@@ -550,7 +550,7 @@
       "label": "EnvSchema",
       "file_type": "code",
       "source_file": "backend/src/config/env.ts",
-      "source_location": "L4",
+      "source_location": "L11",
       "_origin": "ast",
       "id": "backend_src_config_env_envschema",
       "community": 15,
@@ -561,7 +561,7 @@
       "label": "parsed",
       "file_type": "code",
       "source_file": "backend/src/config/env.ts",
-      "source_location": "L34",
+      "source_location": "L41",
       "_origin": "ast",
       "id": "backend_src_config_env_parsed",
       "community": 15,
@@ -2192,8 +2192,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "package",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "package.json"
     },
     {
@@ -2203,8 +2203,8 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "package_name",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "name"
     },
     {
@@ -2214,8 +2214,8 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "package_private",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "private"
     },
     {
@@ -2225,8 +2225,8 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "package_license",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "license"
     },
     {
@@ -2236,8 +2236,8 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "package_type",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "type"
     },
     {
@@ -2247,8 +2247,8 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "package_engines",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "engines"
     },
     {
@@ -2258,8 +2258,8 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "package_engines_node",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "node"
     },
     {
@@ -2269,8 +2269,8 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "package_workspaces",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "workspaces"
     },
     {
@@ -2280,8 +2280,8 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "ref_shared",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "shared"
     },
     {
@@ -2291,8 +2291,8 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "ref_backend",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "backend"
     },
     {
@@ -2302,8 +2302,8 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "ref_frontend",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "frontend"
     },
     {
@@ -2797,8 +2797,8 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "package_dependencies",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "dependencies"
     },
     {
@@ -2808,8 +2808,8 @@
       "source_location": "L53",
       "_origin": "ast",
       "id": "package_dependencies_prisma_client",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "@prisma/client"
     },
     {
@@ -2819,8 +2819,8 @@
       "source_location": "L53",
       "_origin": "ast",
       "id": "package_json_prisma_client",
-      "community": 25,
-      "community_name": "lint-staged",
+      "community": 0,
+      "community_name": "Root Project Configuration",
       "norm_label": "@prisma/client"
     },
     {
@@ -3594,6 +3594,83 @@
       "norm_label": "isolatedmodules"
     },
     {
+      "label": "vercel.json",
+      "file_type": "code",
+      "source_file": "vercel.json",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "vercel",
+      "community": 32,
+      "community_name": "vercel.json",
+      "norm_label": "vercel.json"
+    },
+    {
+      "label": "$schema",
+      "file_type": "code",
+      "source_file": "vercel.json",
+      "source_location": "L2",
+      "_origin": "ast",
+      "id": "vercel_schema",
+      "community": 32,
+      "community_name": "vercel.json",
+      "norm_label": "$schema"
+    },
+    {
+      "label": "framework",
+      "file_type": "code",
+      "source_file": "vercel.json",
+      "source_location": "L3",
+      "_origin": "ast",
+      "id": "vercel_framework",
+      "community": 32,
+      "community_name": "vercel.json",
+      "norm_label": "framework"
+    },
+    {
+      "label": "installCommand",
+      "file_type": "code",
+      "source_file": "vercel.json",
+      "source_location": "L4",
+      "_origin": "ast",
+      "id": "vercel_installcommand",
+      "community": 32,
+      "community_name": "vercel.json",
+      "norm_label": "installcommand"
+    },
+    {
+      "label": "buildCommand",
+      "file_type": "code",
+      "source_file": "vercel.json",
+      "source_location": "L5",
+      "_origin": "ast",
+      "id": "vercel_buildcommand",
+      "community": 32,
+      "community_name": "vercel.json",
+      "norm_label": "buildcommand"
+    },
+    {
+      "label": "outputDirectory",
+      "file_type": "code",
+      "source_file": "vercel.json",
+      "source_location": "L6",
+      "_origin": "ast",
+      "id": "vercel_outputdirectory",
+      "community": 32,
+      "community_name": "vercel.json",
+      "norm_label": "outputdirectory"
+    },
+    {
+      "label": "rewrites",
+      "file_type": "code",
+      "source_file": "vercel.json",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "vercel_rewrites",
+      "community": 32,
+      "community_name": "vercel.json",
+      "norm_label": "rewrites"
+    },
+    {
       "label": "prd.md",
       "file_type": "document",
       "source_file": "docs/prd.md",
@@ -3985,8 +4062,8 @@
       "source_location": "L95",
       "_origin": "ast",
       "id": "docs_trd_4_data_model_prisma",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 37,
+      "community_name": "4. Data Model (Prisma)",
       "norm_label": "4. data model (prisma)"
     },
     {
@@ -3996,8 +4073,8 @@
       "source_location": "L101",
       "_origin": "ast",
       "id": "docs_trd_auth_models_better_auth_prisma_adapter",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 37,
+      "community_name": "4. Data Model (Prisma)",
       "norm_label": "auth models (better-auth prisma adapter)"
     },
     {
@@ -4007,8 +4084,8 @@
       "source_location": "L110",
       "_origin": "ast",
       "id": "docs_trd_clinical_domain",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 37,
+      "community_name": "4. Data Model (Prisma)",
       "norm_label": "clinical domain"
     },
     {
@@ -4018,8 +4095,8 @@
       "source_location": "L145",
       "_origin": "ast",
       "id": "docs_trd_gap_no_data_retention_or_deletion_path",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 37,
+      "community_name": "4. Data Model (Prisma)",
       "norm_label": "gap: no data-retention or deletion path"
     },
     {
@@ -4051,8 +4128,8 @@
       "source_location": "L174",
       "_origin": "ast",
       "id": "docs_trd_6_llm_port_adapter",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 33,
+      "community_name": "6. LLM Port & Adapter",
       "norm_label": "6. llm port & adapter"
     },
     {
@@ -4062,8 +4139,8 @@
       "source_location": "L180",
       "_origin": "ast",
       "id": "docs_trd_port_llmclient",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 33,
+      "community_name": "6. LLM Port & Adapter",
       "norm_label": "port (`llmclient`)"
     },
     {
@@ -4073,8 +4150,8 @@
       "source_location": "L190",
       "_origin": "ast",
       "id": "docs_trd_generaterequest_t",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 33,
+      "community_name": "6. LLM Port & Adapter",
       "norm_label": "`generaterequest<t>`"
     },
     {
@@ -4084,8 +4161,8 @@
       "source_location": "L201",
       "_origin": "ast",
       "id": "docs_trd_llmresponseerror",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 33,
+      "community_name": "6. LLM Port & Adapter",
       "norm_label": "`llmresponseerror`"
     },
     {
@@ -4095,8 +4172,8 @@
       "source_location": "L205",
       "_origin": "ast",
       "id": "docs_trd_adapter_mechanism_openaicompatibleclient",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 33,
+      "community_name": "6. LLM Port & Adapter",
       "norm_label": "adapter mechanism (`openaicompatibleclient`)"
     },
     {
@@ -4106,8 +4183,8 @@
       "source_location": "L214",
       "_origin": "ast",
       "id": "docs_trd_failure_modes",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 33,
+      "community_name": "6. LLM Port & Adapter",
       "norm_label": "failure modes"
     },
     {
@@ -4117,8 +4194,8 @@
       "source_location": "L228",
       "_origin": "ast",
       "id": "docs_trd_7_environment_contract",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 38,
+      "community_name": "7. Environment Contract",
       "norm_label": "7. environment contract"
     },
     {
@@ -4128,8 +4205,8 @@
       "source_location": "L254",
       "_origin": "ast",
       "id": "docs_trd_production_guards_enforced_at_boot",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 38,
+      "community_name": "7. Environment Contract",
       "norm_label": "production guards (enforced at boot)"
     },
     {
@@ -4139,8 +4216,8 @@
       "source_location": "L259",
       "_origin": "ast",
       "id": "docs_trd_gap_no_production_guard_for_deepseek_prc_hosting",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 38,
+      "community_name": "7. Environment Contract",
       "norm_label": "gap: no production guard for deepseek (prc hosting)"
     },
     {
@@ -4150,8 +4227,8 @@
       "source_location": "L263",
       "_origin": "ast",
       "id": "docs_trd_gap_deid_fail_closed_is_not_read_at_the_egress_point",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 38,
+      "community_name": "7. Environment Contract",
       "norm_label": "gap: `deid_fail_closed` is not read at the egress point"
     },
     {
@@ -4161,8 +4238,8 @@
       "source_location": "L269",
       "_origin": "ast",
       "id": "docs_trd_8_http_surface_as_built",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 40,
+      "community_name": "8. HTTP Surface As Built",
       "norm_label": "8. http surface as built"
     },
     {
@@ -4172,8 +4249,8 @@
       "source_location": "L275",
       "_origin": "ast",
       "id": "docs_trd_middleware_stack_in_order",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 40,
+      "community_name": "8. HTTP Surface As Built",
       "norm_label": "middleware stack (in order)"
     },
     {
@@ -4183,8 +4260,8 @@
       "source_location": "L281",
       "_origin": "ast",
       "id": "docs_trd_routes",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 40,
+      "community_name": "8. HTTP Surface As Built",
       "norm_label": "routes"
     },
     {
@@ -4337,8 +4414,8 @@
       "source_location": "L378",
       "_origin": "ast",
       "id": "docs_trd_11_guideline_corpus",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 36,
+      "community_name": "11. Guideline Corpus",
       "norm_label": "11. guideline corpus"
     },
     {
@@ -4348,8 +4425,8 @@
       "source_location": "L382",
       "_origin": "ast",
       "id": "docs_trd_chunk_record_shape",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 36,
+      "community_name": "11. Guideline Corpus",
       "norm_label": "chunk record shape"
     },
     {
@@ -4359,8 +4436,8 @@
       "source_location": "L398",
       "_origin": "ast",
       "id": "docs_trd_candidate_set_reaching_the_prompt",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 36,
+      "community_name": "11. Guideline Corpus",
       "norm_label": "candidate set reaching the prompt"
     },
     {
@@ -4370,8 +4447,8 @@
       "source_location": "L402",
       "_origin": "ast",
       "id": "docs_trd_schema_enforced_rejection",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 36,
+      "community_name": "11. Guideline Corpus",
       "norm_label": "schema-enforced rejection"
     },
     {
@@ -4447,8 +4524,8 @@
       "source_location": "L456",
       "_origin": "ast",
       "id": "docs_trd_13_api_contracts",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 34,
+      "community_name": "13. API Contracts",
       "norm_label": "13. api contracts"
     },
     {
@@ -4458,8 +4535,8 @@
       "source_location": "L460",
       "_origin": "ast",
       "id": "docs_trd_new_response_schemas_proposed_for_shared_types",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 34,
+      "community_name": "13. API Contracts",
       "norm_label": "new response schemas proposed for `@shared/types`"
     },
     {
@@ -4469,8 +4546,8 @@
       "source_location": "L472",
       "_origin": "ast",
       "id": "docs_trd_routes_472",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 34,
+      "community_name": "13. API Contracts",
       "norm_label": "routes"
     },
     {
@@ -4480,8 +4557,8 @@
       "source_location": "L487",
       "_origin": "ast",
       "id": "docs_trd_gap_red_flag_acknowledgment_and_gap_review_have_no_columns_yet",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 34,
+      "community_name": "13. API Contracts",
       "norm_label": "gap \u2014 red-flag acknowledgment and gap review have no columns yet"
     },
     {
@@ -4491,8 +4568,8 @@
       "source_location": "L491",
       "_origin": "ast",
       "id": "docs_trd_state_machine_cross_check",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 34,
+      "community_name": "13. API Contracts",
       "norm_label": "state machine cross-check"
     },
     {
@@ -4513,8 +4590,8 @@
       "source_location": "L512",
       "_origin": "ast",
       "id": "docs_trd_15_audit_logging",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 39,
+      "community_name": "15. Audit Logging",
       "norm_label": "15. audit logging"
     },
     {
@@ -4524,8 +4601,8 @@
       "source_location": "L516",
       "_origin": "ast",
       "id": "docs_trd_auditevent_action_taxonomy",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 39,
+      "community_name": "15. Audit Logging",
       "norm_label": "`auditevent.action` taxonomy"
     },
     {
@@ -4535,8 +4612,8 @@
       "source_location": "L533",
       "_origin": "ast",
       "id": "docs_trd_forbidden_content",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 39,
+      "community_name": "15. Audit Logging",
       "norm_label": "forbidden content"
     },
     {
@@ -4667,8 +4744,8 @@
       "source_location": "L653",
       "_origin": "ast",
       "id": "docs_trd_20_browser_side_asr_contract",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 35,
+      "community_name": "20. Browser-Side ASR Contract",
       "norm_label": "20. browser-side asr contract"
     },
     {
@@ -4678,8 +4755,8 @@
       "source_location": "L659",
       "_origin": "ast",
       "id": "docs_trd_where_transcription_runs",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 35,
+      "community_name": "20. Browser-Side ASR Contract",
       "norm_label": "where transcription runs"
     },
     {
@@ -4689,8 +4766,8 @@
       "source_location": "L664",
       "_origin": "ast",
       "id": "docs_trd_what_crosses_the_network",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 35,
+      "community_name": "20. Browser-Side ASR Contract",
       "norm_label": "what crosses the network"
     },
     {
@@ -4700,8 +4777,8 @@
       "source_location": "L670",
       "_origin": "ast",
       "id": "docs_trd_interaction_with_existing_contracts",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 35,
+      "community_name": "20. Browser-Side ASR Contract",
       "norm_label": "interaction with existing contracts"
     },
     {
@@ -4711,9 +4788,86 @@
       "source_location": "L675",
       "_origin": "ast",
       "id": "docs_trd_open",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 35,
+      "community_name": "20. Browser-Side ASR Contract",
       "norm_label": "open"
+    },
+    {
+      "label": "21. LLM Guardrail Architecture",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L681",
+      "_origin": "ast",
+      "id": "docs_trd_21_llm_guardrail_architecture",
+      "community": 31,
+      "community_name": "21. LLM Guardrail Architecture",
+      "norm_label": "21. llm guardrail architecture"
+    },
+    {
+      "label": "21.1 Measured Finding \u2014 Fabricated Clinical Negatives",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L685",
+      "_origin": "ast",
+      "id": "docs_trd_21_1_measured_finding_fabricated_clinical_negatives",
+      "community": 31,
+      "community_name": "21. LLM Guardrail Architecture",
+      "norm_label": "21.1 measured finding \u2014 fabricated clinical negatives"
+    },
+    {
+      "label": "21.2 Provider Constraint \u2014 Strict Structured Output Is Not Universal",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L727",
+      "_origin": "ast",
+      "id": "docs_trd_21_2_provider_constraint_strict_structured_output_is_not_universal",
+      "community": 31,
+      "community_name": "21. LLM Guardrail Architecture",
+      "norm_label": "21.2 provider constraint \u2014 strict structured output is not universal"
+    },
+    {
+      "label": "21.3 Control Tiers",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L742",
+      "_origin": "ast",
+      "id": "docs_trd_21_3_control_tiers",
+      "community": 31,
+      "community_name": "21. LLM Guardrail Architecture",
+      "norm_label": "21.3 control tiers"
+    },
+    {
+      "label": "21.4 Evidence-Bound Assertion \u2014 The Primary Control",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L755",
+      "_origin": "ast",
+      "id": "docs_trd_21_4_evidence_bound_assertion_the_primary_control",
+      "community": 31,
+      "community_name": "21. LLM Guardrail Architecture",
+      "norm_label": "21.4 evidence-bound assertion \u2014 the primary control"
+    },
+    {
+      "label": "21.5 Transcript As Untrusted Input",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L775",
+      "_origin": "ast",
+      "id": "docs_trd_21_5_transcript_as_untrusted_input",
+      "community": 31,
+      "community_name": "21. LLM Guardrail Architecture",
+      "norm_label": "21.5 transcript as untrusted input"
+    },
+    {
+      "label": "21.6 What Stays Open",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L785",
+      "_origin": "ast",
+      "id": "docs_trd_21_6_what_stays_open",
+      "community": 31,
+      "community_name": "21. LLM Guardrail Architecture",
+      "norm_label": "21.6 what stays open"
     },
     {
       "label": "render.yaml",
@@ -5447,7 +5601,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/config/env.ts",
-      "source_location": "L4",
+      "source_location": "L11",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_config_env",
@@ -5458,7 +5612,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/src/config/env.ts",
-      "source_location": "L34",
+      "source_location": "L41",
       "weight": 1.0,
       "_origin": "ast",
       "source": "backend_src_config_env",
@@ -8639,6 +8793,72 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "vercel.json",
+      "source_location": "L5",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "vercel",
+      "target": "vercel_buildcommand",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "vercel.json",
+      "source_location": "L3",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "vercel",
+      "target": "vercel_framework",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "vercel.json",
+      "source_location": "L4",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "vercel",
+      "target": "vercel_installcommand",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "vercel.json",
+      "source_location": "L6",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "vercel",
+      "target": "vercel_outputdirectory",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "vercel.json",
+      "source_location": "L7",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "vercel",
+      "target": "vercel_rewrites",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "vercel.json",
+      "source_location": "L2",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "vercel",
+      "target": "vercel_schema",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "docs/prd.md",
       "source_location": "L1",
       "weight": 1.0,
@@ -9030,6 +9250,17 @@
       "_origin": "ast",
       "source": "docs_trd_trd",
       "target": "docs_trd_20_browser_side_asr_contract",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L681",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_21_llm_guardrail_architecture",
       "confidence_score": 1.0
     },
     {
@@ -9737,6 +9968,72 @@
       "confidence_score": 1.0
     },
     {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L685",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_21_llm_guardrail_architecture",
+      "target": "docs_trd_21_1_measured_finding_fabricated_clinical_negatives",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L727",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_21_llm_guardrail_architecture",
+      "target": "docs_trd_21_2_provider_constraint_strict_structured_output_is_not_universal",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L742",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_21_llm_guardrail_architecture",
+      "target": "docs_trd_21_3_control_tiers",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L755",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_21_llm_guardrail_architecture",
+      "target": "docs_trd_21_4_evidence_bound_assertion_the_primary_control",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L775",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_21_llm_guardrail_architecture",
+      "target": "docs_trd_21_5_transcript_as_untrusted_input",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L785",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_21_llm_guardrail_architecture",
+      "target": "docs_trd_21_6_what_stays_open",
+      "confidence_score": 1.0
+    },
+    {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
@@ -9831,5 +10128,5 @@
       "source_file": "docs/README.md"
     }
   ],
-  "built_at_commit": "985053499134cec73b4a4399f9a563fd645001a3"
+  "built_at_commit": "4f8b197ce8a7341398bc22eadf01e2c7e3406954"
 }
