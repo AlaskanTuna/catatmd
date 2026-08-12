@@ -1,16 +1,16 @@
 # Graph Report - ai-clinical-assistant  (2026-08-12)
 
 ## Corpus Check
-- 29 files · ~3,788 words
+- 29 files · ~3,809 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 332 nodes · 336 edges · 25 communities (24 shown, 1 thin omitted)
+- 337 nodes · 341 edges · 26 communities (25 shown, 1 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `783278c1`
+- Built from commit: `5e34d0f1`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -34,18 +34,19 @@
 - Shared TypeScript Config
 - Project Documentation
 - Frontend Entry Point
+- lint-staged
 
 ## God Nodes (most connected - your core abstractions)
 1. `scripts` - 17 edges
 2. `compilerOptions` - 16 edges
 3. `includes` - 8 edges
-4. `scripts` - 6 edges
+4. `lint-staged` - 8 edges
 5. `scripts` - 6 edges
-6. `OpenAICompatibleClient` - 5 edges
-7. `LLMClient` - 5 edges
-8. `GenerateRequest` - 5 edges
-9. `formatter` - 5 edges
-10. `compilerOptions` - 5 edges
+6. `scripts` - 6 edges
+7. `OpenAICompatibleClient` - 5 edges
+8. `LLMClient` - 5 edges
+9. `GenerateRequest` - 5 edges
+10. `formatter` - 5 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `GenerateRequest` --references--> `Deidentified`  [EXTRACTED]
@@ -59,11 +60,11 @@
 ## Hyperedges (group relationships)
 - **PHI Boundary Components** — backend_src_deid, backend_src_lib_llm [EXTRACTED 1.00]
 
-## Communities (25 total, 1 thin omitted)
+## Communities (26 total, 1 thin omitted)
 
 ### Community 0 - "Root Project Configuration"
 Cohesion: 0.06
-Nodes (33): dependencies, @prisma/client, engines, node, @prisma/client, license, lint-staged, *.{js,ts,tsx,json} (+25 more)
+Nodes (30): dependencies, @prisma/client, engines, node, @prisma/client, license, name, private (+22 more)
 
 ### Community 1 - "Backend Dependencies"
 Cohesion: 0.08
@@ -133,8 +134,12 @@ Nodes (9): compilerOptions, composite, declaration, outDir, rootDir, extends, in
 Cohesion: 0.40
 Nodes (3): App(), queryClient, root
 
+### Community 25 - "lint-staged"
+Cohesion: 0.25
+Nodes (7): lint-staged, AGENTS.md, biome.json, CLAUDE.md, commitlint.config.js, {docs,.github}/**/*.{md,yml,yaml}, {shared,backend,frontend}/**/*.{ts,tsx,js,json}
+
 ## Knowledge Gaps
-- **193 isolated node(s):** `name`, `private`, `license`, `type`, `dev` (+188 more)
+- **197 isolated node(s):** `name`, `private`, `license`, `type`, `dev` (+192 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **1 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -142,13 +147,13 @@ Nodes (3): App(), queryClient, root
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `devDependencies` connect `Development Tooling` to `Root Project Configuration`?**
-  _High betweenness centrality (0.014) - this node is a cross-community bridge._
+  _High betweenness centrality (0.015) - this node is a cross-community bridge._
 - **Why does `devDependencies` connect `Frontend Build Tools` to `Frontend Scripts`?**
-  _High betweenness centrality (0.014) - this node is a cross-community bridge._
+  _High betweenness centrality (0.013) - this node is a cross-community bridge._
 - **What connects `name`, `private`, `license` to the rest of the system?**
-  _193 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _197 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Root Project Configuration` be split into smaller, more focused modules?**
-  _Cohesion score 0.058823529411764705 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06451612903225806 - nodes in this community are weakly interconnected._
 - **Should `Backend Dependencies` be split into smaller, more focused modules?**
   _Cohesion score 0.07692307692307693 - nodes in this community are weakly interconnected._
 - **Should `Code Formatting Rules` be split into smaller, more focused modules?**
