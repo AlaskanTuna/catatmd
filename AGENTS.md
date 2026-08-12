@@ -133,7 +133,7 @@ Both are committed in this repo, so "it's in the TRD" is a valid answer for impl
   - Prefer a few bullets or a small table over paragraphs. If the summary runs past roughly 10 lines, it is too long — cut it.
   - Detail belongs in the diff, `docs/`, and the PR body. The human will ask if they want more.
   - **Brevity must never hide a problem.** Blockers, risks, failed tests, and skipped work are always stated explicitly, even when everything else is compressed away.
-- **No secrets in repo.** `.env.example` committed, `.env` gitignored. Engagement terms, client names, and commercial figures are **confidential** — they belong in local-only notes, never in tracked files, commit messages, issues, or PR descriptions.
+- **No secrets in repo.** `.env.example` committed, `.env` gitignored. Engagement terms, client names, and commercial figures are **confidential** — they belong in local-only notes, never in tracked files, commit messages, issues, or PR descriptions. One explicit exception: the project submission URL (`docs/prd.md`) is permitted and expected in tracked files, not a confidentiality-check hit. The fee figure, engagement length and dates, and the submission deadline framed as an external commitment stay banned everywhere else.
 
 ---
 

@@ -1422,8 +1422,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_package",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 10,
+      "community_name": "Frontend UI Dependencies",
       "norm_label": "frontend/package.json"
     },
     {
@@ -1433,8 +1433,8 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "frontend_package_name",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 10,
+      "community_name": "Frontend UI Dependencies",
       "norm_label": "name"
     },
     {
@@ -1444,8 +1444,8 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "frontend_package_private",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 10,
+      "community_name": "Frontend UI Dependencies",
       "norm_label": "private"
     },
     {
@@ -1455,8 +1455,8 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "frontend_package_license",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 10,
+      "community_name": "Frontend UI Dependencies",
       "norm_label": "license"
     },
     {
@@ -1466,8 +1466,8 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "frontend_package_type",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 10,
+      "community_name": "Frontend UI Dependencies",
       "norm_label": "type"
     },
     {
@@ -1477,8 +1477,8 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "frontend_package_scripts",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 10,
+      "community_name": "Frontend UI Dependencies",
       "norm_label": "scripts"
     },
     {
@@ -1488,8 +1488,8 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "frontend_package_scripts_dev",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 10,
+      "community_name": "Frontend UI Dependencies",
       "norm_label": "dev"
     },
     {
@@ -1499,8 +1499,8 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "frontend_package_scripts_build",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 10,
+      "community_name": "Frontend UI Dependencies",
       "norm_label": "build"
     },
     {
@@ -1510,8 +1510,8 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "frontend_package_scripts_preview",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 10,
+      "community_name": "Frontend UI Dependencies",
       "norm_label": "preview"
     },
     {
@@ -1521,8 +1521,8 @@
       "source_location": "L10",
       "_origin": "ast",
       "id": "frontend_package_scripts_typecheck",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 10,
+      "community_name": "Frontend UI Dependencies",
       "norm_label": "typecheck"
     },
     {
@@ -1532,8 +1532,8 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "frontend_package_scripts_test",
-      "community": 14,
-      "community_name": "Frontend Scripts",
+      "community": 10,
+      "community_name": "Frontend UI Dependencies",
       "norm_label": "test"
     },
     {
@@ -2192,8 +2192,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "package",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "package.json"
     },
     {
@@ -2203,8 +2203,8 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "package_name",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "name"
     },
     {
@@ -2214,8 +2214,8 @@
       "source_location": "L3",
       "_origin": "ast",
       "id": "package_private",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "private"
     },
     {
@@ -2225,8 +2225,8 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "package_license",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "license"
     },
     {
@@ -2236,8 +2236,8 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "package_type",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "type"
     },
     {
@@ -2247,8 +2247,8 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "package_engines",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "engines"
     },
     {
@@ -2258,8 +2258,8 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "package_engines_node",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "node"
     },
     {
@@ -2269,8 +2269,8 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "package_workspaces",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "workspaces"
     },
     {
@@ -2280,8 +2280,8 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "ref_shared",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "shared"
     },
     {
@@ -2291,8 +2291,8 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "ref_backend",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "backend"
     },
     {
@@ -2302,8 +2302,8 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "ref_frontend",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "frontend"
     },
     {
@@ -2797,8 +2797,8 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "package_dependencies",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "dependencies"
     },
     {
@@ -2808,8 +2808,8 @@
       "source_location": "L53",
       "_origin": "ast",
       "id": "package_dependencies_prisma_client",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "@prisma/client"
     },
     {
@@ -2819,8 +2819,8 @@
       "source_location": "L53",
       "_origin": "ast",
       "id": "package_json_prisma_client",
-      "community": 0,
-      "community_name": "Root Project Configuration",
+      "community": 25,
+      "community_name": "lint-staged",
       "norm_label": "@prisma/client"
     },
     {
@@ -3592,6 +3592,633 @@
       "community": 9,
       "community_name": "TypeScript Compiler Settings",
       "norm_label": "isolatedmodules"
+    },
+    {
+      "label": "prd.md",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_prd",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "prd.md"
+    },
+    {
+      "label": "PRD",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_prd_prd",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "prd"
+    },
+    {
+      "label": "Problem & Context",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L9",
+      "_origin": "ast",
+      "id": "docs_prd_problem_context",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "problem & context"
+    },
+    {
+      "label": "Who It Is For",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L19",
+      "_origin": "ast",
+      "id": "docs_prd_who_it_is_for",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "who it is for"
+    },
+    {
+      "label": "Goals",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L31",
+      "_origin": "ast",
+      "id": "docs_prd_goals",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "goals"
+    },
+    {
+      "label": "Explicit Non-Goals",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L39",
+      "_origin": "ast",
+      "id": "docs_prd_explicit_non_goals",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "explicit non-goals"
+    },
+    {
+      "label": "Clinical Scope",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L51",
+      "_origin": "ast",
+      "id": "docs_prd_clinical_scope",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "clinical scope"
+    },
+    {
+      "label": "Primary Flow",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L59",
+      "_origin": "ast",
+      "id": "docs_prd_primary_flow",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "primary flow"
+    },
+    {
+      "label": "CAP-1 \u2026 CAP-5",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L73",
+      "_origin": "ast",
+      "id": "docs_prd_cap_1_cap_5",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "cap-1 ... cap-5"
+    },
+    {
+      "label": "CAP-1 \u2014 Generate A Structured Clinical Note",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L75",
+      "_origin": "ast",
+      "id": "docs_prd_cap_1_generate_a_structured_clinical_note",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "cap-1 \u2014 generate a structured clinical note"
+    },
+    {
+      "label": "CAP-2 \u2014 Identify Missing Clinical Information",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L86",
+      "_origin": "ast",
+      "id": "docs_prd_cap_2_identify_missing_clinical_information",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "cap-2 \u2014 identify missing clinical information"
+    },
+    {
+      "label": "CAP-3 \u2014 Detect Predefined Red Flags And Escalation Triggers",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L96",
+      "_origin": "ast",
+      "id": "docs_prd_cap_3_detect_predefined_red_flags_and_escalation_triggers",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "cap-3 \u2014 detect predefined red flags and escalation triggers"
+    },
+    {
+      "label": "CAP-4 \u2014 Provide Clinical Suggestions With Cited References",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L106",
+      "_origin": "ast",
+      "id": "docs_prd_cap_4_provide_clinical_suggestions_with_cited_references",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "cap-4 \u2014 provide clinical suggestions with cited references"
+    },
+    {
+      "label": "CAP-5 \u2014 Doctor Reviews, Edits, And Approves Before Saving",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L116",
+      "_origin": "ast",
+      "id": "docs_prd_cap_5_doctor_reviews_edits_and_approves_before_saving",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "cap-5 \u2014 doctor reviews, edits, and approves before saving"
+    },
+    {
+      "label": "Safety Constraints",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L129",
+      "_origin": "ast",
+      "id": "docs_prd_safety_constraints",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "safety constraints"
+    },
+    {
+      "label": "Regulatory & Data-Protection Positioning",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L142",
+      "_origin": "ast",
+      "id": "docs_prd_regulatory_data_protection_positioning",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "regulatory & data-protection positioning"
+    },
+    {
+      "label": "Out Of Scope For The MVP",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L152",
+      "_origin": "ast",
+      "id": "docs_prd_out_of_scope_for_the_mvp",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "out of scope for the mvp"
+    },
+    {
+      "label": "Known Limitations",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L167",
+      "_origin": "ast",
+      "id": "docs_prd_known_limitations",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "known limitations"
+    },
+    {
+      "label": "Demo Script",
+      "file_type": "document",
+      "source_file": "docs/prd.md",
+      "source_location": "L181",
+      "_origin": "ast",
+      "id": "docs_prd_demo_script",
+      "community": 26,
+      "community_name": "PRD",
+      "norm_label": "demo script"
+    },
+    {
+      "label": "trd.md",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_trd",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "trd.md"
+    },
+    {
+      "label": "TRD",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_trd_trd",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "trd"
+    },
+    {
+      "label": "1. Purpose & Relationship To Other Docs",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L7",
+      "_origin": "ast",
+      "id": "docs_trd_1_purpose_relationship_to_other_docs",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "1. purpose & relationship to other docs"
+    },
+    {
+      "label": "Status Tag Legend",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L15",
+      "_origin": "ast",
+      "id": "docs_trd_status_tag_legend",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "status tag legend"
+    },
+    {
+      "label": "2. System Context & Component Responsibilities",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L29",
+      "_origin": "ast",
+      "id": "docs_trd_2_system_context_component_responsibilities",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "2. system context & component responsibilities"
+    },
+    {
+      "label": "3. Shared Contracts (`@shared/types`)",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L49",
+      "_origin": "ast",
+      "id": "docs_trd_3_shared_contracts_shared_types",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "3. shared contracts (`@shared/types`)"
+    },
+    {
+      "label": "Transcript",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L55",
+      "_origin": "ast",
+      "id": "docs_trd_transcript",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "transcript"
+    },
+    {
+      "label": "Clinical Note & Analysis",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L63",
+      "_origin": "ast",
+      "id": "docs_trd_clinical_note_analysis",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "clinical note & analysis"
+    },
+    {
+      "label": "Consultation Lifecycle",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L74",
+      "_origin": "ast",
+      "id": "docs_trd_consultation_lifecycle",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "consultation lifecycle"
+    },
+    {
+      "label": "Load-Bearing Semantics",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L83",
+      "_origin": "ast",
+      "id": "docs_trd_load_bearing_semantics",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "load-bearing semantics"
+    },
+    {
+      "label": "4. Data Model (Prisma)",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L91",
+      "_origin": "ast",
+      "id": "docs_trd_4_data_model_prisma",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "4. data model (prisma)"
+    },
+    {
+      "label": "Auth Models (better-auth Prisma Adapter)",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L97",
+      "_origin": "ast",
+      "id": "docs_trd_auth_models_better_auth_prisma_adapter",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "auth models (better-auth prisma adapter)"
+    },
+    {
+      "label": "Clinical Domain",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L106",
+      "_origin": "ast",
+      "id": "docs_trd_clinical_domain",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "clinical domain"
+    },
+    {
+      "label": "5. The PHI Boundary \u2014 Type-Level Contract",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L143",
+      "_origin": "ast",
+      "id": "docs_trd_5_the_phi_boundary_type_level_contract",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "5. the phi boundary \u2014 type-level contract"
+    },
+    {
+      "label": "What The Compiler Enforces Versus What Convention Enforces",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L156",
+      "_origin": "ast",
+      "id": "docs_trd_what_the_compiler_enforces_versus_what_convention_enforces",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "what the compiler enforces versus what convention enforces"
+    },
+    {
+      "label": "6. LLM Port & Adapter",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L166",
+      "_origin": "ast",
+      "id": "docs_trd_6_llm_port_adapter",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "6. llm port & adapter"
+    },
+    {
+      "label": "Port (`LLMClient`)",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L172",
+      "_origin": "ast",
+      "id": "docs_trd_port_llmclient",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "port (`llmclient`)"
+    },
+    {
+      "label": "`GenerateRequest<T>`",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L182",
+      "_origin": "ast",
+      "id": "docs_trd_generaterequest_t",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "`generaterequest<t>`"
+    },
+    {
+      "label": "`LLMResponseError`",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L193",
+      "_origin": "ast",
+      "id": "docs_trd_llmresponseerror",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "`llmresponseerror`"
+    },
+    {
+      "label": "Adapter Mechanism (`OpenAICompatibleClient`)",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L197",
+      "_origin": "ast",
+      "id": "docs_trd_adapter_mechanism_openaicompatibleclient",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "adapter mechanism (`openaicompatibleclient`)"
+    },
+    {
+      "label": "Failure Modes",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L206",
+      "_origin": "ast",
+      "id": "docs_trd_failure_modes",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "failure modes"
+    },
+    {
+      "label": "7. Environment Contract",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L220",
+      "_origin": "ast",
+      "id": "docs_trd_7_environment_contract",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "7. environment contract"
+    },
+    {
+      "label": "Production Guards (Enforced At Boot)",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L246",
+      "_origin": "ast",
+      "id": "docs_trd_production_guards_enforced_at_boot",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "production guards (enforced at boot)"
+    },
+    {
+      "label": "Gap: `DEID_FAIL_CLOSED` Is Not Read At The Egress Point",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L251",
+      "_origin": "ast",
+      "id": "docs_trd_gap_deid_fail_closed_is_not_read_at_the_egress_point",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "gap: `deid_fail_closed` is not read at the egress point"
+    },
+    {
+      "label": "8. HTTP Surface As Built",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L257",
+      "_origin": "ast",
+      "id": "docs_trd_8_http_surface_as_built",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "8. http surface as built"
+    },
+    {
+      "label": "Middleware Stack (In Order)",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L263",
+      "_origin": "ast",
+      "id": "docs_trd_middleware_stack_in_order",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "middleware stack (in order)"
+    },
+    {
+      "label": "Routes",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L269",
+      "_origin": "ast",
+      "id": "docs_trd_routes",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "routes"
+    },
+    {
+      "label": "9. De-Identification Pipeline",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L279",
+      "_origin": "ast",
+      "id": "docs_trd_9_de_identification_pipeline",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "9. de-identification pipeline"
+    },
+    {
+      "label": "10. Red-Flag Rules Engine",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L285",
+      "_origin": "ast",
+      "id": "docs_trd_10_red_flag_rules_engine",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "10. red-flag rules engine"
+    },
+    {
+      "label": "11. Guideline Corpus",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L291",
+      "_origin": "ast",
+      "id": "docs_trd_11_guideline_corpus",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "11. guideline corpus"
+    },
+    {
+      "label": "12. LLM Prompt & Response Contracts",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L297",
+      "_origin": "ast",
+      "id": "docs_trd_12_llm_prompt_response_contracts",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "12. llm prompt & response contracts"
+    },
+    {
+      "label": "13. API Contracts",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L303",
+      "_origin": "ast",
+      "id": "docs_trd_13_api_contracts",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "13. api contracts"
+    },
+    {
+      "label": "14. Auth Model",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L309",
+      "_origin": "ast",
+      "id": "docs_trd_14_auth_model",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "14. auth model"
+    },
+    {
+      "label": "15. Audit Logging",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L315",
+      "_origin": "ast",
+      "id": "docs_trd_15_audit_logging",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "15. audit logging"
+    },
+    {
+      "label": "16. Security Controls",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L321",
+      "_origin": "ast",
+      "id": "docs_trd_16_security_controls",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "16. security controls"
+    },
+    {
+      "label": "17. Environments & Deployment",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L327",
+      "_origin": "ast",
+      "id": "docs_trd_17_environments_deployment",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "17. environments & deployment"
+    },
+    {
+      "label": "18. Traceability",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L333",
+      "_origin": "ast",
+      "id": "docs_trd_18_traceability",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "18. traceability"
+    },
+    {
+      "label": "19. Open Decisions Register",
+      "file_type": "document",
+      "source_file": "docs/trd.md",
+      "source_location": "L339",
+      "_origin": "ast",
+      "id": "docs_trd_19_open_decisions_register",
+      "community": 14,
+      "community_name": "Frontend Scripts",
+      "norm_label": "19. open decisions register"
     },
     {
       "label": "render.yaml",
@@ -7530,6 +8157,611 @@
       "confidence_score": 1.0
     },
     {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd",
+      "target": "docs_prd_prd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L73",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_prd",
+      "target": "docs_prd_cap_1_cap_5",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L51",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_prd",
+      "target": "docs_prd_clinical_scope",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L181",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_prd",
+      "target": "docs_prd_demo_script",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L39",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_prd",
+      "target": "docs_prd_explicit_non_goals",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L31",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_prd",
+      "target": "docs_prd_goals",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L167",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_prd",
+      "target": "docs_prd_known_limitations",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L152",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_prd",
+      "target": "docs_prd_out_of_scope_for_the_mvp",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L59",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_prd",
+      "target": "docs_prd_primary_flow",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L9",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_prd",
+      "target": "docs_prd_problem_context",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L142",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_prd",
+      "target": "docs_prd_regulatory_data_protection_positioning",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L129",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_prd",
+      "target": "docs_prd_safety_constraints",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L19",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_prd",
+      "target": "docs_prd_who_it_is_for",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L75",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_cap_1_cap_5",
+      "target": "docs_prd_cap_1_generate_a_structured_clinical_note",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L86",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_cap_1_cap_5",
+      "target": "docs_prd_cap_2_identify_missing_clinical_information",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L96",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_cap_1_cap_5",
+      "target": "docs_prd_cap_3_detect_predefined_red_flags_and_escalation_triggers",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L106",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_cap_1_cap_5",
+      "target": "docs_prd_cap_4_provide_clinical_suggestions_with_cited_references",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/prd.md",
+      "source_location": "L116",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_prd_cap_1_cap_5",
+      "target": "docs_prd_cap_5_doctor_reviews_edits_and_approves_before_saving",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd",
+      "target": "docs_trd_trd",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L285",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_10_red_flag_rules_engine",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L291",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_11_guideline_corpus",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L297",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_12_llm_prompt_response_contracts",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L303",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_13_api_contracts",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L309",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_14_auth_model",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L315",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_15_audit_logging",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L321",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_16_security_controls",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L327",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_17_environments_deployment",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L333",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_18_traceability",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L339",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_19_open_decisions_register",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L7",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_1_purpose_relationship_to_other_docs",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L29",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_2_system_context_component_responsibilities",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L49",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_3_shared_contracts_shared_types",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L91",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_4_data_model_prisma",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L143",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_5_the_phi_boundary_type_level_contract",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L166",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_6_llm_port_adapter",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L220",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_7_environment_contract",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L257",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_8_http_surface_as_built",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L279",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_trd",
+      "target": "docs_trd_9_de_identification_pipeline",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L15",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_1_purpose_relationship_to_other_docs",
+      "target": "docs_trd_status_tag_legend",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L63",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_3_shared_contracts_shared_types",
+      "target": "docs_trd_clinical_note_analysis",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L74",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_3_shared_contracts_shared_types",
+      "target": "docs_trd_consultation_lifecycle",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L83",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_3_shared_contracts_shared_types",
+      "target": "docs_trd_load_bearing_semantics",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L55",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_3_shared_contracts_shared_types",
+      "target": "docs_trd_transcript",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L97",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_4_data_model_prisma",
+      "target": "docs_trd_auth_models_better_auth_prisma_adapter",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L106",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_4_data_model_prisma",
+      "target": "docs_trd_clinical_domain",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L156",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_5_the_phi_boundary_type_level_contract",
+      "target": "docs_trd_what_the_compiler_enforces_versus_what_convention_enforces",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L197",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_6_llm_port_adapter",
+      "target": "docs_trd_adapter_mechanism_openaicompatibleclient",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L206",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_6_llm_port_adapter",
+      "target": "docs_trd_failure_modes",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L182",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_6_llm_port_adapter",
+      "target": "docs_trd_generaterequest_t",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L193",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_6_llm_port_adapter",
+      "target": "docs_trd_llmresponseerror",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L172",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_6_llm_port_adapter",
+      "target": "docs_trd_port_llmclient",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L251",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_7_environment_contract",
+      "target": "docs_trd_gap_deid_fail_closed_is_not_read_at_the_egress_point",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L246",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_7_environment_contract",
+      "target": "docs_trd_production_guards_enforced_at_boot",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L263",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_8_http_surface_as_built",
+      "target": "docs_trd_middleware_stack_in_order",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/trd.md",
+      "source_location": "L269",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_trd_8_http_surface_as_built",
+      "target": "docs_trd_routes",
+      "confidence_score": 1.0
+    },
+    {
       "relation": "references",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
@@ -7624,5 +8856,5 @@
       "source_file": "docs/README.md"
     }
   ],
-  "built_at_commit": "5e34d0f142fc947a32414271fffda54a9508ea94"
+  "built_at_commit": "d412b94ad9215f0aea167777bac9093dcb28f4c4"
 }

@@ -8,6 +8,12 @@ An assistant that turns a GP consultation transcript into a **reviewable** struc
 
 ---
 
+## Status
+
+This repository is currently a **scaffold**. The PHI boundary types and the LLM adapter interface are implemented; the de-identification gate itself, the red-flag rules engine, and citation-constrained clinical suggestions described below are specified but not yet built. See `docs/trd.md` for per-component status.
+
+---
+
 ## What it does
 
 | Capability                           | Approach                                                                                           |
@@ -33,7 +39,10 @@ transcript ──► deid gate ──► LLMClient ──► provider
                             └──► rehydrates model output on return
 ```
 
-This is enforced by the type system, not by convention. `LLMClient.generate()` accepts only a `Deidentified` branded string, which only `backend/src/deid/` can mint — so "raw transcript text reached a provider" is a compile error rather than a code-review question.
+`LLMClient.generate()` accepts only a `Deidentified` branded string, so passing a plain `string` here — an accidental leak — is a compile error, not a code-review question. Two enforcement points are not yet compiler-level:
+
+- **Minting is a convention, not a lock.** `markDeidentified` is exported from `backend/src/deid/types.ts`, so any module can call it directly rather than going through the de-identification gate.
+- **`DEID_FAIL_CLOSED` is checked at boot only.** It is validated in `backend/src/config/env.ts` but not read at the egress point in `OpenAICompatibleClient`, so it currently has no runtime effect on requests.
 
 The provider itself is a **swappable adapter**. All three supported providers speak the OpenAI-compatible protocol, selected by `LLM_PROVIDER`:
 
