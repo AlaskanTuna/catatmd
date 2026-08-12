@@ -1,0 +1,5 @@
+superpowers 6.2.0 — vendored 2026-08-12 from the claude-plugins-official marketplace.
+
+Vendored so collaborators get the same method skills without installing the plugin.
+Refresh: cp -a ~/.claude/plugins/cache/claude-plugins-official/superpowers/<newest>/skills/<name> .agents/skills/<name>
+Do not hand-edit — a refresh replaces these wholesale. AGENTS.md takes precedence on any conflict.
