@@ -4,7 +4,7 @@
 
 @AGENTS.md
 
-## Claude Code specifics
+## Claude Code Specifics
 
 - Roles are dispatched as **named subagents** from `.claude/agents/` (`planner`, `programmer`, `qa`), each pinned to its own `model:` + `effort:`. Dispatch by name so both take effect.
 - Read `docs/roles.md` before acting — it defines your role, boundaries, and the gates.
