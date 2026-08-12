@@ -1,16 +1,16 @@
 # Graph Report - ai-clinical-assistant  (2026-08-13)
 
 ## Corpus Check
-- 31 files · ~14,357 words
+- 32 files · ~17,195 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 432 nodes · 435 edges · 38 communities (37 shown, 1 thin omitted)
+- 452 nodes · 454 edges · 41 communities (40 shown, 1 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `da554282`
+- Built from commit: `4f8b197c`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -41,8 +41,11 @@
 - 10. Red-Flag Rules Engine
 - 12. LLM Prompt & Response Contracts
 - 3. Shared Contracts (`@shared/types`)
+- 21. LLM Guardrail Architecture
+- vercel.json
 - 6. LLM Port & Adapter
 - 13. API Contracts
+- 20. Browser-Side ASR Contract
 - 11. Guideline Corpus
 - 4. Data Model (Prisma)
 - 7. Environment Contract
@@ -50,15 +53,15 @@
 - 8. HTTP Surface As Built
 
 ## God Nodes (most connected - your core abstractions)
-1. `TRD` - 20 edges
+1. `TRD` - 22 edges
 2. `scripts` - 17 edges
 3. `compilerOptions` - 16 edges
 4. `PRD` - 16 edges
 5. `includes` - 8 edges
 6. `lint-staged` - 8 edges
-7. `9. De-Identification Pipeline` - 7 edges
-8. `17. Environments & Deployment` - 7 edges
-9. `scripts` - 6 edges
+7. `17. Environments & Deployment` - 8 edges
+8. `9. De-Identification Pipeline` - 7 edges
+9. `21. LLM Guardrail Architecture` - 7 edges
 10. `scripts` - 6 edges
 
 ## Surprising Connections (you probably didn't know these)
@@ -73,7 +76,7 @@
 ## Hyperedges (group relationships)
 - **PHI Boundary Components** — backend_src_deid, backend_src_lib_llm [EXTRACTED 1.00]
 
-## Communities (38 total, 1 thin omitted)
+## Communities (41 total, 1 thin omitted)
 
 ### Community 0 - "Root Project Configuration"
 Cohesion: 0.06
@@ -148,8 +151,8 @@ Cohesion: 0.40
 Nodes (3): App(), queryClient, root
 
 ### Community 23 - "CI Workflow"
-Cohesion: 0.29
-Nodes (7): 17. Environments & Deployment, CI, Free-Tier Auto-Pause Mitigation, Migration Flow, Pooled Versus Direct URL Split, Render Service Definition (`render.yaml`), Topology
+Cohesion: 0.25
+Nodes (8): 17. Environments & Deployment, CI, Free-Tier Auto-Pause Mitigation, Free-Tier Seats And Collaborator Access, Migration Flow, Pooled Versus Direct URL Split, Render Service Definition (`render.yaml`), Topology
 
 ### Community 25 - "lint-staged"
 Cohesion: 0.25
@@ -175,48 +178,60 @@ Nodes (6): 12. LLM Prompt & Response Contracts, Latency Budget Tension (Open), O
 Cohesion: 0.33
 Nodes (6): 3. Shared Contracts (`@shared/types`), Clinical Note & Analysis, Consultation Lifecycle, Load-Bearing Semantics, Structured Clinical-Information Schema — Proposal, Transcript
 
-### Community 31 - "6. LLM Port & Adapter"
+### Community 31 - "21. LLM Guardrail Architecture"
+Cohesion: 0.29
+Nodes (7): 21.1 Measured Finding — Fabricated Clinical Negatives, 21.2 Provider Constraint — Strict Structured Output Is Not Universal, 21.3 Control Tiers, 21.4 Evidence-Bound Assertion — The Primary Control, 21.5 Transcript As Untrusted Input, 21.6 What Stays Open, 21. LLM Guardrail Architecture
+
+### Community 32 - "vercel.json"
+Cohesion: 0.29
+Nodes (6): buildCommand, framework, installCommand, outputDirectory, rewrites, $schema
+
+### Community 33 - "6. LLM Port & Adapter"
 Cohesion: 0.33
 Nodes (6): 6. LLM Port & Adapter, Adapter Mechanism (`OpenAICompatibleClient`), Failure Modes, `GenerateRequest<T>`, `LLMResponseError`, Port (`LLMClient`)
 
-### Community 32 - "13. API Contracts"
+### Community 34 - "13. API Contracts"
 Cohesion: 0.40
 Nodes (5): 13. API Contracts, Gap — Red-Flag Acknowledgment And Gap Review Have No Columns Yet, New Response Schemas Proposed For `@shared/types`, Routes, State Machine Cross-Check
 
-### Community 33 - "11. Guideline Corpus"
+### Community 35 - "20. Browser-Side ASR Contract"
+Cohesion: 0.40
+Nodes (5): 20. Browser-Side ASR Contract, Interaction With Existing Contracts, Open, What Crosses The Network, Where Transcription Runs
+
+### Community 36 - "11. Guideline Corpus"
 Cohesion: 0.50
 Nodes (4): 11. Guideline Corpus, Candidate Set Reaching The Prompt, Chunk Record Shape, Schema-Enforced Rejection
 
-### Community 34 - "4. Data Model (Prisma)"
+### Community 37 - "4. Data Model (Prisma)"
 Cohesion: 0.50
 Nodes (4): 4. Data Model (Prisma), Auth Models (better-auth Prisma Adapter), Clinical Domain, Gap: No Data-Retention Or Deletion Path
 
-### Community 35 - "7. Environment Contract"
+### Community 38 - "7. Environment Contract"
 Cohesion: 0.50
 Nodes (4): 7. Environment Contract, Gap: `DEID_FAIL_CLOSED` Is Not Read At The Egress Point, Gap: No Production Guard For DeepSeek (PRC Hosting), Production Guards (Enforced At Boot)
 
-### Community 36 - "15. Audit Logging"
+### Community 39 - "15. Audit Logging"
 Cohesion: 0.67
 Nodes (3): 15. Audit Logging, `AuditEvent.action` Taxonomy, Forbidden Content
 
-### Community 37 - "8. HTTP Surface As Built"
+### Community 40 - "8. HTTP Surface As Built"
 Cohesion: 0.67
 Nodes (3): 8. HTTP Surface As Built, Middleware Stack (In Order), Routes
 
 ## Knowledge Gaps
-- **273 isolated node(s):** `name`, `private`, `license`, `type`, `dev` (+268 more)
+- **290 isolated node(s):** `name`, `private`, `license`, `type`, `dev` (+285 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **1 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `TRD` connect `Frontend Scripts` to `13. API Contracts`, `11. Guideline Corpus`, `4. Data Model (Prisma)`, `7. Environment Contract`, `15. Audit Logging`, `8. HTTP Surface As Built`, `CI Workflow`, `9. De-Identification Pipeline`, `10. Red-Flag Rules Engine`, `12. LLM Prompt & Response Contracts`, `3. Shared Contracts (`@shared/types`)`, `6. LLM Port & Adapter`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+- **Why does `TRD` connect `Frontend Scripts` to `6. LLM Port & Adapter`, `13. API Contracts`, `20. Browser-Side ASR Contract`, `11. Guideline Corpus`, `4. Data Model (Prisma)`, `7. Environment Contract`, `15. Audit Logging`, `8. HTTP Surface As Built`, `CI Workflow`, `9. De-Identification Pipeline`, `10. Red-Flag Rules Engine`, `12. LLM Prompt & Response Contracts`, `3. Shared Contracts (`@shared/types`)`, `21. LLM Guardrail Architecture`?**
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
 - **Why does `devDependencies` connect `Development Tooling` to `Root Project Configuration`?**
-  _High betweenness centrality (0.009) - this node is a cross-community bridge._
+  _High betweenness centrality (0.008) - this node is a cross-community bridge._
 - **What connects `name`, `private`, `license` to the rest of the system?**
-  _273 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _290 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Root Project Configuration` be split into smaller, more focused modules?**
   _Cohesion score 0.06451612903225806 - nodes in this community are weakly interconnected._
 - **Should `Backend Dependencies` be split into smaller, more focused modules?**

@@ -1,5 +1,12 @@
-import 'dotenv/config'
+import { resolve } from 'node:path'
+import { config } from 'dotenv'
 import { z } from 'zod'
+
+// Resolved from this module, not the working directory: the backend is started
+// with cwd=backend/ but .env lives at the repo root, shared with Prisma. Three
+// levels up lands on the root from both src/config/ and the built dist/config/.
+// No-ops in production, where the platform supplies the variables.
+config({ path: resolve(import.meta.dirname, '../../../.env') })
 
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -16,7 +23,7 @@ const EnvSchema = z.object({
 
   QWEN_API_KEY: z.string().optional(),
   QWEN_BASE_URL: z.string().url().default('https://dashscope-intl.aliyuncs.com/compatible-mode/v1'),
-  QWEN_MODEL: z.string().default('qwen3.7-flash'),
+  QWEN_MODEL: z.string().default('qwen-flash'),
 
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-3.5-flash-lite'),
