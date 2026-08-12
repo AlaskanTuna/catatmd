@@ -6,3 +6,6 @@ graphify-out/
 bun.lock
 prisma/migrations/
 CHANGELOG.md
+.claude/skills/
+.agents/skills/
+skills-lock.json

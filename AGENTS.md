@@ -122,6 +122,12 @@ Both are committed in this repo, so "it's in the TRD" is a valid answer for impl
   - Label taxonomy: `type:task` / `type:bug`, one `area:*` (`deid`, `llm`, `redflags`, `guidelines`, `api`, `ui`, `db`, `infra`, `docs`), and a `priority:*` where it matters.
   - PRs follow `.github/PULL_REQUEST_TEMPLATE.md`. Its **Clinical-Safety Checklist** is not optional when the diff touches `deid/`, `lib/llm/`, `redflags/`, `guidelines/`, or logging.
 - **Squash-merge is the default path to `main`.** Any substantial change goes: feature branch → PR → `gh pr merge --squash --delete-branch`. The feature branch is always deleted on merge, so no residue accumulates. **Minor changes** (typo, doc tweak, config one-liner, single obvious fix) may be committed directly to `main` — do not open a PR for a one-line change. Judge by whether a reviewer would gain anything from seeing it in isolation.
+- **Project skills are committed** in `.claude/skills/`, so every collaborator's agent has the same capabilities on clone — no per-machine setup:
+  - **impeccable** — design-quality detector. Its hook is wired in the committed `.claude/settings.json` and fires on every UI edit; QA runs `npx impeccable detect` on UI diffs as the deterministic audit. Never suppress a design finding without explicit human confirmation; waivers go through `/impeccable hooks ignore-*` only. Needs Node ≥ 22.12.
+  - **healthcare-cdss-patterns** — read before touching `redflags/` or any clinical scoring. Its core rule is ours: the engine is a pure function library with zero side effects and **zero tolerance for false negatives**.
+  - **healthcare-phi-compliance** — read before touching `deid/`, `AuditEvent`, or access control.
+  - **better-auth-security-best-practices** — read before touching auth wiring.
+  - `skills-lock.json` pins versions; restore with `npx skills experimental_install`. `.agents/skills/` is the tool-agnostic home for non-Claude harnesses.
 - **Report concisely — do not overwhelm the human.** When you finish a piece of work, give a short, digestible summary: what changed, and anything they must decide or act on. Lead with the outcome.
   - **Do not** paste full file contents, long diffs, exhaustive file listings, command transcripts, or a replay of your reasoning.
   - Prefer a few bullets or a small table over paragraphs. If the summary runs past roughly 10 lines, it is too long — cut it.

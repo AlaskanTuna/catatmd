@@ -1,8 +1,20 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
-  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
   "files": {
-    "includes": ["**", "!**/dist", "!**/node_modules", "!graphify-out", "!prisma/migrations"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/node_modules",
+      "!graphify-out",
+      "!prisma/migrations",
+      "!.claude/skills",
+      "!.agents/skills"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -20,10 +32,15 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "suspicious": {
         "noExplicitAny": "error",
-        "noConsole": { "level": "warn", "options": { "allow": ["error", "warn"] } }
+        "noConsole": {
+          "level": "warn",
+          "options": {
+            "allow": ["error", "warn"]
+          }
+        }
       },
       "style": {
         "useImportType": "error",
