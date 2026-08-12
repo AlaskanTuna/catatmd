@@ -7,6 +7,24 @@
       "skillPath": "security/SKILL.md",
       "computedHash": "7a230edf3a24ce18162cb4379f59b6a19b8d24ca04db530609d0f15cede556dc"
     },
+    "browse": {
+      "source": "garrytan/gstack",
+      "sourceType": "github",
+      "skillPath": "browse/SKILL.md",
+      "computedHash": "aa22e099f1e2bb8fcfadab02333c153a61401440619a75882a0048f609170629"
+    },
+    "cso": {
+      "source": "garrytan/gstack",
+      "sourceType": "github",
+      "skillPath": "cso/SKILL.md",
+      "computedHash": "7160f4fde8a398ff42fc25fafde825ce67352fef2f9b2995049632f3a74a59a9"
+    },
+    "diagram": {
+      "source": "garrytan/gstack",
+      "sourceType": "github",
+      "skillPath": "diagram/SKILL.md",
+      "computedHash": "00088fd82fd7a9d0c108396ef9ad58dc671d3e7d0d480ed403a5544b17a2080a"
+    },
     "healthcare-cdss-patterns": {
       "source": "affaan-m/ecc",
       "sourceType": "github",
@@ -18,6 +36,18 @@
       "sourceType": "github",
       "skillPath": "skills/healthcare-phi-compliance/SKILL.md",
       "computedHash": "ec927614356e38be7d70c0b0082300eb60d23fb73075fc407f1170d315aaf89a"
+    },
+    "make-pdf": {
+      "source": "garrytan/gstack",
+      "sourceType": "github",
+      "skillPath": "make-pdf/SKILL.md",
+      "computedHash": "4b80a679ba8aecd72d308c5396d21cbd0322882cb056d0350ac05c0fcf780759"
+    },
+    "qa": {
+      "source": "garrytan/gstack",
+      "sourceType": "github",
+      "skillPath": "qa/SKILL.md",
+      "computedHash": "b6bff4827639b4d4e909ad3ae2c9b0e3177cb956ea91c1805701576c448f0065"
     }
   }
 }
