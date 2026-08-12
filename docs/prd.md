@@ -72,12 +72,12 @@ Gate 1 introduced a second seeded doctor account only to demonstrate ownership i
 
 Numbered against `Consultation.status` (`shared/src/index.ts`):
 
-1. Doctor selects a bundled synthetic fixture or pastes transcript text (Q1). A `Consultation` is created with status **`draft`**.
+1. Doctor selects a bundled synthetic fixture, pastes transcript text, uploads a transcript file (`.txt` / `.json`), or captures a live consultation via browser-based audio transcription (Q1). For the audio path, transcription runs entirely on the doctor's device before anything is sent to the API — see `docs/trd.md` §20. A `Consultation` is created with status **`draft`** once a `Transcript` exists, regardless of which path produced it.
 2. Doctor triggers analysis. Status transitions to **`analyzing`**.
 3. The transcript is de-identified, analysed by the LLM, and checked against the deterministic red-flag rules engine (rules run regardless of model output; the model may only add candidates). On completion, status transitions to **`awaiting_review`** and the assembled `ConsultationAnalysis` is attached.
 4. Doctor reviews the SOAP note, information gaps, red flags, and cited suggestions.
 5. Doctor edits the SOAP note and acknowledges red flags as needed (red flags can be acknowledged, never removed — Q3). While still `awaiting_review`, the doctor may re-trigger analysis to refresh the draft.
-6. Doctor explicitly approves. Status transitions to **`approved`**, `approvedAt` and an audit event are recorded, and a read-only finalised view with copy-to-clipboard becomes available (Q4).
+6. Doctor explicitly approves. Status transitions to **`approved`**, `approvedAt` and an audit event are recorded, and a read-only finalised view with copy-to-clipboard and PDF/print export becomes available (Q4).
 7. **`approved` is terminal.** No further edits, re-analysis, or status change is possible from this state.
 
 ---
@@ -92,7 +92,7 @@ The system generates a SOAP note (subjective, objective, assessment, plan) from 
 
 - [ ] Running analysis on any bundled fixture produces a `SoapNote` with all four fields populated (non-empty strings).
 - [ ] The note is visible on the review screen before any approval action is available.
-- [ ] Analysis completes within **30 seconds** for a transcript of up to **3,000 words** (roughly a 20-minute consultation) — the stated non-functional target (Q11). This target is not yet reconciled against `docs/trd.md` §12's two-sequential-call design, the second of which carries the full guideline corpus in the system prompt; see the TRD's Open Decisions Register, §19, row 8.
+- [ ] Analysis completes within **30 seconds** for a transcript of up to **3,000 words** (roughly a 20-minute consultation) — the stated non-functional target (Q11), measured from the doctor triggering analysis, not from when audio capture began. This target is not yet reconciled against `docs/trd.md` §12's two-sequential-call design, the second of which carries the full guideline corpus in the system prompt; see the TRD's Open Decisions Register, §19, row 8. Live audio capture (Primary Flow step 1) makes this reconciliation gap materially worse, not better: client-side transcription adds further wall-clock time before analysis is even triggered, and that time is not counted in the 30s figure at all — see `docs/trd.md` §20.
 - [ ] The note is editable by the doctor prior to approval, and edits persist.
 
 ### CAP-2 — Identify Missing Clinical Information
@@ -135,7 +135,7 @@ Nothing reaches `approved` without an explicit doctor action.
 
 - [ ] The approve action is a distinct, deliberate control — never a default state or a side effect of another action.
 - [ ] Approval is blocked until the consultation is `awaiting_review` with an attached analysis.
-- [ ] After approval, the note is read-only and copyable to the clipboard; no further edits are accepted.
+- [ ] After approval, the note is read-only, copyable to the clipboard, and exportable as a PDF (or printable directly from the browser); no further edits are accepted.
 - [ ] Approval writes an audit event recording the transition (see `docs/trd.md`, Audit Logging).
 
 ---
@@ -168,30 +168,30 @@ This section states a design posture, **not a legal conclusion.** Final regulato
 
 ## Out Of Scope For The MVP
 
-| Deferred Item                                  | Reason                                                                        |
-| ---------------------------------------------- | ----------------------------------------------------------------------------- |
-| Live audio capture and ASR transcription       | Large scope on its own, and a second PHI vector alongside the transcript (Q1) |
-| Transcript file upload (`.txt` / `.json`)      | Fixture picker plus paste already cover the demo path (Q1)                    |
-| Open self-service sign-up                      | Seeded demo accounts only; account management is out of scope (Q2)            |
-| PDF / print export of the approved note        | Real implementation cost; copy-to-clipboard covers the demo need (Q4)         |
-| "Send to EMR" or any external write-back       | Presumed out by the brief; no EMR integration target exists                   |
-| Red-flag deletion or silent dismissal          | Flags may only be acknowledged, never removed (Q3)                            |
-| Editing or re-analysis after `approved`        | `approved` is terminal by design (Q3)                                         |
-| Development timeline and team responsibilities | Belong to the proposal, not this document (Q12)                               |
+| Deferred Item                                  | Reason                                                                                          |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| "Send to EMR" or any external write-back       | Presumed out by the brief; no EMR integration target exists                                     |
+| Red-flag deletion or silent dismissal          | Flags may only be acknowledged, never removed (Q3) — a safety guarantee, not a deferred feature |
+| Editing or re-analysis after `approved`        | `approved` is terminal by design (Q3)                                                           |
+| Development timeline and team responsibilities | Belong to the proposal, not this document (Q12)                                                 |
+
+Four items previously deferred here — transcript file upload, PDF/print export of the approved note, live audio capture with browser-side ASR, and open self-service sign-up — have moved into scope for this iteration; see Primary Flow, CAP-1, CAP-5, and the Demo Script, and `docs/trd.md` §20 for the ASR architecture.
 
 ---
 
 ## Known Limitations
 
-- **English-only.** Malaysian GP consultations frequently code-switch (Malay / Manglish / dialect); this prototype does not handle that (Q8).
-- **No audio or ASR.** Transcript input is limited to a bundled fixture or pasted text (Q1).
+- **English-only, and worse on audio.** Malaysian GP consultations frequently code-switch (Malay / Manglish / dialect); this prototype does not handle that (Q8). Browser-side Whisper transcription (`docs/trd.md` §20) inherits this limit and is expected to degrade further on Malaysian-accented English and code-switching than typed or pasted input does — it has not been benchmarked against local speech.
+- **First-use ASR download cost.** The client-side Whisper model is not free to obtain: the first use of live audio capture on a given device adds a download (latency and bandwidth) before transcription can run, on top of the accuracy limitation above.
+- **No server-side ASR fallback.** Transcription cannot run on the API server as a fallback or alternative — Render's free tier (512 MB, no GPU) cannot host a local Whisper instance, so browser-side transcription (`docs/trd.md` §20) is the only supported path, not one option among several.
 - **Narrow clinical scope.** Validated only for adult acute cough, sore throat, and other upper respiratory presentations — not for any other presentation.
+- **Scope grew late against a short runway.** Transcript upload, PDF export, live audio/ASR, and open sign-up were added to the MVP after the original scope was drafted. They are not equally mature: audio/ASR in particular carries the open questions in `docs/trd.md` §19 (rows 8, 13) and has no benchmark evidence yet. Treat the newly in-scope items as a delivery risk, not a settled capability set.
 - **No clinician sign-off.** The red-flag trigger list and the guideline corpus are drawn from published sources and cited, but no clinician has reviewed or signed off on them (Q7).
 - **Small guideline corpus.** 10–15 chunks is not exhaustive coverage of upper-respiratory guidance; specific source selection and redistribution licensing are still pending confirmation (Q6).
 - **De-identification recall is best-effort, not guaranteed.** The detectors in `backend/src/deid/` are pattern-based and may miss an identifier; this is stated plainly, not softened, and is why raw transcripts are still treated as sensitive at rest.
 - **LLM output is non-deterministic.** The same transcript may produce different note wording, gap phrasing, or suggestion text across runs, even with a low sampling temperature.
 - **Synthetic data only.** No real-world clinical validation of note quality, gap relevance, or suggestion accuracy has been performed.
-- **Free-tier hosting constraints.** Supabase free-tier projects auto-pause when idle; the Gemini free tier's terms permit use for product improvement and is restricted to local development on synthetic data only.
+- **Free-tier hosting constraints.** Both Render (backend) and Supabase (database) stay on free tiers by design (`docs/trd.md` §17): Render free instances spin down when idle and Supabase free-tier projects auto-pause after roughly a week idle. Evaluation happens after submission, so a sleeping demo on first access is a real failure mode; a keep-alive mechanism is needed and not yet chosen — see `docs/trd.md` §19, row 14. The Gemini free tier's terms permit use for product improvement and is restricted to local development on synthetic data only.
 - **Alert-fatigue risk is unmeasured.** Red-flag severity (`emergency` / `urgent` / `advisory`) and the acknowledge-not-remove workflow (Safety Constraints) bound how a flag is presented, but the MVP does not track acknowledgment/dismissal rates or otherwise measure whether the volume of surfaced flags and gaps causes a doctor to disengage — deferred to Future Production Metrics, below.
 
 ---
@@ -220,16 +220,16 @@ Deferred to a production deployment, once real usage exists to measure against:
 
 An ordered walkthrough an evaluator can follow end to end, exercising all five capabilities:
 
-1. **Log in** as a seeded doctor account.
+1. **Log in** as a seeded doctor account, or **sign up** for a new account (self-service sign-up, Q2).
 2. **View the consultation list**, scoped to the logged-in doctor.
-3. **Start a new consultation** and either pick a bundled fixture or paste transcript text (Primary Flow step 1).
+3. **Start a new consultation** and pick a bundled fixture, paste transcript text, upload a transcript file, or capture a short audio sample transcribed in-browser (Primary Flow step 1).
 4. **Trigger analysis** and observe the status move to `analyzing`, then `awaiting_review`.
 5. **Review the SOAP note** — CAP-1.
 6. **Review the information gaps** and their rationale — CAP-2.
 7. **Review the red flags**, noting the rule-sourced flag is visually distinct from any model-added candidate — CAP-3.
 8. **Review the clinical suggestions**, opening a citation to see the underlying guideline entry — CAP-4.
 9. **Edit a field of the SOAP note** and **acknowledge a red flag** without removing it.
-10. **Approve the consultation** — CAP-5 — and confirm the read-only finalised view and copy-to-clipboard are available, and that no further edits are possible.
+10. **Approve the consultation** — CAP-5 — and confirm the read-only finalised view, copy-to-clipboard, and PDF/print export are available, and that no further edits are possible.
 11. **Log out and log in as the second seeded doctor**; confirm the first doctor's consultation does not appear — ownership isolation (Q2).
 
 **Fixture content note.** The gap-heavy fixture (step 6) should read like an incomplete adult URTI presentation — e.g. cough, sore throat, and fever established, but haemoptysis, chest pain, SpO₂, and respiratory rate never asked about — so the missing-information panel has genuine gaps to surface. The hard-red-flag fixture (step 7) should contain evidence for at least one deterministic rule trigger, so the rule-sourced flag fires reproducibly. This grounds the Q5 fixture references above; it does not add steps to the walkthrough.
@@ -249,6 +249,6 @@ The ten sections required by the external proposal, mapped to where each is draf
 | 5   | Hosting approach                                                 | `docs/trd.md` §17 (Environments & Deployment) — topology, pooled-versus-direct URL split, migration flow, CI, free-tier mitigation. `docs/prd.md` Regulatory & Data-Protection Positioning for the Singapore-hosting-for-Malaysian-data framing.                                                                                                     |
 | 6   | Cybersecurity controls                                           | `docs/trd.md` §16 (Security Controls), §5 (PHI Boundary — Type-Level Contract), §14 (Auth Model).                                                                                                                                                                                                                                                    |
 | 7   | PDPA compliance approach                                         | `docs/prd.md` Regulatory & Data-Protection Positioning, including the retention/deletion/DPIA bullet. `docs/trd.md` §4 (Data Model — no retention or deletion path today), §9 (De-Identification Pipeline), §15 (Audit Logging), §16 (Security Controls) for the mechanisms that back the positioning, and §19 row 11 for the open retention period. |
-| 8   | How patient data will be prevented from being exposed to the LLM | `docs/README.md` — The PHI Boundary section and diagram, for the narrative. `docs/trd.md` §5 (type-level contract), §6 (LLM Port & Adapter), §9 (De-Identification Pipeline) for contract-level depth.                                                                                                                                               |
+| 8   | How patient data will be prevented from being exposed to the LLM | `docs/README.md` — The PHI Boundary section and diagram, for the narrative, including the audio path. `docs/trd.md` §5 (type-level contract), §6 (LLM Port & Adapter), §9 (De-Identification Pipeline), §20 (Browser-Side ASR Contract) for contract-level depth.                                                                                    |
 | 9   | Key technical risks and limitations                              | `docs/prd.md` Known Limitations. `docs/trd.md` §19 (Open Decisions Register) for the specific unresolved engineering questions, including the two recorded enforcement gaps (§5 `markDeidentified` export, §7 `DEID_FAIL_CLOSED` not read at egress) and §11's licensing question.                                                                   |
 | 10  | Clear MVP deliverables and acceptance criteria                   | `docs/prd.md` CAP-1 … CAP-5 (acceptance criteria), Out Of Scope For The MVP, Demo Script.                                                                                                                                                                                                                                                            |

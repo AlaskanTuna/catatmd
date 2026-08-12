@@ -30,7 +30,12 @@ This repository is currently a **scaffold**. The PHI boundary types and the LLM 
 
 The central architectural invariant: **no text containing patient identifiers leaves the API.**
 
+Audio input extends this one step further, and further back: raw audio can't be de-identified, only transcribed — so if transcription ran on a hosted service, un-redacted patient audio (and voice itself, a biometric identifier) would leave the trust boundary before the gate ever saw it. Live audio capture therefore transcribes **entirely on the doctor's device**, using a browser-side Whisper model (`docs/trd.md` §20). No audio byte crosses the network at all — only the resulting transcript text does, and it then enters the same pipeline as text pasted, uploaded, or picked from a fixture:
+
 ```
+audio ──► client-side Whisper (browser) ──► transcript text
+              never crosses the network         │
+                                                 ▼
 transcript ──► deid gate ──► LLMClient ──► provider
    (raw)      tokenises      only egress    (outside
               identifiers      point         boundary)

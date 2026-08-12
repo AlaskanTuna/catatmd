@@ -61,3 +61,4 @@ graphify-out/*
 *.phi.json
 /transcripts/
 /patient-data/
+.vercel
