@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: ai-clinical-assistant-api
+    name: catatmd-api
     runtime: node
     region: singapore
     plan: free

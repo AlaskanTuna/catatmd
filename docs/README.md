@@ -1,10 +1,24 @@
-# AI Clinical Assistant
+# CatatMD
 
 An assistant that turns a GP consultation transcript into a **reviewable** structured clinical note — with missing-information prompts, red-flag detection, and clinical suggestions carrying real citations.
+
+_Catat_ — Malay, "to note down". The product documents; the doctor decides.
 
 > **The doctor decides.** This system does not diagnose and does not replace clinical judgement. Every output is reviewed, edited, and explicitly approved by the clinician, who remains fully responsible for all medical decisions. All consultation data in this repository is **simulated**.
 
 **Clinical scope:** adult GP consultations for acute cough, sore throat, and other upper respiratory symptoms.
+
+---
+
+## Live
+
+| Component    | URL                                                      | Host                |
+| ------------ | -------------------------------------------------------- | ------------------- |
+| **Frontend** | https://catatmd.vercel.app                               | Vercel              |
+| **API**      | https://catatmd-api.onrender.com · health: `/api/health` | Render, Singapore   |
+| **Database** | not publicly reachable — API-only access                 | Supabase, Singapore |
+
+Both are on free tiers by design. Render free instances spin down when idle, so a first request after a quiet period may take up to a minute to answer while the instance wakes — see `docs/trd.md` §17.
 
 ---
 
@@ -98,6 +112,8 @@ bun run test                  # vitest
 ```
 
 `BETTER_AUTH_SECRET` — generate with `openssl rand -base64 32`.
+
+`PORT` defaults to `3001`, which is commonly taken (Grafana, other dev servers). Set `PORT` and `BETTER_AUTH_URL` together in `.env` if you move it — better-auth's URL must match the origin the API actually serves on.
 
 ---
 
