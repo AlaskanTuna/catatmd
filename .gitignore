@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build output
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# Env & secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bun-debug.log*
+logs/
+
+# Test / coverage
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# Editor / OS
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# Caches
+.cache/
+.turbo/
+.eslintcache
+node-compile-cache/
+
+# ─── Knowledge graph ──────────────────────────────────────────────────────────
+# Commit only the queryable graph + human-readable report; everything else is
+# regenerable locally via `graphify update .` (see the post-commit hook).
+graphify-out/*
+!graphify-out/graph.json
+!graphify-out/GRAPH_REPORT.md
+
+# ─── Clinical data guard ──────────────────────────────────────────────────────
+# Nothing resembling patient data belongs in this repo. Synthetic fixtures live
+# in backend/src/fixtures/ and are committed deliberately.
+*.phi.json
+/transcripts/
+/patient-data/

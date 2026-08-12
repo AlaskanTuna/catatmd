@@ -1,0 +1,50 @@
+{
+  "name": "ai-clinical-assistant",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n shared,backend,frontend -c cyan,green,magenta \"bun run --cwd shared dev\" \"bun run --cwd backend dev\" \"bun run --cwd frontend dev\"",
+    "dev:backend": "bun run --cwd shared build && bun run --cwd backend dev",
+    "dev:frontend": "bun run --cwd shared build && bun run --cwd frontend dev",
+    "db:migrate": "bunx prisma migrate dev --schema prisma/schema.prisma",
+    "db:migrate:deploy": "bunx prisma migrate deploy --schema prisma/schema.prisma",
+    "db:studio": "bunx prisma studio --schema prisma/schema.prisma",
+    "prisma:generate": "bunx prisma generate --schema prisma/schema.prisma",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write . && prettier --write --no-error-on-unmatched-pattern '*.{md,yml,yaml}' 'docs/**/*.md'",
+    "format:check": "biome format . && prettier --check --no-error-on-unmatched-pattern '*.{md,yml,yaml}' 'docs/**/*.md'",
+    "typecheck": "bun run --cwd shared build && bun run --cwd backend typecheck && bun run --cwd frontend typecheck",
+    "test": "bun run --cwd shared build && bun run --cwd backend test && bun run --cwd frontend test",
+    "build": "bun run --cwd shared build && bunx prisma generate --schema prisma/schema.prisma && bun run --cwd backend build && bun run --cwd frontend build",
+    "start": "bun run --cwd backend start",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx,json}": "biome check --write --no-errors-on-unmatched",
+    "*.{md,yml,yaml}": "prettier --write"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.14",
+    "@commitlint/cli": "^21.2.1",
+    "@commitlint/config-conventional": "^21.2.0",
+    "concurrently": "^9.2.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.3.4",
+    "prettier": "^3.6.2",
+    "prisma": "^6.19.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0"
+  }
+}

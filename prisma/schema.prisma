@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Pooled connection (Supavisor :6543) for the running app.
+  url       = env("DATABASE_URL")
+  // Direct connection (:5432) — migrations only.
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Auth (better-auth Prisma adapter) ───────────────────────────────────────
+
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions      Session[]
+  accounts      Account[]
+  consultations Consultation[]
+  auditEvents   AuditEvent[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ─── Clinical domain ─────────────────────────────────────────────────────────
+
+enum ConsultationStatus {
+  draft
+  analyzing
+  awaiting_review
+  approved
+}
+
+/// A single simulated GP consultation. `approved` is only reachable through an
+/// explicit doctor action — nothing auto-approves.
+model Consultation {
+  id     String             @id @default(cuid())
+  status ConsultationStatus @default(draft)
+
+  /// Owning doctor. Every read path scopes on this; see the authz helper.
+  doctorId String
+  doctor   User   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  /// Transcript turns, shape validated by TranscriptSchema in @shared/types.
+  transcript Json?
+  /// ConsultationAnalysisSchema — regenerated on re-analysis.
+  analysis   Json?
+  /// Doctor's edited copy of the note. Kept separate so the AI output and the
+  /// approved clinical record are never conflated.
+  editedNote Json?
+
+  approvedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  auditEvents AuditEvent[]
+
+  @@index([doctorId, status])
+  @@map("consultation")
+}
+
+/// Append-only audit trail. Records identifiers and event types only — never
+/// transcript bodies, note contents, or de-identification vault entries.
+model AuditEvent {
+  id        String   @id @default(cuid())
+  action    String
+  createdAt DateTime @default(now())
+
+  /// Detector labels that fired during de-identification, e.g. ["NRIC","NAME"].
+  /// Labels only, never values.
+  metadata Json?
+
+  actorId String?
+  actor   User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  consultationId String?
+  consultation   Consultation? @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  @@index([consultationId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("audit_event")
+}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build/
+coverage/
+graphify-out/
+bun.lock
+prisma/migrations/
+CHANGELOG.md

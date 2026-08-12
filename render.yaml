@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: ai-clinical-assistant-api
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: bun install && bun run --cwd shared build && bunx prisma generate --schema prisma/schema.prisma && bun run --cwd backend build
+    startCommand: bun run --cwd backend start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: BETTER_AUTH_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: LLM_PROVIDER
+        value: qwen
+      - key: QWEN_API_KEY
+        sync: false
+      - key: QWEN_BASE_URL
+        value: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+      - key: QWEN_MODEL
+        value: qwen3.7-flash
+      - key: DEID_FAIL_CLOSED
+        value: 'true'

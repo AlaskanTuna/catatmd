@@ -1,0 +1,27 @@
+# Keep the knowledge graph focused. Merged with .gitignore (! re-includes).
+# Use docs/* (not docs/) so the ! lines below can re-include specific files.
+docs/*
+!docs/README.md
+!docs/prd.md
+!docs/trd.md
+!docs/proposal.md
+.claude/
+.codex/
+.agents/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.cursorrules
+.windsurfrules
+RTK.md
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.svg
+assets/
+frontend/public/
+prisma/migrations/

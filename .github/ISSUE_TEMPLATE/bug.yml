@@ -1,0 +1,57 @@
+name: Bug
+description: Something behaves incorrectly.
+title: '<area>: <what is wrong>'
+labels: ['type:bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste real patient data, real NRICs, or production credentials.** Use synthetic values in every reproduction step and log excerpt.
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs Actual
+      value: |
+        **Expected:**
+        **Actual:**
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Exact steps, with the smallest input that triggers it.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Error message, stack trace, or failing test name. Trim to the relevant lines.
+      render: shell
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - 'critical — patient-safety or PHI boundary affected'
+        - 'high — core flow broken'
+        - 'medium — degraded but usable'
+        - 'low — cosmetic'
+    validations:
+      required: true
+
+  - type: input
+    id: scope
+    attributes:
+      label: Suspected Scope
+      description: Where you think it lives, or "unknown".
+      placeholder: backend/src/lib/llm/

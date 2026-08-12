@@ -1,0 +1,71 @@
+name: Task
+description: A unit of work — feature, refactor, chore, or documentation.
+title: '<area>: <imperative summary>'
+labels: ['type:task']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep it scoped to one deliverable. If it needs more than one PR, split it.
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What is true after this is done? One or two sentences, no implementation detail.
+      placeholder: A doctor can upload a transcript file and see it rendered as speaker-labelled turns.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: Verifiable checks. Each must be objectively pass/fail — this is what review is judged against.
+      value: |
+        - [ ]
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+
+  - type: input
+    id: scope
+    attributes:
+      label: File Scope
+      description: Directories or files expected to change. Enables parallel work without collisions.
+      placeholder: backend/src/deid/, backend/src/fixtures/
+    validations:
+      required: true
+
+  - type: input
+    id: depends
+    attributes:
+      label: Depends On
+      description: Issue numbers that must land first, or "none".
+      placeholder: '#12, #14'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - deid (PHI boundary)
+        - llm (provider adapter, prompting)
+        - redflags (rules engine)
+        - guidelines (citation corpus)
+        - api (routes, auth)
+        - ui (frontend)
+        - db (schema, migrations)
+        - infra (CI, deploy, tooling)
+        - docs
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Constraints, prior art, links, or anything that would otherwise be rediscovered. Optional.
