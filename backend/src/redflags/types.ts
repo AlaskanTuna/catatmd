@@ -1,4 +1,5 @@
 import type { Transcript } from '@shared/types'
+import type { ProfileId } from '../clinical-profiles/types.js'
 
 /**
  * TRD §10 (Trigger Record Shape). One entry per deterministic escalation
@@ -17,4 +18,6 @@ export interface RedFlagTrigger {
   clinicalSource: string
   /** Version of the trigger list this entry belongs to. */
   listVersion: string
+  /** Profiles that include this trigger. */
+  profiles: readonly ProfileId[]
 }

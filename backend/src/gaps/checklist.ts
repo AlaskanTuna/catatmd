@@ -1,4 +1,5 @@
 import type { ClinicalAssertion, ClinicalFacts, OperationalBlock } from '@shared/types'
+import type { ProfileId } from '../clinical-profiles/types.js'
 import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
 
 /**
@@ -7,9 +8,12 @@ import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
  * set of gaps can be traced back to the checklist that produced it.
  */
 export const GAP_CHECKLIST_VERSION: ClinicalArtefactVersion = {
-  id: 'gap-checklist-v1',
-  effectiveDate: '2026-08-13',
+  id: 'gap-checklist-v2',
+  effectiveDate: '2026-08-14',
 }
+
+const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
+const UTI_PROFILES: readonly ProfileId[] = ['adult-acute-uncomplicated-uti']
 
 /**
  * Materiality rule (GitHub issue #6; docs/prd.md §12 alert fatigue).
@@ -50,6 +54,7 @@ export interface GapChecklistEntry {
   /** Why this field is tracked for this presentation. Never a clinical instruction. */
   rationale: string
   select: (facts: ClinicalFacts, operational: OperationalBlock) => ClinicalAssertion
+  profiles: readonly ProfileId[]
 }
 
 export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
@@ -62,6 +67,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Cough duration is a standard field tracked for adult cough and URTI presentations and ' +
       'is not documented in this consultation.',
     select: (facts) => facts.symptoms.coughDuration,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'sputum-production',
@@ -71,6 +77,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Sputum production is a standard field tracked for adult cough and URTI presentations ' +
       'and is not documented in this consultation.',
     select: (facts) => facts.symptoms.sputumProduction,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'haemoptysis',
@@ -80,6 +87,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Haemoptysis status is a standard field tracked for adult cough presentations and is ' +
       'not documented in this consultation.',
     select: (facts) => facts.symptoms.haemoptysis,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'fever',
@@ -89,6 +97,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Fever status is a standard field tracked for adult URTI presentations and is not ' +
       'documented in this consultation.',
     select: (facts) => facts.symptoms.fever,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'dyspnoea',
@@ -98,6 +107,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Breathlessness status is a standard field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
     select: (facts) => facts.symptoms.dyspnoea,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'chest-pain',
@@ -107,6 +117,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Chest pain status is a standard field tracked for adult cough and URTI presentations ' +
       'and is not documented in this consultation.',
     select: (facts) => facts.symptoms.chestPain,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'swallowing-difficulty',
@@ -116,6 +127,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Swallowing difficulty is a standard field tracked for adult sore-throat presentations ' +
       'and is not documented in this consultation.',
     select: (facts) => facts.symptoms.swallowingDifficulty,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'oral-intake',
@@ -125,6 +137,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Oral intake status is a standard field tracked for adult sore-throat presentations and ' +
       'is not documented in this consultation.',
     select: (facts) => facts.symptoms.oralIntake,
+    profiles: URTI_PROFILES,
   },
 
   // ─── History ────────────────────────────────────────────────────────────
@@ -136,6 +149,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Asthma history is a standard field tracked for adult cough and URTI presentations and ' +
       'is not documented in this consultation.',
     select: (facts) => facts.history.asthma,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'copd',
@@ -145,6 +159,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'COPD history is a standard field tracked for adult cough and URTI presentations and is ' +
       'not documented in this consultation.',
     select: (facts) => facts.history.copd,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'cardiac-disease',
@@ -154,6 +169,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Cardiac disease history is a standard field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
     select: (facts) => facts.history.cardiacDisease,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'immunosuppression',
@@ -163,6 +179,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Immunosuppression status is a standard field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
     select: (facts) => facts.history.immunosuppression,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'smoking',
@@ -172,6 +189,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Smoking status is a standard field tracked for adult cough and URTI presentations and ' +
       'is not documented in this consultation.',
     select: (facts) => facts.history.smoking,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'current-medications',
@@ -181,6 +199,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Current medications are a standard field tracked for adult cough and URTI ' +
       'presentations and are not documented in this consultation.',
     select: (facts) => facts.history.currentMedications,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'drug-allergies',
@@ -190,6 +209,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Drug allergy status is a standard field tracked whenever medication may be dispensed, ' +
       'and is not documented in this consultation.',
     select: (facts) => facts.history.drugAllergies,
+    profiles: URTI_PROFILES,
   },
 
   // ─── Observations ───────────────────────────────────────────────────────
@@ -201,6 +221,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Temperature is a standard vital-sign field tracked for adult URTI presentations and is ' +
       'not documented in this consultation.',
     select: (facts) => facts.observations.temperature,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'heart-rate',
@@ -210,6 +231,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Heart rate is a standard vital-sign field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
     select: (facts) => facts.observations.heartRate,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'respiratory-rate',
@@ -219,6 +241,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Respiratory rate is a standard vital-sign field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
     select: (facts) => facts.observations.respiratoryRate,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'blood-pressure',
@@ -228,6 +251,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Blood pressure is a standard vital-sign field tracked for adult URTI presentations and ' +
       'is not documented in this consultation.',
     select: (facts) => facts.observations.bloodPressure,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'oxygen-saturation',
@@ -237,6 +261,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Oxygen saturation is a standard vital-sign field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
     select: (facts) => facts.observations.oxygenSaturation,
+    profiles: URTI_PROFILES,
   },
 
   // ─── Examination ────────────────────────────────────────────────────────
@@ -248,6 +273,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Throat examination findings are a standard field tracked for adult sore-throat ' +
       'presentations and are not documented in this consultation.',
     select: (facts) => facts.examination.throat,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'tonsillar-examination',
@@ -257,6 +283,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Tonsillar examination findings are a standard field tracked for adult sore-throat ' +
       'presentations and are not documented in this consultation.',
     select: (facts) => facts.examination.tonsillar,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'cervical-lymph-nodes',
@@ -266,6 +293,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Cervical lymph node findings are a standard field tracked for adult sore-throat ' +
       'presentations and are not documented in this consultation.',
     select: (facts) => facts.examination.cervicalLymphNodes,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'chest-examination',
@@ -275,6 +303,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Chest examination findings are a standard field tracked for adult cough presentations ' +
       'and are not documented in this consultation.',
     select: (facts) => facts.examination.chest,
+    profiles: URTI_PROFILES,
   },
 
   // ─── Malaysian operational block ───────────────────────────────────────
@@ -287,6 +316,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       '(condition, treatment, medication dispensed, MC days, referral) and is not documented ' +
       'in this consultation.',
     select: (_facts, operational) => operational.diagnosis,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'mc-days',
@@ -296,6 +326,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'MC days are one of the fields in the Malaysian payer-enforced consultation record and ' +
       'are not documented in this consultation.',
     select: (_facts, operational) => operational.mcDays,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'referral',
@@ -305,6 +336,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Referral is one of the fields in the Malaysian payer-enforced consultation record and ' +
       'is not documented in this consultation.',
     select: (_facts, operational) => operational.referral,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'follow-up',
@@ -314,5 +346,64 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
       'Follow-up interval is one of the fields in the Malaysian payer-enforced consultation ' +
       'record and is not documented in this consultation.',
     select: (_facts, operational) => operational.followUp,
+    profiles: URTI_PROFILES,
   },
+]
+
+export const UTI_GAP_CHECKLIST: readonly GapChecklistEntry[] = [
+  {
+    id: 'uti-temperature',
+    priority: 'high',
+    question: 'The record does not contain a temperature reading.',
+    rationale:
+      'Temperature is a safety-relevant observation for adult acute urinary presentations and ' +
+      'is not documented in this consultation.',
+    select: (facts) => facts.observations.temperature,
+    profiles: UTI_PROFILES,
+  },
+  {
+    id: 'uti-heart-rate',
+    priority: 'high',
+    question: 'The record does not contain a heart-rate reading.',
+    rationale:
+      'Heart rate is a safety-relevant observation for adult acute urinary presentations and ' +
+      'is not documented in this consultation.',
+    select: (facts) => facts.observations.heartRate,
+    profiles: UTI_PROFILES,
+  },
+  {
+    id: 'uti-respiratory-rate',
+    priority: 'high',
+    question: 'The record does not contain a respiratory-rate reading.',
+    rationale:
+      'Respiratory rate is a safety-relevant observation for adult acute urinary presentations ' +
+      'and is not documented in this consultation.',
+    select: (facts) => facts.observations.respiratoryRate,
+    profiles: UTI_PROFILES,
+  },
+  {
+    id: 'uti-blood-pressure',
+    priority: 'high',
+    question: 'The record does not contain a blood-pressure reading.',
+    rationale:
+      'Blood pressure is a safety-relevant observation for adult acute urinary presentations ' +
+      'and is not documented in this consultation.',
+    select: (facts) => facts.observations.bloodPressure,
+    profiles: UTI_PROFILES,
+  },
+  {
+    id: 'uti-drug-allergies',
+    priority: 'medium',
+    question: 'The record does not indicate whether drug allergies were reviewed.',
+    rationale:
+      'Drug allergy status is relevant whenever medication may be dispensed and is not ' +
+      'documented in this consultation.',
+    select: (facts) => facts.history.drugAllergies,
+    profiles: UTI_PROFILES,
+  },
+]
+
+export const ALL_GAP_CHECKLIST: readonly GapChecklistEntry[] = [
+  ...GAP_CHECKLIST,
+  ...UTI_GAP_CHECKLIST,
 ]

@@ -11,7 +11,12 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { analyseNote } from '../analysis/index.js'
 import { type AnalysisFailureReason, getAuditHistory, recordAuditEvent } from '../audit/index.js'
-import { ACTIVE_CLINICAL_VERSIONS } from '../clinical-versions/index.js'
+import {
+  DEFAULT_PROFILE_ID,
+  getClinicalProfile,
+  ProfileIdSchema,
+} from '../clinical-profiles/index.js'
+import { getActiveClinicalVersions } from '../clinical-versions/index.js'
 import { DeidentificationError, deidentifyTranscript } from '../deid/index.js'
 import { deriveGaps } from '../gaps/index.js'
 import { assertOwnedConsultation } from '../lib/authz.js'
@@ -190,6 +195,15 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
     throw new HttpError(409, 'invalid_state', 'This consultation has no usable transcript.')
   }
 
+  const profileBody = z
+    .object({ profileId: ProfileIdSchema.optional() })
+    .default({})
+    .safeParse(req.body)
+  if (!profileBody.success) {
+    throw new HttpError(400, 'invalid_body', 'A valid clinical profile is required.')
+  }
+  const profile = getClinicalProfile(profileBody.data.profileId ?? DEFAULT_PROFILE_ID)
+
   const previousStatus = consultation.status
   await prisma.consultation.update({
     where: { id: consultation.id },
@@ -215,11 +229,13 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
 
     // Runs on the raw transcript, in-process, regardless of model output. It
     // never leaves the API, so it needs no gate.
-    const ruleFlags = await timeStage('rules', () => evaluateRedFlags(transcript.data))
+    const ruleFlags = await timeStage('rules', () =>
+      evaluateRedFlags(transcript.data, profile.redFlagTriggers),
+    )
 
     const [noteResult, suggestionResult] = await Promise.all([
-      timeStage('note_generation', () => analyseNote(text, text)),
-      timeStage('retrieval', () => generateSuggestions(text)),
+      timeStage('note_generation', () => analyseNote(text, text, profile)),
+      timeStage('retrieval', () => generateSuggestions(text, profile)),
     ])
 
     const rehydrate = (value: string) => vault.rehydrate(value)
@@ -231,8 +247,9 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
         assessment: rehydrate(noteResult.note.assessment),
         plan: rehydrate(noteResult.note.plan),
       },
+      profileId: profile.id,
       gaps: mergeGaps(
-        deriveGaps(noteResult.clinicalFacts, noteResult.operational),
+        deriveGaps(noteResult.clinicalFacts, noteResult.operational, profile.gapChecklist),
         noteResult.gaps,
       ).map((gap) => ({
         ...gap,
@@ -271,10 +288,11 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
       metadata: {
         detected,
         discardedFieldIds: noteResult.discardedFieldIds,
+        profileId: profile.id,
         versions: {
           provider: llm.provider,
           model: llm.model,
-          clinicalContent: ACTIVE_CLINICAL_VERSIONS,
+          clinicalContent: getActiveClinicalVersions(profile),
         },
       },
     })

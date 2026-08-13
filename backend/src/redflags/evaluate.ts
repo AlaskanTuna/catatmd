@@ -1,14 +1,18 @@
 import type { RedFlag, Transcript } from '@shared/types'
 import { REDFLAG_TRIGGERS } from './triggers.js'
+import type { RedFlagTrigger } from './types.js'
 
 /**
  * Pure function over the transcript directly (docs/trd.md §10, Engine
  * Posture): no I/O, no LLM call, no database access, no clock, no
  * randomness. Runs independently of, and is never gated by, the model call.
  */
-export function evaluateRedFlags(transcript: Transcript): RedFlag[] {
+export function evaluateRedFlags(
+  transcript: Transcript,
+  triggers: readonly RedFlagTrigger[] = REDFLAG_TRIGGERS,
+): RedFlag[] {
   const flags: RedFlag[] = []
-  for (const trigger of REDFLAG_TRIGGERS) {
+  for (const trigger of triggers) {
     const evidence = trigger.matcher(transcript)
     if (evidence === null) continue
     flags.push({

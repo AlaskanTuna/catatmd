@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { GAP_CHECKLIST } from '../gaps/index.js'
 import { GUIDELINE_CORPUS } from '../guidelines/index.js'
 import { RED_FLAG_LIST_VERSION, REDFLAG_TRIGGERS } from '../redflags/index.js'
-import { ACTIVE_CLINICAL_VERSIONS } from './index.js'
+import { ACTIVE_CLINICAL_VERSIONS, ACTIVE_PROFILE_VERSIONS } from './index.js'
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 describe('clinical content versions (issue #16)', () => {
-  it('covers exactly the three versioned artefacts', () => {
+  it('covers the three versioned artefacts and the default clinical profile', () => {
     expect(Object.keys(ACTIVE_CLINICAL_VERSIONS).sort()).toEqual([
+      'clinicalProfile',
       'gapChecklist',
       'guidelineCorpus',
       'redFlagList',
@@ -46,5 +47,13 @@ describe('clinical content versions (issue #16)', () => {
     expect(REDFLAG_TRIGGERS.length).toBeGreaterThan(0)
     expect(GAP_CHECKLIST.length).toBeGreaterThan(0)
     expect(GUIDELINE_CORPUS.length).toBeGreaterThan(0)
+  })
+
+  it('includes a version for every selectable clinical profile', () => {
+    expect(Object.keys(ACTIVE_PROFILE_VERSIONS).length).toBeGreaterThan(1)
+    for (const version of Object.values(ACTIVE_PROFILE_VERSIONS)) {
+      expect(version.id).not.toHaveLength(0)
+      expect(version.effectiveDate).toMatch(ISO_DATE)
+    }
   })
 })

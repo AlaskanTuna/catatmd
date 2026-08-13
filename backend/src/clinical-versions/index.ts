@@ -1,3 +1,9 @@
+import {
+  CLINICAL_PROFILES,
+  type ClinicalProfile,
+  DEFAULT_PROFILE_ID,
+  type ProfileId,
+} from '../clinical-profiles/index.js'
 import { GAP_CHECKLIST_VERSION } from '../gaps/index.js'
 import { GUIDELINE_CORPUS_VERSION } from '../guidelines/index.js'
 import { RED_FLAG_LIST_VERSION } from '../redflags/index.js'
@@ -19,4 +25,20 @@ export const ACTIVE_CLINICAL_VERSIONS = {
   redFlagList: RED_FLAG_LIST_VERSION,
   gapChecklist: GAP_CHECKLIST_VERSION,
   guidelineCorpus: GUIDELINE_CORPUS_VERSION,
+  clinicalProfile: CLINICAL_PROFILES[DEFAULT_PROFILE_ID].version,
 } as const satisfies Record<string, ClinicalArtefactVersion>
+
+/** Every selectable profile is versioned before it can enter an analysis stamp. */
+export const ACTIVE_PROFILE_VERSIONS: Readonly<Record<ProfileId, ClinicalArtefactVersion>> =
+  Object.fromEntries(
+    Object.values(CLINICAL_PROFILES).map((profile) => [profile.id, profile.version]),
+  ) as Record<ProfileId, ClinicalArtefactVersion>
+
+export function getActiveClinicalVersions(profile: ClinicalProfile) {
+  return {
+    ...ACTIVE_CLINICAL_VERSIONS,
+    clinicalProfile: ACTIVE_PROFILE_VERSIONS[profile.id],
+  }
+}
+
+export type ActiveClinicalVersions = ReturnType<typeof getActiveClinicalVersions>
