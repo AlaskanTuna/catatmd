@@ -1,8 +1,9 @@
-import { FileText, Moon, PanelLeft, Plus, Stethoscope, Sun } from 'lucide-react'
+import { FileText, Moon, PanelLeft, Plus, Sun } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
 import { useTheme } from '../lib/theme.js'
+import { Mark } from '../ui/Mark.js'
 import { Wordmark } from '../ui/Wordmark.js'
 
 const OPEN_DELAY_MS = 120
@@ -81,7 +82,7 @@ export function SidebarIsland({
       )}
     >
       <div className="flex items-center gap-2 px-2 py-3">
-        <Stethoscope aria-hidden className="size-6 shrink-0 text-accent" />
+        <Mark className="size-6 text-accent" />
         <Wordmark
           className={cn(
             'text-xl whitespace-nowrap transition-opacity duration-150',
