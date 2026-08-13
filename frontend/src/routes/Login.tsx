@@ -1,10 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { FileLock2, MapPin, Stethoscope, UserCheck } from 'lucide-react'
+import { FileLock2, MapPin, UserCheck } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ApiError, api } from '../lib/api.js'
 import { Button } from '../ui/Button.js'
+import { Mark } from '../ui/Mark.js'
 import { ThemeToggle } from '../ui/ThemeToggle.js'
+import { Wordmark } from '../ui/Wordmark.js'
 
 /**
  * Guest sign-in carries no credentials, by design (#29).
@@ -60,8 +62,8 @@ export function Login() {
       */}
       <aside className="relative hidden w-1/2 flex-col justify-between bg-accent p-10 lg:flex">
         <Link to="/" className="flex items-center gap-2.5 text-accent-ink">
-          <Stethoscope aria-hidden className="size-6" />
-          <span className="text-lg font-semibold tracking-tight">CatatMD</span>
+          <Mark className="size-7 brightness-0 invert" />
+          <Wordmark className="text-xl" />
         </Link>
 
         <div className="max-w-md">
@@ -87,8 +89,8 @@ export function Login() {
             to="/"
             className="flex items-center gap-2 text-base font-semibold tracking-tight lg:invisible"
           >
-            <Stethoscope aria-hidden className="size-5 text-accent" />
-            CatatMD
+            <Mark className="size-6" />
+            <Wordmark className="text-lg" />
           </Link>
           <ThemeToggle />
         </div>

@@ -1,6 +1,8 @@
 import { ArrowRight, FileLock2, MapPin, Stethoscope, UserCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { Mark } from '../ui/Mark.js'
 import { ThemeToggle } from '../ui/ThemeToggle.js'
+import { Wordmark } from '../ui/Wordmark.js'
 
 /**
  * The only brand-register surface in the product, and the first thing an
@@ -38,9 +40,9 @@ export function Landing() {
   return (
     <div className="min-h-dvh">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
-        <span className="flex items-center gap-2 text-lg font-semibold tracking-tight">
-          <Stethoscope aria-hidden className="size-5 text-accent" />
-          CatatMD
+        <span className="flex items-center gap-2">
+          <Mark className="size-6" />
+          <Wordmark className="text-xl" />
         </span>
         <div className="flex items-center gap-1">
           <ThemeToggle />
