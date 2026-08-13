@@ -44,11 +44,15 @@ export class OpenAICompatibleClient implements LLMClient {
     const completion = await this.client.chat.completions.create({
       model: this.model,
       temperature: request.temperature ?? 0.2,
-      // The `note_and_gaps` response carries 34 assertions, each with a state,
-      // a value and an evidence span, and measured at 3,324 completion tokens
-      // on a 3,000-word consultation. That is close enough to the provider's
-      // default output ceiling that some runs spill over and return truncated
-      // JSON — which surfaces as a parse failure well after the real cause.
+      // Headroom, not a target. The largest operation (`clinical_facts`, 34
+      // assertions each with a state, a value and an evidence span) measures
+      // 2,652 to 2,779 completion tokens on a 3,000-word consultation, so this
+      // sits at roughly 3x the observed ceiling.
+      //
+      // Raising it is not a fix for truncation and has been measured making
+      // things worse: at 16,384 the model emitted all 16,384 tokens without
+      // terminating. A response that will not stop needs a structural bound
+      // (docs/trd.md §21.3, Tier 1) rather than a bigger budget to fill.
       max_tokens: request.maxTokens ?? 8192,
       messages: [
         { role: 'system', content: request.system },

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import {
   ClinicalAssertionSchema,
+  ClinicalFactsResponseSchema,
   ClinicalFactsSchema,
   ConsultationDetailSchema,
   ErrorEnvelopeSchema,
@@ -92,8 +93,7 @@ describe('the decoding schema is permissive, the persistence schema is strict', 
   })
 
   it('accepts a whole model response whose assertions carry no spans', () => {
-    const result = NoteAndGapsResponseSchema.safeParse({
-      note: { subjective: 'Cough 3 days.', objective: '', assessment: '', plan: '' },
+    const result = ClinicalFactsResponseSchema.safeParse({
       clinicalFacts: {
         symptoms: { fever: { state: 'DENIED', value: 'no fever', evidence: '' } },
         history: {},
@@ -101,7 +101,6 @@ describe('the decoding schema is permissive, the persistence schema is strict', 
         examination: {},
       },
       operational: {},
-      gaps: [],
     })
     expect(result.success).toBe(true)
   })
@@ -245,10 +244,28 @@ describe('makeSuggestionsAndRedFlagsSchema', () => {
 })
 
 describe('LLM-facing schemas convert to JSON Schema for constrained decoding', () => {
-  it('converts note_and_gaps without throwing (TRD §6 step 2)', () => {
-    const json = z.toJSONSchema(NoteAndGapsResponseSchema, { target: 'draft-7' })
+  it('converts clinical_facts without throwing (TRD §6 step 2)', () => {
+    const json = z.toJSONSchema(ClinicalFactsResponseSchema, { target: 'draft-7' })
     expect(json).toHaveProperty('properties.operational')
     expect(json).toHaveProperty('properties.clinicalFacts')
+  })
+
+  it('converts note_and_gaps without throwing (TRD §6 step 2)', () => {
+    const json = z.toJSONSchema(NoteAndGapsResponseSchema, { target: 'draft-7' })
+    expect(json).toHaveProperty('properties.note')
+    expect(json).toHaveProperty('properties.gaps')
+  })
+
+  // The split (§19 row 19) is only worth anything if the two halves stay
+  // disjoint: a key drifting back into both would restore the response size
+  // the split exists to cut.
+  it('keeps the two halves of operation 1 disjoint', () => {
+    const facts = z.toJSONSchema(ClinicalFactsResponseSchema, { target: 'draft-7' })
+    const prose = z.toJSONSchema(NoteAndGapsResponseSchema, { target: 'draft-7' })
+    const keysOf = (json: unknown) =>
+      Object.keys((json as { properties: Record<string, unknown> }).properties)
+
+    expect(keysOf(facts).filter((key) => keysOf(prose).includes(key))).toEqual([])
   })
 
   it('converts suggestions_and_red_flags with the corpus enum intact', () => {
