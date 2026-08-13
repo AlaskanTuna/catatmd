@@ -99,7 +99,12 @@ export function ConsultationNew() {
         art="/art/new-consultation.webp"
       />
 
-      <div role="tablist" aria-label="Transcript source" className="mt-6 flex flex-wrap gap-1">
+      <div
+        role="tablist"
+        aria-label="Transcript source"
+        data-tour="intake"
+        className="mt-6 flex flex-wrap gap-1"
+      >
         {TABS.map(({ id, label, Icon }) => (
           <button
             key={id}

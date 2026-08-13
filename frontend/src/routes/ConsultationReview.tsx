@@ -151,6 +151,7 @@ export function ConsultationReview() {
               showTranscript ? 'block' : 'hidden lg:block',
             )}
             aria-labelledby="transcript-heading"
+            data-tour="transcript"
             data-print="hide"
           >
             <h2 id="transcript-heading" className="mb-2 text-sm font-semibold">

@@ -100,7 +100,7 @@ export function Guidelines() {
 
       {guidelines.data && (
         <>
-          <Card className="mt-6 p-5">
+          <Card data-tour="corpus" className="mt-6 p-5">
             <p className="text-sm leading-relaxed text-ink-muted">
               A suggestion carries a guideline ID, never free text. The model is given only these{' '}
               <span className="font-medium text-ink">{all.length} entries</span> and can cite
