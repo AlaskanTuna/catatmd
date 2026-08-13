@@ -40,7 +40,7 @@ export function ConsultationReview() {
     return (
       <div className="mx-auto flex max-w-7xl flex-col gap-4">
         <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-96 w-full rounded-[--radius-card]" />
+        <Skeleton className="h-96 w-full rounded-card" />
       </div>
     )
   }
@@ -133,7 +133,7 @@ export function ConsultationReview() {
             <h2 id="transcript-heading" className="mb-2 text-sm font-semibold">
               Transcript
             </h2>
-            <div className="max-h-[70vh] overflow-y-auto rounded-[--radius-card] bg-sunken p-3">
+            <div className="max-h-[70vh] overflow-y-auto rounded-card bg-sunken p-3">
               {keyedTurns.map((turn) => (
                 <p key={turn.key} className="mb-2 text-xs leading-relaxed">
                   <span

@@ -76,8 +76,8 @@ export function SidebarIsland({
         // Below md the island is the wrong shape for a thumb and hover does
         // not exist, so it is replaced by a bottom dock rather than shrunk.
         'hidden md:flex',
-        'glass fixed top-4 bottom-4 left-4 flex-col rounded-[--radius-float] p-2',
-        'transition-[width] duration-[220ms] ease-[--ease-out-expo]',
+        'glass fixed top-4 bottom-4 left-4 flex-col rounded-float p-2',
+        'transition-[width] duration-[220ms] ease-out-expo',
         expanded ? 'w-58' : 'w-16',
       )}
     >
@@ -100,7 +100,7 @@ export function SidebarIsland({
               data-tour={tour}
               className={({ isActive }) =>
                 cn(
-                  'flex h-11 items-center gap-3 rounded-[--radius-control] px-3',
+                  'flex h-11 items-center gap-3 rounded-control px-3',
                   'text-sm font-medium transition-colors duration-150',
                   isActive
                     ? 'bg-accent/12 text-accent'
@@ -126,7 +126,7 @@ export function SidebarIsland({
         <button
           type="button"
           onClick={() => setPreference(resolved === 'dark' ? 'light' : 'dark')}
-          className="flex h-11 items-center gap-3 rounded-[--radius-control] px-3 text-sm font-medium text-ink-muted transition-colors duration-150 hover:bg-sunken/60 hover:text-ink"
+          className="flex h-11 items-center gap-3 rounded-control px-3 text-sm font-medium text-ink-muted transition-colors duration-150 hover:bg-sunken/60 hover:text-ink"
         >
           {resolved === 'dark' ? (
             <Sun aria-hidden className="size-5 shrink-0" />
@@ -150,7 +150,7 @@ export function SidebarIsland({
           onClick={() => setPinned((value) => !value)}
           aria-pressed={pinned}
           aria-label={pinned ? 'Unpin sidebar' : 'Pin sidebar open'}
-          className="flex h-11 items-center gap-3 rounded-[--radius-control] px-3 text-sm font-medium text-ink-muted transition-colors duration-150 hover:bg-sunken/60 hover:text-ink"
+          className="flex h-11 items-center gap-3 rounded-control px-3 text-sm font-medium text-ink-muted transition-colors duration-150 hover:bg-sunken/60 hover:text-ink"
         >
           <PanelLeft aria-hidden className={cn('size-5 shrink-0', pinned && 'text-accent')} />
           <span

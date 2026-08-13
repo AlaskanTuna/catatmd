@@ -19,9 +19,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  */
 const VARIANTS: Record<Variant, string> = {
   primary:
-    'bg-accent text-accent-ink hover:bg-accent-hover active:brightness-95 disabled:bg-line disabled:text-ink-muted',
+    'bg-accent text-accent-ink shadow-raised hover:bg-accent-hover disabled:bg-line disabled:text-ink-muted disabled:shadow-none',
   secondary:
-    'bg-surface text-ink border border-line hover:border-ink-muted active:bg-sunken disabled:text-ink-muted',
+    'bg-surface text-ink shadow-raised hover:bg-sunken disabled:text-ink-muted disabled:shadow-none',
   ghost: 'text-ink-muted hover:text-ink hover:bg-sunken active:bg-line disabled:text-line',
   danger:
     'bg-surface text-emergency border border-emergency/40 hover:bg-emergency/8 active:bg-emergency/12',
@@ -50,9 +50,14 @@ export function Button({
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cn(
-        'inline-flex items-center justify-center rounded-[--radius-control] font-medium',
-        'transition-[background-color,border-color,color,opacity] duration-150 ease-[--ease-out-quart]',
-        'disabled:cursor-not-allowed',
+        // Pill, not a rounded rectangle. It is the clearest statement of the
+        // shape language, and it separates an action from the rounded-rect
+        // cards and inputs it sits among rather than echoing them.
+        'inline-flex items-center justify-center rounded-pill font-medium',
+        'transition-[background-color,border-color,color,opacity,transform] duration-150 ease-out-quart',
+        // A press should feel like a press. Small enough that it reads as
+        // tactile rather than as the button jumping.
+        'active:scale-[0.97] disabled:cursor-not-allowed disabled:active:scale-100',
         VARIANTS[variant],
         SIZES[size],
         className,
