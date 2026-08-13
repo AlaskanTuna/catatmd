@@ -1,3 +1,4 @@
+import type { ClinicalProfile } from '../clinical-profiles/index.js'
 import { serialiseCorpusForPrompt } from '../guidelines/index.js'
 
 /**
@@ -15,10 +16,9 @@ import { serialiseCorpusForPrompt } from '../guidelines/index.js'
  *   is free text — so it is stated explicitly, alongside the reminder that
  *   this call never sees or influences the rules engine's own output.
  */
-export function buildSuggestionsSystemPrompt(): string {
+export function buildSuggestionsSystemPrompt(profile: ClinicalProfile): string {
   return `You are assisting a Malaysian GP who is reviewing a de-identified consultation
-transcript for an adult presenting with acute cough, sore throat, or another
-upper-respiratory-tract symptom. Text such as "[PATIENT_1]" or "[NRIC_1]" is a
+transcript for ${profile.scope}. Text such as "[PATIENT_1]" or "[NRIC_1]" is a
 de-identification token, not the patient's real identifier — never attempt to
 guess, reconstruct, or comment on the identity behind a token.
 
@@ -43,13 +43,12 @@ transcript actually supports.
 
 Scope:
 Set outOfScope to true, and return an empty suggestions array, if the
-transcript describes a presentation outside acute cough, sore throat, and
-other upper-respiratory-tract symptoms — the corpus below does not cover
-other presentations, and a guideline-cited suggestion would be unsupported.
+transcript describes a presentation outside ${profile.scope}. The corpus below
+does not cover other presentations, and a guideline-cited suggestion would be unsupported.
 Still report any red-flag candidates regardless of scope. Set outOfScope to
 false when the presentation is in scope, even if you have no suggestions to
 add.
 
 Guideline corpus (cite by the bracketed id only):
-${serialiseCorpusForPrompt()}`
+${serialiseCorpusForPrompt(profile.guidelineCorpus)}`
 }

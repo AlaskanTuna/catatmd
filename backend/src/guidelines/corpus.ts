@@ -1,5 +1,8 @@
 import { type GuidelineChunk, GuidelineChunkSchema } from '@shared/types'
+import type { ProfileId } from '../clinical-profiles/types.js'
 import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
+
+export type ProfiledGuidelineChunk = GuidelineChunk & { readonly profiles: readonly ProfileId[] }
 
 /**
  * Bumped whenever a chunk is added, removed, or its summary/threshold
@@ -10,9 +13,12 @@ import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
  * carries its own source's `publisher` and `year`.
  */
 export const GUIDELINE_CORPUS_VERSION: ClinicalArtefactVersion = {
-  id: 'guideline-corpus-v1',
-  effectiveDate: '2026-08-13',
+  id: 'guideline-corpus-v2',
+  effectiveDate: '2026-08-14',
 }
+
+const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
+const UTI_PROFILES: readonly ProfileId[] = ['adult-acute-uncomplicated-uti']
 
 /**
  * Source selection resolved 13/08/26 (docs/trd.md §11, §19 row 3, closed).
@@ -30,7 +36,7 @@ export const GUIDELINE_CORPUS_VERSION: ClinicalArtefactVersion = {
  * clinician review pass (docs/prd.md §12) is expected to add `quote`s for
  * the CC-licensed sources where warranted.
  */
-export const GUIDELINE_CORPUS: readonly GuidelineChunk[] = [
+export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
   // ─── MOH National Antimicrobial Guideline (NAG), 4th ed., 2024 ───────────
   // © MOH Malaysia, all rights reserved — summarise and link, never quote.
   {
@@ -45,6 +51,7 @@ export const GUIDELINE_CORPUS: readonly GuidelineChunk[] = [
       'the antibiotic-consideration threshold at a Modified Centor score of 3 or more.',
     sourceLicence: 'MOH-ARR',
     verbatimAllowed: false,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'moh-nag-2024-c1-acute-pharyngitis',
@@ -60,6 +67,7 @@ export const GUIDELINE_CORPUS: readonly GuidelineChunk[] = [
       'first-line management for the majority of presentations.',
     sourceLicence: 'MOH-ARR',
     verbatimAllowed: false,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'moh-nag-2024-c1-viral-vs-bacterial',
@@ -75,6 +83,7 @@ export const GUIDELINE_CORPUS: readonly GuidelineChunk[] = [
       'bacterial pharyngitis in adults.',
     sourceLicence: 'MOH-ARR',
     verbatimAllowed: false,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'moh-nag-2024-c3-acute-bronchitis',
@@ -89,6 +98,7 @@ export const GUIDELINE_CORPUS: readonly GuidelineChunk[] = [
       'process such as pneumonia.',
     sourceLicence: 'MOH-ARR',
     verbatimAllowed: false,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'moh-nag-2024-c4-uncomplicated-urti',
@@ -103,6 +113,7 @@ export const GUIDELINE_CORPUS: readonly GuidelineChunk[] = [
       'symptoms worsen, persist beyond the expected viral course, or a red-flag feature develops.',
     sourceLicence: 'MOH-ARR',
     verbatimAllowed: false,
+    profiles: URTI_PROFILES,
   },
 
   // ─── Abdullah et al. (2024), Malaysian sore-throat Delphi consensus ──────
@@ -121,6 +132,7 @@ export const GUIDELINE_CORPUS: readonly GuidelineChunk[] = [
       'streptococcus in older adults.',
     sourceLicence: 'CC-BY-NC-3.0',
     verbatimAllowed: true,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'abdullah-2024-mcisaac-threshold',
@@ -135,6 +147,7 @@ export const GUIDELINE_CORPUS: readonly GuidelineChunk[] = [
       'point-of-care testing at a score of 2-3.',
     sourceLicence: 'CC-BY-NC-3.0',
     verbatimAllowed: true,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'abdullah-2024-safety-netting',
@@ -150,6 +163,7 @@ export const GUIDELINE_CORPUS: readonly GuidelineChunk[] = [
       'expected course.',
     sourceLicence: 'CC-BY-NC-3.0',
     verbatimAllowed: true,
+    profiles: URTI_PROFILES,
   },
 
   // ─── Ooi et al. (2022), Malaysian Family Physician ───────────────────────
@@ -166,6 +180,7 @@ export const GUIDELINE_CORPUS: readonly GuidelineChunk[] = [
       'viral in an otherwise healthy adult.',
     sourceLicence: 'CC-BY-4.0',
     verbatimAllowed: true,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'ooi-2022-antibiotic-prescribing-patterns',
@@ -180,6 +195,7 @@ export const GUIDELINE_CORPUS: readonly GuidelineChunk[] = [
       'as a stewardship intervention.',
     sourceLicence: 'CC-BY-4.0',
     verbatimAllowed: true,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'ooi-2022-symptom-duration',
@@ -193,6 +209,21 @@ export const GUIDELINE_CORPUS: readonly GuidelineChunk[] = [
       'secondary bacterial process, which is useful context for reassurance and safety-netting.',
     sourceLicence: 'CC-BY-4.0',
     verbatimAllowed: true,
+    profiles: URTI_PROFILES,
+  },
+  {
+    id: 'moh-nag-2024-acute-uti-scope',
+    title: 'National Antimicrobial Guideline, 4th Edition, Acute Urinary Tract Infection',
+    publisher: 'Ministry of Health Malaysia',
+    year: 2024,
+    url: 'https://www.pharmacy.gov.my/v2/en/documents/national-antimicrobial-guideline-nag.html',
+    summary:
+      'MOH NAG 2024 includes guidance for urinary tract infection presentations. This prototype ' +
+      'does not encode drug choice, dose, duration, or treatment thresholds from that source; ' +
+      'the treating doctor must review the source itself.',
+    sourceLicence: 'MOH-ARR',
+    verbatimAllowed: false,
+    profiles: UTI_PROFILES,
   },
 ]
 
@@ -205,10 +236,10 @@ for (const chunk of GUIDELINE_CORPUS) {
  * tuple type, not `string[]`, so `z.enum` can narrow `guidelineId` at the
  * type level. The cast is checked immediately below by the length guard.
  */
-function toCorpusIds(chunks: readonly GuidelineChunk[]): readonly [string, ...string[]] {
+export function corpusIdsFor(chunks: readonly GuidelineChunk[]): readonly [string, ...string[]] {
   const ids = chunks.map((chunk) => chunk.id)
   if (ids.length === 0) throw new Error('guideline corpus must not be empty')
   return ids as [string, ...string[]]
 }
 
-export const corpusIds = toCorpusIds(GUIDELINE_CORPUS)
+export const corpusIds = corpusIdsFor(GUIDELINE_CORPUS)

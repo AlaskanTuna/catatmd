@@ -1,5 +1,5 @@
 import type { AssertionState, ClinicalFacts, InformationGap, OperationalBlock } from '@shared/types'
-import { GAP_CHECKLIST } from './checklist.js'
+import { GAP_CHECKLIST, type GapChecklistEntry } from './checklist.js'
 
 /**
  * A field the transcript never touched is the same fact seen from two sides
@@ -15,10 +15,14 @@ const GAP_STATES: ReadonlySet<AssertionState> = new Set(['NOT_ASSESSED', 'UNKNOW
  * set plus the Malaysian operational block. See `checklist.ts` for the
  * materiality rule deciding which fields are eligible to raise a gap.
  */
-export function deriveGaps(facts: ClinicalFacts, operational: OperationalBlock): InformationGap[] {
+export function deriveGaps(
+  facts: ClinicalFacts,
+  operational: OperationalBlock,
+  checklist: readonly GapChecklistEntry[] = GAP_CHECKLIST,
+): InformationGap[] {
   const gaps: InformationGap[] = []
 
-  for (const entry of GAP_CHECKLIST) {
+  for (const entry of checklist) {
     const assertion = entry.select(facts, operational)
     if (!GAP_STATES.has(assertion.state)) continue
 

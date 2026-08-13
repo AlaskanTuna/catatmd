@@ -6,15 +6,16 @@ vi.mock('../lib/llm/index.js', () => ({
   getLLMClient: () => ({ provider: 'qwen', model: 'qwen-flash', generate }),
 }))
 
+import { getClinicalProfile } from '../clinical-profiles/index.js'
 import type { Deidentified } from '../deid/types.js'
-import { corpusIds } from '../guidelines/index.js'
+import { corpusIdsFor } from '../guidelines/index.js'
 import type { GenerateRequest } from '../lib/llm/types.js'
 import { generateSuggestions } from './index.js'
 
 const content =
   'Doctor: What brings you in? Patient: [PATIENT_1] here, cough 3 days.' as Deidentified
 
-const firstCorpusId = corpusIds[0]
+const firstCorpusId = corpusIdsFor(getClinicalProfile().guidelineCorpus)[0]
 
 const emptyResponse = { outOfScope: false, redFlags: [], suggestions: [] }
 
@@ -156,10 +157,10 @@ describe('generateSuggestions — system prompt content', () => {
     expect(request.system).toMatch(/never (override|suppress|downgrade)/i)
   })
 
-  it('serialises every corpus id into the system prompt', async () => {
+  it('serialises every selected profile corpus id into the system prompt', async () => {
     const request = await capturedRequest()
 
-    for (const id of corpusIds) {
+    for (const id of corpusIdsFor(getClinicalProfile().guidelineCorpus)) {
       expect(request.system).toContain(id)
     }
   })

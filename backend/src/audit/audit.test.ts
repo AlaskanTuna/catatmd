@@ -88,6 +88,7 @@ describe('recordAuditEvent', () => {
       metadata: {
         detected: ['NRIC', 'NAME'],
         discardedFieldIds: ['fever', 'cough_duration'],
+        profileId: 'adult-acute-urti',
         versions: {
           provider: 'qwen',
           model: 'qwen-flash',
@@ -99,6 +100,7 @@ describe('recordAuditEvent', () => {
     expect(lastWrite().data.metadata).toEqual({
       detected: ['NRIC', 'NAME'],
       discardedFieldIds: ['fever', 'cough_duration'],
+      profileId: 'adult-acute-urti',
       versions: {
         provider: 'qwen',
         model: 'qwen-flash',
@@ -132,6 +134,7 @@ describe('recordAuditEvent', () => {
         metadata: {
           detected: ['NRIC'],
           discardedFieldIds: ['fever'],
+          profileId: 'adult-acute-urti',
           versions: {
             provider: 'qwen',
             model: 'qwen-flash',

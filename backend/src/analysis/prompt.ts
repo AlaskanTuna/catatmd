@@ -14,9 +14,12 @@
  * the SOAP prose constraints in context while filling a 34-key checklist.
  */
 
-const SHARED_PREAMBLE = `You are extracting structured clinical information from a de-identified GP
-consultation transcript for adult upper-respiratory presentations (cough,
-sore throat, and related URTI symptoms). You do not diagnose and you do not
+import type { ClinicalProfile } from '../clinical-profiles/index.js'
+
+const sharedPreamble = (
+  profile: ClinicalProfile,
+) => `You are extracting structured clinical information from a de-identified GP
+consultation transcript for ${profile.scope}. You do not diagnose and you do not
 replace clinical judgement: every output you produce is reviewed and edited
 by the treating doctor before it is used.`
 
@@ -24,7 +27,8 @@ by the treating doctor before it is used.`
  * Operation 1a. Carries the evidence rules, because it is the only half that
  * emits assertions.
  */
-export const CLINICAL_FACTS_SYSTEM_PROMPT = `${SHARED_PREAMBLE}
+export function buildClinicalFactsSystemPrompt(profile: ClinicalProfile): string {
+  return `${sharedPreamble(profile)}
 
 Produce two things from the transcript:
 
@@ -70,16 +74,18 @@ Produce two things from the transcript:
 
 Do not produce a differential diagnosis, a clinical impression, or a
 probability statement anywhere in your output.`
+}
 
 /**
  * Operation 1b. Carries the diagnostic-prose rules, because it is the only
  * half that emits free text a doctor reads as narrative.
  */
-export const NOTE_AND_GAPS_SYSTEM_PROMPT = `${SHARED_PREAMBLE}
+export function buildNoteAndGapsSystemPrompt(profile: ClinicalProfile): string {
+  return `${sharedPreamble(profile)}
 
 Produce two things from the transcript:
 
-1. A SOAP note (subjective, objective, assessment, plan). The "assessment"
+1. A SOAP note (subjective, objective, assessment, plan). ${profile.noteTemplate} The "assessment"
    section is a synthesis of the findings recorded. It must never state,
    imply, or name a diagnosis, differential, or clinical impression. A
    diagnosis is recorded elsewhere in this system, in a structured field, and
@@ -102,3 +108,4 @@ Produce two things from the transcript:
 
 Do not produce a differential diagnosis, a clinical impression, or a
 probability statement anywhere in your output.`
+}
