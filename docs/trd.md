@@ -211,7 +211,7 @@ Index: `@@index([doctorId, status])` — supports the doctor's own consultation-
 
 Indexes: `@@index([consultationId, createdAt])`, `@@index([actorId, createdAt])`.
 
-`prevHash` and `hash` are nullable only because rows written before the chain existed cannot be given one honestly. Every row written by `recordAuditEvent` carries both. See §15.
+`prevHash` and `hash` are nullable only because rows written before the chain existed cannot be given one honestly. Every row written since carries both, including `auth.session.created` from the better-auth session hook. `recordAuditEvent` is the only writer, enforced by `backend/src/audit/no-stray-audit-writes.test.ts`. See §15.
 
 `analysis` and `editedNote` are separate columns rather than one field so that the model's raw output is never overwritten by the doctor's edits — both remain independently inspectable, which matters both for review-trail integrity and for the "every output editable before approval" safety posture. `AuditEvent.metadata` is restricted to detector labels, never values, because the audit trail must not become a second PHI leak vector — it directly enforces the "no vault entries in logs" clinical-safety do-not.
 
@@ -774,10 +774,20 @@ hash = sha256( prevHash | id | action | actorId | consultationId | createdAt )
 - It is **not** a defence against an attacker with write access who recomputes the whole chain. It makes tampering **detectable by an auditor holding a head hash from an earlier point in time**, not impossible.
 - **A `metadata` rewrite is not detectable**, because `metadata` is deliberately excluded from the hash.
 - **Truncation of the newest rows is not self-detecting.** Deleting from the end leaves a shorter chain that is internally valid; only a previously recorded head hash reveals it. `verifyAuditChain` takes that head as an optional argument, and `chain.test.ts` asserts this limitation rather than only documenting it.
-- **Rows written before the migration are not chained.** 18 such rows exist. Integrity cannot be retrofitted onto history that was not recorded while it happened, so they carry no hash and verification skips them.
+- **Rows written before the migration are not chained.** 19 such rows exist. Integrity cannot be retrofitted onto history that was not recorded while it happened, so they carry no hash and verification skips them.
 - No blockchain, no distributed ledger, no external anchoring. Immutability was rejected on 13/08/26 because it conflicts directly with PDPA rights to correction and withdrawal of consent.
 
-Under real write concurrency the head read and the append want a retry around the unique-constraint failure. The current single-instance deployment does not reach that, and the constraint means the failure is loud rather than silent.
+### One Writer, Enforced (issue #55)
+
+`recordAuditEvent` is the only thing permitted to write `audit_event`, and `backend/src/audit/no-stray-audit-writes.test.ts` fails the build when anything else does.
+
+That invariant was a doc comment until #55, and the comment was **wrong**. The better-auth session hook wrote `prisma.auditEvent.create` directly, so every `auth.session.created` row landed with no `prevHash` and sat permanently outside the chain. It was found in production, not in review, because nothing executable was checking. The guard scans `backend/src` and `prisma/` for every write verb, not only `create`: on an append-only table an `update` or `delete` reaching it is worse than a bypassed insert.
+
+### Losing the Race for the Chain Head
+
+Login writes to the chain now, and the guest account is shared by design (`docs/prd.md` §6), so two appends reading the same head is a normal event rather than a fault. `recordAuditEvent` retries the transaction up to three times on the `prevHash` unique violation, re-reading the head each attempt. Anything that is not that violation rethrows untouched.
+
+**One call site fails open, and only one.** Every consultation path propagates a failed append, because a note whose approval was not recorded must not read as approved. The better-auth session hook is the exception: after the retry is exhausted it logs under `audit_write_error` and lets sign-in proceed. Locking a doctor out of a clinical system because an audit row lost a race is the worse failure. The `catch` sits at the hook rather than inside `recordAuditEvent`, so the asymmetry is visible at the call site instead of hidden in the shared path, and the gap is logged rather than swallowed.
 
 ### Forbidden Content
 

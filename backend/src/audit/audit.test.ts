@@ -4,7 +4,7 @@ import { prisma } from '../lib/prisma.js'
 import {
   AUDIT_CHAIN_GENESIS,
   type AuditChainRow,
-  type AuditEventInput,
+  type ConsultationAuditEvent,
   computeAuditHash,
   getAuditHistory,
   recordAuditEvent,
@@ -50,7 +50,13 @@ beforeEach(() => {
   vi.mocked(prisma.auditEvent.findFirst).mockClear()
 })
 
-const write = (event: AuditEventInput) =>
+/** What Prisma throws when a second append reads the same chain head. */
+const chainHeadRace = () =>
+  Object.assign(new Error('Unique constraint failed on the fields: (`prevHash`)'), {
+    code: 'P2002',
+  })
+
+const write = (event: ConsultationAuditEvent) =>
   recordAuditEvent({ ...event, actorId: 'doctor-1', consultationId: 'consult-1' })
 
 function lastWrite() {
@@ -117,7 +123,7 @@ describe('recordAuditEvent', () => {
    * clinical prose (issue #12; docs/trd.md §15).
    */
   it('writes no transcript text, note content or vault entry for any action', async () => {
-    const everyAction: AuditEventInput[] = [
+    const everyAction: ConsultationAuditEvent[] = [
       { action: 'consultation.created' },
       { action: 'consultation.asr_hosted_used' },
       { action: 'consultation.analysis_started' },
@@ -234,6 +240,61 @@ describe('the hash chain (issue #27)', () => {
       failedAtId: appended[1]?.id,
       reason: 'hash_mismatch',
     })
+  })
+
+  /**
+   * Issue #55. The better-auth session hook wrote this row directly for as long
+   * as the chain existed, so every session event sat outside it.
+   */
+  it('chains an auth session event, which carries no consultation', async () => {
+    await recordAuditEvent({ action: 'auth.session.created', actorId: 'doctor-1' })
+
+    expect(lastWrite().data).toMatchObject({
+      action: 'auth.session.created',
+      actorId: 'doctor-1',
+      consultationId: null,
+      prevHash: AUDIT_CHAIN_GENESIS,
+    })
+    expect(lastWrite().data.hash).toEqual(expect.any(String))
+  })
+
+  it('verifies a chain that mixes auth and consultation events', async () => {
+    await write({ action: 'consultation.created' })
+    await recordAuditEvent({ action: 'auth.session.created', actorId: 'doctor-1' })
+    await write({ action: 'consultation.approved' })
+
+    expect(verifyAuditChain(appended)).toMatchObject({ ok: true, verified: 3 })
+  })
+
+  /**
+   * Login writes to the chain now and the guest account is shared, so two
+   * appends reading the same head is a normal event rather than a fault.
+   */
+  it('retries when an append loses the race for the chain head', async () => {
+    vi.mocked(prisma.auditEvent.create).mockRejectedValueOnce(chainHeadRace())
+
+    await write({ action: 'consultation.created' })
+
+    expect(prisma.auditEvent.create).toHaveBeenCalledTimes(2)
+    expect(appended).toHaveLength(1)
+  })
+
+  it('gives up after a bounded number of attempts rather than looping', async () => {
+    vi.mocked(prisma.auditEvent.create)
+      .mockRejectedValueOnce(chainHeadRace())
+      .mockRejectedValueOnce(chainHeadRace())
+      .mockRejectedValueOnce(chainHeadRace())
+
+    await expect(write({ action: 'consultation.created' })).rejects.toThrow('Unique constraint')
+    expect(prisma.auditEvent.create).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not retry a failure that is not a chain-head race', async () => {
+    const broken = Object.assign(new Error('connection lost'), { code: 'P1001' })
+    vi.mocked(prisma.auditEvent.create).mockRejectedValueOnce(broken)
+
+    await expect(write({ action: 'consultation.created' })).rejects.toThrow('connection lost')
+    expect(prisma.auditEvent.create).toHaveBeenCalledTimes(1)
   })
 
   it('keeps metadata out of the hash inputs', async () => {
