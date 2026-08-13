@@ -14,13 +14,18 @@
  * Mafins, the logotype face. Subsetted to the seven glyphs of "CatatMD" and
  * nothing else, which is why it costs about 1 KB rather than 280 KB.
  *
+ * Served from `public/` with an absolute URL rather than imported from `src/`.
+ * A relative `url()` inside this file is not rewritten by the build, so the
+ * face silently failed to load and the wordmark fell back to the heading
+ * serif, which looked plausible enough to miss.
+ *
  * It appears exactly once, in the wordmark. A display serif drawn for 48px is
  * a legibility risk at the 16px a SOAP note is read at, and using it more
  * widely would turn a logotype into a theme.
  */
 @font-face {
   font-family: 'Mafins';
-  src: url('./assets/fonts/Mafins-logo.woff2') format('woff2');
+  src: url('/fonts/Mafins-logo.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
