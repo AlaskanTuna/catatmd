@@ -63,7 +63,7 @@ export function Login() {
       <aside className="relative hidden w-1/2 flex-col justify-between bg-accent p-10 lg:flex">
         <Link to="/" className="flex items-center gap-2.5 text-accent-ink">
           <Mark className="size-7 brightness-0 invert" />
-          <Wordmark className="text-xl" />
+          <Wordmark tone="inverse" className="text-xl" />
         </Link>
 
         <div className="max-w-md">
