@@ -2,6 +2,10 @@
 
 > Canonical technical reference. `docs/prd.md` owns requirements; `docs/README.md` owns the reader-facing narrative. This document goes deeper than both — implementers build against it.
 
+**Status: Final for the MVP.** Reconciled 13/08/26 against the research phase (`docs/superpowers/research/`) and closed as the implementation gate alongside `docs/prd.md` (issue #1).
+
+Two sections carry **measured findings** rather than design intent, and the controls around them are traceable to the measurement: §20.1 (ASR model selection for Malaysian code-switched speech) and §21.1 (fabricated clinical negatives on sparse transcripts). §19's Open Decisions Register carries 18 rows, 11 of them still open; resolved rows are struck through and kept so cross-references stay stable. A `Specified` tag means designed-not-built (16 sections), and `Built` means it exists in the repository today (8 sections).
+
 ---
 
 ## 1. Purpose & Relationship To Other Docs
@@ -60,6 +64,21 @@ All schemas live in `shared/src/index.ts`. Types are inferred (`z.infer`), never
 | `TranscriptTurnSchema` | `speaker: Speaker`, `text: string().min(1)`, `offsetSeconds?: number().nonnegative()` |
 | `TranscriptSchema`     | `turns: TranscriptTurn[]` — `.min(1)`                                                 |
 
+### Transcript Provenance — `Transcript.source`
+
+**Status: `Specified`** — decided 13/08/26. A new field on `TranscriptSchema`, persisted with the transcript and shown on the review screen:
+
+```
+TranscriptSourceSchema = z.enum(['fixture','paste','upload','asr_local','asr_hosted'])
+```
+
+It does double duty, and both jobs are load-bearing enough that neither would justify the field alone:
+
+- **Egress audit.** `asr_hosted` is the only input path on which audio leaves the doctor's device (§20). The field is the durable record of which consultations took that path, alongside the audit event in §15.
+- **Fabrication-risk signal for the reviewer.** §20's threat table applies only to `asr_*` sources. A pasted or fixture transcript is what someone typed; a transcribed one may contain a substituted content word carrying a perfectly valid evidence span (§21.4). The review UI can therefore cue closer reading of the transcript itself on `asr_*` sources, and say nothing on the others — which is the difference between a useful warning and a banner the doctor learns to ignore.
+
+**`source` is client-asserted, and the backend cannot verify it.** Transcription runs in the browser on both ASR paths, so the API receives a claim about how the transcript was produced, not evidence of it. This is stated rather than glossed: the field is an honest provenance record for a cooperating client, not a security control, and nothing in the safety architecture rests on it. What is not client-asserted is the de-identification gate (§9), which treats every transcript identically regardless of `source`.
+
 ### Clinical Note & Analysis
 
 | Schema                       | Fields                                                                                                                                                      |
@@ -86,9 +105,46 @@ All schemas live in `shared/src/index.ts`. Types are inferred (`z.infer`), never
 - **`RedFlag.ruleId`** — present when `source: 'rule'`; identifies which trigger in the versioned rule list fired. The schema does not enforce this pairing (`ruleId` is unconditionally optional) — it is a convention, not a compile-time guarantee.
 - **`ClinicalSuggestion.citations`** — `.min(1)`. A suggestion with zero citations fails validation; the schema forbids an uncited clinical suggestion from ever reaching the doctor.
 
-### Structured Clinical-Information Schema — Proposal
+### Structured Clinical-Information Schema — Ratified 13/08/26
 
-**Open** — `SoapNoteSchema` (above) is four free-text strings and cannot itself express per-field assertion states. `docs/prd.md`'s Safety Constraints requires that a symptom, allergy, medication, history item, vital sign, examination finding, or safety question never asked about must never be represented as denied — that requires distinguishing `NOT_ASSESSED`/`UNKNOWN` from `DENIED`/`PRESENT` at the level of an individual clinical fact, which four opaque note strings cannot do. Whether the schema should grow a structured, per-field clinical-fact representation (with an explicit assertion-state enum) alongside or instead of `SoapNoteSchema`, and what that shape should be, is unresolved — this is a proposal awaiting human ratification, not a decision made here. See the Open Decisions Register, §19, row 10.
+**Status: `Specified`** — human-ratified (§19 row 10, closed). `SoapNoteSchema` (above) is four free-text strings and cannot express per-field assertion states. `docs/prd.md` §10 requires that a symptom, allergy, medication, history item, vital sign, examination finding, safety question, or operational-block field never established must never be represented as denied — which requires distinguishing `NOT_ASSESSED`/`UNKNOWN` from `DENIED`/`PRESENT` at the level of an individual clinical fact. Four opaque note strings cannot do that. The schema therefore grows a structured per-field representation **alongside** `SoapNoteSchema`, which is retained as the review scaffold.
+
+**Proposed shape:**
+
+```
+ClinicalAssertionSchema = z.object({
+  state: z.enum(['PRESENT','DENIED','CLINICIAN_OBSERVED','NOT_ASSESSED','UNKNOWN','NOT_APPLICABLE']),
+  value: z.string().optional(),   // normalised concept label — paraphrase permitted
+  evidence: z.string().optional() // verbatim de-identified transcript span — required for PRESENT/DENIED
+})
+```
+
+### Malaysian Operational Block
+
+**Status: `Specified`** — human-ratified 13/08/26. The payer-enforced record schema (PMCare panel GP contract §1.9/§1.15) is condition → treatment → itemised medication dispensed → MC days → referral. Two of those fields have no home in SOAP, so a SOAP-only note is incomplete against the contract the clinic signed. The note therefore carries an operational block alongside the four SOAP strings:
+
+| Field                  | Type                  | Semantics                                                             |
+| ---------------------- | --------------------- | --------------------------------------------------------------------- |
+| `diagnosis`            | `ClinicalAssertion`   | The impression **the doctor stated**. Transcription-bound — see below |
+| `medicationsDispensed` | `ClinicalAssertion[]` | Drugs the doctor named as dispensed, with dose where stated           |
+| `mcDays`               | `ClinicalAssertion`   | Medical-certificate days the doctor stated                            |
+| `referral`             | `ClinicalAssertion`   | Referral the doctor stated                                            |
+| `followUp`             | `ClinicalAssertion`   | Follow-up interval the doctor stated                                  |
+
+**Every operational-block field is extraction, not generation.** Each is subject to the evidence-bound assertion control (§21.4) without exception: `PRESENT` requires a verbatim span in which the doctor states the value, and absent that span the field resolves to `NOT_ASSESSED` and surfaces as an information gap.
+
+**`diagnosis` carries an additional, stricter constraint.** `docs/prd.md` §10 permits a `diagnosis` field only because it is transcription-bound; it is the one field where a generation failure would put the system on the wrong side of its own intended-purpose statement (`docs/prd.md` §11). Two consequences bind the implementation:
+
+- The `note_and_gaps` prompt (§12) must never request a diagnosis, differential, or impression. It requests **the diagnosis the doctor stated, if any** — and the schema's `NOT_ASSESSED` state must be the cheapest path for the model, not an error condition.
+- The evidence check for `diagnosis` runs at Tier 3 like every other field, but its failure mode is not merely a noisy gap: an inferred label surviving into `diagnosis` is a **CAP-1 acceptance-criteria failure and a `docs/prd.md` §10 safety-constraint breach**, and must be covered by an explicit test using a fixture in which the doctor examines and prescribes but never names a condition.
+
+### Ratification Conditions (Research-Imposed)
+
+The schema is ratified **as a hypothesis to be tested, not as a mitigation to be assumed.** The one published study that imposed a template on LLM note generation (Asgari et al., _npj Digital Medicine_ 2025) measured an **increase** in major hallucinations. Three conditions attach:
+
+1. **`NOT_ASSESSED` must be the default and cheapest path.** No field may be implicitly required to be filled, in the schema, in the prompt, or in the UI's rendering of an empty field.
+2. **The eval must compare schema-constrained output against free-form output on the same sparse transcripts** — the §21.1 fixtures are the baseline. If the schema increases fabrication, that is a finding to report, not a result to bury.
+3. **The evidence-span rule is scoped to assertion state, not concept vocabulary** (§21.4) — `state` requires a span; `value` may be a normalised term.
 
 ---
 
@@ -144,7 +200,7 @@ Indexes: `@@index([consultationId, createdAt])`, `@@index([actorId, createdAt])`
 
 ### Gap: No Data-Retention Or Deletion Path
 
-`Consultation` and `AuditEvent` rows persist indefinitely today — no TTL, archival job, or deletion/access-request endpoint exists. `docs/prd.md`'s Regulatory & Data-Protection Positioning states this is a prerequisite gap before any real patient data reaches the system, and that a DPIA must precede production deployment. Not fixed here; see the Open Decisions Register, §19, row 11.
+`Consultation` and `AuditEvent` rows persist indefinitely today — no TTL, archival job, or deletion/access-request endpoint exists. `docs/prd.md` §11 (Regulatory Posture) states this is a prerequisite gap before any real patient data reaches the system, and that a DPIA must precede production deployment. Not fixed here; see the Open Decisions Register, §19, row 11.
 
 ---
 
@@ -243,7 +299,7 @@ Source: `backend/src/config/env.ts`. `EnvSchema` is validated against `process.e
 | `LLM_PROVIDER`       | `enum(['qwen','gemini','deepseek'])`               | `qwen`                                                   |
 | `QWEN_API_KEY`       | `string().optional()`                              | none                                                     |
 | `QWEN_BASE_URL`      | `string().url()`                                   | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` |
-| `QWEN_MODEL`         | `string()`                                         | `qwen3.7-flash`                                          |
+| `QWEN_MODEL`         | `string()`                                         | `qwen-flash`                                             |
 | `GEMINI_API_KEY`     | `string().optional()`                              | none                                                     |
 | `GEMINI_MODEL`       | `string()`                                         | `gemini-3.5-flash-lite`                                  |
 | `DEEPSEEK_API_KEY`   | `string().optional()`                              | none                                                     |
@@ -308,6 +364,27 @@ No other routes exist today. There is no authentication middleware, no rate limi
 
 This inventory satisfies Q7/Q8's honest-limitations posture, not a clinical-grade NER system — see the recall note below.
 
+### Detector Shape — `pattern + score + context`
+
+Detectors are specified as `{ pattern, baseScore, contextWords }` rather than as flat boolean regex, matching Microsoft Presidio's `PatternRecognizer` contract. A low-confidence pattern match is **promoted** when a context word appears nearby — `IC`, `no. kad pengenalan`, `pesakit`, `patient`, `MyKad` — and demoted otherwise. This is the industry-standard shape and is citable as such, which matters for a component whose recall cannot be guaranteed.
+
+Two additions raise precision and recall respectively, at low cost:
+
+- **NRIC structural validation.** Layer a date-of-birth validity check and a place-of-birth state-code check on top of the `YYMMDD-PB-###G` shape match. **MyKad has no checksum**, so this is the only structural check that exists. Copy the state-code table from the MIT-licensed `mykad` package rather than adding a dependency. Cuts false positives at zero recall cost.
+- **Name gazetteer.** A deny-list of Malay, Chinese and Indian given names plus honorifics, applied as a second recall pass for names carrying no particle or honorific cue. This is the **only** measure available in this window that raises name recall without a model.
+
+### Why Not Presidio Or An Off-The-Shelf Library
+
+Recorded as a decision with evidence rather than left as silence, because de-identification is the component a reviewer will probe hardest:
+
+| Option                             | Why It Was Rejected                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Microsoft Presidio**             | Python-only (the maintainer's answer for other runtimes is Docker + REST), which would reintroduce a Python sidecar into a TypeScript stack. Ships `SG_NRIC_FIN` but **no MyKad recognizer**. English-only by default, and its `PERSON` path is documented to perform worst on non-Western names — precisely this corpus. |
+| **JS de-identification libraries** | Every one surveyed is a US-centric regex engine (HIPAA's 18 identifiers) with zero Malaysian coverage. Nothing to adopt.                                                                                                                                                                                                  |
+| **In-process ML NER**              | GLiNER multi-PII ONNX is ~349 MB int8; the JS runner is a small, stale repo pinned to an old transformers.js. Not viable in this window, and it would not fix Malay-name recall — see below.                                                                                                                              |
+
+**Named future work, with costs**, so the weakest component reads as deliberate rather than unexamined: Presidio in Docker, in-region, as a second pass; GLiNER multi-PII ONNX in-process; a fine-tuned Malaysian de-identification NER seeded from `obi/deid_roberta_i2b2` (MIT, no ONNX shipped).
+
 ### Token Format
 
 `[LABEL_N]`, matching the format already fixed in `AGENTS.md` (`[PATIENT_1]`, `[NRIC_1]`). `N` increments per unique value encountered within one request: a second distinct name becomes `[PATIENT_2]`; every repeat of an already-seen value maps to the token already minted for it, so the model sees one consistent handle per person across the whole transcript.
@@ -329,7 +406,7 @@ Each analyse run writes one `consultation.analysis_completed` `AuditEvent` (§15
 
 ### Recall Limitation
 
-Stated plainly in `docs/prd.md`'s Known Limitations: these detectors are pattern-based and may miss an identifier, particularly a name with no adjacent cue. This is why raw transcripts are still treated as sensitive at rest (Q9, §4).
+Stated plainly in `docs/prd.md` §12: these detectors are pattern-based and may miss an identifier, particularly an unmarked name with no adjacent honorific, patronymic, or context cue. **An ML NER would miss it too**, and the published evidence says it would miss it disproportionately for Malay names — so this is a limitation of the problem, not only of the chosen approach. That is why raw transcripts are still treated as sensitive at rest (Q9, §4), and the mitigations that do exist are named rather than implied: the outbound payload is reviewable, the vault is request-scoped, and `LLMClient` is the sole egress point.
 
 ---
 
@@ -355,7 +432,7 @@ interface RedFlagTrigger {
 ### Evaluation
 
 - `evaluateRedFlags(transcript: Transcript): RedFlag[]` — a pure function over the transcript directly. It runs in-process and never leaves the API, so it does not need to pass through `deid/` first (§9 exists for the LLM egress path only).
-- Runs independently of, and is never gated by, the LLM call — `docs/prd.md`'s Primary Flow step 3 states rules run "regardless of model output."
+- Runs independently of, and is never gated by, the LLM call — `docs/prd.md` §8 (Primary Flow) step 3 states rules run "regardless of model output."
 - Every trigger whose `matcher` returns non-null becomes a `RedFlag` with `source: 'rule'`, `ruleId: trigger.id`, `evidence` set to the matched span.
 
 ### Merge Rule — The Zero-Suppression Invariant
@@ -371,7 +448,7 @@ Pure function library, zero side effects (no I/O, no LLM call, no database acces
 
 ### What Stays Undecided
 
-The concrete trigger content — the actual list of clinical triggers, their thresholds, and each `clinicalSource` citation — is not specified here. Q7 records that no clinician is available to draft or validate it; inventing specific clinical thresholds without that review would itself violate the no-invention rule this document runs on. Sourcing the initial list from NICE, WHO, Centor/FeverPAIN, and the Malaysian CPG (as `docs/prd.md`'s Known Limitations already names) is implementation work against this contract, not a further TRD design decision.
+The concrete trigger content — the actual list of clinical triggers, their thresholds, and each `clinicalSource` citation — is not specified here. Q7 records that no clinician is available to draft or validate it; inventing specific clinical thresholds without that review would itself violate the no-invention rule this document runs on. Sourcing the initial list from the §11 corpus — **MOH NAG 2024, the 2024 Malaysian sore-throat Delphi consensus, and Ooi et al. 2022** — is implementation work against this contract, not a further TRD design decision. NICE is **not** a permitted source here for the same licence reason that excludes it from the corpus (§11); the Centor and McIsaac criteria themselves are clinical algorithms whose criteria are restated in the Malaysian sources, so they are expressed in our own words and attributed to those sources.
 
 ---
 
@@ -389,11 +466,34 @@ interface GuidelineChunk {
   year: number
   url: string
   summary: string    // short, non-verbatim summary shown in the UI
-  quote?: string      // optional short verbatim excerpt — only once redistribution is confirmed safe, see below
+  sourceLicence: string       // e.g. 'MOH-ARR' | 'CC-BY-4.0' | 'CC-BY-NC-3.0'
+  verbatimAllowed: boolean    // gates whether `quote` may be populated at all
+  quote?: string      // short verbatim excerpt — only permitted when verbatimAllowed
 }
 ```
 
-10–15 chunks (Q6), drawn from NICE acute cough guidance, Centor/FeverPAIN scoring, the Malaysian CPG for URTI, and WHO guidance.
+`sourceLicence` and `verbatimAllowed` were added 13/08/26 because the licensing difference between sources is legally load-bearing and the schema previously had no way to express it. `verbatimAllowed: false` means the chunk may be summarised and linked but never quoted; a `quote` present on such a chunk is a corpus-authoring defect and should fail a corpus validation test.
+
+### Source Selection — Resolved 13/08/26 (§19 Row 3, Closed)
+
+10–15 chunks (Q6), anchored on Malaysian sources:
+
+| Source                                                                                   | Covers                                                       | Licence Posture                                                                      |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| **MOH National Antimicrobial Guideline (NAG) 4th ed., 2024** — §A10, §C1/C3/C4           | Modified Centor scoring, acute pharyngitis, acute bronchitis | © MOH Malaysia, **all rights reserved** — summarise + link, `verbatimAllowed: false` |
+| **Abdullah et al. (2024), Malaysian sore-throat Delphi consensus**, _Infect Drug Resist_ | McIsaac scoring and thresholds                               | **CC BY-NC 3.0** — quotable with attribution, `verbatimAllowed: true`                |
+| **Ooi et al. (2022)**, _Malaysian Family Physician_                                      | Malaysian URTI epidemiology                                  | **CC BY 4.0** — quotable with attribution, `verbatimAllowed: true`                   |
+
+**NICE is excluded from the corpus.** The NICE UK Open Content Licence states that requests to use NICE content **for artificial intelligence purposes, in the UK and internationally, are not covered by the licence**; international reuse requires a paid agreement, and the licence separately forbids amending or adapting the wording or structure of a published recommendation — which chunking for retrieval arguably is. NICE may still be cited as external context in prose; no NICE recommendation text enters the corpus. This is both the safe answer and the better product answer for a Malaysian GP tool.
+
+### One Source Per Chunk — A Safety Requirement, Not A Style Rule
+
+The two Malaysian sources **disagree**: NAG 2024 puts the antibiotic threshold at Modified Centor **≥3**, while the 2024 Delphi consensus puts it at McIsaac **≥4** (and no antibiotic below 2). They give different answers at a score of 3.
+
+Merging them into one "Centor threshold" chunk would manufacture a consensus that does not exist — and the ID-constrained citation mechanism **cannot catch that failure**, because the model would be citing a real, valid ID. A fabricated agreement reachable through a valid ID is strictly worse than a free-text citation, because it is structurally invisible. Therefore:
+
+- One source per chunk. Every chunk carries its own `publisher`, `year`, and threshold.
+- The review UI attributes **per chunk**. It never renders "the guideline says" over merged sources (`docs/prd.md` CAP-4).
 
 ### Candidate Set Reaching The Prompt
 
@@ -403,7 +503,7 @@ The whole corpus (Q16) — every chunk's `id`, `title`, and `summary` — is ser
 
 `ClinicalSuggestionSchema.citations[].guidelineId` is `z.string()` in the shared schema (§3) — the shared package cannot depend on a backend-only corpus. The request-time schema used for the suggestions call (§12) narrows this field to `z.enum(corpusIds)`, where `corpusIds` is the live list of chunk ids at request time. A citation naming an id outside that set fails `request.schema.safeParse()` inside `OpenAICompatibleClient.generate()` (§6, `Built`) and throws `LLMResponseError` — the suggestion never reaches the doctor. This is a schema-enforced rejection path, not a prompt instruction the model could choose to ignore.
 
-**Open** — exact source selection and the redistribution/licensing stance for verbatim `quote` fields are unresolved (Q6: "licensing needs a human call"). `docs/prd.md`'s Known Limitations already names this; it is repeated here because it directly bounds what the `quote` field may contain. See §19.
+**Resolved 13/08/26** — source selection and the redistribution stance are settled above, and `verbatimAllowed` now carries the distinction in the schema rather than in a comment. §19 row 3 is closed. Two residual items are **not** settled and are deliberately not represented as such: whether a MaHTAS/MOH _Clinical Practice Guideline_ distinct from the NAG exists for URTI (the MaHTAS portal refused connection during research; the working assumption is that NAG is the operative Malaysian source), and the fact that no clinician has reviewed any chunk in this corpus (`docs/prd.md` §12).
 
 ---
 
@@ -415,16 +515,16 @@ Two operations per analyse request (Q15 — decomposition by capability, not one
 
 ### Operation 1 — `note_and_gaps`
 
-| Field           | Value                                                                                                                                                                     |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `operation`     | `"note_and_gaps"`                                                                                                                                                         |
-| `system` intent | Produce a SOAP note and information gaps from the de-identified transcript; explicitly instructed never to state or imply a diagnosis (`docs/prd.md`, Safety Constraints) |
-| `content`       | The de-identified transcript, serialised as speaker-labelled turns                                                                                                        |
-| response schema | Proposed `z.object({ note: SoapNoteSchema, gaps: z.array(InformationGapSchema) })` — a new export, not yet in `shared/src/index.ts`                                       |
-| `schemaName`    | `"note_and_gaps"`                                                                                                                                                         |
-| `temperature`   | Default `0.2` (§6)                                                                                                                                                        |
+| Field           | Value                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `operation`     | `"note_and_gaps"`                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `system` intent | Produce the SOAP scaffold, the per-field clinical assertions, the Malaysian operational block, and information gaps from the de-identified transcript. Every assertion must carry a verbatim transcript span; `NOT_ASSESSED` is the correct and cheapest answer wherever the transcript is silent. The prompt **never asks for a diagnosis, differential, or impression** — only for the diagnosis the doctor stated, if any (§3) |
+| `content`       | The de-identified transcript, serialised as speaker-labelled turns                                                                                                                                                                                                                                                                                                                                                                |
+| response schema | Proposed `z.object({ note: SoapNoteSchema, clinicalFacts: …, operational: …, gaps: z.array(InformationGapSchema) })` — a new export, not yet in `shared/src/index.ts`; shapes per §3                                                                                                                                                                                                                                              |
+| `schemaName`    | `"note_and_gaps"`                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `temperature`   | Default `0.2` (§6)                                                                                                                                                                                                                                                                                                                                                                                                                |
 
-**Open** — see §3 and the Open Decisions Register, §19, row 10, for the unresolved question of whether `SoapNoteSchema` should be replaced or supplemented by a structured per-field clinical-information schema with assertion states before this operation is implemented.
+The prompt is a Tier-4 control (§21.3) and is never relied on alone: the `NOT_ASSESSED` default is enforced structurally by the schema (Tier 1) and the span requirement is enforced in code by the evidence check (Tier 3, §21.4). §21.1 measured this exact instruction failing silently.
 
 ### Operation 2 — `suggestions_and_red_flags`
 
@@ -439,13 +539,13 @@ Two operations per analyse request (Q15 — decomposition by capability, not one
 
 ### Scope Notice For Non-URTI Presentations
 
-`docs/prd.md`'s Clinical Scope requires that, for a transcript outside acute cough / sore throat / other upper-respiratory presentations, the system still runs `note_and_gaps` and the rule engine (§10) as normal but does not attempt guideline-cited suggestions — and the review screen must carry a visible scope notice. The `suggestions_and_red_flags` system prompt can instruct the model to return an empty `suggestions` array when the presentation falls outside the corpus's coverage, which is schema-valid — §11's `citations.min(1)` constrains items present in the array, not the array's length.
+`docs/prd.md` §6 (Scope) requires that, for a transcript outside acute cough / sore throat / other upper-respiratory presentations, the system still runs `note_and_gaps` and the rule engine (§10) as normal but does not attempt guideline-cited suggestions — and the review screen must carry a visible scope notice. The `suggestions_and_red_flags` system prompt can instruct the model to return an empty `suggestions` array when the presentation falls outside the corpus's coverage, which is schema-valid — §11's `citations.min(1)` constrains items present in the array, not the array's length.
 
 **Open** — how the review screen decides whether to show the scope notice is unresolved: inferring it from an empty `suggestions` array conflates "out of scope, suggestions suppressed" with "in scope, nothing to suggest," so a dedicated signal (e.g. an `outOfScope: boolean` alongside the analysis) may be needed instead. See §19.
 
 ### Retry / Failure Behaviour
 
-No automatic retry inside `LLMClient` (§6, `Built`) — a failure on either call throws `LLMResponseError`, which the `/analyze` route (§13) catches and translates into a reverted `Consultation.status` plus an error response. The doctor's only retry path is manually re-triggering analysis (`docs/prd.md`, Primary Flow step 5), matching CAP-5's "no autonomous action" constraint — nothing retries itself.
+No automatic retry inside `LLMClient` (§6, `Built`) — a failure on either call throws `LLMResponseError`, which the `/analyze` route (§13) catches and translates into a reverted `Consultation.status` plus an error response. The doctor's only retry path is manually re-triggering analysis (`docs/prd.md` §8, step 5), matching CAP-5's "no autonomous action" constraint — nothing retries itself.
 
 ### Latency Budget Tension (Open)
 
@@ -461,13 +561,13 @@ No automatic retry inside `LLMClient` (§6, `Built`) — a failure on either cal
 
 None of these exist yet — proposing them is this document's mandate under Q17 ("the TRD proposes, the human ratifies").
 
-| Schema                       | Shape                                                                                                                                                                                                                                             |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ConsultationListItemSchema` | `id`, `status`, `createdAt`, `updatedAt` — no transcript/analysis body, for the consultation-list view (Q2)                                                                                                                                       |
-| `ConsultationDetailSchema`   | `ConsultationSchema` (§3) extended with `editedNote: SoapNoteSchema.nullable()`, `approvedAt: z.coerce.date().nullable()`, `acknowledgedRedFlagIds: z.array(z.string())`, `reviewedGapIds: z.array(z.string())` — resolves §3's forward reference |
-| `ErrorEnvelopeSchema`        | `z.object({ error: z.object({ code: z.string(), message: z.string() }) })` — uniform across every route                                                                                                                                           |
-| `FixtureSchema`              | `id: string`, `label: string`, `transcript: Transcript` — names the shape `GET /api/fixtures` already returns, so no route response is an inline anonymous type                                                                                   |
-| `GuidelineChunkSchema`       | Mirrors §11's `GuidelineChunk` interface (`id`, `title`, `publisher`, `year: number`, `url`, `summary`, `quote?`) — new export enabling `GET /api/guidelines`                                                                                     |
+| Schema                       | Shape                                                                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ConsultationListItemSchema` | `id`, `status`, `createdAt`, `updatedAt` — no transcript/analysis body, for the consultation-list view (Q2)                                                                                                                                                                                                                                                                                        |
+| `ConsultationDetailSchema`   | `ConsultationSchema` (§3) extended with `editedNote: SoapNoteSchema.nullable()`, `approvedAt: z.coerce.date().nullable()`, `acknowledgedRedFlagIds: z.array(z.string())`, `reviewedGapIds: z.array(z.string())` — resolves §3's forward reference                                                                                                                                                  |
+| `ErrorEnvelopeSchema`        | `z.object({ error: z.object({ code: z.string(), message: z.string() }) })` — uniform across every route                                                                                                                                                                                                                                                                                            |
+| `FixtureSchema`              | `id: string`, `label: string`, `transcript: Transcript` — names the shape `GET /api/fixtures` already returns, so no route response is an inline anonymous type                                                                                                                                                                                                                                    |
+| `GuidelineChunkSchema`       | Mirrors §11's `GuidelineChunk` interface (`id`, `title`, `publisher`, `year: number`, `url`, `summary`, `sourceLicence`, `verbatimAllowed: boolean`, `quote?`) — new export enabling `GET /api/guidelines`. `verbatimAllowed` must be surfaced, not stripped: the citation-detail view is where a licence-restricted chunk's absent `quote` needs explaining rather than looking like missing data |
 
 ### Routes
 
@@ -490,7 +590,7 @@ CAP-3's "a red flag can be acknowledged" and CAP-2's "the doctor can... note tha
 
 ### State Machine Cross-Check
 
-Matches `docs/prd.md`'s Primary Flow exactly: `draft →(create) draft →(analyze) analyzing →(complete) awaiting_review →(analyze, repeatable) analyzing → awaiting_review →(approve) approved [terminal]`.
+Matches `docs/prd.md` §8 (Primary Flow) exactly: `draft →(create) draft →(analyze) analyzing →(complete) awaiting_review →(analyze, repeatable) analyzing → awaiting_review →(approve) approved [terminal]`.
 
 ---
 
@@ -499,10 +599,10 @@ Matches `docs/prd.md`'s Primary Flow exactly: `draft →(create) draft →(analy
 **Status: `Specified`**
 
 - better-auth with the Prisma adapter, against the `User` / `Session` / `Account` / `Verification` models already in `prisma/schema.prisma` (§4, `Built`) — no new auth tables.
-- Session strategy: better-auth's default cookie session (`httpOnly`, `secure` in production, `sameSite: lax`), per `.claude/skills/better-auth-security-best-practices/SKILL.md`.
+- Session strategy: better-auth's cookie session (`httpOnly`, `secure` in production), per `.claude/skills/better-auth-security-best-practices/SKILL.md`. **`sameSite` must be `none`, not the `lax` default.** The frontend is served from `catatmd.vercel.app` and the API from `catatmd-api.onrender.com` — different registrable domains, so every API call is cross-site and a `lax` cookie is simply not sent. Required together: `sameSite: 'none'` with `secure: true`, `trustedOrigins` set to the Vercel origin, and `credentials: 'include'` on every frontend fetch. The failure mode if this is missed is deceptive: login returns `200`, every subsequent request returns `401`, and it works perfectly on `localhost` throughout — it reads as a credential bug and is not one. Safari's ITP can still block third-party cookies even with `sameSite: none`; a custom domain with `app.` / `api.` subdomains would remove the problem entirely but is not in scope.
 - Route protection: an Express middleware resolves the session on every request; all `/api/consultations*` and `/api/fixtures` routes reject with `401` when no valid session is present. `/api/health` and `/api/auth/**` are exempt.
 - Ownership scoping: every `Consultation` read or write path calls one helper (e.g. `assertOwnedConsultation(id, doctorId)`) querying `WHERE id = ? AND doctorId = ?`; a mismatch returns `404`, not `403` (§13) — this is also what the Demo Script's ownership-isolation step (`docs/prd.md`) actually observes.
-- Sign-up: open self-service sign-up is now in scope (`docs/prd.md`, Primary Flow / Demo Script). The frontend exposes a sign-up screen calling better-auth's own `/api/auth/sign-up/email` route directly — no custom sign-up endpoint. Seeded accounts (Q2's original ownership-isolation demo pair) continue to exist alongside self-service accounts; nothing about ownership scoping (above) distinguishes how an account was created.
+- Sign-up: open self-service sign-up is now in scope (`docs/prd.md` §8 / §14). The frontend exposes a sign-up screen calling better-auth's own `/api/auth/sign-up/email` route directly — no custom sign-up endpoint. Seeded accounts (Q2's original ownership-isolation demo pair) continue to exist alongside self-service accounts; nothing about ownership scoping (above) distinguishes how an account was created.
 - CSRF, trusted origins, and rate limiting are cross-cutting with Security Controls — see §16 rather than restating here.
 
 **Open** — with sign-up now publicly reachable rather than seeded-only, the exact better-auth configuration to apply before it goes live — e.g. requiring email verification, and confirming the default rate limiting named in §16 actually covers `/api/auth/sign-up/email` on the installed better-auth version — is unresolved. See §19, row 4 (revised from "should sign-up be disabled" to "what should guard it, now that it is enabled").
@@ -517,18 +617,21 @@ Matches `docs/prd.md`'s Primary Flow exactly: `draft →(create) draft →(analy
 
 `AuditEvent.action` is a free `String` in the `Built` schema (§4); this table is the enumerated set of values it should be constrained to.
 
-| Action                            | Fires On                                     | `metadata`                                                                |
-| --------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------- |
-| `consultation.created`            | `POST /api/consultations`                    | —                                                                         |
-| `consultation.analysis_started`   | `POST /api/consultations/:id/analyze` begins | —                                                                         |
-| `consultation.analysis_completed` | analyse pipeline succeeds                    | `{ detected: string[] }` — detector labels only (§9)                      |
-| `consultation.analysis_failed`    | analyse pipeline throws                      | `{ reason: string }` — a short failure category, never the raw error text |
-| `consultation.edited`             | `PATCH /api/consultations/:id`               | —                                                                         |
-| `redflag.acknowledged`            | doctor acknowledges a red flag               | `{ redFlagId: string }`                                                   |
-| `gap.reviewed`                    | doctor marks an information gap reviewed     | `{ gapId: string }`                                                       |
-| `consultation.approved`           | `POST /api/consultations/:id/approve`        | —                                                                         |
+| Action                            | Fires On                                                             | `metadata`                                                                |
+| --------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `consultation.created`            | `POST /api/consultations`                                            | —                                                                         |
+| `consultation.asr_hosted_used`    | `POST /api/consultations` where `transcript.source === 'asr_hosted'` | `—` — the fact of the hosted path, never any audio, chunk, or text        |
+| `consultation.analysis_started`   | `POST /api/consultations/:id/analyze` begins                         | —                                                                         |
+| `consultation.analysis_completed` | analyse pipeline succeeds                                            | `{ detected: string[] }` — detector labels only (§9)                      |
+| `consultation.analysis_failed`    | analyse pipeline throws                                              | `{ reason: string }` — a short failure category, never the raw error text |
+| `consultation.edited`             | `PATCH /api/consultations/:id`                                       | —                                                                         |
+| `redflag.acknowledged`            | doctor acknowledges a red flag                                       | `{ redFlagId: string }`                                                   |
+| `gap.reviewed`                    | doctor marks an information gap reviewed                             | `{ gapId: string }`                                                       |
+| `consultation.approved`           | `POST /api/consultations/:id/approve`                                | —                                                                         |
 
-Every row also carries `actorId` (the authenticated doctor) and `consultationId` — both already `Built` (§4). Together the taxonomy covers every transition in `docs/prd.md`'s Primary Flow: create → analyse (start/complete/fail) → edit/acknowledge → approve.
+Every row also carries `actorId` (the authenticated doctor) and `consultationId` — both already `Built` (§4). Together the taxonomy covers every transition in `docs/prd.md` §8 (Primary Flow): create → analyse (start/complete/fail) → edit/acknowledge → approve.
+
+**Why `consultation.asr_hosted_used` fires at creation rather than at consent.** The doctor's consent to hosted transcription happens in the browser, before a `Consultation` row exists — `docs/prd.md` §8 step 1 creates the row only once a `Transcript` does. An event written at the moment of consent would therefore have no `consultationId` to hang on, which is the one field that makes the audit trail navigable. The event is instead written by `POST /api/consultations` on the declared `source` (§3), which is the first point at which the fact and the consultation id coexist. The consequence is stated plainly: like `source` itself, this row records a **client-asserted** fact.
 
 ### Forbidden Content
 
@@ -581,7 +684,7 @@ Source: `render.yaml` (repo root).
 | `startCommand`     | `bun run --cwd backend start`                                                                                                    |
 | `healthCheckPath`  | `/api/health`                                                                                                                    |
 
-`envVars`: `NODE_ENV=production`; `DATABASE_URL`, `DIRECT_URL`, `BETTER_AUTH_URL`, `CORS_ORIGIN`, `QWEN_API_KEY` all `sync: false` (set manually in the Render dashboard, never committed); `BETTER_AUTH_SECRET` uses `generateValue: true`; `LLM_PROVIDER=qwen`; `QWEN_BASE_URL` pinned to the Singapore Model Studio endpoint; `QWEN_MODEL=qwen3.7-flash`; `DEID_FAIL_CLOSED: 'true'`.
+`envVars`: `NODE_ENV=production`; `DATABASE_URL`, `DIRECT_URL`, `BETTER_AUTH_URL`, `CORS_ORIGIN`, `QWEN_API_KEY` all `sync: false` (set manually in the Render dashboard, never committed); `BETTER_AUTH_SECRET` uses `generateValue: true`; `LLM_PROVIDER=qwen`; `QWEN_BASE_URL` pinned to the Singapore Model Studio endpoint; `QWEN_MODEL=qwen-flash`; `DEID_FAIL_CLOSED: 'true'`.
 
 `QWEN_MODEL` pins the same untested default flagged in Open #6 below — the value is already committed to the deploy config before the exact model id has been confirmed against a live Model Studio account.
 
@@ -591,7 +694,7 @@ Source: `render.yaml` (repo root).
 
 ### Migration Flow
 
-Locally: `bun run db:migrate` (`prisma migrate dev`, against `DIRECT_URL`). In production: `render.yaml`'s `buildCommand` does not run `prisma migrate deploy` today. Proposed: add a `preDeployCommand: bunx prisma migrate deploy --schema prisma/schema.prisma` to the existing `render.yaml`, run against `DIRECT_URL`.
+Locally: `bun run db:migrate` (`prisma migrate dev`, against `DIRECT_URL`). In production: `render.yaml`'s `buildCommand` does not run `prisma migrate deploy`, and **it should not**. Render's `preDeployCommand` is a paid-tier feature, and it is unnecessary here regardless — Postgres is Supabase, not Render, so migrations are applied from a developer machine against `DIRECT_URL` and are already live by the time the API deploys. The earlier proposal to add a `preDeployCommand` is withdrawn.
 
 ### CI
 
@@ -599,14 +702,16 @@ Locally: `bun run db:migrate` (`prisma migrate dev`, against `DIRECT_URL`). In p
 
 ### Free-Tier Auto-Pause Mitigation
 
-Two independent free-tier sleep behaviours compound the same risk: Render free instances spin down after a period of inactivity, and Supabase free-tier projects auto-pause after roughly a week idle. Evaluation happens after submission, not immediately, so a cold demo on first access is a realistic failure mode, not a theoretical one. Proposed mitigation: a scheduled keep-alive ping (e.g. a cron hitting `GET /api/health` every few days) — which also touches the database via the health check's `SELECT 1` (§8), so one ping addresses both platforms' sleep behaviour — or upgrading one or both projects to a paid tier. Which mechanism to use, and whether it is worth the operational overhead for a prototype, is unresolved; see the Open Decisions Register, §19, row 14.
+Two independent free-tier sleep behaviours compound the same risk: Render free instances spin down after a period of inactivity, and Supabase free-tier projects auto-pause after roughly a week idle. Evaluation happens after submission, not immediately, so a cold demo on first access is a realistic failure mode, not a theoretical one.
 
-**Open** — two infrastructure facts, per Q18, blocked on accounts that do not yet exist:
+**Resolved 13/08/26 (§19 row 14, closed).** An external scheduler pings `GET /api/health` and the frontend origin every 10 minutes. Two properties make this the right shape rather than a platform-native cron:
 
-- **Supabase org capacity.** Whether the target Supabase org has room for another project (the free tier caps at 2 active projects per org, counted across all Owner/Admin members) is unconfirmed.
-- **Exact Qwen model id.** `QWEN_MODEL=qwen3.7-flash` in `.env.example` is an untested default; the exact model id available on the Singapore Model Studio endpoint has not been confirmed against a live account.
+- The health check performs a `SELECT 1` (§8), so **one ping addresses both platforms' sleep behaviour** — the API instance stays warm and the database sees traffic.
+- It runs **off-platform**, so it survives the exact failure it exists to prevent: a Render-hosted cron on a spun-down instance cannot wake itself.
 
-See §19.
+Both projects stay on their free tiers; no upgrade is required.
+
+Two infrastructure facts previously recorded here as `Open` are now **resolved** — see §19 rows 5 and 6: the Supabase project exists in `ap-southeast-1` (Singapore), and `QWEN_MODEL` is pinned to `qwen-flash`, the only model on the account that accepts JSON-Schema-constrained decoding (§21.2). `.env.example` and `render.yaml` both carry the corrected value.
 
 ---
 
@@ -614,14 +719,14 @@ See §19.
 
 **Status: `Specified`**
 
-| Capability    | Realised By                                                                                                                                                                                                                                                                                                                                             |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **CAP-1**     | §12 (`note_and_gaps` operation), §3 (`SoapNoteSchema`), §13 (analyse route)                                                                                                                                                                                                                                                                             |
-| **CAP-2**     | §12 (`note_and_gaps` operation — `gaps`), §3 (`InformationGapSchema`), §13 (`PATCH` route — `reviewedGapIds`), §4 (proposed `Consultation.reviewedGapIds`)                                                                                                                                                                                              |
-| **CAP-3**     | §10 (Red-Flag Rules Engine — authoritative), §12 (`suggestions_and_red_flags` — model candidates), §3 (`RedFlagSchema`)                                                                                                                                                                                                                                 |
-| **CAP-4**     | §11 (Guideline Corpus), §12 (`suggestions_and_red_flags`), §3 (`ClinicalSuggestionSchema`, `citations.min(1)`), §13 (`GET /api/guidelines`)                                                                                                                                                                                                             |
-| **CAP-5**     | §13 (`PATCH` and `/approve` routes), §4 (`Consultation.editedNote`/`approvedAt`), §15 (Audit Logging)                                                                                                                                                                                                                                                   |
-| Cross-cutting | §2 (module boundaries), §5 (PHI boundary), §6 (LLM adapter), §7 (environment contract), §8 (HTTP surface as built), §9 (de-identification), §14 (auth model), §16 (security controls), §17 (environments & deployment), §20 (browser-side ASR contract) — these underwrite `docs/prd.md`'s Safety Constraints as a whole rather than any single `CAP-n` |
+| Capability    | Realised By                                                                                                                                                                                                                                                                                                                                    |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **CAP-1**     | §12 (`note_and_gaps` operation), §3 (`SoapNoteSchema`), §13 (analyse route)                                                                                                                                                                                                                                                                    |
+| **CAP-2**     | §12 (`note_and_gaps` operation — `gaps`), §3 (`InformationGapSchema`), §13 (`PATCH` route — `reviewedGapIds`), §4 (proposed `Consultation.reviewedGapIds`)                                                                                                                                                                                     |
+| **CAP-3**     | §10 (Red-Flag Rules Engine — authoritative), §12 (`suggestions_and_red_flags` — model candidates), §3 (`RedFlagSchema`)                                                                                                                                                                                                                        |
+| **CAP-4**     | §11 (Guideline Corpus), §12 (`suggestions_and_red_flags`), §3 (`ClinicalSuggestionSchema`, `citations.min(1)`), §13 (`GET /api/guidelines`)                                                                                                                                                                                                    |
+| **CAP-5**     | §13 (`PATCH` and `/approve` routes), §4 (`Consultation.editedNote`/`approvedAt`), §15 (Audit Logging)                                                                                                                                                                                                                                          |
+| Cross-cutting | §2 (module boundaries), §5 (PHI boundary), §6 (LLM adapter), §7 (environment contract), §8 (HTTP surface as built), §9 (de-identification), §14 (auth model), §16 (security controls), §17 (environments & deployment), §20 (ASR contract) — these underwrite `docs/prd.md` §10 (Safety Constraints) as a whole rather than any single `CAP-n` |
 
 ---
 
@@ -629,52 +734,196 @@ See §19.
 
 **Status: `Specified`**
 
-Every `Open` item in this document, collected in one place.
+Every `Open` item in this document, collected in one place. **Resolved rows are struck through and kept, never deleted** — renumbering would break the many `§19, row N` cross-references in both documents. Six rows closed on 13/08/26 (3, 5, 6, 10, 13, 14); four opened (15, 16, 17, 18).
 
-| #   | Question                                                                                                                                                                                                                          | Section | What Would Unblock It                                                                                                                                                                                                                                                                                    | Owner                                                    |
-| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| 1   | Should `markDeidentified` stop being exported, or be locked down another way?                                                                                                                                                     | §5      | Deciding between an ESLint import-restriction rule, removing the export, or accepting the risk behind the existing PR Clinical-Safety Checklist                                                                                                                                                          | PL, next `deid/` implementation task                     |
-| 2   | What should "fail closed" actually do at the point a request leaves the process?                                                                                                                                                  | §7      | Deciding the behaviour when `DEID_FAIL_CLOSED` is true and detection is incomplete or the vault is empty, then wiring it into `OpenAICompatibleClient`                                                                                                                                                   | PG, next `deid/`/`lib/llm/` implementation task          |
-| 3   | Which guideline sources may be quoted verbatim versus summarised only?                                                                                                                                                            | §11     | Human confirmation of the redistribution/licensing stance per source (Q6)                                                                                                                                                                                                                                | Human (licensing call)                                   |
-| 4   | Now that self-service sign-up is in scope and `/api/auth/sign-up/email` is enabled, what should guard it (email verification, confirmed rate-limit coverage) before it is publicly reachable?                                     | §14     | Confirming the correct better-auth configuration options against the installed version at implementation time                                                                                                                                                                                            | PG, auth implementation task                             |
-| 5   | ~~Does the target Supabase org have room for another project?~~ **Resolved 13/08/26**                                                                                                                                             | §17     | Org and the `ai-clinical-assistant` project both created; free-tier capacity confirmed. Region must be verified as Singapore (`ap-southeast-1`) — data residency depends on it                                                                                                                           | — (closed)                                               |
-| 6   | ~~What is the exact Qwen model id available on the Singapore Model Studio endpoint?~~ **Resolved 13/08/26: `qwen-flash`**                                                                                                         | §17     | Verified against the live account (§21.2). `qwen3.7-flash` — the value committed to `.env.example` and `render.yaml` — exists but rejects `json_schema` decoding with HTTP 400, as do `qwen3.6-flash` and `qwen3.5-flash`. **Both files still carry the broken pin and must be corrected before deploy** | PG, one-line config fix                                  |
-| 7   | How does the review screen distinguish "out of scope, suggestions suppressed" from "in scope, nothing to suggest" for the Clinical-Scope notice (`docs/prd.md`)?                                                                  | §12     | Deciding whether to add an explicit signal (e.g. `outOfScope: boolean`) to the analysis response, versus inferring it from an empty `suggestions` array                                                                                                                                                  | PL, next `suggestions_and_red_flags` implementation task |
-| 8   | Does the 30s / 3,000-word analysis target (CAP-1, `docs/prd.md`) hold given §12's two sequential LLM calls, the second carrying the full guideline corpus in the system prompt against a free-tier flash model?                   | §12     | Human ratification of the number as-is, or a benchmark-driven latency budget split across the two operations                                                                                                                                                                                             | Human (target ratification)                              |
-| 9   | Should `LLM_PROVIDER=deepseek` be guarded in production the same way `gemini` is, given DeepSeek's PRC hosting and the PDPA 2010 s.129 cross-border question `docs/README.md` already names?                                      | §7      | Deciding whether to add a production guard in `env.ts`, restrict DeepSeek to benchmarking-only tooling, or accept the risk explicitly                                                                                                                                                                    | PL, next `config/env.ts` implementation task             |
-| 10  | Should `SoapNoteSchema` move from four free-text strings to a structured, per-field clinical-information schema with explicit assertion states, to support the Unknown ≠ Negative rule (`docs/prd.md`, Safety Constraints)?       | §3      | Human ratification of the schema redesign — structured fields make Unknown ≠ Negative machine-checkable at the cost of losing the free-text note's simpler read; this is a product trade-off, not an engineering default                                                                                 | Human (schema redesign ratification)                     |
-| 11  | What retention period and deletion/access-request mechanism should apply before real patient data is stored, and when should the mandated DPIA be performed?                                                                      | §4      | Human decision on a retention period, design of a deletion/access-request path, and scheduling the DPIA ahead of any production deployment                                                                                                                                                               | Human (retention policy + DPIA)                          |
-| 12  | Should automated CI (lint/typecheck/test, previously `.github/workflows/ci.yml`) be reinstated, and on what trigger?                                                                                                              | §17     | Human decision on whether CI is worth the Actions minutes/scope for a prototype evaluated externally, and if so, restoring the workflow definition                                                                                                                                                       | Human (CI decision)                                      |
-| 13  | How should the client-side Whisper model be delivered (bundled with the frontend build, fetched from a CDN on first use, or cached in-browser after first download), and what model size trades accuracy against download weight? | §20     | Benchmarking bundle size and cold-load latency against transcription accuracy across the available Whisper model sizes, then a human call on the trade-off                                                                                                                                               | Human (model-size/delivery ratification)                 |
-| 14  | Which keep-alive mechanism, if any, should run against the free-tier Render and Supabase projects, given evaluation happens after submission and a cold demo is a real failure mode?                                              | §17     | Human decision between a scheduled keep-alive ping, upgrading one or both projects to a paid tier, or accepting the cold-start risk                                                                                                                                                                      | Human (hosting operations decision)                      |
+| #   | Question                                                                                                                                                                                                        | Section | What Would Unblock It                                                                                                                                                                                                                                                                                                                                   | Owner                                                    |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| 1   | Should `markDeidentified` stop being exported, or be locked down another way?                                                                                                                                   | §5      | Deciding between an ESLint import-restriction rule, removing the export, or accepting the risk behind the existing PR Clinical-Safety Checklist                                                                                                                                                                                                         | PL, next `deid/` implementation task                     |
+| 2   | What should "fail closed" actually do at the point a request leaves the process?                                                                                                                                | §7      | Deciding the behaviour when `DEID_FAIL_CLOSED` is true and detection is incomplete or the vault is empty, then wiring it into `OpenAICompatibleClient`                                                                                                                                                                                                  | PG, next `deid/`/`lib/llm/` implementation task          |
+| 3   | ~~Which guideline sources may be quoted verbatim versus summarised only?~~ **Resolved 13/08/26**                                                                                                                | §11     | NICE excluded — its Open Content Licence expressly does not cover AI use, UK or international. Corpus anchored on MOH NAG 2024 (`verbatimAllowed: false`), Abdullah et al. 2024 (CC BY-NC 3.0), Ooi et al. 2022 (CC BY 4.0). `sourceLicence`/`verbatimAllowed` added to the chunk schema                                                                | — (closed)                                               |
+| 4   | Now that self-service sign-up is in scope and `/api/auth/sign-up/email` is enabled, what should guard it (email verification, confirmed rate-limit coverage) before it is publicly reachable?                   | §14     | Confirming the correct better-auth configuration options against the installed version at implementation time                                                                                                                                                                                                                                           | PG, auth implementation task                             |
+| 5   | ~~Does the target Supabase org have room for another project?~~ **Resolved 13/08/26**                                                                                                                           | §17     | Org and project both created; free-tier capacity confirmed. Region **verified** as Singapore (`ap-southeast-1`), which is what data residency depends on. Project since renamed to CatatMD                                                                                                                                                              | — (closed)                                               |
+| 6   | ~~What is the exact Qwen model id available on the Singapore Model Studio endpoint?~~ **Resolved 13/08/26: `qwen-flash`**                                                                                       | §17     | Verified against the live account (§21.2). `qwen3.7-flash` — the value previously committed to `.env.example` and `render.yaml` — exists but rejects `json_schema` decoding with HTTP 400, as do `qwen3.6-flash` and `qwen3.5-flash`. Both files were corrected to `qwen-flash` on 13/08/26                                                             | — (closed)                                               |
+| 7   | How does the review screen distinguish "out of scope, suggestions suppressed" from "in scope, nothing to suggest" for the Clinical-Scope notice (`docs/prd.md`)?                                                | §12     | Deciding whether to add an explicit signal (e.g. `outOfScope: boolean`) to the analysis response, versus inferring it from an empty `suggestions` array                                                                                                                                                                                                 | PL, next `suggestions_and_red_flags` implementation task |
+| 8   | Does the 30s / 3,000-word analysis target (CAP-1, `docs/prd.md`) hold given §12's two sequential LLM calls, the second carrying the full guideline corpus in the system prompt against a free-tier flash model? | §12     | Human ratification of the number as-is, or a benchmark-driven latency budget split across the two operations                                                                                                                                                                                                                                            | Human (target ratification)                              |
+| 9   | Should `LLM_PROVIDER=deepseek` be guarded in production the same way `gemini` is, given DeepSeek's PRC hosting and the PDPA 2010 s.129 cross-border question `docs/README.md` already names?                    | §7      | Deciding whether to add a production guard in `env.ts`, restrict DeepSeek to benchmarking-only tooling, or accept the risk explicitly                                                                                                                                                                                                                   | PL, next `config/env.ts` implementation task             |
+| 10  | ~~Should `SoapNoteSchema` move to a structured, per-field clinical-information schema with explicit assertion states?~~ **Ratified 13/08/26**                                                                   | §3      | Ratified **alongside** `SoapNoteSchema`, not instead of it, plus the Malaysian operational block (`diagnosis`, `medicationsDispensed`, `mcDays`, `referral`, `followUp`). Ratified **as a hypothesis** — three research-imposed conditions attach (§3); condition 2 is untested and is now row 16                                                       | — (closed; conditions tracked as row 16)                 |
+| 11  | What retention period and deletion/access-request mechanism should apply before real patient data is stored, and when should the mandated DPIA be performed?                                                    | §4      | Human decision on a retention period, design of a deletion/access-request path, and scheduling the DPIA ahead of any production deployment                                                                                                                                                                                                              | Human (retention policy + DPIA)                          |
+| 12  | Should automated CI (lint/typecheck/test, previously `.github/workflows/ci.yml`) be reinstated, and on what trigger?                                                                                            | §17     | Human decision on whether CI is worth the Actions minutes/scope for a prototype evaluated externally, and if so, restoring the workflow definition                                                                                                                                                                                                      | Human (CI decision)                                      |
+| 13  | ~~How should the client-side Whisper model be delivered, and what model size trades accuracy against download weight?~~ **Resolved 13/08/26**                                                                   | §20     | **Revised 13/08/26 by measurement (§20.1): `whisper-small`, not `whisper-base`** — `base` substitutes and drops content words on Manglish. Fetched from the HF CDN on first use and browser-cached, `@huggingface/transformers` v4 directly, WASM first-class, desktop Chromium only, `language` always `'en'` and never a language the audio is not in | — (closed)                                               |
+| 14  | ~~Which keep-alive mechanism should run against the free-tier Render and Supabase projects?~~ **Resolved 13/08/26**                                                                                             | §17     | External scheduled ping every 10 minutes against `/api/health` and the frontend origin, run off-platform so it survives a cold API. Both projects stay on free tiers                                                                                                                                                                                    | — (closed)                                               |
+| 15  | Should the ASR low-confidence indicator and VAD silence-trimming (§20) be built in this window, or named as unmitigated?                                                                                        | §20     | A build-cost call against the remaining runway. Neither closes the second-fabrication-surface gap; both bound it. Paste-first demo path already reduces the exposure                                                                                                                                                                                    | Human (scope call)                                       |
+| 16  | Does the structured schema (§3) reduce or increase fabrication versus free-form output on the same sparse transcripts?                                                                                          | §3, §21 | Running §3's ratification condition 2 — a schema-versus-free-form eval against the §21.1 fixtures. **The single largest unvalidated assumption in the guardrail architecture**; the one published study of template-imposed note generation measured _increased_ major hallucinations                                                                   | PG, after the structured schema lands                    |
+| 17  | Should note-to-transcript evidence spans be surfaced in the review UI as clickable traceability, or stay data-only?                                                                                             | §21.4   | The data already exists as a by-product of §21.4. Abridge Linked Evidence and Dragon's evidence summary are top-of-market trust features; `docs/prd.md` §12 currently scopes this out in one sentence rather than leaving it silent                                                                                                                     | Human (scope call)                                       |
+| 18  | What exactly does the hosted-ASR consent gate say and require, such that hosted stays **findable but not funnelled** (§20)?                                                                                     | §20     | Deciding the wording, the affordance, and what the doctor must actively do — the governing rule (on-device default, per-consultation explicit act, degrade to paste never to cloud) is settled; the interaction that carries it is not. The tension is that the doctor on weak hardware is exactly who is offered it, at the moment of most frustration | Human (consent UX), before the hosted adapter is built   |
 
 ---
 
-## 20. Browser-Side ASR Contract
+## 20. ASR Contract — On-Device Default, Hosted By Exception
 
 **Status: `Specified`**
 
-Audio input creates a second egress point that sits **before** the de-identification gate (§9): raw audio cannot be de-identified, only transcribed first. If transcription ran on a hosted provider, un-redacted patient audio — and voice itself, a biometric identifier — would leave the trust boundary before the gate ever saw it, contradicting the central invariant in `AGENTS.md` that no text containing patient identifiers may leave the API. This section specifies the resolution: transcription never leaves the doctor's device.
+Audio input creates a second egress point that sits **before** the de-identification gate (§9): raw audio cannot be de-identified, only transcribed first. Un-redacted patient audio — and voice itself, a biometric identifier — would leave the trust boundary before the gate ever saw it, contradicting the central invariant in `AGENTS.md` that no text containing patient identifiers may leave the API.
+
+The resolution is not "audio never leaves the device" as an absolute, because §20.1 measured the hardware cost of holding that line on a modest clinic PC and it is real. It is a **default plus a gate**: on-device transcription is what the product does, and the hosted path exists, is documented, and can only be entered deliberately.
+
+### The Governing Rule
+
+> **On-device is the default and the floor. Hosted is only ever entered by an explicit, recorded, per-consultation act. Failure degrades to paste, never to the cloud.**
+
+This is the direct analogue of `DEID_FAIL_CLOSED` (§7), and it is stated here in the same terms because a reviewer will — correctly — ask what happens when the on-device path cannot cope:
+
+| Behaviour on a device that cannot transcribe locally     | Verdict                                                                                                                     |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Fall back to paste, tell the doctor why                  | **The specified behaviour.** The privacy control fails **closed** — the cheap path out is the private one                   |
+| Silently switch to hosted ASR because the device is slow | **Rejected.** A privacy control that fails **open** under load, degrading precisely when the doctor is least able to notice |
+
+The second option is the one a performance-minded implementation reaches for by default, which is why it is written down as rejected rather than left to judgement. Convenience may never be the trigger that moves patient audio off the device; only the doctor, per consultation, may be.
+
+### The `ASRClient` Port
+
+Transcription is specified as a **port with two adapters**, deliberately mirroring `LLMClient` (§6) rather than inventing a second pattern:
+
+| Adapter      | Implementation                                                                  | Status                                                                   | Where audio goes                |
+| ------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------- |
+| `asr_local`  | `whisper-small` via `@huggingface/transformers` v4, chunked in a **Web Worker** | the implementation target                                                | Nowhere — browser memory only   |
+| `asr_hosted` | `qwen3-asr-flash` on the Singapore endpoint, posting discrete chunks            | **`Specified`** — not built, and nothing in the repo implements it today | Alibaba Model Studio, Singapore |
+
+The rationale for shaping it as a port rather than a branch is the same one that justifies `LLMClient`: it is what lets "what happens when data residency requirements change" be answered with an architecture instead of an assertion. A second adapter that is written down, gated, and audited is a stronger answer than a single path that quietly becomes a second path the first time someone hits a slow laptop.
+
+`Transcript.source` (§3) records which adapter produced a given transcript, and §15's `consultation.asr_hosted_used` records the fact of the hosted path in the audit trail.
 
 ### Where Transcription Runs
 
-- Audio capture and transcription happen entirely client-side, inside `frontend/`, using Whisper via `transformers.js` (or an equivalent whisper-web port), running in WASM or, where available, WebGPU. There is no server-side transcription path and none is planned: Render's free-tier instance (§17) has 512 MB of memory and no GPU, which cannot host a local Whisper model. Server-side ASR is not a deferred convenience here — it is not viable on the chosen hosting tier at all.
-- The audio buffer (microphone input or an uploaded audio file, if that path is ever added) exists only in the browser's memory for the duration of transcription. It is never sent to `backend/`, never written to a request body, and never persisted anywhere server-side.
+- On the default path, audio capture and transcription happen entirely client-side, inside `frontend/`, using Whisper via **`@huggingface/transformers` v4 directly** — not `xenova/whisper-web`, which was last pushed 2024-10-01, carries WebGPU only on a branch, and has 49 open issues.
+- The audio buffer (microphone input, or an uploaded audio file if that path is ever added) exists only in the browser's memory for the duration of transcription. It is never sent to `backend/`, never written to a request body, and never persisted anywhere server-side.
+- **There is no self-hosted transcription path, and none is planned.** Render's free-tier instance (§17) has 512 MB of memory and no GPU, and cannot host a Whisper model at all — but the tier is not the real argument. Self-hosted server-side ASR is **strictly dominated**: the audio crosses the network either way, so it pays the full privacy cost _and_ the compute cost, for worse accuracy than a hosted provider (`docs/prd.md` §12). Where audio must leave the device, a hosted provider is the honest choice; running our own would only obscure that it left.
+- The hosted adapter is therefore an egress path to a **third party in-region**, not a fallback to our own backend, and it is governed by the rule above.
 
 ### What Crosses The Network
 
+On the `asr_local` path:
+
 - The **only** thing that reaches the API is the transcript text the browser-side model produces, structured into `TranscriptSchema` turns (§3) — the same shape already used by the fixture, paste, and file-upload input paths.
-- Once transcription completes, the resulting `Transcript` is submitted through the existing `POST /api/consultations` contract (§13) unchanged. No new backend route and no new shared schema are required: audio is a frontend-only input modality that terminates in a contract already `Built`.
-- Because no audio byte — raw or compressed — is ever transmitted or persisted server-side, this path keeps voice data outside the PHI boundary by construction rather than by policy: it never reaches the de-identification gate (§9) because nothing crosses the network for that gate to guard. This is, by construction, the one point in the system where "never leaves the device" is literally true rather than a control being relied upon.
+- Because no audio byte — raw or compressed — is ever transmitted or persisted, this path keeps voice data outside the PHI boundary by construction rather than by policy: it never reaches the de-identification gate (§9) because nothing crosses the network for that gate to guard. This is the one point in the system where "never leaves the device" is literally true rather than a control being relied upon.
+
+On the `asr_hosted` path, that sentence stops being true, and the documentation says so rather than softening it:
+
+- Audio chunks are posted to the Singapore endpoint. The audio is **not** de-identified, because it cannot be — that is the whole reason this path is gated by an explicit act rather than by a configuration flag.
+- What returns is text, which then enters the same pipeline as every other transcript: the de-identification gate (§9) still runs before any LLM call, unchanged. The hosted ASR path widens the audio boundary; it does not touch the text boundary.
+
+In both cases the resulting `Transcript` is submitted through the existing `POST /api/consultations` contract (§13). No new backend route is required; the only shared-schema change is `Transcript.source` (§3).
+
+### Deciding Whether To Offer Audio — The Two-Stage Capability Probe
+
+The probe's job is to decide **whether to offer audio on this device at all** — not to silently pick a mode. Mode selection is the doctor's (see the governing rule); capability is a fact about the machine.
+
+**Design constraint that shapes the whole thing:** a probe that downloads 240 MB before reporting "your device is too slow" punishes exactly the user it exists to protect. The free stage exists to gate the expensive one.
+
+| Stage                                           | What it measures                                                                                       | Cost                 | What it decides                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------- | ------------------------------------------------------------ |
+| **1 — Triage**, on opening "New consultation"   | `navigator.hardwareConcurrency`, `navigator.deviceMemory`, and a ~200 ms synthetic WASM microbenchmark | Zero network, ~0.5 s | Three bands: clearly capable / clearly incapable / uncertain |
+| **2 — Verdict**, on the first transcribed chunk | Real-time factor (RTF) measured on work actually done                                                  | The chunk itself     | Can **overturn** Stage 1 in either direction                 |
+
+A synthetic benchmark is triage, not a verdict — which is why Stage 2 exists and is allowed to overrule Stage 1. The "uncertain" band is a genuine outcome and must be designed for, not collapsed into one of the confident ones.
+
+**Caching, stated honestly.** The model is cached to OPFS, with the measured RTF stored alongside it so the probe does not start from zero on every visit. "One-time download" is nevertheless a claim that fails in ordinary clinic conditions, and is not made here: cache eviction, a shared clinic PC where each staff member has their own browser profile, and incognito sessions each defeat it independently.
+
+### The Memory Failure Mode
+
+Slowness is the visible risk. Memory exhaustion is the one that actually loses a consultation.
+
+`whisper-small` at ~240 MB, plus the ONNX runtime, plus the browser itself, on a 4 GB machine already running the clinic's own management system, is a plausible out-of-memory kill — **a dead tab in the middle of a consultation, not merely a slow one**. Recovering a half-transcribed consultation from a crashed tab is not a feature this prototype has.
+
+Consequently: **Core-i3-class hardware gets audio _not offered_ by default**, with an explicit override for a doctor who wants to try it anyway. This is deliberately stronger than "discouraged" — a warning the doctor can click past is the wrong control for a failure whose cost is losing the consultation rather than waiting longer for it.
+
+**The same budget argument constrains the rest of the page.** These estimates assume transcription is not competing with a continuous render loop for the same cores: at an estimated RTF of 1.5–3.0 in-browser on a 4-core clinic PC (§20.1), there is no headroom to share. Any always-animating WebGL or `requestAnimationFrame` surface on the consultation screen would be spending exactly the CPU the ASR path needs, so the frontend does not carry one — a constraint on the UI, recorded here because it originates in this section's measurements rather than in a design preference.
+
+### Consent UX — A Live Tension, Not A Solved Problem
+
+Recorded as an unresolved tension because presenting it as solved would be the more comfortable and less honest option.
+
+**The tension:** the doctor on weak hardware is exactly the doctor who wants hosted mode — and surfacing the hosted option at the moment of maximum frustration is precisely how meaningful consent quietly degrades into clicking whatever ends the friction. The mechanism is sound (explicit, per-consultation, recorded); the risk is that the moment it fires is the moment the doctor is least able to weigh it.
+
+**The handling:** hosted must be **findable but not funnelled**. It is mentioned neutrally, with its tradeoff stated in the same breath rather than behind a link, and it is never the highlighted button on a screen the doctor reached by failing. The exact wording and affordance are unresolved — see the Open Decisions Register, §19, row 18.
+
+Two properties are settled regardless of how that resolves: consent is **per consultation and never sticky** (consent is not transferable between patients), and choosing hosted is recorded in both the transcript (§3) and the audit trail (§15).
+
+### Batch, Not Streaming, For V1
+
+The hosted adapter uses `qwen3-asr-flash` on discrete chunks — **not** `qwen3-asr-flash-realtime`, the streaming WebSocket variant.
+
+| Reason                | Detail                                                                                                                          |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Latency is sufficient | 2.8 s for a 50 s chunk (§20.1) is already near-live against a consultation's pace; streaming buys a margin nobody has asked for |
+| Integration cost      | Posting chunks reuses the request/response shape the codebase already has everywhere; a WebSocket session does not              |
+| Exposure surface      | A continuously open audio stream is a materially larger surface than discrete posts of bounded chunks                           |
+
+True streaming is an optimisation available later, not the starting point. Stated as a decision so that "we didn't use the realtime endpoint" reads as a choice rather than an omission.
 
 ### Interaction With Existing Contracts
 
-- Downstream of transcript creation, the audio-sourced path is indistinguishable from any other `Transcript` — the same de-identification pipeline (§9), red-flag engine (§10), and LLM prompt contracts (§12) apply with no special-casing.
+- Downstream of transcript creation, the audio-sourced path is **processed** identically to any other `Transcript` — the same de-identification pipeline (§9), red-flag engine (§10), and LLM prompt contracts (§12) apply with no special-casing. `Transcript.source` (§3) makes it _identifiable_ without making it _special_: nothing in the pipeline branches on it, and the field exists for the audit trail and the reviewer's attention, not for the processing path.
 - The CAP-1 latency target (`docs/prd.md`) is measured from the doctor triggering analysis, not from when audio capture began (see `docs/prd.md` CAP-1). Client-side transcription time is additional wall-clock time the doctor experiences before analysis is even triggered, and it is not counted in that target — it compounds, rather than resolves, the tension already recorded in the Open Decisions Register, §19, row 8.
 
-### Open
+### Model, Delivery, And Runtime — Resolved 13/08/26 (§19 Row 13, Closed)
 
-How the Whisper model reaches the browser (bundled with the frontend build, fetched from a CDN on first use, or fetched once and cached in the browser thereafter) and which model size to use (a smaller model downloads faster but transcribes less accurately) are both unresolved — see the Open Decisions Register, §19, row 13.
+| Decision           | Value                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model              | **`whisper-small`** (~240 MB), revised upward from `whisper-base` on 13/08/26 by measurement — see §20.1. `base` is **not** fit for Malaysian code-switched speech. **Not** `large-v3-turbo` — ≈560 MB+ on first load                                                                                                                                                                     |
+| Delivery           | Fetched from the Hugging Face CDN on first use, then cached in the browser. Never bundled into the frontend build                                                                                                                                                                                                                                                                         |
+| Execution provider | **WASM is first-class, not a fallback.** Through transformers.js v3.0.2, WASM beat WebGPU on `whisper-base` on an M2 (4.9–5.9 s vs 9.5–9.6 s for 60 s audio). v4's runtime may have flipped this; measure, do not assume                                                                                                                                                                  |
+| Platform           | **Desktop Chromium only**, stated explicitly. Documented crashes exist on Android Chrome and iOS                                                                                                                                                                                                                                                                                          |
+| `language`         | **Always hard-coded to `'en'`.** Never auto-detected, and never set from a locale picker or a patient's recorded language — §20.1 finding 2. The risk is not that auto-detect translates (that claim was measured and withdrawn — finding 3); it is that auto-detect could _select_ a non-English language on code-switched audio, which is the regime finding 2 measured as catastrophic |
+| Version pinning    | Pin the exact model × dtype × device combination and test it before shipping; a known open issue collapses all segments into one under v4 + WebGPU + fp16 + timestamped turbo                                                                                                                                                                                                             |
+
+**Never promise real-time.** Measured figures and their hardware caveats are in §20.1; the short version is that `whisper-small` ranges from comfortably faster than real time on a modern multi-core machine to **several times slower than real time** on a modest clinic PC, and the clinic's hardware is not ours to choose. Design consequences: transcribe in chunks in a Web Worker during the consultation, probe real-time factor on the first chunk and warn early if the device cannot keep up, show real progress, and keep the paste-a-transcript path as the primary route (`docs/prd.md` §14).
+
+**Check cross-origin isolation before counting on multi-threaded WASM.** COOP/COEP headers are required for `SharedArrayBuffer`, and enabling them on Vercel constrains cross-origin model fetches from the HF CDN — the two requirements pull against each other and must be resolved together, not sequentially.
+
+### Threat: ASR Is A Second Fabrication Surface
+
+This is a genuine architectural gap, stated as one. Every control in this system — the de-identification gate (§9), the rules engine (§10), ID-constrained citations (§11), and evidence-bound assertion (§21.4) — sits **downstream of the transcript** and cannot detect a transcript that is already wrong.
+
+| Failure                        | Mechanism                                                                                                                                               | Why No Downstream Control Catches It                                                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Whisper hallucination**      | ~1% of transcriptions contain entire fabricated phrases, correlated with long non-vocal spans; ~40% judged capable of harm (Koenecke et al., FAccT '24) | A hallucinated span **passes** the §21.4 evidence check — the evidence genuinely is in the transcript. The transcript is what is wrong  |
+| **Wrong-language declaration** | **Measured, §20.1.** Declaring a language the audio is not in produces a fluent repetition loop, not an error — on both `base` and `small`              | Grammatical, plausible output in the declared language, bearing no relation to what was said. Indistinguishable downstream              |
+| **Semantic substitution**      | **Measured, §20.1.** `whisper-base` rendered "auntie" as "until" and dropped "pasar malam" entirely                                                     | The transcript is well-formed English. A substituted content word is a fact the doctor never said, and it carries a valid evidence span |
+
+Mitigations available in this window: pass `language` and **never pass one the audio is not in**; VAD-trim long silences before transcription; surface a low-confidence indicator on ASR output so the doctor is cued to check the **transcript**, not only the note; and keep pasted text as the primary demo path. None of these closes the gap — they bound it. The same law fires at both layers: **silence → fabrication at the ASR layer, sparse text → fabrication at the LLM layer** (§21.1).
+
+### 20.1 Measured Finding — Model Selection For Malaysian Code-Switched Speech
+
+Measured **13/08/26** on a 49.7 s Manglish sample (casual conversation, Malay and Cantonese loanwords, single speaker, not clinical register), decoded to 16 kHz mono. Whisper runs via `@huggingface/transformers` **4.2.0** — the exact production dependency — at `dtype: 'q8', device: 'cpu'` on a 16-core machine. Qwen via `qwen3-asr-flash` on the Singapore endpoint.
+
+**Sample provenance:** a publicly downloaded speech sample. No patient data, real or simulated, was sent to any provider. The file is **not committed** to this repository.
+
+| Token in audio      | `whisper-base`        | `whisper-small`    | `qwen3-asr-flash` |
+| ------------------- | --------------------- | ------------------ | ----------------- |
+| "pasar malam"       | **dropped entirely**  | "Paso Malams"      | "pasar malams"    |
+| "auntie"            | **"until"**           | "Auntie"           | "Auntie"          |
+| "lang loi"          | **"language"** (7×)   | "Lang Loi"         | "lang loi"        |
+| "lang chai"         | **"language"**        | "Lang Jai"         | "lang chai"       |
+| `lah` / `ah` / `eh` | mostly lost           | preserved          | preserved         |
+| Wall clock          | 7.2 s (**RTF 0.146**) | 13.9 s (RTF 0.279) | **2.8 s**         |
+| Determinism         | —                     | —                  | byte-identical ×3 |
+
+**Three findings, in order of consequence.**
+
+1. **`whisper-base` is not fit for this market.** It rendered _"You call me auntie ah, how old am I"_ as _"You call me until you're old and you know?"_ — not degradation but a **meaning change**, in well-formed English that no downstream control can flag. `whisper-small` recovers essentially all of it. The §20 default is therefore revised `base` → `small`, at the cost of ~104 MB more download and roughly 2× the compute.
+
+2. **Declaring the wrong language causes a fluent hallucination loop, on both model sizes.** With `language: 'ms'`, `base` emitted _"Dia berlalu di sini"_ ×20 then _"Saya takkan berguna"_ ×30 — **238 words for 50 s of audio**, RTF rising 4× to 0.583. `small` emitted _"Teruklah"_ ×10 at **RTF 1.365 — slower than real time.** This is the §21.1 failure mode reproduced one layer down: grammatical, confident, entirely fabricated. It is why `language` must be `'en'` and must never be set from a locale picker or auto-detected patient language.
+
+3. **The silent-translation threat did not reproduce, and the claim is withdrawn.** Earlier drafts of this section asserted, from secondary research, that Whisper translates rather than transcribes on code-switched audio when `language` is unset. Measured here, `auto` and `language: 'en'` produced **byte-identical output** on both model sizes. The underlying source benchmarked European language pairs; it does not transfer to Malaysian audio. `language` stays explicit because finding 2 makes it load-bearing anyway — but for a different and better-evidenced reason.
+
+**Limits of this measurement, stated plainly.** n=1, one 50-second sample, casual register rather than clinical, with heavier Cantonese loanword density than a typical consultation. Clinical Manglish is plausibly easier — medical vocabulary is English. No WER is reported because the sample carries no ground-truth transcript; the table compares specific tokens whose correct value is agreed between the two stronger models. This is a **smoke test that settled a model choice**, not a benchmark, and it is described as such wherever it is cited.
+
+**The hardware consequence is now the binding constraint, not accuracy.** The 16-core figures above run native ONNX Runtime in Node; **browser WASM is typically 1.5–3× slower**, so treat RTF 0.279 as a floor. On a 4-core clinic PC, `whisper-small` in-browser plausibly lands at **RTF 1.5–3.0 — slower than real time**, meaning a 10-minute consultation could take 15–30 minutes to transcribe. Design consequence: probe real-time factor on the first completed chunk and tell the doctor up front, rather than discovering the backlog at the end.
+
+**Open** — `language` is settled above and is not negotiable. Whether the low-confidence indicator and VAD silence-trimming are built in this window, or named as unmitigated, is a scope call against the remaining runway. See the Open Decisions Register, §19, row 15.
+
+**Malay-accuracy roadmap, not a build item.** `mesolitica/malaysian-whisper-*` is fine-tuned on Malaysian audio (IMDA STT, the Malay Conversational Speech Corpus, pseudolabelled Malaysian YouTube) with v3 described as handling Malay, Manglish, Mandarin and Tamil. **No ONNX build is published and no public WER exists.** Cite it as the improvement path; do not attempt the conversion now.
 
 ---
 
@@ -716,7 +965,7 @@ contacts. No known allergies. Medications: none reported.
 
 Of the assertions in that sentence, only _"denies fever"_ is supported by the transcript. Chills, night sweats, **haemoptysis**, chest pain, dyspnoea, sick-contact exposure, allergies, and medications were never raised by either speaker. Each is recorded as an explicit negative.
 
-**Why this specific finding is load-bearing.** `docs/prd.md`'s Safety Constraints names haemoptysis as the concrete, testable instance of the Unknown ≠ Negative rule: _"any generated note, gap, or persisted field that asserts haemoptysis absent, rather than not-assessed, fails QA."_ Four of five runs assert exactly that. The rule was written as a precaution; it is confirmed as a defect in the default implementation.
+**Why this specific finding is load-bearing.** `docs/prd.md` §10 (Safety Constraints) names haemoptysis as the concrete, testable instance of the Unknown ≠ Negative rule: _"any generated note, gap, or persisted field that asserts haemoptysis absent, rather than not-assessed, fails QA."_ Four of five runs assert exactly that. The rule was written as a precaution; it is confirmed as a defect in the default implementation.
 
 **Why the input-dependence makes it worse, not better.** The failure did not reproduce on Transcript B, where the doctor explicitly asked about fever. The model fabricates in proportion to how _sparse_ the transcript is — it completes a clinical template rather than reporting what was said. This is the opposite of a convenient failure mode:
 
@@ -761,6 +1010,14 @@ The mechanism that closes §21.1, specified here and depending on the structured
 - After §6's `safeParse` and before assembly, each fact is checked in code: is `evidence` present in the transcript, under whitespace-and-case normalisation?
 - **A fact whose evidence does not match is forced to `NOT_ASSESSED`**, and the discard is counted in the audit event (§15) by field id — never by content.
 
+**Scoped to assertion state, not concept vocabulary.** The span requirement binds the `state` field (`PRESENT` and `DENIED` each require one); the `value` field may carry a **normalised concept label**. "Throat irritation" in the transcript may become `value: "pharyngeal discomfort"` with the transcript's own words as `evidence`.
+
+This scoping is deliberate and evidence-driven. A vendor study (Augnito Research, arXiv:2604.14829) measured a **35% → 9%** swing in apparent hallucination rate purely by changing the judging criterion from strict grounding to inference-aware — because strict grounding misclassifies synonym mapping, terminology normalisation, and abstraction of examination findings as fabrication. Applied bluntly to vocabulary, this control would force `NOT_ASSESSED` on legitimate paraphrase and produce a note the doctor rewrites anyway — the editing-burden paradox clinicians reported in the only SEA ambient-scribe study found. Applied to assertion state, it catches the failure that matters (§21.1) without suppressing medically necessary normalisation.
+
+The distinction it must not lose: _changing the word for a thing the doctor said_ is paraphrase and is permitted; _asserting a state for a topic nobody raised_ is fabrication and is not.
+
+**Open** — this control produces note-to-transcript evidence spans as a by-product, which is the top-of-market trust feature elsewhere (Abridge Linked Evidence; Dragon's evidence summary with one-click access to the source transcript). Whether to surface them in the review UI as clickable traceability or keep them data-only is unresolved; `docs/prd.md` §12 currently scopes it out in one sentence rather than leaving it silent. See the Open Decisions Register, §19, row 17.
+
 The asymmetry is the point, and it is deliberate:
 
 | Wrong direction       | Produced by                          | Consequence                                                                                                     |
@@ -768,7 +1025,7 @@ The asymmetry is the point, and it is deliberate:
 | Fact → `NOT_ASSESSED` | Model paraphrased instead of quoting | An extra gap prompt. Noise. **Safe.**                                                                           |
 | Fact → `DENIED`       | Model fabricated a negative (§21.1)  | A later clinician rules out a diagnosis on an unchecked finding. **The failure this system exists to prevent.** |
 
-Strict matching biases every error toward the safe direction. A false `NOT_ASSESSED` costs the doctor one dismissed prompt; a false `DENIED` is the harm named in `docs/prd.md`'s Safety Constraints. The control is therefore specified strict-first, and any later relaxation toward fuzzy matching must be justified against this table rather than against output tidiness.
+Strict matching biases every error toward the safe direction. A false `NOT_ASSESSED` costs the doctor one dismissed prompt; a false `DENIED` is the harm named in `docs/prd.md` §10 (Safety Constraints). The control is therefore specified strict-first, and any later relaxation toward fuzzy matching must be justified against this table rather than against output tidiness.
 
 This makes Unknown ≠ Negative a mechanically enforced invariant rather than a prompt instruction — which §21.1 demonstrates is insufficient.
 
@@ -782,7 +1039,24 @@ The transcript reaches the model as the `content` field (§6) and is not authore
 
 This is stated as a design property, not a solved problem: no control here claims to make prompt injection impossible, only to bound what an injected instruction can achieve.
 
-### 21.6 What Stays Open
+### 21.6 Independent Corroboration Of The §21.1 Mechanism
+
+Added 13/08/26 from the research phase. **No published study measures "fabricated pertinent negatives on sparse transcripts" as a named phenomenon** — §21.1 is a genuine contribution rather than a restatement. But four primary sources independently establish its _mechanism_, which matters because it means the control is not designed against a single observation on a single model:
+
+| Finding                                                                                                                                            | Source                                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **Negation is the second-largest hallucination class — 30% (56/191)** — in LLM primary-care note generation, and the class flagged most concerning | Asgari et al., _npj Digital Medicine_, May 2025 (PriMock consultation transcripts)   |
+| **Models do not abstain when context is insufficient**: 10.2% incorrect with _no_ context, rising to **66.1% with insufficient context**           | Joren et al., "Sufficient Context", ICLR 2025                                        |
+| **Ambient notes carry more hallucination than physician notes (31% vs 20%)** while scoring higher on thoroughness and lower on succinctness        | Palm et al., _Frontiers in AI_, Oct 2025                                             |
+| Negation handling is a structural LLM weakness generally: 59–72% hallucination with negation vs 26–42% without                                     | Varshney et al., arXiv:2406.05494 (general domain, small open models — context only) |
+
+**State the relationship precisely.** The literature's "negation" is the model _flipping_ an assertion that was made; §21.1's finding is the model _inventing_ an assertion state for a topic never raised. These are siblings — both are assertion-polarity errors that survive fluency checks — not the same measurement. The defensible claim is: _the literature establishes assertion-polarity error as a distinct, high-severity class in primary-care note generation; §21.1 measures a specific, previously unmeasured variant of it._ Do not write "the literature replicated our finding."
+
+The third row is the sharpest corroboration of the _mechanism_: "more thorough + less succinct + more hallucinatory" is the fingerprint of a model filling out more of a note than the encounter supported. And the second row is the sentence that generalises §21.1 beyond `qwen-flash`: **partial context is more dangerous than no context.** A one-line transcript is the worst possible input — enough to activate a clinical template, not enough to constrain it. That is precisely the input distribution this product targets.
+
+### 21.7 What Stays Open
 
 - Whether the evidence check should ever relax from verbatim-span to token-overlap matching, and at what threshold, is unmeasured — it depends on how often `qwen-flash` paraphrases rather than quotes under the structured schema. Benchmark before relaxing.
-- The rate at which facts are downgraded to `NOT_ASSESSED` by §21.4 is itself a quality signal worth recording, but no metric for it is specified. Related to, but distinct from, the alert-fatigue limitation in `docs/prd.md`.
+- The rate at which facts are downgraded to `NOT_ASSESSED` by §21.4 is itself a quality signal worth recording, but no metric for it is specified. Related to, but distinct from, the alert-fatigue limitation in `docs/prd.md` §12.
+- **Whether the structured schema helps or hurts is untested** (§3, ratification condition 2). The one published study that imposed a template on note generation measured _increased_ major hallucinations. This is the single largest unvalidated assumption in the guardrail architecture.
+- **The ASR layer is a second fabrication surface these controls do not reach** (§20). Nothing in §21 protects against a transcript that is already wrong.
