@@ -82,3 +82,176 @@ jobs:
             exit 1
           fi
           echo "CLEAN"
+
+  # ── Deploy ──────────────────────────────────────────────────────────────────
+  # Deployment moved off Vercel's Git integration and behind this job for two
+  # reasons, both observed rather than theorised:
+  #
+  #  1. Git-integration deploys were blocked outright for one collaborator. The
+  #     project is on a Hobby plan, which only builds commits authored by the
+  #     account owner, so a push from the other contributor failed with
+  #     TEAM_ACCESS_REQUIRED (13/08/26, commit c2321c4). A token-authenticated
+  #     CLI deploy is attributed to the token owner, so authorship stops
+  #     mattering.
+  #  2. Git-integration deploys ignored CI. A red build shipped, and worse, a
+  #     green build silently did not: after #50 merged, Vercel reported the
+  #     deployment Ready while catatmd.vercel.app kept serving the previous
+  #     build. `vercel promote` then returned 409 "already the current
+  #     production deployment" because Vercel believed it had shipped. It had
+  #     not, and nothing anywhere reported an error. The alias had to be moved
+  #     by hand. That is why this job asserts what the domain actually serves
+  #     rather than trusting the deploy step's exit code.
+  deploy:
+    name: Deploy to Vercel
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      # Identifiers, not credentials: they appear in Vercel dashboard URLs.
+      # Only VERCEL_TOKEN is secret, which keeps the setup burden to one secret.
+      VERCEL_ORG_ID: team_CwktsdBSB9TLrdwdCV3dZRbg
+      VERCEL_PROJECT_ID: prj_6QNJo1XWj70DACDO3F0ICVSJkQTF
+      # The domain a reviewer actually visits, and the origin the API trusts for
+      # CORS and cookies (docs/trd.md §14). Asserting against the deployment's
+      # own URL would prove nothing: that URL always resolves to the deployment.
+      PRODUCTION_DOMAIN: catatmd.vercel.app
+
+    steps:
+      # Full history: the final assertion asks whether the commit production
+      # serves is an ancestor of this one, which a shallow clone cannot answer.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Pinned rather than @latest: the deploy path should not change under us
+      # between one merge and the next.
+      - name: Install Vercel CLI
+        run: npm install --global vercel@54.12.0
+
+      - name: Pull production project settings
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      # Builds with the settings just pulled, so CI cannot drift from what the
+      # dashboard would have done. The build command itself lives in
+      # vercel.json, in the repo, rather than in dashboard state.
+      - name: Build
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      # `--meta commitSha` is set explicitly rather than relying on the CLI's git
+      # auto-detection, because the identity check below reads it back and must
+      # not depend on how the CLI happened to infer provenance.
+      - name: Deploy prebuilt output
+        id: deploy
+        run: |
+          url="$(vercel deploy --prebuilt --prod \
+            --meta commitSha="$GITHUB_SHA" \
+            --token="$VERCEL_TOKEN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Deployed: $url"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      # The step that would have caught the #50 incident. Vite emits a
+      # content-hashed entry chunk, so comparing the hash the build produced
+      # against the one the production domain serves answers "did the thing we
+      # just built actually become the live site" rather than "did the API
+      # accept our request".
+      - name: Assert the production domain serves this build
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+
+          expected="$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' \
+            .vercel/output/static/index.html | head -1)"
+          if [ -z "$expected" ]; then
+            echo "::error::Could not fingerprint the build output"
+            exit 1
+          fi
+          echo "Expecting $expected"
+
+          serves_expected() {
+            curl -fsSL --max-time 20 "https://$PRODUCTION_DOMAIN/" 2>/dev/null \
+              | grep -qF "$expected"
+          }
+
+          # Propagation is not instant, so a first miss is not yet a failure.
+          for _ in 1 2 3 4 5 6; do
+            if serves_expected; then
+              echo "$PRODUCTION_DOMAIN serves this build."
+              exit 0
+            fi
+            sleep 10
+          done
+
+          # Reached only when Vercel considers the deploy done but the alias did
+          # not move. Repair it explicitly rather than leaving a green job over
+          # a stale site.
+          echo "::warning::Alias did not move on its own; repointing $PRODUCTION_DOMAIN"
+          vercel alias set "$DEPLOYMENT_URL" "$PRODUCTION_DOMAIN" --token="$VERCEL_TOKEN"
+
+          for _ in 1 2 3 4 5 6; do
+            if serves_expected; then
+              echo "$PRODUCTION_DOMAIN serves this build after an explicit alias set."
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "::error::$PRODUCTION_DOMAIN is not serving $expected. The deploy reported success but the live site is stale."
+          exit 1
+
+      # The content check above is necessary but not sufficient. A backend-only
+      # or docs-only merge produces a byte-identical frontend bundle, so a stale
+      # alias would still serve the "expected" hash and the check would pass
+      # while production had not moved at all. This asserts identity rather than
+      # content: the deployment the domain resolves to must be the one built
+      # from this commit.
+      #
+      # It is also what names the 22:03 failure precisely. A deploy of an older
+      # commit taking the alias from a newer one is production moving backwards,
+      # which is a different fault from content simply being stale, and it
+      # deserves its own message.
+      - name: Assert the alias resolves to this commit
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          api() { curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" "$1"; }
+
+          deployment_id="$(api \
+            "https://api.vercel.com/v4/aliases/$PRODUCTION_DOMAIN?teamId=$VERCEL_ORG_ID" \
+            | jq -r '.deploymentId // empty')"
+          if [ -z "$deployment_id" ]; then
+            echo "::error::Could not resolve $PRODUCTION_DOMAIN to a deployment"
+            exit 1
+          fi
+
+          live_sha="$(api \
+            "https://api.vercel.com/v13/deployments/$deployment_id?teamId=$VERCEL_ORG_ID" \
+            | jq -r '.meta.commitSha // .meta.githubCommitSha // empty')"
+
+          if [ "$live_sha" = "$GITHUB_SHA" ]; then
+            echo "$PRODUCTION_DOMAIN resolves to this commit ($GITHUB_SHA)."
+            exit 0
+          fi
+
+          if [ -n "$live_sha" ] && git merge-base --is-ancestor "$GITHUB_SHA" "$live_sha" 2>/dev/null; then
+            echo "::error::$PRODUCTION_DOMAIN serves $live_sha, which is ahead of this commit. A newer deploy won the race."
+            exit 1
+          fi
+
+          echo "::error::PRODUCTION MOVED BACKWARDS. $PRODUCTION_DOMAIN resolves to a deployment built from ${live_sha:-an unknown commit}, not $GITHUB_SHA. A deploy of an older tree has taken the production alias."
+          exit 1
