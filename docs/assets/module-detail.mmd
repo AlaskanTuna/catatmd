@@ -1,0 +1,52 @@
+%%{init: {'flowchart': {'wrappingWidth': 340}}}%%
+graph TD
+  REQ["POST /api/consultations/:id/analyze<br/>requireSession, then assertOwnedConsultation.<br/>A miss returns 404, never 403"]
+
+  subgraph API["Express API - Render, Singapore. Inside the trust boundary"]
+    direction TB
+    DEID["deid/ - 7 pattern detectors, NRIC structural check, name gazetteer.<br/>Mints [PATIENT_1] and [NRIC_1] into a request-scoped vault"]
+    RF["redflags/ - evaluateRedFlags over the RAW transcript.<br/>Pure function, in-process. Never egresses, so it needs no gate"]
+    NOTE["analysis/ - operation note_and_gaps<br/>SOAP scaffold, 29 fixed clinical facts, Malaysian operational block"]
+    SUGG["suggestions/ - operation suggestions_and_red_flags<br/>Model red-flag candidates and cited suggestions"]
+    GL["guidelines/ - 11 chunks, one source per chunk"]
+    LLMC["lib/llm/ - LLMClient, the ONLY egress point.<br/>DEID_FAIL_CLOSED re-scans the outbound payload<br/>and refuses to send if a detector fires"]
+    INV["INVARIANT - no text carrying patient identifiers crosses the boundary.<br/>lib/llm/ accepts only a Deidentified branded string, so a raw string is a compile error.<br/>markDeidentified is module-private to deid/, and the egress guard re-scans what a cast could smuggle past it."]
+    EV["Evidence check - every PRESENT or DENIED needs a verbatim transcript span.<br/>Unmatched is forced to NOT_ASSESSED"]
+    GAPS["gaps/ - deriveGaps over assertion states. Deterministic, Tier 2"]
+    MERGE["Assembly - rule flags plus model candidates, derived gaps plus model gaps.<br/>A union, never a filter"]
+    PERSIST["vault.rehydrate, persist analysis, status awaiting_review"]
+    AUDIT["audit/ - detector labels, discarded field ids, provider / model / list versions.<br/>Never content"]
+  end
+
+  PROV["LLM provider - Qwen on Model Studio, Singapore.<br/>Gemini and DeepSeek both throw at boot in production"]
+
+  REQ -->|"raw transcript"| DEID
+  REQ -->|"raw transcript"| RF
+  DEID -->|"Deidentified branded string"| NOTE
+  DEID -->|"Deidentified branded string"| SUGG
+  NOTE -.->|"the two operations run concurrently"| SUGG
+  GL -->|"corpus ids narrow guidelineId to a z.enum, so a free-text citation fails decoding"| SUGG
+  NOTE --> LLMC
+  SUGG --> LLMC
+  LLMC ==>|"CROSSES BOUNDARY - de-identified text only"| PROV
+  PROV -.->|"schema-validated JSON"| LLMC
+  LLMC --> EV
+  LLMC -->|"model candidates only, never authoritative"| MERGE
+  EV --> GAPS
+  GAPS --> MERGE
+  RF -->|"rule hits - authoritative, never model-suppressed"| MERGE
+  MERGE --> PERSIST
+  PERSIST --> AUDIT
+  INV -.- LLMC
+
+  classDef egress fill:#fde2e2,stroke:#c0392b,stroke-width:3px
+  classDef outside fill:#f4f4f4,stroke:#888888,stroke-dasharray:4 3
+  classDef note fill:#fff6d6,stroke:#d4a017,stroke-width:2px
+  classDef gate fill:#e2f0fd,stroke:#2563eb,stroke-width:2px
+  classDef safety fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+
+  class LLMC egress
+  class PROV outside
+  class INV note
+  class DEID gate
+  class RF,GAPS,MERGE,EV safety
