@@ -91,6 +91,7 @@ print(f'  stroke {C_SW}u = {C_SW * 24 / M:.2f}px at 24px, '
 with open('mark.svg', 'w') as fh:
     fh.write(
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {M} {M}" fill="none">'
+        f'<title>CatatMD</title>'
         f'<path d="{arc}" stroke="currentColor" stroke-width="{C_SW}" '
         f'stroke-linecap="round"/>'
         f'<circle cx="{dot_cx}" cy="{dot_cy}" r="{dot_r}" fill="currentColor"/>'
@@ -147,6 +148,7 @@ with open('wordmark.svg', 'w') as fh:
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'viewBox="0 {VB_Y:.0f} {VB_W:.0f} {VB_H:.0f}" '
         f'style="--md-ink:#fff;color:#1b6b56">'
+        f'<title>CatatMD</title>'
         f'<path d="{catat_d}" fill="currentColor"/>'
         f'<rect x="{badge_x:.0f}" y="{badge_y:.0f}" width="{badge_w:.0f}" '
         f'height="{BADGE_H}" rx="{BADGE_R}" fill="currentColor"/>'
