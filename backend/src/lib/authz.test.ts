@@ -13,16 +13,21 @@ vi.mock('./prisma.js', () => ({
  * the `where` clause would pass no matter what the helper did.
  */
 const ROWS = [
-  { id: 'consult-aisyah', doctorId: 'doctor-aisyah' },
-  { id: 'consult-lim', doctorId: 'doctor-lim' },
-  { id: 'consult-guest', doctorId: 'guest' },
+  { id: 'consult-aisyah', doctorId: 'doctor-aisyah', erasedAt: null },
+  { id: 'consult-lim', doctorId: 'doctor-lim', erasedAt: null },
+  { id: 'consult-guest', doctorId: 'guest', erasedAt: null },
+  { id: 'consult-erased', doctorId: 'doctor-aisyah', erasedAt: new Date('2026-08-14T00:00:00Z') },
 ]
 
 beforeEach(() => {
   vi.mocked(prisma.consultation.findFirst).mockImplementation(
-    (async (args: { where: { id: string; doctorId: string } }) =>
-      ROWS.find((r) => r.id === args.where.id && r.doctorId === args.where.doctorId) ??
-      null) as never,
+    (async (args: { where: { id: string; doctorId: string; erasedAt?: null } }) =>
+      ROWS.find(
+        (r) =>
+          r.id === args.where.id &&
+          r.doctorId === args.where.doctorId &&
+          (args.where.erasedAt === undefined || r.erasedAt === args.where.erasedAt),
+      ) ?? null) as never,
   )
 })
 
@@ -37,8 +42,15 @@ describe('assertOwnedConsultation', () => {
     await assertOwnedConsultation('consult-aisyah', 'doctor-aisyah').catch(() => {})
 
     expect(prisma.consultation.findFirst).toHaveBeenCalledWith({
-      where: { id: 'consult-aisyah', doctorId: 'doctor-aisyah' },
+      where: { id: 'consult-aisyah', doctorId: 'doctor-aisyah', erasedAt: null },
     })
+  })
+
+  it('treats an erased consultation as not found', async () => {
+    const error = await assertOwnedConsultation('consult-erased', 'doctor-aisyah').catch((e) => e)
+
+    expect(error).toBeInstanceOf(HttpError)
+    expect(error.status).toBe(404)
   })
 
   it('raises 404 — never 403 — when the consultation belongs to another doctor', async () => {

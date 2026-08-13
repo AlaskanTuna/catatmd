@@ -111,7 +111,7 @@ function classifyFailure(error: unknown): AnalysisFailureReason {
 
 consultationsRouter.get('/', async (req, res) => {
   const rows = await prisma.consultation.findMany({
-    where: { doctorId: doctorId(req) },
+    where: { doctorId: doctorId(req), erasedAt: null },
     orderBy: { updatedAt: 'desc' },
     select: { id: true, status: true, createdAt: true, updatedAt: true },
   })
