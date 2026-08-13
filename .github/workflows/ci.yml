@@ -9,9 +9,18 @@ on:
     branches: [main]
   pull_request:
 
+# Superseded runs are cancelled on pull requests, where only the latest commit
+# matters, but never on `main`, because a run on `main` deploys.
+#
+# Observed on the first run after #52 merged: a push two minutes later cancelled
+# the in-flight deploy. Cancelling `verify` is free; cancelling a deploy is not,
+# because the window between `vercel deploy` and the assertions that follow it is
+# exactly where a half-finished deploy leaves the production alias pointing at an
+# unverified build. That is the failure the job exists to detect, so the job must
+# not be able to cause it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   verify:
