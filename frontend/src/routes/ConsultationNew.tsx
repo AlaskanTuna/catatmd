@@ -37,7 +37,7 @@ export function parseTranscript(raw: string): TranscriptTurn[] {
 }
 
 const TABS = [
-  { id: 'fixture', label: 'Bundled case', Icon: FolderOpen },
+  { id: 'fixture', label: 'Bundled Case', Icon: FolderOpen },
   { id: 'paste', label: 'Paste', Icon: Type },
   { id: 'upload', label: 'Upload', Icon: FileUp },
 ] as const
@@ -92,7 +92,7 @@ export function ConsultationNew() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-2xl font-semibold tracking-tight">New consultation</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">New Consultation</h1>
       <p className="mt-1 text-sm text-ink-muted">
         Every bundled case is synthetic. No real patient data enters this system.
       </p>
@@ -151,7 +151,7 @@ export function ConsultationNew() {
         {tab === 'upload' && (
           <Card className="p-6">
             <label className="flex flex-col items-start gap-2 text-sm">
-              <span className="font-medium">Transcript file</span>
+              <span className="font-medium">Transcript File</span>
               <span className="text-ink-muted">
                 A .txt or .json file. It lands in the editor below so you can correct it before
                 submitting.
@@ -213,7 +213,7 @@ export function ConsultationNew() {
         loading={create.isPending}
         onClick={() => create.mutate()}
       >
-        Start consultation
+        Start Consultation
       </Button>
     </div>
   )

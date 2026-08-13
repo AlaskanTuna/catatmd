@@ -106,9 +106,9 @@ function ProvenanceMark({ source }: { source: RedFlag['source'] }) {
 }
 
 const GAP_PRIORITY = {
-  high: 'Ask first',
-  medium: 'Worth asking',
-  low: 'If time allows',
+  high: 'Ask First',
+  medium: 'Worth Asking',
+  low: 'If Time Allows',
 } as const
 
 export function GapCard({

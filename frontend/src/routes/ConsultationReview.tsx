@@ -71,7 +71,7 @@ export function ConsultationReview() {
     <div className="mx-auto max-w-7xl">
       <header className="flex flex-wrap items-start justify-between gap-3" data-print="hide">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Consultation review</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Consultation Review</h1>
           <p className="mt-1 font-mono text-xs text-ink-muted">{detail.id}</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -92,7 +92,7 @@ export function ConsultationReview() {
 
       {!analysis && (
         <Card className="mt-6 p-6" data-print="hide">
-          <h2 className="text-lg font-semibold">Ready to analyse</h2>
+          <h2 className="text-lg font-semibold">Ready to Analyse</h2>
           <p className="mt-2 max-w-prose text-sm text-ink-muted">
             The transcript is de-identified before any part of it leaves this server. Identifiers
             are replaced with pseudonymous tokens and restored only after the response returns.
@@ -113,7 +113,7 @@ export function ConsultationReview() {
             onClick={() => analyze.mutate()}
             data-tour="analyse"
           >
-            {analyze.isPending ? 'Analysing' : 'Analyse consultation'}
+            {analyze.isPending ? 'Analysing' : 'Analyse Consultation'}
           </Button>
         </Card>
       )}
@@ -152,7 +152,7 @@ export function ConsultationReview() {
 
           <section className="order-2 min-w-0" aria-labelledby="note-heading">
             <h2 id="note-heading" className="mb-2 text-sm font-semibold" data-print="hide">
-              Clinical note
+              Clinical Note
             </h2>
             <NoteEditor
               note={note}
@@ -168,7 +168,7 @@ export function ConsultationReview() {
           </section>
 
           <aside className="order-1 flex flex-col gap-5 lg:order-3" aria-label="Clinical safety">
-            <Panel title="Red flags" count={flags.length}>
+            <Panel title="Red Flags" count={flags.length}>
               {flags.length === 0 ? (
                 <p className="text-sm text-ink-muted">
                   No escalation triggers fired for this consultation.
@@ -189,7 +189,7 @@ export function ConsultationReview() {
               )}
             </Panel>
 
-            <Panel title="Missing information" count={analysis.gaps.length}>
+            <Panel title="Missing Information" count={analysis.gaps.length}>
               {analysis.gaps.map((gap) => (
                 <GapCard
                   key={gap.id}

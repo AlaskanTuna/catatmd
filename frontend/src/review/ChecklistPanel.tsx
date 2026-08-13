@@ -43,7 +43,7 @@ export function ChecklistPanel({
   if (!clinicalFacts || !operational) {
     return (
       <Card className="mt-5 p-4">
-        <h2 className="text-sm font-semibold">Completeness checklist</h2>
+        <h2 className="text-sm font-semibold">Completeness Checklist</h2>
         <p className="mt-1 text-sm text-ink-muted">
           Not recorded for this consultation. It was analysed by an earlier version that did not
           persist the checklist. This does not mean the fields were assessed and found absent.
@@ -68,7 +68,7 @@ export function ChecklistPanel({
         className="flex w-full items-center justify-between gap-2 p-4 text-left"
         data-tour="checklist"
       >
-        <span className="text-sm font-semibold">Completeness checklist</span>
+        <span className="text-sm font-semibold">Completeness Checklist</span>
         <span className="text-xs text-ink-muted">
           {assessed} of {entries.length} established
         </span>
