@@ -18,7 +18,9 @@ const bareOperational = (overrides: Record<string, unknown> = {}) =>
 
 describe('applyEvidenceCheck (docs/trd.md §21.4)', () => {
   it('downgrades a DENIED assertion carrying no evidence span to NOT_ASSESSED', () => {
-    const facts = bareFacts({ symptoms: { fever: { state: 'DENIED', value: 'no fever' } } })
+    const facts = bareFacts({
+      symptoms: { fever: { state: 'DENIED', value: 'no fever', evidence: '' } },
+    })
 
     const { clinicalFacts, discardedFieldIds } = applyEvidenceCheck(
       facts,

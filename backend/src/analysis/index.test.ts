@@ -90,7 +90,7 @@ describe('analyseNote', () => {
             fever: { state: 'PRESENT', value: 'fever', evidence: '38.2 degrees' },
             // Reproduces docs/trd.md §21.1: the model asserts a negative for a
             // topic the transcript never raises, with no supporting span.
-            haemoptysis: { state: 'DENIED', value: 'no haemoptysis' },
+            haemoptysis: { state: 'DENIED', value: 'no haemoptysis', evidence: '' },
           },
           history: {},
           observations: {},
@@ -120,7 +120,11 @@ describe('analyseNote', () => {
         clinicalFacts: emptyFacts(),
         operational: LlmOperationalBlockSchema.parse({
           // No verbatim span — the doctor never named a condition in this fixture.
-          diagnosis: { state: 'PRESENT', value: 'viral upper respiratory tract infection' },
+          diagnosis: {
+            state: 'PRESENT',
+            value: 'viral upper respiratory tract infection',
+            evidence: '',
+          },
         }),
         gaps: [],
       }
