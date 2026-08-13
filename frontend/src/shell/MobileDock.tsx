@@ -24,7 +24,7 @@ export function MobileDock() {
       aria-label="Main"
       data-print="hide"
       style={{ zIndex: 'var(--z-sidebar)' }}
-      className="glass fixed inset-x-3 bottom-3 flex items-center justify-around rounded-[--radius-float] p-1.5 md:hidden"
+      className="glass fixed inset-x-3 bottom-3 flex items-center justify-around rounded-float p-1.5 md:hidden"
     >
       {ITEMS.map(({ to, label, icon: Icon, end }) => (
         <NavLink
@@ -33,7 +33,7 @@ export function MobileDock() {
           end={end}
           className={({ isActive }) =>
             cn(
-              'flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 rounded-[--radius-control] px-2 py-1.5',
+              'flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-2 py-1.5',
               'text-2xs font-medium transition-colors duration-150',
               isActive ? 'bg-accent/12 text-accent' : 'text-ink-muted',
             )

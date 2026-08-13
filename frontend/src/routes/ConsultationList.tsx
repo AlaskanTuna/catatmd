@@ -41,7 +41,7 @@ export function ConsultationList() {
         </div>
         <Link
           to="/consultations/new"
-          className="inline-flex h-10 items-center gap-2 rounded-[--radius-control] bg-accent px-4 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover"
+          className="inline-flex h-10 items-center gap-2 rounded-control bg-accent px-4 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover"
         >
           <Plus aria-hidden className="size-4" />
           New Consultation
@@ -50,9 +50,7 @@ export function ConsultationList() {
 
       <div className="mt-8 flex flex-col gap-2">
         {isPending &&
-          [0, 1, 2].map((key) => (
-            <Skeleton key={key} className="h-18 w-full rounded-[--radius-card]" />
-          ))}
+          [0, 1, 2].map((key) => <Skeleton key={key} className="h-18 w-full rounded-card" />)}
 
         {data?.length === 0 && (
           <EmptyState
@@ -61,7 +59,7 @@ export function ConsultationList() {
             action={
               <Link
                 to="/consultations/new"
-                className="mt-2 inline-flex h-10 items-center rounded-[--radius-control] bg-accent px-4 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover"
+                className="mt-2 inline-flex h-10 items-center rounded-control bg-accent px-4 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover"
               >
                 Start a Consultation
               </Link>
@@ -75,7 +73,7 @@ export function ConsultationList() {
             <Link
               key={consultation.id}
               to={`/consultations/${consultation.id}`}
-              className="flex items-center justify-between gap-4 rounded-[--radius-card] border border-line bg-surface px-4 py-4 transition-colors hover:border-ink-muted/50"
+              className="flex items-center justify-between gap-4 rounded-card border border-line bg-surface px-4 py-4 transition-colors hover:border-ink-muted/50"
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{formatDate(consultation.createdAt)}</p>

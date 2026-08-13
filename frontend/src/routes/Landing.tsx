@@ -48,7 +48,7 @@ export function Landing() {
           <ThemeToggle />
           <Link
             to="/login"
-            className="rounded-[--radius-control] px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-sunken"
+            className="rounded-control px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-sunken"
           >
             Sign in
           </Link>
@@ -75,7 +75,7 @@ export function Landing() {
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
               to="/login"
-              className="inline-flex h-12 items-center gap-2 rounded-[--radius-control] bg-accent px-6 text-base font-medium text-accent-ink transition-colors hover:bg-accent-hover"
+              className="inline-flex h-12 items-center gap-2 rounded-control bg-accent px-6 text-base font-medium text-accent-ink transition-colors hover:bg-accent-hover"
             >
               Try the Demo
               <ArrowRight aria-hidden className="size-4" />

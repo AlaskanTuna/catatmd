@@ -127,7 +127,7 @@ export function GapCard({
     <div
       data-tour="gap"
       className={cn(
-        'rounded-[--radius-card] border border-dashed p-4 page-break-avoid',
+        'rounded-card border border-dashed p-4 page-break-avoid',
         reviewed ? 'border-line bg-sunken/40' : 'border-ink-muted/40',
       )}
     >
@@ -188,7 +188,7 @@ export function SuggestionCard({
                 {citation.guidelineId}
               </button>
               {open && chunk && (
-                <div className="mt-2 rounded-[--radius-control] border border-line bg-sunken p-3">
+                <div className="mt-2 rounded-control border border-line bg-sunken p-3">
                   <p className="text-xs font-medium text-ink">{chunk.title}</p>
                   <p className="mt-0.5 text-2xs text-ink-muted">
                     {chunk.publisher} · {chunk.year}
