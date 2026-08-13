@@ -159,6 +159,37 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
+      # This exact failure has shipped twice. `VITE_API_URL` is read at build
+      # time and inlined, so if it is missing the bundle falls back to a
+      # relative base, every call lands on the static origin, and the SPA
+      # rewrite answers `POST /api/...` with 405 text/html. The client cannot
+      # parse that as an error envelope, so the only symptom a user sees is
+      # "Something went wrong" on a site that is otherwise up. Nothing else in
+      # the pipeline notices: the build succeeds and the deploy is healthy.
+      #
+      # The cause both times was the variable being marked Sensitive in the
+      # dashboard. Sensitive values are write-only, so `vercel pull` returns
+      # the literal string `[SENSITIVE]` and the prebuilt build never sees the
+      # URL. It is a public value that ships inside client JavaScript, so
+      # Sensitive buys nothing and costs the deploy.
+      - name: Assert the bundle points at the API, not the static origin
+        run: |
+          api="$(sed -n 's/^VITE_API_URL="\?\([^"]*\)"\?$/\1/p' .vercel/.env.production.local)"
+          case "$api" in
+            '' | '[SENSITIVE]')
+              echo "::error::VITE_API_URL did not reach the build (got '${api:-<unset>}')."
+              echo "If it reads [SENSITIVE], clear the flag:"
+              echo "  vercel env rm VITE_API_URL production --yes"
+              echo "  vercel env add VITE_API_URL production --no-sensitive --value <url>"
+              exit 1
+              ;;
+          esac
+          if ! grep -rqF "$api" .vercel/output/static/assets; then
+            echo "::error::Built bundle does not contain $api, so the API base is empty."
+            exit 1
+          fi
+          echo "Bundle is wired to $api"
+
       # `--meta commitSha` is set explicitly rather than relying on the CLI's git
       # auto-detection, because the identity check below reads it back and must
       # not depend on how the CLI happened to infer provenance.
