@@ -144,6 +144,7 @@ describe('recordAuditEvent', () => {
       },
       { action: 'consultation.analysis_failed', metadata: { reason: 'internal_error' } },
       { action: 'consultation.edited' },
+      { action: 'consultation.erased' },
       { action: 'redflag.acknowledged', metadata: { redFlagId: 'rf-1' } },
       { action: 'gap.reviewed', metadata: { gapId: 'gap-1' } },
       { action: 'consultation.approved' },

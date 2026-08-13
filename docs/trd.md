@@ -700,11 +700,20 @@ Matches `docs/prd.md` §8 (Primary Flow) exactly: `draft →(create) draft →(a
 | `consultation.analysis_completed` | analyse pipeline succeeds                                            | `{ detected, discardedFieldIds, profileId, versions }` — see below        |
 | `consultation.analysis_failed`    | analyse pipeline throws                                              | `{ reason: string }` — a short failure category, never the raw error text |
 | `consultation.edited`             | `PATCH /api/consultations/:id`                                       | —                                                                         |
+| `consultation.erased`             | Retention process invokes the erase mechanism                        | None                                                                      |
 | `redflag.acknowledged`            | doctor acknowledges a red flag                                       | `{ redFlagId: string }`                                                   |
 | `gap.reviewed`                    | doctor marks an information gap reviewed                             | `{ gapId: string }`                                                       |
 | `consultation.approved`           | `POST /api/consultations/:id/approve`                                | —                                                                         |
 
 Every row also carries `actorId` (the authenticated doctor) and `consultationId` — both already `Built` (§4). Together the taxonomy covers every transition in `docs/prd.md` §8 (Primary Flow): create → analyse (start/complete/fail) → edit/acknowledge → approve.
+
+### Consultation Erasure Tombstones
+
+**Status: `Built`** (issue #64). Erasure does not delete the `Consultation` row. It clears `transcript`, `analysis`, and `editedNote`, then sets `erasedAt` and appends `consultation.erased`. The surviving tombstone retains only opaque system identifiers, workflow state, timestamps, and audit relationships. These values are not patient personal data because, after the content columns are cleared, nothing maps the opaque consultation identifier to a patient. The retained `doctorId` remains a staff-account relationship, not a patient identifier.
+
+`AuditEvent.consultationId` is a hash input, so `onDelete: SetNull` was rejected. Nulling that foreign key after an audit row was written would change the row's hash input and turn a deleted consultation into a hash mismatch. The audit relation therefore uses `onDelete: Restrict`, and existing audit rows are never edited, deleted, or re-hashed. The consultation id stays valid through the tombstone, preserving the chain by construction.
+
+The `User → Consultation` relation still uses `onDelete: Cascade`. With the audit relation restricted, a user deletion will now fail if it would cascade to a consultation with audit history. No user-deletion path is currently configured in the application or its better-auth integration. Any future account-deletion feature must make an explicit retention decision rather than bypassing this database constraint.
 
 **Why `consultation.asr_hosted_used` fires at creation rather than at consent.** The doctor's consent to hosted transcription happens in the browser, before a `Consultation` row exists — `docs/prd.md` §8 step 1 creates the row only once a `Transcript` does. An event written at the moment of consent would therefore have no `consultationId` to hang on, which is the one field that makes the audit trail navigable. The event is instead written by `POST /api/consultations` on the declared `source` (§3), which is the first point at which the fact and the consultation id coexist. The consequence is stated plainly: like `source` itself, this row records a **client-asserted** fact.
 

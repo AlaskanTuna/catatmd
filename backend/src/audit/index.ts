@@ -72,6 +72,7 @@ export type ConsultationAuditEvent =
     }
   | { action: 'consultation.analysis_failed'; metadata: { reason: AnalysisFailureReason } }
   | { action: 'consultation.edited' }
+  | { action: 'consultation.erased' }
   | { action: 'redflag.acknowledged'; metadata: { redFlagId: string } }
   | { action: 'gap.reviewed'; metadata: { gapId: string } }
   | { action: 'consultation.approved' }
