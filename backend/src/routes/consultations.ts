@@ -66,6 +66,36 @@ function mergeGaps(derived: InformationGap[], modelGaps: InformationGap[]): Info
   return [...derived, ...modelGaps.filter((gap) => !seen.has(gap.id))]
 }
 
+/**
+ * Rehydrates every `value` and `evidence` string anywhere in an assertion tree.
+ *
+ * Recursive rather than a per-field map, for two reasons. The structure is not
+ * uniform: `ClinicalFacts` nests assertions two levels under four groups, while
+ * `OperationalBlock` is flat except for `medicationsDispensed`, which is an
+ * array of them. And a hard-coded field list would silently stop covering a
+ * field the moment the 29-key checklist grows, which is the same failure the
+ * clinical-version guard exists to prevent.
+ *
+ * `evidence` in particular is a verbatim span from the *de-identified*
+ * transcript by construction, so it carries `[PATIENT_1]`-style tokens
+ * essentially always rather than occasionally.
+ */
+function rehydrateAssertions<T>(node: T, rehydrate: (value: string) => string): T {
+  if (Array.isArray(node)) {
+    return node.map((item) => rehydrateAssertions(item, rehydrate)) as T
+  }
+  if (node !== null && typeof node === 'object') {
+    return Object.fromEntries(
+      Object.entries(node).map(([key, value]) =>
+        (key === 'value' || key === 'evidence') && typeof value === 'string'
+          ? [key, rehydrate(value)]
+          : [key, rehydrateAssertions(value, rehydrate)],
+      ),
+    ) as T
+  }
+  return node
+}
+
 function classifyFailure(error: unknown): AnalysisFailureReason {
   if (error instanceof DeidentificationError) return 'deidentification_failed'
   if (error instanceof LLMResponseError) return 'llm_response_invalid'
@@ -214,6 +244,12 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
         label: rehydrate(flag.label),
         evidence: rehydrate(flag.evidence),
       })),
+      // The reviewed checklist, surfaced rather than discarded. Without these
+      // the UI cannot render a `NOT_ASSESSED` it was never sent, and docs/prd.md
+      // §10's "unestablished, never absent" requirement has nothing to display
+      // (Demo Script step 5).
+      clinicalFacts: rehydrateAssertions(noteResult.clinicalFacts, rehydrate),
+      operational: rehydrateAssertions(noteResult.operational, rehydrate),
       suggestions: suggestionResult.suggestions.map((suggestion) => ({
         ...suggestion,
         text: rehydrate(suggestion.text),

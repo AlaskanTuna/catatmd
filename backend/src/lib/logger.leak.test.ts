@@ -30,8 +30,20 @@ vi.mock('../analysis/index.js', () => ({
       assessment: 'Acute upper respiratory tract infection.',
       plan: 'Symptomatic relief. Review if worsening.',
     },
-    clinicalFacts: {},
-    operational: {},
+    // Now persisted and returned, so it has to satisfy `ClinicalFactsSchema`.
+    // `evidence` carries a vault token deliberately: this suite exists to prove
+    // none of it reaches the log drain.
+    clinicalFacts: {
+      symptoms: {
+        cough: { state: 'PRESENT', value: 'dry cough', evidence: '[PATIENT_1] has a dry cough' },
+      },
+      history: {},
+      observations: {},
+      examination: {},
+    },
+    operational: {
+      diagnosis: { state: 'PRESENT', value: 'URTI', evidence: '[PATIENT_1] likely has a URTI' },
+    },
     gaps: [
       {
         id: 'gap-1',

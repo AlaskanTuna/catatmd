@@ -15,8 +15,29 @@ vi.mock('../analysis/index.js', () => ({
       assessment: 'Likely viral URTI',
       plan: 'Fluids and rest',
     },
-    clinicalFacts: {},
-    operational: {},
+    // Shaped like the real thing: assertions nested under groups, and an array
+    // of them under `medicationsDispensed`. `evidence` is a verbatim span from
+    // the de-identified transcript, so it carries a vault token by construction.
+    clinicalFacts: {
+      symptoms: {
+        cough: { state: 'PRESENT', value: 'dry cough', evidence: '[PATIENT_1] has a dry cough' },
+        haemoptysis: { state: 'NOT_ASSESSED' },
+      },
+      history: {
+        smoking: { state: 'DENIED', value: 'non-smoker', evidence: '[PATIENT_1] does not smoke' },
+      },
+      // Present but empty: every field carries its own NOT_ASSESSED default, so
+      // the groups fill themselves in. The group keys are still required.
+      observations: {},
+      examination: {},
+    },
+    operational: {
+      diagnosis: { state: 'PRESENT', value: 'URTI', evidence: 'I think [PATIENT_1] has a URTI' },
+      medicationsDispensed: [
+        { state: 'PRESENT', value: 'paracetamol', evidence: 'giving [PATIENT_1] paracetamol' },
+      ],
+      mcDays: { state: 'NOT_ASSESSED' },
+    },
     gaps: [
       {
         id: 'model-gap',
@@ -236,9 +257,15 @@ describe('analyse output', () => {
   beforeEach(() => seed('draft'))
 
   async function analysed() {
+    type Assertion = { state: string; value?: string; evidence?: string }
     const body = (await (await call('POST', '/api/consultations/c1/analyze')).json()) as {
       consultation: {
-        analysis: { redFlags: { id: string }[]; gaps: { id: string }[] }
+        analysis: {
+          redFlags: { id: string }[]
+          gaps: { id: string }[]
+          clinicalFacts?: Record<string, Record<string, Assertion>>
+          operational?: Record<string, Assertion> & { medicationsDispensed?: Assertion[] }
+        }
       }
     }
     return body.consultation.analysis
@@ -263,6 +290,42 @@ describe('analyse output', () => {
     const body = await res.text()
 
     expect(body).not.toMatch(/\[[A-Z]+_\d+\]/)
+  })
+
+  /**
+   * docs/prd.md §10 requires a field the consultation never touched to read as
+   * unestablished rather than absent, and the review screen cannot render a
+   * `NOT_ASSESSED` it was never sent. These were computed, fed to `deriveGaps`,
+   * and then discarded before this.
+   */
+  it('persists the reviewed checklist rather than discarding it', async () => {
+    const analysis = await analysed()
+
+    expect(analysis.clinicalFacts?.symptoms?.cough?.state).toBe('PRESENT')
+    expect(analysis.clinicalFacts?.symptoms?.haemoptysis?.state).toBe('NOT_ASSESSED')
+    expect(analysis.operational?.diagnosis?.state).toBe('PRESENT')
+  })
+
+  it('rehydrates assertion values and evidence, including inside arrays', async () => {
+    const analysis = await analysed()
+
+    // `evidence` is a verbatim span from the de-identified transcript, so it
+    // carries a token essentially always. A pseudonym reaching the evidence
+    // trail is what the doctor would actually notice.
+    expect(analysis.clinicalFacts?.symptoms?.cough?.evidence).toContain('Ahmad')
+    expect(analysis.clinicalFacts?.history?.smoking?.evidence).toContain('Ahmad')
+    expect(analysis.operational?.diagnosis?.evidence).toContain('Ahmad')
+    // The array case a per-field map would silently miss.
+    expect(analysis.operational?.medicationsDispensed?.[0]?.evidence).toContain('Ahmad')
+
+    expect(JSON.stringify(analysis)).not.toMatch(/\[[A-Z]+_\d+\]/)
+  })
+
+  it('leaves an assertion with no value or evidence untouched', async () => {
+    const analysis = await analysed()
+
+    expect(analysis.clinicalFacts?.symptoms?.haemoptysis).toEqual({ state: 'NOT_ASSESSED' })
+    expect(analysis.operational?.mcDays).toEqual({ state: 'NOT_ASSESSED' })
   })
 
   it('records version stamps and discarded field ids on completion', async () => {
