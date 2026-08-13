@@ -1,5 +1,18 @@
 {
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/.claude/hooks/no-em-dash-or-emoji.mjs\" ] || node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/no-em-dash-or-emoji.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking house style"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
@@ -26,5 +39,5 @@
       }
     ]
   },
-  "description": "Impeccable design detector: immediate-tier checks after Edit/Write/MultiEdit on UI files, full-rule deep pass on Stop. Shared with all collaborators."
+  "description": "Shared with all collaborators. House-style guard blocks Edit/Write content that introduces an em dash or emoji. Impeccable design detector runs immediate-tier checks after Edit/Write/MultiEdit on UI files and a full-rule deep pass on Stop."
 }

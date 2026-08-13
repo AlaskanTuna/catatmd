@@ -41,6 +41,7 @@ playwright-report/
 .DS_Store
 Thumbs.db
 *.swp
+.$*.bkp
 
 # Caches
 .cache/
@@ -62,3 +63,12 @@ graphify-out/*
 /transcripts/
 /patient-data/
 .vercel
+.gstack/
+
+# ─── Diagram exports ──────────────────────────────────────────────────────────
+# The .drawio sources and the .png the README embeds are committed. The .svg
+# exports are not: draw.io inlines every icon as a base64 raster, so they are
+# ~1MB each, gain nothing over the .png, and nothing references them.
+# Regenerate with:
+#   drawio --export --format svg --output <out>.svg <src>.drawio
+docs/assets/*.drawio.svg
