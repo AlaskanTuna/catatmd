@@ -50,7 +50,7 @@ export function ConsultationList() {
         }
       />
 
-      <div className="mt-8 flex flex-col gap-2">
+      <div data-tour="consultation-list" className="mt-8 flex flex-col gap-2">
         {isPending &&
           [0, 1, 2].map((key) => <Skeleton key={key} className="h-18 w-full rounded-card" />)}
 
