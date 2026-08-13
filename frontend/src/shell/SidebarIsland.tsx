@@ -113,12 +113,17 @@ export function SidebarIsland({
               to={to}
               end={to === '/consultations'}
               data-tour={tour}
+              // The active tint is /16 where every other active state in the app
+              // is /12. This is the only one painted on glass with the scrim
+              // behind it, and at the lowered glass alpha the /12 tint measured
+              // 4.05:1 with the island expanded. The extra 4% buys back AA
+              // without the accent reading as a filled chip.
               className={({ isActive }) =>
                 cn(
                   'flex h-11 items-center gap-3 rounded-control px-3',
                   'text-sm font-medium transition-colors duration-150',
                   isActive
-                    ? 'bg-accent/12 text-accent'
+                    ? 'bg-accent/16 text-accent'
                     : 'text-ink-muted hover:bg-sunken/60 hover:text-ink',
                 )
               }

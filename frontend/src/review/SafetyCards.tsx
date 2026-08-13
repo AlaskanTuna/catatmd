@@ -211,7 +211,7 @@ export function SuggestionCard({
                     rel="noreferrer noopener"
                     className="mt-2 inline-block text-xs font-medium text-accent underline underline-offset-2"
                   >
-                    Open Source
+                    Open Guideline
                   </a>
                 </div>
               )}

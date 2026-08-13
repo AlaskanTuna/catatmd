@@ -14,8 +14,8 @@ import { ThemeToggle } from '../ui/ThemeToggle.js'
  * it to show four navigation targets would be theatre.
  */
 const ITEMS = [
-  { to: '/consultations', label: 'Consultations', icon: FileText, end: true },
   { to: '/consultations/new', label: 'New', icon: Plus, end: false },
+  { to: '/consultations', label: 'Consultations', icon: FileText, end: true },
   { to: '/guidelines', label: 'Guidelines', icon: BookMarked, end: false },
 ]
 

@@ -16,10 +16,15 @@ import { Wordmark } from '../ui/Wordmark.js'
  * "skeleton" feeling this redesign is answering.
  */
 
+/*
+ * Both destinations are reachable signed out, which is the constraint that
+ * decides this list rather than a judgement about what is interesting. The
+ * footer renders on the public landing page, and `/guidelines` is auth-gated,
+ * so a visitor clicking it was bounced to `/login` with the intent discarded.
+ */
 const LINKS = [
   { to: '/login', label: 'Try the Demo' },
   { to: '/privacy', label: 'Privacy and Data Protection' },
-  { to: '/guidelines', label: 'Guidelines' },
 ]
 
 export function SiteFooter({ className }: { className?: string }) {
