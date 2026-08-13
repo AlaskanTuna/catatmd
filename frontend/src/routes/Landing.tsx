@@ -77,7 +77,7 @@ export function Landing() {
           <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
             <Link
               to="/login"
-              className="inline-flex h-12 items-center gap-2 rounded-pill bg-accent px-7 text-base font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97]"
+              className="inline-flex h-12 items-center gap-2 rounded-control bg-accent px-7 text-base font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97]"
             >
               Try the Demo
               <ArrowRight aria-hidden className="size-4" />

@@ -42,7 +42,7 @@ export function ConsultationList() {
         actions={
           <Link
             to="/consultations/new"
-            className="inline-flex h-10 items-center gap-2 rounded-pill bg-accent px-5 text-sm font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97]"
+            className="inline-flex h-10 items-center gap-2 rounded-control bg-accent px-5 text-sm font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97]"
           >
             <Plus aria-hidden className="size-4" />
             New Consultation

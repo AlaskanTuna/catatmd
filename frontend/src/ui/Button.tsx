@@ -50,10 +50,12 @@ export function Button({
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cn(
-        // Pill, not a rounded rectangle. It is the clearest statement of the
-        // shape language, and it separates an action from the rounded-rect
-        // cards and inputs it sits among rather than echoing them.
-        'inline-flex items-center justify-center rounded-pill font-medium',
+        // Rounded rectangle, not a pill. Actions now echo the radius of the
+        // cards and inputs they sit among instead of standing apart from them,
+        // which is the one shape rule applied everywhere: `rounded-pill` is
+        // reserved for chips and status markers, which are labels rather than
+        // things you press.
+        'inline-flex items-center justify-center rounded-control font-medium',
         'transition-[background-color,border-color,color,opacity,transform] duration-150 ease-out-quart',
         // A press should feel like a press. Small enough that it reads as
         // tactile rather than as the button jumping.
