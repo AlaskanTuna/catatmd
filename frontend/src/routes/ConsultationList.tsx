@@ -34,7 +34,7 @@ export function ConsultationList() {
   })
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-4xl">
       <PageHeader
         title="Consultations"
         subtitle="Simulated consultations, scoped to you."

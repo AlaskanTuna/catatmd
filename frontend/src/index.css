@@ -50,6 +50,10 @@
   --color-advisory: oklch(0.457 0.164 258);
   --color-advisory-rule: oklch(0.457 0.164 258);
 
+  /* Faint enough to disappear against the ground until the eye looks for it. */
+  --color-scrollbar: oklch(0.245 0.008 160 / 0.22);
+  --color-scrollbar-hover: oklch(0.245 0.008 160 / 0.38);
+
   /* Chrome only. Never behind text a doctor acts on. */
   --color-glass: oklch(1 0 0 / 0.72);
   --color-glass-line: oklch(1 0 0 / 0.55);
@@ -150,6 +154,9 @@
     --color-advisory: oklch(0.76 0.115 245);
     --color-advisory-rule: oklch(0.76 0.115 245);
 
+    --color-scrollbar: oklch(0.945 0.004 160 / 0.2);
+    --color-scrollbar-hover: oklch(0.945 0.004 160 / 0.34);
+
     --color-glass: oklch(0.225 0.007 160 / 0.72);
     --color-glass-line: oklch(1 0 0 / 0.1);
     --color-scrim: oklch(0.12 0.005 160 / 0.5);
@@ -196,6 +203,53 @@
     border-radius: 4px;
   }
 
+  /*
+   * One scrollbar vocabulary, everywhere, in both engines.
+   *
+   * `scrollbar-width: thin` is the standard property and is all Firefox needs;
+   * the `::-webkit-scrollbar` block is what Chromium reads. Both are declared
+   * because neither alone covers the browsers this is judged in.
+   *
+   * The track is transparent rather than tinted, so the bar sits on whatever
+   * surface it happens to overlay (ground, card, or the sunken transcript
+   * panel) instead of cutting a grey channel through it. The thumb is the ink
+   * hue at low alpha, which makes it theme-aware without a second declaration:
+   * it darkens on the light ground and lightens on the dark one because the ink
+   * token already flipped.
+   */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-scrollbar) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-scrollbar);
+    /* Inset via a transparent border so the thumb reads as a slim capsule with
+     * breathing room, rather than a bar wedged against the content edge. */
+    background-clip: padding-box;
+    border: 3px solid transparent;
+    border-radius: var(--radius-pill);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-scrollbar-hover);
+  }
+
+  /* The corner where two scrollbars meet, which otherwise paints an opaque
+   * light square on the dark theme. */
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
   ::placeholder {
     /* Not the muted default: placeholder text needs the same 4.5:1 as body. */
     color: var(--color-ink-muted);
@@ -212,8 +266,15 @@
    */
   .glass {
     background-color: var(--color-glass);
-    backdrop-filter: blur(20px) saturate(150%);
+    /*
+     * Prefix FIRST, standard LAST, and that order is load-bearing rather than
+     * cosmetic. Written the other way round the minifier treats the pair as one
+     * property declared twice, keeps the last, and ships `-webkit-` alone: the
+     * frost silently degrades to flat translucency in the production build
+     * while dev, which does not minify, looks perfect. Do not reorder these.
+     */
     -webkit-backdrop-filter: blur(20px) saturate(150%);
+    backdrop-filter: blur(20px) saturate(150%);
     border: 1px solid var(--color-glass-line);
     box-shadow:
       0 1px 2px oklch(0 0 0 / 0.04),
@@ -227,8 +288,9 @@
     inset: 0;
     z-index: var(--z-scrim);
     background-color: var(--color-scrim);
-    backdrop-filter: blur(8px);
+    /* Prefix first, standard last. See the note on `.glass`. */
     -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
     opacity: 0;
     pointer-events: none;
     transition:
@@ -255,11 +317,26 @@
    * footer's top row hidden behind the page, which nobody sees unless they
    * scroll to the bottom at the width that broke.
    */
-  .marketing-shell {
+  .reveal-shell {
     --footer-h: 23rem;
   }
 
-  .marketing-page {
+  /*
+   * The paper the whole product is printed on, public and signed-in alike.
+   *
+   * It also does load-bearing work for the glass. `backdrop-filter` blurs
+   * whatever is behind it, so over a flat fill it has nothing to operate on and
+   * the chrome reads as merely translucent no matter how large the blur radius
+   * is. The grid gives the blur something to smear, which is what makes frost
+   * look like frost.
+   */
+  .dot-grid {
+    background-color: var(--color-ground);
+    background-image: radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 0);
+    background-size: 18px 18px;
+  }
+
+  .reveal-page {
     position: relative;
     z-index: var(--z-sticky);
     min-height: 100vh;
@@ -267,12 +344,9 @@
     /* Opaque, and that is the whole mechanism. A translucent page would show
      * the footer through itself from the first paint and the reveal would
      * never happen. */
-    background-color: var(--color-ground);
-    background-image: radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 0);
-    background-size: 18px 18px;
   }
 
-  .marketing-footer {
+  .site-footer {
     position: fixed;
     right: 0;
     bottom: 0;
@@ -287,7 +361,7 @@
    * The pointer trail, painted between the page's own background and its
    * content.
    *
-   * `z-index: -1` inside `.marketing-page` is doing precise work. A negative
+   * `z-index: -1` inside `.reveal-page` is doing precise work. A negative
    * index paints after the ancestor's background and before its in-flow
    * descendants, so the glow washes over the dot grid and passes behind every
    * word. `z-index: 0` looks like a near-miss of the same thing and is not:
@@ -330,11 +404,11 @@
    * and the reserve is not a number anyone has to keep correct.
    */
   @media (width < 48rem) {
-    .marketing-page {
+    .reveal-page {
       margin-bottom: 0;
     }
 
-    .marketing-footer {
+    .site-footer {
       position: static;
       height: auto;
     }
