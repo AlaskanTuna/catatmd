@@ -85,7 +85,7 @@ export function NoteEditor({
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   rows={5}
-                  className="w-full rounded-[--radius-control] border border-line bg-surface p-3 text-base leading-relaxed focus:border-accent"
+                  className="w-full rounded-control border border-line bg-surface p-3 text-base leading-relaxed focus:border-accent"
                 />
                 <div className="mt-2 flex gap-2">
                   <Button

@@ -106,7 +106,7 @@ export function ConsultationNew() {
             aria-selected={tab === id}
             onClick={() => setTab(id)}
             className={cn(
-              'inline-flex min-h-10 items-center gap-2 rounded-[--radius-control] px-3 text-sm font-medium transition-colors',
+              'inline-flex min-h-10 items-center gap-2 rounded-control px-3 text-sm font-medium transition-colors',
               tab === id ? 'bg-accent/12 text-accent' : 'text-ink-muted hover:bg-sunken',
             )}
           >
@@ -137,7 +137,7 @@ export function ConsultationNew() {
                   setSource('fixture')
                   setTab('paste')
                 }}
-                className="rounded-[--radius-card] border border-line bg-surface px-4 py-3 text-left transition-colors hover:border-accent"
+                className="rounded-card border border-line bg-surface px-4 py-3 text-left transition-colors hover:border-accent"
               >
                 <p className="text-sm font-medium">{fixture.label}</p>
                 <p className="mt-0.5 text-xs text-ink-muted">
@@ -160,7 +160,7 @@ export function ConsultationNew() {
                 type="file"
                 accept=".txt,.json,text/plain,application/json"
                 onChange={onUpload}
-                className="mt-2 text-sm file:mr-3 file:min-h-10 file:rounded-[--radius-control] file:border file:border-line file:bg-surface file:px-3 file:text-sm file:font-medium"
+                className="mt-2 text-sm file:mr-3 file:min-h-10 file:rounded-control file:border file:border-line file:bg-surface file:px-3 file:text-sm file:font-medium"
               />
             </label>
           </Card>
@@ -177,7 +177,7 @@ export function ConsultationNew() {
               }}
               rows={14}
               placeholder={'Doctor: What brings you in today?\nPatient: Batuk sudah 3 hari...'}
-              className="rounded-[--radius-card] border border-line bg-surface p-3 font-mono text-sm leading-relaxed transition-colors focus:border-accent"
+              className="rounded-card border border-line bg-surface p-3 font-mono text-sm leading-relaxed transition-colors focus:border-accent"
             />
           </label>
         )}

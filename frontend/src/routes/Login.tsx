@@ -204,7 +204,7 @@ function Field({
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 rounded-[--radius-control] border border-line bg-surface px-3 text-sm transition-colors focus:border-accent"
+        className="h-10 rounded-control border border-line bg-surface px-3 text-sm transition-colors focus:border-accent"
         {...props}
       />
     </label>

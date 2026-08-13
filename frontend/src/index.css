@@ -6,9 +6,8 @@
  * and adds a dependency the data-residency argument then has to explain. These
  * ship in the bundle.
  */
-@import '@fontsource-variable/inter';
-@import '@fontsource-variable/source-serif-4';
-@import '@fontsource-variable/source-serif-4/standard-italic.css';
+@import '@fontsource-variable/outfit';
+@import '@fontsource-variable/work-sans';
 
 /*
  * Mafins, the logotype face, is deliberately absent here. It is the wordmark
@@ -28,9 +27,14 @@
 
 @theme {
   /* ── Light, the default and the design target ─────────────────────────── */
-  --color-ground: oklch(0.978 0.004 85);
+  /* The ground is recessed and the surface floats on it. The previous pair sat
+   * at 0.978 against 1.0, which is not a step a viewer can see, so every card
+   * needed a border to exist at all and the whole interface read as flat. Cards
+   * are lifted by the ground being darker and by shadow, and the border becomes
+   * optional. */
+  --color-ground: oklch(0.945 0.005 85);
   --color-surface: oklch(1 0 0);
-  --color-sunken: oklch(0.955 0.005 85);
+  --color-sunken: oklch(0.915 0.006 85);
   --color-ink: oklch(0.245 0.008 160);
   --color-ink-muted: oklch(0.47 0.012 160);
   --color-line: oklch(0.895 0.004 85);
@@ -51,13 +55,14 @@
   --color-glass-line: oklch(1 0 0 / 0.55);
   --color-scrim: oklch(0.245 0.008 160 / 0.32);
 
-  /* Body, UI and every number. Tabular figures are the reason this is a sans
-   * rather than the heading serif: vitals and timestamps sit in columns. */
-  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  /* Headings and subheadings. A text serif, drawn to be read, which is what
-   * lets it carry the wordmark's serif character into the interface without
-   * dragging a display face in with it. */
-  --font-serif: 'Source Serif 4 Variable', Georgia, 'Times New Roman', serif;
+  /* Body, UI and every number. Work Sans carries `tnum`, which is the reason a
+   * humanist sans holds the clinical content: vitals and timestamps sit in
+   * columns and must not shimmer between rows. */
+  --font-sans: 'Work Sans Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Headings, and the wordmark. Geometric, wide apertures, rounded terminals.
+   * Paired with Work Sans on the contrast axis (geometric against humanist)
+   * rather than the near-miss of two sans faces from the same family tree. */
+  --font-display: 'Outfit Variable', 'Work Sans Variable', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* Fixed rem scale, ratio 1.2. No clamp: product UI is viewed at a
@@ -71,9 +76,22 @@
   --text-2xl: 1.75rem;
   --text-3xl: 2.25rem;
 
-  --radius-control: 8px;
-  --radius-card: 12px;
-  --radius-float: 16px;
+  /* Roundness is a brand property here, not a default. The references this was
+   * built against carry their softness in the radius and the shadow rather than
+   * in blur, which is what lets clinical text sit on a fully opaque surface and
+   * still read as part of the same soft interface. */
+  --radius-control: 10px;
+  --radius-card: 16px;
+  --radius-float: 22px;
+  --radius-pill: 999px;
+
+  /* Elevation. Two shadows each: a tight contact shadow to seat the element,
+   * and a wide soft one to lift it. Tinted toward the ink hue rather than pure
+   * black, which greys out a warm ground. */
+  --shadow-raised: 0 1px 2px oklch(0.245 0.008 160 / 0.05), 0 1px 3px oklch(0.245 0.008 160 / 0.04);
+  --shadow-card: 0 1px 2px oklch(0.245 0.008 160 / 0.04), 0 6px 16px -4px oklch(0.245 0.008 160 / 0.08);
+  --shadow-float: 0 2px 4px oklch(0.245 0.008 160 / 0.04),
+    0 16px 40px -8px oklch(0.245 0.008 160 / 0.14);
 
   --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -99,9 +117,15 @@
 
   :root[data-theme='dark'] {
     color-scheme: dark;
-    --color-ground: oklch(0.185 0.006 160);
-    --color-surface: oklch(0.225 0.007 160);
-    --color-sunken: oklch(0.165 0.006 160);
+    --color-ground: oklch(0.155 0.006 160);
+    --color-surface: oklch(0.215 0.007 160);
+    --color-sunken: oklch(0.135 0.005 160);
+
+    /* Shadow does almost no work on a dark ground, so elevation is carried by
+     * the surface step above and the shadows only deepen the seam. */
+    --shadow-raised: 0 1px 2px oklch(0 0 0 / 0.4);
+    --shadow-card: 0 1px 2px oklch(0 0 0 / 0.4), 0 6px 16px -4px oklch(0 0 0 / 0.5);
+    --shadow-float: 0 2px 4px oklch(0 0 0 / 0.45), 0 16px 40px -8px oklch(0 0 0 / 0.6);
     --color-ink: oklch(0.945 0.004 160);
     --color-ink-muted: oklch(0.72 0.01 160);
     --color-line: oklch(0.305 0.008 160);
@@ -140,11 +164,13 @@
   h1,
   h2,
   h3 {
-    font-family: var(--font-serif);
+    font-family: var(--font-display);
     font-weight: 600;
     text-wrap: balance;
-    line-height: 1.3;
-    letter-spacing: -0.015em;
+    line-height: 1.25;
+    /* Outfit is already wide-set and geometric, so it takes less negative
+     * tracking than the serif it replaced before the counters start closing. */
+    letter-spacing: -0.01em;
   }
 
   p {
@@ -212,24 +238,43 @@
    * and the transition is the enhancement, so an element can never be left
    * transparent because an animation did not run.
    *
-   * Blur is dropped rather than reduced. It is the most expensive part of the
-   * effect and the most hostile to vestibular disorders, which is a medical
-   * accessibility setting and frequently set by exactly our users.
+   * What the preference suppresses is deliberately narrower than it was. It
+   * targets motion the interface starts on its own: keyframes, looping
+   * decoration, anything that moves while the user holds still. It no longer
+   * blanket-kills `transition-duration`, because a transition is a response to
+   * something the user just did, in the same category as a hover highlight. The
+   * previous blanket rule meant a doctor whose OS animations were off got an
+   * interface where the sidebar teleported between states, which reads as a
+   * broken widget rather than as a considered reduction.
+   *
+   * Anyone who does want everything suppressed can say so directly, and the
+   * in-app preference wins over the OS in both directions.
+   *
+   * Blur is no longer dropped here at all. `backdrop-filter` is not motion; a
+   * static blurred layer does not move. Animating the blur is motion, so that
+   * transition is what gets removed.
    */
   @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
+    :root:not([data-motion='full']) *,
+    :root:not([data-motion='full']) *::before,
+    :root:not([data-motion='full']) *::after {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
 
-    .scrim {
-      backdrop-filter: none;
-      -webkit-backdrop-filter: none;
+    :root:not([data-motion='full']) .scrim {
+      transition-property: opacity;
     }
+  }
+
+  :root[data-motion='reduced'] *,
+  :root[data-motion='reduced'] *::before,
+  :root[data-motion='reduced'] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

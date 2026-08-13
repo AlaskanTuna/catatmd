@@ -44,7 +44,7 @@ export function ApproveBar({
 
   if (approved) {
     return (
-      <div className="mt-6 flex items-center gap-2 rounded-[--radius-card] border border-accent/30 bg-accent/8 px-4 py-3">
+      <div className="mt-6 flex items-center gap-2 rounded-card border border-accent/30 bg-accent/8 px-4 py-3">
         <CheckCircle2 aria-hidden className="size-5 shrink-0 text-accent" />
         <p className="text-sm">
           <span className="font-medium text-accent">Approved</span>
@@ -67,7 +67,7 @@ export function ApproveBar({
 
   return (
     <div
-      className="glass sticky bottom-4 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-[--radius-float] p-3"
+      className="glass sticky bottom-4 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-float p-3"
       style={{ zIndex: 'var(--z-sticky)' }}
       data-print="hide"
       data-tour="approve"

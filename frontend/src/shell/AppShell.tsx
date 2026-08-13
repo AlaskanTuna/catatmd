@@ -10,10 +10,11 @@ import { SidebarIsland } from './SidebarIsland.js'
  * expanded. The alternative, filtering the content subtree, repaints the entire
  * review screen on every hover and is what makes this effect feel cheap.
  *
- * Reduced motion drops the blur to dim-only in CSS rather than here: the
- * outcome (the layer beneath is de-emphasised) survives, only the transition
- * and the expensive filter go. Motion degrades to an instant state change,
- * never to no state change (issue #30).
+ * Reduced motion no longer touches the blur. A static blurred layer does not
+ * move, so it is not what the preference is about; only the transition that
+ * fades it in is, and that is handled in CSS. Dropping the filter here is what
+ * previously made the effect vanish entirely for anyone whose OS animations
+ * were off, which is a common default rather than an edge case.
  */
 export function AppShell() {
   const [dimmed, setDimmed] = useState(false)
