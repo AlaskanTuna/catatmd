@@ -199,14 +199,19 @@ Index: `@@index([doctorId, status])` — supports the doctor's own consultation-
 
 | Field            | Type                                            | Note                                                                                                |
 | ---------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `id`             | `String @id @default(cuid())`                   | —                                                                                                   |
+| `id`             | `String @id @default(cuid())`                   | Minted by `recordAuditEvent`, not by the column default: it is a hash input (§15)                   |
 | `action`         | `String`                                        | Free-form today; the enumerated taxonomy is `Specified` in §15                                      |
+| `seq`            | `Int @unique @default(autoincrement())`         | Append order. Finds the chain head without ties; `prevHash` is what defines the order               |
+| `prevHash`       | `String? @unique`                               | Hash of the preceding row, or `'genesis'`. Unique, so two appends cannot fork the chain (§15)       |
+| `hash`           | `String?`                                       | This row's hash, over ids and event type only                                                       |
 | `metadata`       | `Json?`                                         | Detector **labels** that fired during de-identification (e.g. `["NRIC","NAME"]`) — never the values |
 | `actorId`        | `String?` → `User`, `onDelete: SetNull`         | —                                                                                                   |
 | `consultationId` | `String?` → `Consultation`, `onDelete: Cascade` | —                                                                                                   |
-| `createdAt`      | `DateTime @default(now())`                      | —                                                                                                   |
+| `createdAt`      | `DateTime @default(now())`                      | Also minted by `recordAuditEvent`, for the same reason as `id`                                      |
 
 Indexes: `@@index([consultationId, createdAt])`, `@@index([actorId, createdAt])`.
+
+`prevHash` and `hash` are nullable only because rows written before the chain existed cannot be given one honestly. Every row written by `recordAuditEvent` carries both. See §15.
 
 `analysis` and `editedNote` are separate columns rather than one field so that the model's raw output is never overwritten by the doctor's edits — both remain independently inspectable, which matters both for review-trail integrity and for the "every output editable before approval" safety posture. `AuditEvent.metadata` is restricted to detector labels, never values, because the audit trail must not become a second PHI leak vector — it directly enforces the "no vault entries in logs" clinical-safety do-not.
 
@@ -743,6 +748,36 @@ Because `AuditEvent` is append-only, a past analysis keeps the versions it ran u
 **Enforcement.** `backend/src/clinical-versions/no-stray-clinical-constants.test.ts` scans `backend/src` and `frontend/src` and fails the build on either a whole single-quoted literal equal to a trigger or checklist id, or a guideline scoring-system name, outside the three data files. Tests and `backend/src/fixtures/` are exempt. The id set is read from the data at runtime, never listed in the test, so it cannot go stale. The second check exists because the scoring systems carry the thresholds the two Malaysian sources disagree on (§11): a hard-coded one is a manufactured consensus with nothing citing it.
 
 **Not versioned data, deliberately.** Per-chunk source versions are not modelled. `GuidelineChunk` (§11) carries `year`, and the edition sits inside `title` ("4th Edition"). Adding a structured `sourceVersion` would change a `@shared/types` schema and is raised on issue #31 rather than assumed.
+
+### Tamper-Evidence: The Hash Chain
+
+**Status: `Built`** (issue #27). `AuditEvent` was already append-only by convention, but nothing made a silent `UPDATE` or `DELETE` detectable. Approval is a documented risk control (`docs/prd.md` §10, §11), and a risk control whose evidence can be edited without trace is weaker than it reads.
+
+Each row stores the hash of its predecessor, so the log is a chain rather than a set of independent rows:
+
+```
+hash = sha256( prevHash | id | action | actorId | consultationId | createdAt )
+```
+
+| Decision                                                | Why                                                                                                                                                                                                         |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`metadata` is not a hash input**                      | It is the one column that could ever hold more than a label. Keeping it out means the chain can never become a second copy of anything sensitive. The cost is stated below.                                 |
+| **Genesis is the string `'genesis'`, not `null`**       | Postgres lets any number of `null`s through a unique index, so a nullable root would silently permit a second chain beside the first.                                                                       |
+| **`prevHash` is `@unique`**                             | Two concurrent appends that read the same head fail loudly instead of forking the chain. Verified against the live database: the second insert raises `Unique constraint failed on the fields: (prevHash)`. |
+| **`id` and `createdAt` are minted in application code** | Both are hash inputs, and their column defaults would not produce a value until after the hash had to be computed.                                                                                          |
+| **Verification follows links, not `createdAt`**         | Two rows written in the same millisecond must not be read back in the wrong order and reported as tampering. A false alarm in an integrity check costs nearly as much as a missed one.                      |
+
+`verifyAuditChainFromDatabase()` walks the chain and reports the first row that does not hold up: `hash_mismatch` for an edited row, `orphaned` for one whose predecessor was deleted or rewritten, `unexpected_head` when the chain is intact but ends somewhere other than a head hash the auditor already held.
+
+**What this does not do.** Stated plainly, because the property is narrower than "tamper-proof" and the difference matters:
+
+- It is **not** a defence against an attacker with write access who recomputes the whole chain. It makes tampering **detectable by an auditor holding a head hash from an earlier point in time**, not impossible.
+- **A `metadata` rewrite is not detectable**, because `metadata` is deliberately excluded from the hash.
+- **Truncation of the newest rows is not self-detecting.** Deleting from the end leaves a shorter chain that is internally valid; only a previously recorded head hash reveals it. `verifyAuditChain` takes that head as an optional argument, and `chain.test.ts` asserts this limitation rather than only documenting it.
+- **Rows written before the migration are not chained.** 18 such rows exist. Integrity cannot be retrofitted onto history that was not recorded while it happened, so they carry no hash and verification skips them.
+- No blockchain, no distributed ledger, no external anchoring. Immutability was rejected on 13/08/26 because it conflicts directly with PDPA rights to correction and withdrawal of consent.
+
+Under real write concurrency the head read and the append want a retry around the unique-constraint failure. The current single-instance deployment does not reach that, and the constraint means the failure is loud rather than silent.
 
 ### Forbidden Content
 

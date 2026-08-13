@@ -1,5 +1,21 @@
+import { randomUUID } from 'node:crypto'
 import type { ACTIVE_CLINICAL_VERSIONS } from '../clinical-versions/index.js'
 import { prisma } from '../lib/prisma.js'
+import {
+  AUDIT_CHAIN_GENESIS,
+  type AuditChainRow,
+  computeAuditHash,
+  verifyAuditChain,
+} from './chain.js'
+
+export {
+  AUDIT_CHAIN_GENESIS,
+  type AuditChainFailure,
+  type AuditChainRow,
+  type AuditChainVerification,
+  computeAuditHash,
+  verifyAuditChain,
+} from './chain.js'
 
 /**
  * Short failure categories for `consultation.analysis_failed`. A closed set,
@@ -59,8 +75,19 @@ export type AuditEventInput =
   | { action: 'consultation.approved' }
 
 /**
- * Appends one audit row. Append-only by construction: this module exposes no
- * update or delete, and nothing else in the codebase writes `auditEvent`.
+ * Appends one audit row, linked to the current chain head. Append-only by
+ * construction: this module exposes no update or delete, and nothing else in
+ * the codebase writes `auditEvent`.
+ *
+ * `id` and `createdAt` are minted here rather than left to their column
+ * defaults, because both are hash inputs and the database would otherwise not
+ * produce them until after the hash had to be computed.
+ *
+ * The transaction is what keeps the head read and the append atomic. The unique
+ * constraint on `prevHash` is the backstop: under enough write concurrency two
+ * appends can still read the same head, and the constraint turns that into a
+ * loud failure rather than a silently forked chain. A deployment with real
+ * write concurrency wants a retry here.
  */
 export async function recordAuditEvent(
   event: AuditEventInput & { actorId: string; consultationId: string },
@@ -68,14 +95,63 @@ export async function recordAuditEvent(
   const { action, actorId, consultationId } = event
   const metadata = 'metadata' in event ? event.metadata : undefined
 
-  await prisma.auditEvent.create({
-    data: {
+  await prisma.$transaction(async (tx) => {
+    const head = await tx.auditEvent.findFirst({
+      where: { hash: { not: null } },
+      orderBy: { seq: 'desc' },
+      select: { hash: true },
+    })
+
+    const row = {
+      prevHash: head?.hash ?? AUDIT_CHAIN_GENESIS,
+      id: randomUUID(),
       action,
       actorId,
       consultationId,
-      metadata: metadata === undefined ? undefined : JSON.parse(JSON.stringify(metadata)),
+      createdAt: new Date(),
+    }
+
+    await tx.auditEvent.create({
+      data: {
+        ...row,
+        hash: computeAuditHash(row),
+        metadata: metadata === undefined ? undefined : JSON.parse(JSON.stringify(metadata)),
+      },
+    })
+  })
+}
+
+/**
+ * Reads the chain and reports the first row that does not hold up.
+ *
+ * Rows written before this chain existed carry no hash and are skipped: you
+ * cannot retrofit integrity onto history you did not record while it happened.
+ * Pass the head hash from a previous run as `knownHead` to also catch rows
+ * deleted from the end, which an intact-but-shorter chain cannot reveal.
+ */
+export async function verifyAuditChainFromDatabase(
+  knownHead?: string,
+): Promise<ReturnType<typeof verifyAuditChain>> {
+  const rows = await prisma.auditEvent.findMany({
+    orderBy: { seq: 'asc' },
+    select: {
+      id: true,
+      prevHash: true,
+      hash: true,
+      action: true,
+      actorId: true,
+      consultationId: true,
+      createdAt: true,
     },
   })
+
+  const chained = rows.flatMap<AuditChainRow>((row) =>
+    row.prevHash === null || row.hash === null
+      ? []
+      : [{ ...row, prevHash: row.prevHash, hash: row.hash }],
+  )
+
+  return verifyAuditChain(chained, knownHead)
 }
 
 /**

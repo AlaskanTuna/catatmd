@@ -1,15 +1,53 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ACTIVE_CLINICAL_VERSIONS } from '../clinical-versions/index.js'
 import { prisma } from '../lib/prisma.js'
-import { type AuditEventInput, getAuditHistory, recordAuditEvent } from './index.js'
+import {
+  AUDIT_CHAIN_GENESIS,
+  type AuditChainRow,
+  type AuditEventInput,
+  computeAuditHash,
+  getAuditHistory,
+  recordAuditEvent,
+  verifyAuditChain,
+} from './index.js'
 
-vi.mock('../lib/prisma.js', () => ({
-  prisma: { auditEvent: { create: vi.fn(), findMany: vi.fn(() => []) } },
-}))
+/**
+ * Minimal append-only stand-in for `audit_event`. Behaving like the real table
+ * rather than returning a fixed stub is what lets these tests watch a chain
+ * build across several writes.
+ */
+const appended: (AuditChainRow & { metadata?: unknown })[] = []
+
+vi.mock('../lib/prisma.js', () => {
+  const auditEvent = {
+    create: vi.fn(async ({ data }: { data: AuditChainRow & { metadata?: unknown } }) => {
+      appended.push(data)
+      return data
+    }),
+    findMany: vi.fn(async () => []),
+    findFirst: vi.fn(async () => {
+      const head = appended.at(-1)
+      return head === undefined ? null : { hash: head.hash }
+    }),
+  }
+
+  return {
+    prisma: {
+      auditEvent,
+      // The append runs inside a transaction; hand the callback the same mock
+      // so assertions can keep reading `prisma.auditEvent.create`.
+      $transaction: vi.fn((run: (tx: { auditEvent: typeof auditEvent }) => unknown) =>
+        run({ auditEvent }),
+      ),
+    },
+  }
+})
 
 beforeEach(() => {
+  appended.length = 0
   vi.mocked(prisma.auditEvent.create).mockClear()
   vi.mocked(prisma.auditEvent.findMany).mockClear()
+  vi.mocked(prisma.auditEvent.findFirst).mockClear()
 })
 
 const write = (event: AuditEventInput) =>
@@ -17,7 +55,7 @@ const write = (event: AuditEventInput) =>
 
 function lastWrite() {
   return vi.mocked(prisma.auditEvent.create).mock.calls.at(-1)?.[0] as {
-    data: { action: string; actorId: string; consultationId: string; metadata?: unknown }
+    data: AuditChainRow & { metadata?: unknown }
   }
 }
 
@@ -125,6 +163,95 @@ describe('recordAuditEvent', () => {
     const audit = await import('./index.js')
 
     expect(Object.keys(audit).filter((k) => /update|delete|remove/i.test(k))).toEqual([])
+  })
+})
+
+describe('the hash chain (issue #27)', () => {
+  it('starts the chain at the genesis sentinel, never at null', async () => {
+    await write({ action: 'consultation.created' })
+
+    expect(lastWrite().data.prevHash).toBe(AUDIT_CHAIN_GENESIS)
+  })
+
+  it('links every append to the current chain head', async () => {
+    await write({ action: 'consultation.created' })
+    const first = lastWrite().data.hash
+
+    await write({ action: 'consultation.approved' })
+
+    expect(lastWrite().data.prevHash).toBe(first)
+  })
+
+  it('reads the head by append order, so same-millisecond writes cannot tie', async () => {
+    await write({ action: 'consultation.created' })
+
+    expect(prisma.auditEvent.findFirst).toHaveBeenCalledWith({
+      where: { hash: { not: null } },
+      orderBy: { seq: 'desc' },
+      select: { hash: true },
+    })
+  })
+
+  it('writes a hash matching the row it stores', async () => {
+    await write({ action: 'consultation.created' })
+    const { prevHash, id, action, actorId, consultationId, createdAt, hash } = lastWrite().data
+
+    expect(hash).toBe(
+      computeAuditHash({ prevHash, id, action, actorId, consultationId, createdAt }),
+    )
+  })
+
+  /**
+   * `id` and `createdAt` are hash inputs, so leaving them to their column
+   * defaults would mean hashing values the database had not produced yet.
+   */
+  it('mints the id and timestamp rather than leaving them to the database', async () => {
+    await write({ action: 'consultation.created' })
+
+    expect(lastWrite().data.id).toEqual(expect.any(String))
+    expect(lastWrite().data.createdAt).toBeInstanceOf(Date)
+  })
+
+  it('produces a chain that verifies end to end', async () => {
+    await write({ action: 'consultation.created' })
+    await write({ action: 'consultation.edited' })
+    await write({ action: 'consultation.approved' })
+
+    expect(verifyAuditChain(appended)).toMatchObject({ ok: true, verified: 3 })
+  })
+
+  it('produces a chain that fails verification once a row is edited', async () => {
+    await write({ action: 'consultation.created' })
+    await write({ action: 'consultation.edited' })
+    await write({ action: 'consultation.approved' })
+
+    const tampered = appended.map((row, index) =>
+      index === 1 ? { ...row, action: 'consultation.approved' } : row,
+    )
+
+    expect(verifyAuditChain(tampered)).toMatchObject({
+      ok: false,
+      failedAtId: appended[1]?.id,
+      reason: 'hash_mismatch',
+    })
+  })
+
+  it('keeps metadata out of the hash inputs', async () => {
+    await write({ action: 'redflag.acknowledged', metadata: { redFlagId: 'rf-1' } })
+    const row = lastWrite().data
+
+    // Recomputing without metadata reproduces the stored hash, so metadata
+    // cannot have contributed to it.
+    expect(
+      computeAuditHash({
+        prevHash: row.prevHash,
+        id: row.id,
+        action: row.action,
+        actorId: row.actorId,
+        consultationId: row.consultationId,
+        createdAt: row.createdAt,
+      }),
+    ).toBe(row.hash)
   })
 })
 
