@@ -66,7 +66,7 @@ export function Privacy() {
           </p>
         </Section>
 
-        <Section title="Retention And Access">
+        <Section title="Retention and Access">
           <p>
             A consultation is visible only to the clinician account that created it. Access is
             checked on every request rather than assumed from a session. Actions that touch clinical
@@ -87,7 +87,7 @@ export function Privacy() {
           </p>
         </Section>
 
-        <Section title="Not A Medical Device">
+        <Section title="Not a Medical Device">
           <p>
             CatatMD does not diagnose and does not replace clinical judgement. It is not a
             registered medical device, and no clinician has reviewed its output in a validation

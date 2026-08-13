@@ -21,7 +21,7 @@ import { useEffect, useRef } from 'react'
 const TRAIL = 14
 const HEAD_SIZE = 190
 const TAIL_SIZE = 34
-const HEAD_ALPHA = 0.06
+const HEAD_ALPHA = 0.04
 /** How hard each disc chases the one ahead. Lower is a longer, lazier tail. */
 const CHASE = 0.3
 
