@@ -14,7 +14,7 @@ import type { RedFlagTrigger } from './types.js'
  * changes. Recorded with every analysis (docs/trd.md §15).
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v2',
+  id: 'redflag-list-v3',
   effectiveDate: '2026-08-14',
 }
 
@@ -25,11 +25,74 @@ const URTI_AND_UTI_PROFILES: readonly ProfileId[] = [
 ]
 const UTI_PROFILES: readonly ProfileId[] = ['adult-acute-uncomplicated-uti']
 
+/**
+ * A reply that opens by denying the thing just asked about. Deliberately narrow
+ * (GitHub issue #70): it matches only an unambiguous leading negation, in
+ * English and the Malay a Malaysian consultation actually uses, and anything it
+ * is unsure of is not a denial.
+ */
+const LEADING_DENIAL =
+  /^\s*(?:no+|nope|none|nothing|negative|tak|tidak|takde|tak\s+ada|takda|belum)\b/i
+
+/**
+ * Whether a doctor turn asks rather than states. A screening question names the
+ * symptom it is screening for, so the naive matcher fires on the question and
+ * ignores the answer, which is what issue #70 reported.
+ */
+const isQuestion = (text: string): boolean => /\?\s*$/.test(text.trim())
+
+/**
+ * Does this turn's text count as asserting the symptom it mentions?
+ *
+ * Patient turns always do. A doctor's statement always does, so an observed
+ * finding ("I can hear stridor") still fires. A doctor's *question* does only
+ * when the patient's reply does not open with a denial.
+ *
+ * The default is to assert, which is the direction this engine must fail in.
+ * Dropping every question instead would be the obvious fix and a worse one: a
+ * patient answering "Yes, since this morning" to "Any chest pain?" never says
+ * the words, so the question is the only place the symptom appears and
+ * discarding it would lose the flag entirely.
+ */
+const asserts = (transcript: Transcript, index: number): boolean => {
+  const turn = transcript.turns[index]
+  if (turn === undefined || turn.speaker !== 'doctor' || !isQuestion(turn.text)) return true
+
+  const reply = transcript.turns[index + 1]
+  if (reply === undefined || reply.speaker !== 'patient') return true
+
+  return !LEADING_DENIAL.test(reply.text)
+}
+
+/** Words that end the scope of a preceding negation: "no fever but chest pain". */
+const NEGATION_SCOPE_END = /\b(?:but|tapi|however|although|except)\b/i
+
+/** An unambiguous negator sitting immediately before the matched span. */
+const TRAILING_NEGATOR =
+  /\b(?:no|not|none|never|denies|denied|without|tak|tidak|takde|tiada)\b[^.!?;]{0,24}$/i
+
+/**
+ * Is this match negated by the words immediately before it? Scoped tightly on
+ * purpose: only the run of text since the last clause break is considered, and
+ * a "but" ends the negation's reach, so "no fever but chest pain" still fires.
+ *
+ * This exists because a denial often repeats the phrase being denied. "No pain
+ * in the chest" contains "pain in the chest", so suppressing the doctor's
+ * question alone still left the patient's own denial matching (issue #70).
+ */
+const isNegated = (text: string, matchIndex: number): boolean => {
+  const before = text.slice(Math.max(0, matchIndex - 60), matchIndex)
+  const inScope = before.split(NEGATION_SCOPE_END).pop() ?? ''
+  return TRAILING_NEGATOR.test(inScope)
+}
+
 const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string | null => {
-  for (const turn of transcript.turns) {
+  for (const [index, turn] of transcript.turns.entries()) {
+    if (!asserts(transcript, index)) continue
+
     for (const pattern of patterns) {
       const match = pattern.exec(turn.text)
-      if (match) return match[0]
+      if (match && !isNegated(turn.text, match.index)) return match[0]
     }
   }
   return null
@@ -117,7 +180,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
     severity: 'urgent',
     matcher: (transcript) =>
       findSpan(transcript, [
-        /can'?t\s+swallow/i,
+        /(?:can'?t|cannot)\s+swallow/i,
         /unable\s+to\s+swallow/i,
         /can'?t\s+(?:keep|hold)\s+(?:anything|fluids|food|water)\s+down/i,
         /not\s+(?:been\s+)?able\s+to\s+(?:eat|drink)/i,
