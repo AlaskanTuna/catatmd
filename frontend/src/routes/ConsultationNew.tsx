@@ -92,7 +92,7 @@ export function ConsultationNew() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-4xl">
       <PageHeader
         title="New Consultation"
         subtitle="Every bundled case is synthetic. No real patient data enters this system."
