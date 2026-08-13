@@ -4,5 +4,15 @@
   "installCommand": "bun install",
   "buildCommand": "bun run --cwd shared build && bun run --cwd frontend build",
   "outputDirectory": "frontend/dist",
-  "rewrites": [{ "source": "/((?!assets/).*)", "destination": "/index.html" }]
+  "rewrites": [
+    {
+      "source": "/((?!assets/).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "main": false
+    }
+  }
 }
