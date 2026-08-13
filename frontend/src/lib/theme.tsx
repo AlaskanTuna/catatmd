@@ -15,15 +15,21 @@ const ThemeContext = createContext<ThemeContextValue | null>(null)
 const systemPrefersDark = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
 
+/**
+ * Light is the default, not the operating system's preference.
+ *
+ * A clinical tool that flips to dark because a doctor's laptop is in night mode
+ * is making a legibility decision on their behalf, and every severity contrast
+ * ratio in docs/DESIGN.md was derived against the light ground first. Dark is
+ * offered, never assumed. `system` remains selectable, just not the default.
+ */
 const readStored = (): ThemePreference => {
-  if (typeof window === 'undefined') return 'system'
+  if (typeof window === 'undefined') return 'light'
   const stored = window.localStorage.getItem(STORAGE_KEY)
-  return stored === 'light' || stored === 'dark' ? stored : 'system'
+  return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'light'
 }
 
 /**
- * Light is the default and the design target; dark is a preference.
- *
  * Only ever stores the preference, never anything about the consultation being
  * viewed. `localStorage` is banned for clinical content
  * (`.claude/skills/healthcare-phi-compliance`) and a theme key is the one thing
@@ -49,8 +55,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setPreference = (next: ThemePreference) => {
     setPreferenceState(next)
-    if (next === 'system') window.localStorage.removeItem(STORAGE_KEY)
-    else window.localStorage.setItem(STORAGE_KEY, next)
+    // Stored even when it is `system`: absence now means "never chose", which
+    // resolves to light, so removing the key would silently reset the choice.
+    window.localStorage.setItem(STORAGE_KEY, next)
   }
 
   return <ThemeContext value={{ preference, resolved, setPreference }}>{children}</ThemeContext>

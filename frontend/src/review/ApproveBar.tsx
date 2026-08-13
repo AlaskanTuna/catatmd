@@ -103,7 +103,7 @@ export function ApproveBar({
           loading={approve.isPending}
           onClick={() => (confirming ? approve.mutate() : setConfirming(true))}
         >
-          {confirming ? 'Confirm approval' : 'Approve note'}
+          {confirming ? 'Confirm Approval' : 'Approve Note'}
         </Button>
       </div>
     </div>

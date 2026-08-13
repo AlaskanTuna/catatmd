@@ -1,7 +1,7 @@
-import { FileText, Moon, Plus, Sun } from 'lucide-react'
+import { FileText, Plus } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
-import { useTheme } from '../lib/theme.js'
+import { ThemeToggle } from '../ui/ThemeToggle.js'
 
 /**
  * The small-screen replacement for the sidebar island, not a squeezed version
@@ -19,8 +19,6 @@ const ITEMS = [
 ]
 
 export function MobileDock() {
-  const { resolved, setPreference } = useTheme()
-
   return (
     <nav
       aria-label="Main"
@@ -45,19 +43,7 @@ export function MobileDock() {
           {label}
         </NavLink>
       ))}
-      <button
-        type="button"
-        onClick={() => setPreference(resolved === 'dark' ? 'light' : 'dark')}
-        aria-label={resolved === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-        className="flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 rounded-[--radius-control] px-2 py-1.5 text-2xs font-medium text-ink-muted"
-      >
-        {resolved === 'dark' ? (
-          <Sun aria-hidden className="size-5" />
-        ) : (
-          <Moon aria-hidden className="size-5" />
-        )}
-        Theme
-      </button>
+      <ThemeToggle className="flex-1" />
     </nav>
   )
 }

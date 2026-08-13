@@ -14,7 +14,7 @@ import { EmptyState, Skeleton } from '../ui/Card.js'
 const STATUS: Record<ConsultationStatus, { label: string; className: string }> = {
   draft: { label: 'Draft', className: 'border-line text-ink-muted' },
   analyzing: { label: 'Analysing', className: 'border-advisory/40 text-advisory' },
-  awaiting_review: { label: 'Awaiting review', className: 'border-urgent/40 text-urgent' },
+  awaiting_review: { label: 'Awaiting Review', className: 'border-urgent/40 text-urgent' },
   approved: { label: 'Approved', className: 'border-accent/40 text-accent' },
 }
 
@@ -44,7 +44,7 @@ export function ConsultationList() {
           className="inline-flex h-10 items-center gap-2 rounded-[--radius-control] bg-accent px-4 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover"
         >
           <Plus aria-hidden className="size-4" />
-          New consultation
+          New Consultation
         </Link>
       </header>
 
@@ -56,14 +56,14 @@ export function ConsultationList() {
 
         {data?.length === 0 && (
           <EmptyState
-            title="No consultations yet"
+            title="No Consultations Yet"
             body="Start one from a bundled synthetic case, or paste a transcript you already have."
             action={
               <Link
                 to="/consultations/new"
                 className="mt-2 inline-flex h-10 items-center rounded-[--radius-control] bg-accent px-4 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover"
               >
-                Start a consultation
+                Start a Consultation
               </Link>
             }
           />

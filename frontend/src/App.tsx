@@ -7,6 +7,7 @@ import { ConsultationNew } from './routes/ConsultationNew.js'
 import { ConsultationReview } from './routes/ConsultationReview.js'
 import { Landing } from './routes/Landing.js'
 import { Login } from './routes/Login.js'
+import { Privacy } from './routes/Privacy.js'
 import { AppShell } from './shell/AppShell.js'
 import { Skeleton } from './ui/Card.js'
 
@@ -30,6 +31,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/privacy" element={<Privacy />} />
         <Route
           element={
             <RequireSession>

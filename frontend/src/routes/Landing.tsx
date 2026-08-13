@@ -1,6 +1,6 @@
 import { ArrowRight, FileLock2, MapPin, Stethoscope, UserCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { useTheme } from '../lib/theme.js'
+import { ThemeToggle } from '../ui/ThemeToggle.js'
 
 /**
  * The only brand-register surface in the product, and the first thing an
@@ -19,24 +19,22 @@ import { useTheme } from '../lib/theme.js'
 const CLAIMS = [
   {
     Icon: FileLock2,
-    title: 'Identifiers never reach the model',
+    title: 'Identifiers Never Reach the Model',
     body: 'Every outbound call passes a de-identification gate first. Names and NRICs are replaced with pseudonymous tokens and restored only after the response returns.',
   },
   {
     Icon: Stethoscope,
-    title: 'Red flags are deterministic',
+    title: 'Red Flags Are Deterministic',
     body: 'Escalation triggers run as code against a versioned list. The model may add candidates for review; it can never suppress or downgrade a rule that fired.',
   },
   {
     Icon: UserCheck,
-    title: 'The doctor approves everything',
+    title: 'The Doctor Approves Everything',
     body: 'Nothing is finalised without an explicit action. The system does not diagnose, and every note is edited and signed off by the treating clinician.',
   },
 ]
 
 export function Landing() {
-  const { resolved, setPreference } = useTheme()
-
   return (
     <div className="min-h-dvh">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
@@ -45,13 +43,7 @@ export function Landing() {
           CatatMD
         </span>
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setPreference(resolved === 'dark' ? 'light' : 'dark')}
-            className="rounded-[--radius-control] px-3 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-sunken hover:text-ink"
-          >
-            {resolved === 'dark' ? 'Light' : 'Dark'}
-          </button>
+          <ThemeToggle />
           <Link
             to="/login"
             className="rounded-[--radius-control] px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-sunken"
@@ -83,7 +75,7 @@ export function Landing() {
               to="/login"
               className="inline-flex h-12 items-center gap-2 rounded-[--radius-control] bg-accent px-6 text-base font-medium text-accent-ink transition-colors hover:bg-accent-hover"
             >
-              Try the demo
+              Try the Demo
               <ArrowRight aria-hidden className="size-4" />
             </Link>
             <span className="inline-flex items-center gap-1.5 text-sm text-ink-muted">
@@ -95,7 +87,7 @@ export function Landing() {
 
         <section aria-labelledby="claims" className="border-t border-line py-14">
           <h2 id="claims" className="text-xl font-semibold tracking-tight">
-            Three things this product does differently
+            Three Things This Product Does Differently
           </h2>
           <p className="mt-2 max-w-2xl text-ink-muted">
             Each one is an architectural property rather than a policy, which means it holds whether
@@ -116,7 +108,7 @@ export function Landing() {
 
         <section className="border-t border-line py-14">
           <div className="max-w-2xl">
-            <h2 className="text-xl font-semibold tracking-tight">What this is not</h2>
+            <h2 className="text-xl font-semibold tracking-tight">What This Is Not</h2>
             <p className="mt-3 leading-relaxed text-ink-muted">
               This is a prototype built for evaluation. It is not a registered medical device, no
               clinician has reviewed its output in a validation study, and every consultation in it
@@ -127,8 +119,11 @@ export function Landing() {
         </section>
       </main>
 
-      <footer className="mx-auto max-w-5xl border-t border-line px-6 py-8 text-sm text-ink-muted">
-        Simulated data only. Not for clinical use.
+      <footer className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 border-t border-line px-6 py-8 text-sm text-ink-muted">
+        <span>Simulated data only. Not for clinical use.</span>
+        <Link to="/privacy" className="underline underline-offset-2 hover:text-ink">
+          Privacy and Data Protection
+        </Link>
       </footer>
     </div>
   )
