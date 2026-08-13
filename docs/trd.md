@@ -823,7 +823,22 @@ Frontend → Vercel; backend → Render (Singapore); database → Supabase (Sing
 
 ### Free-Tier Seats And Collaborator Access
 
-Both Vercel and Render stay on **free tiers**, deliberately: Vercel Hobby is a single seat with no collaborators, and Render's free plan is a single workspace member. Neither collaborator's platform access is paid for. @Andersonnn7788 works through the GitHub repository, not a platform seat — pushing to `main` triggers Vercel's and Render's Git-integrated deploys, and build logs are readable from each platform's GitHub check without a dashboard login. Only genuinely dashboard-level configuration (environment variables, custom domains) needs a seat, and that is expected to stay a single-owner task.
+Both Vercel and Render stay on **free tiers**, deliberately: Vercel Hobby is a single seat with no collaborators, and Render's free plan is a single workspace member. Neither collaborator's platform access is paid for. @Andersonnn7788 works through the GitHub repository, not a platform seat, and build logs are readable from each platform's GitHub check without a dashboard login. Only genuinely dashboard-level configuration (environment variables, custom domains) needs a seat, and that is expected to stay a single-owner task.
+
+**Vercel Git-integration deploys are off entirely** (`vercel.json` → `git.deploymentEnabled: false`, issue #58). The CI `deploy` job is the only path to production. Do not reconnect the integration: it deployed without regard to CI status, and on pull requests it produced a permanently failing check that no branch could ever turn green. Render's Git integration is unaffected and still deploys the backend.
+
+#### The Hobby Author Restriction Is Not Bypassed By CI
+
+Vercel Hobby only builds commits authored by the account owner. This was originally believed to affect Git-integration deploys only, on the reasoning that a token-authenticated CLI deploy is attributed to the token owner. **That reasoning is wrong**, and the deployment record disproves it:
+
+| Observation                                                    | Evidence                                                    |
+| -------------------------------------------------------------- | ----------------------------------------------------------- |
+| The CLI attaches the checkout's git metadata to the deployment | `meta.githubCommitAuthorName` is populated on CLI deploys   |
+| Vercel applies the author check to that metadata               | `dpl_BLGhgtaTjfujznqt8aoofmZkZPcB`, `source=cli`, `BLOCKED` |
+| Every `BLOCKED` deployment was authored by a non-owner         | 10 of the last 100, across both the Git and CLI paths       |
+| Every owner-authored deployment built                          | same sample                                                 |
+
+**Consequence:** a merge of a collaborator-authored commit does not reach production. Squash-merge preserves the PR author, so this applies to roughly half of all merges. The CI `deploy` job now fails fast and names the author rather than hanging until the job timeout, but it cannot fix the restriction. Resolving it requires a plan decision (Vercel Pro, or moving the project to a team), not a workflow change.
 
 ### Render Service Definition (`render.yaml`)
 
@@ -854,7 +869,20 @@ Locally: `bun run db:migrate` (`prisma migrate dev`, against `DIRECT_URL`). In p
 
 ### CI
 
-**Status: `Open`** — no CI workflow exists in the repo. `.github/workflows/ci.yml` (previously `Built`, running `bun install --frozen-lockfile`, `prisma generate`, `bun run lint`, `bun run typecheck`, and `bun run test` on every push to `main` and every PR) has been removed. Whether and when to reinstate automated CI, including the dependency-scan step proposed in §16, is unresolved. See the Open Decisions Register, §19, row 12.
+**Status: `Built`** — `.github/workflows/ci.yml`, reinstated 13/08/26 (issue #13), extended to deployment 13/08/26 (issue #52). It answers §19 row 12 in practice: CI runs on every push to `main` and every pull request. The register row is left open pending the dependency-scan half of the question (§16), which is still not built.
+
+Two jobs, the second gated on the first:
+
+| Job      | Runs on               | Does                                                                                                                                                                    |
+| -------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verify` | every push and PR     | `bun install --frozen-lockfile`, `prisma generate` + `migrate deploy` against a throwaway Postgres service container, `lint`, `typecheck`, `test`, confidentiality grep |
+| `deploy` | pushes to `main` only | `vercel pull` / `build` / `deploy --prebuilt`, then asserts what production actually serves                                                                             |
+
+Two properties of `verify` are deliberate. It uses a **throwaway Postgres**, never the shared Supabase instance, because the route and auth suites exercise real ownership scoping and audit writes rather than mocking the database. It carries **no LLM provider key**, because LLM-dependent tests stub at the `LLMClient` port, the same boundary that makes the provider swappable.
+
+`deploy` asserts rather than trusts, because each of these has shipped at least once: a deployment Vercel refused to build, a production alias left pointing at an older build, and a bundle built without `VITE_API_URL` so every API call landed on the static origin. Exit code 0 from `vercel deploy` establishes none of that, so the job checks the deployment's ready state, the domain's resolved deployment id, and the served bundle.
+
+**Concurrency:** superseded runs are cancelled on pull requests but never on `main`, because a run on `main` deploys, and cancelling between the deploy and its assertions is precisely how an unverified build is left live.
 
 ### Free-Tier Auto-Pause Mitigation
 
