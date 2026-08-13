@@ -1,0 +1,84 @@
+name: CI
+
+# Reinstated 13/08/26 (TRD §19 row 12) as part of issue #13. The clinical-safety
+# acceptance suite exists so that a regression fails a build rather than
+# reaching a demo — running it only on a developer's machine defeats the point.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # A throwaway Postgres, because the route and auth suites exercise real
+    # ownership scoping and audit writes rather than mocking the database —
+    # which is the point of them. It is never the shared Supabase instance.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    # No LLM provider key. LLM-dependent tests stub at the `LLMClient` port —
+    # the same boundary that makes the provider swappable. A test needing a real
+    # key would leak cost and non-determinism into CI.
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+      BETTER_AUTH_SECRET: ci-secret-not-used-anywhere-real-000000
+      BETTER_AUTH_URL: http://localhost:3001
+      CORS_ORIGIN: http://localhost:5173
+      LLM_PROVIDER: qwen
+      DEID_FAIL_CLOSED: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client and apply migrations to the throwaway database
+        run: |
+          bunx prisma generate --schema prisma/schema.prisma
+          bunx prisma migrate deploy --schema prisma/schema.prisma
+
+      - run: bun run lint
+
+      - run: bun run typecheck
+
+      - name: Test, including the clinical-safety acceptance suite
+        run: bun run test
+
+      - name: Confidentiality check
+        # Engagement terms must never reach a tracked file. The submission URL
+        # is the one authorised exception and is filtered out.
+        run: |
+          if git ls-files -z | xargs -0 grep -sInIiE "kabel|RM ?3,?000|8-week" \
+            | grep -v "dxp\.kabel\.my/candidate/projects" \
+            | grep -v "kickoff-.*-session\.md" \
+            | grep -v "\.github/workflows/ci\.yml"; then
+            echo "::error::Confidential engagement details found in tracked files"
+            exit 1
+          fi
+          echo "CLEAN"
