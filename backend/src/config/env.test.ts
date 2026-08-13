@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
@@ -13,7 +14,7 @@ function boot(overrides: Record<string, string>) {
       [
         '--experimental-strip-types',
         '--no-warnings',
-        new URL('./env.ts', import.meta.url).pathname,
+        fileURLToPath(new URL('./env.ts', import.meta.url)),
       ],
       {
         env: { ...process.env, ...overrides },
