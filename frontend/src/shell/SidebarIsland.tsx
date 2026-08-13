@@ -66,7 +66,17 @@ export function SidebarIsland({
       data-tour="sidebar"
       onPointerEnter={() => schedule(true)}
       onPointerLeave={() => schedule(false)}
-      onFocus={() => setFocused(true)}
+      // Keyboard focus expands the island; a mouse click does not. Clicking a
+      // nav item leaves that item focused, and focus does not leave the island
+      // on navigation, so treating every focus as intent held the island open
+      // until the user happened to click something else entirely. `:focus-visible`
+      // is the browser's own answer to "did this focus come from the keyboard",
+      // which is exactly the distinction being drawn here.
+      onFocus={(event) => {
+        if (event.target instanceof Element && event.target.matches(':focus-visible')) {
+          setFocused(true)
+        }
+      }}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false)
       }}
