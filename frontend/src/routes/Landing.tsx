@@ -41,7 +41,7 @@ export function Landing() {
     <div className="min-h-dvh">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
         <span className="flex items-center gap-2">
-          <Mark className="size-6" />
+          <Mark className="size-6 text-accent" />
           <Wordmark className="text-xl" />
         </span>
         <div className="flex items-center gap-1">
