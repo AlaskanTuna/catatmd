@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
 import { useTheme } from '../lib/theme.js'
+import { Wordmark } from '../ui/Wordmark.js'
 
 const OPEN_DELAY_MS = 120
 const CLOSE_DELAY_MS = 200
@@ -81,15 +82,12 @@ export function SidebarIsland({
     >
       <div className="flex items-center gap-2 px-2 py-3">
         <Stethoscope aria-hidden className="size-6 shrink-0 text-accent" />
-        <span
+        <Wordmark
           className={cn(
-            'text-lg font-semibold tracking-tight whitespace-nowrap',
-            'transition-opacity duration-150',
+            'text-xl whitespace-nowrap transition-opacity duration-150',
             expanded ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
-        >
-          CatatMD
-        </span>
+        />
       </div>
 
       <ul className="mt-2 flex flex-1 flex-col gap-1">

@@ -1,6 +1,32 @@
 @import 'tailwindcss';
 
 /*
+ * Self-hosted, never a CDN. A clinical application that fetches a font from a
+ * third party on every page load leaks a request pattern to that third party
+ * and adds a dependency the data-residency argument then has to explain. These
+ * ship in the bundle.
+ */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/source-serif-4';
+@import '@fontsource-variable/source-serif-4/standard-italic.css';
+
+/*
+ * Mafins, the logotype face. Subsetted to the seven glyphs of "CatatMD" and
+ * nothing else, which is why it costs about 1 KB rather than 280 KB.
+ *
+ * It appears exactly once, in the wordmark. A display serif drawn for 48px is
+ * a legibility risk at the 16px a SOAP note is read at, and using it more
+ * widely would turn a logotype into a theme.
+ */
+@font-face {
+  font-family: 'Mafins';
+  src: url('./assets/fonts/Mafins-logo.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/*
  * Design tokens. The authority is docs/DESIGN.md; this file implements it.
  *
  * Tokens are named by role, never by material. There is no --paper and no
@@ -33,8 +59,15 @@
   --color-glass-line: oklch(1 0 0 / 0.55);
   --color-scrim: oklch(0.245 0.008 160 / 0.32);
 
-  --font-sans:
-    'Inter var', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Body, UI and every number. Tabular figures are the reason this is a sans
+   * rather than the heading serif: vitals and timestamps sit in columns. */
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Headings and subheadings. A text serif, drawn to be read, which is what
+   * lets it carry the wordmark's serif character into the interface without
+   * dragging a display face in with it. */
+  --font-serif: 'Source Serif 4 Variable', Georgia, 'Times New Roman', serif;
+  /* The wordmark, and nothing else. */
+  --font-logo: 'Mafins', var(--font-serif);
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* Fixed rem scale, ratio 1.2. No clamp: product UI is viewed at a
@@ -117,6 +150,8 @@
   h1,
   h2,
   h3 {
+    font-family: var(--font-serif);
+    font-weight: 600;
     text-wrap: balance;
     line-height: 1.3;
     letter-spacing: -0.015em;
