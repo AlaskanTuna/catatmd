@@ -1,6 +1,6 @@
 import { env } from '../../config/env.js'
 import { OpenAICompatibleClient } from './openai-compatible.js'
-import type { LLMClient } from './types.js'
+import type { LLMClient, LLMProvider } from './types.js'
 
 export type { GenerateRequest, LLMClient, LLMProvider } from './types.js'
 export { LLMResponseError } from './types.js'
