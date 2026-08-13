@@ -1,4 +1,4 @@
-import { FileText, Plus } from 'lucide-react'
+import { BookMarked, FileText, Plus } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
 import { ThemeToggle } from '../ui/ThemeToggle.js'
@@ -16,6 +16,7 @@ import { ThemeToggle } from '../ui/ThemeToggle.js'
 const ITEMS = [
   { to: '/consultations', label: 'Consultations', icon: FileText, end: true },
   { to: '/consultations/new', label: 'New', icon: Plus, end: false },
+  { to: '/guidelines', label: 'Guidelines', icon: BookMarked, end: false },
 ]
 
 export function MobileDock() {

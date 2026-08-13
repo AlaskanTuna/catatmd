@@ -5,10 +5,12 @@ import { api } from './lib/api.js'
 import { ConsultationList } from './routes/ConsultationList.js'
 import { ConsultationNew } from './routes/ConsultationNew.js'
 import { ConsultationReview } from './routes/ConsultationReview.js'
+import { Guidelines } from './routes/Guidelines.js'
 import { Landing } from './routes/Landing.js'
 import { Login } from './routes/Login.js'
 import { Privacy } from './routes/Privacy.js'
 import { AppShell } from './shell/AppShell.js'
+import { MarketingShell } from './shell/MarketingShell.js'
 import { Skeleton } from './ui/Card.js'
 
 function RequireSession({ children }: { children: ReactNode }) {
@@ -29,9 +31,14 @@ export function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Landing />} />
+        {/* Login is deliberately outside the marketing shell: it is a
+            full-height split with its own brand pane, and a topbar and footer
+            wrapped around that would be chrome competing with chrome. */}
+        <Route element={<MarketingShell />}>
+          <Route path="/" element={<Landing />} />
+          <Route path="/privacy" element={<Privacy />} />
+        </Route>
         <Route path="/login" element={<Login />} />
-        <Route path="/privacy" element={<Privacy />} />
         <Route
           element={
             <RequireSession>
@@ -42,6 +49,7 @@ export function App() {
           <Route path="/consultations" element={<ConsultationList />} />
           <Route path="/consultations/new" element={<ConsultationNew />} />
           <Route path="/consultations/:id" element={<ConsultationReview />} />
+          <Route path="/guidelines" element={<Guidelines />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
 import { EmptyState, Skeleton } from '../ui/Card.js'
+import { PageHeader } from '../ui/PageHeader.js'
 
 /**
  * Status is carried by colour, shape and a word together, never colour alone
@@ -34,19 +35,20 @@ export function ConsultationList() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Consultations</h1>
-          <p className="mt-1 text-sm text-ink-muted">Simulated consultations, scoped to you.</p>
-        </div>
-        <Link
-          to="/consultations/new"
-          className="inline-flex h-10 items-center gap-2 rounded-control bg-accent px-4 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover"
-        >
-          <Plus aria-hidden className="size-4" />
-          New Consultation
-        </Link>
-      </header>
+      <PageHeader
+        title="Consultations"
+        subtitle="Simulated consultations, scoped to you."
+        art="/art/consultations.webp"
+        actions={
+          <Link
+            to="/consultations/new"
+            className="inline-flex h-10 items-center gap-2 rounded-pill bg-accent px-5 text-sm font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97]"
+          >
+            <Plus aria-hidden className="size-4" />
+            New Consultation
+          </Link>
+        }
+      />
 
       <div className="mt-8 flex flex-col gap-2">
         {isPending &&

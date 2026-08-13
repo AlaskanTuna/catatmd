@@ -2,7 +2,7 @@ import type { ClinicalAssertion, ConsultationDetail, SoapNote } from '@shared/ty
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Printer, Sparkles } from 'lucide-react'
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
 import { ApproveBar } from '../review/ApproveBar.js'
@@ -11,13 +11,18 @@ import { NoteEditor } from '../review/NoteEditor.js'
 import { GapCard, RedFlagCard, SuggestionCard } from '../review/SafetyCards.js'
 import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
+import { PageHeader } from '../ui/PageHeader.js'
 
 const SEVERITY_ORDER = { emergency: 0, urgent: 1, advisory: 2 } as const
+
+/** Enough gaps to show the shape of the list without it swallowing the rail. */
+const GAP_PREVIEW = 6
 
 export function ConsultationReview() {
   const { id = '' } = useParams()
   const queryClient = useQueryClient()
   const [showTranscript, setShowTranscript] = useState(false)
+  const [showAllGaps, setShowAllGaps] = useState(false)
 
   const consultation = useQuery({
     queryKey: ['consultation', id],
@@ -69,26 +74,41 @@ export function ConsultationReview() {
 
   return (
     <div className="mx-auto max-w-7xl">
-      <header className="flex flex-wrap items-start justify-between gap-3" data-print="hide">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Consultation Review</h1>
-          <p className="mt-1 font-mono text-xs text-ink-muted">{detail.id}</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            className="lg:hidden"
-            onClick={() => setShowTranscript((value) => !value)}
-            aria-expanded={showTranscript}
-          >
-            {showTranscript ? 'Hide transcript' : 'Transcript'}
-          </Button>
-          {approved && (
-            <Button icon={<Printer className="size-4" />} onClick={() => window.print()}>
-              Export
+      <PageHeader
+        data-print="hide"
+        title="Consultation Review"
+        breadcrumb={
+          <ol className="flex items-center gap-1.5">
+            <li>
+              <Link to="/consultations" className="transition-colors hover:text-ink">
+                Consultations
+              </Link>
+            </li>
+            <li aria-hidden>/</li>
+            <li aria-current="page" className="text-ink">
+              Review
+            </li>
+          </ol>
+        }
+        subtitle={<span className="font-mono text-xs">{detail.id}</span>}
+        art="/art/review.webp"
+        actions={
+          <>
+            <Button
+              className="lg:hidden"
+              onClick={() => setShowTranscript((value) => !value)}
+              aria-expanded={showTranscript}
+            >
+              {showTranscript ? 'Hide transcript' : 'Transcript'}
             </Button>
-          )}
-        </div>
-      </header>
+            {approved && (
+              <Button icon={<Printer className="size-4" />} onClick={() => window.print()}>
+                Export
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {!analysis && (
         <Card className="mt-6 p-6" data-print="hide">
@@ -126,7 +146,10 @@ export function ConsultationReview() {
            tabs hide safety content. */
         <div className="mt-6 grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)_360px]">
           <section
-            className={cn('order-3 lg:order-1', showTranscript ? 'block' : 'hidden lg:block')}
+            className={cn(
+              'order-3 lg:sticky lg:top-6 lg:order-1 lg:self-start',
+              showTranscript ? 'block' : 'hidden lg:block',
+            )}
             aria-labelledby="transcript-heading"
             data-print="hide"
           >
@@ -167,7 +190,21 @@ export function ConsultationReview() {
             />
           </section>
 
-          <aside className="order-1 flex flex-col gap-5 lg:order-3" aria-label="Clinical safety">
+          {/* The rail scrolls itself instead of stretching the page.
+              Previously it was the tallest column by a wide margin (one guest
+              consultation produced four flags and twenty-seven gaps), so it set
+              the height of the whole screen and left the other two columns
+              sitting beside a long empty gutter. Sticky keeps the flags next to
+              the note while it is edited, which is the actual workflow, and the
+              page can never be taller than the note itself.
+
+              The bottom stop clears the approve bar, which is `sticky bottom-4`
+              in flow and would otherwise sit on top of the last card. */}
+          <aside
+            className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto lg:pr-1"
+            aria-label="Clinical safety"
+            data-print="expand"
+          >
             <Panel title="Red Flags" count={flags.length}>
               {flags.length === 0 ? (
                 <p className="text-sm text-ink-muted">
@@ -189,17 +226,41 @@ export function ConsultationReview() {
               )}
             </Panel>
 
+            {/* Gaps are the one list that gets long enough to bury the panels
+                under it, so it opens at a readable length with the full count
+                still on the heading. Red flags are never collapsed: hiding a
+                fired escalation trigger behind a disclosure is the failure
+                this product exists to prevent. */}
             <Panel title="Missing Information" count={analysis.gaps.length}>
-              {analysis.gaps.map((gap) => (
-                <GapCard
+              {/* Every gap is rendered and the extras are hidden in CSS rather
+                  than sliced out of the array, so `print:block` brings them all
+                  back. Slicing would put a truncated list on paper with nothing
+                  to say it had been truncated. */}
+              {analysis.gaps.map((gap, position) => (
+                <div
                   key={gap.id}
-                  gap={gap}
-                  reviewed={detail.reviewedGapIds.includes(gap.id)}
-                  onReview={() =>
-                    patch.mutate({ reviewedGapIds: [...detail.reviewedGapIds, gap.id] })
-                  }
-                />
+                  className={cn(!showAllGaps && position >= GAP_PREVIEW && 'hidden print:block')}
+                >
+                  <GapCard
+                    gap={gap}
+                    reviewed={detail.reviewedGapIds.includes(gap.id)}
+                    onReview={() =>
+                      patch.mutate({ reviewedGapIds: [...detail.reviewedGapIds, gap.id] })
+                    }
+                  />
+                </div>
               ))}
+              {analysis.gaps.length > GAP_PREVIEW && (
+                <button
+                  type="button"
+                  data-print="hide"
+                  onClick={() => setShowAllGaps((value) => !value)}
+                  aria-expanded={showAllGaps}
+                  className="mt-1 self-start rounded-control px-2 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-sunken"
+                >
+                  {showAllGaps ? 'Show fewer' : `Show all ${analysis.gaps.length} missing items`}
+                </button>
+              )}
             </Panel>
 
             <Panel title="Suggestions" count={analysis.suggestions.length}>
