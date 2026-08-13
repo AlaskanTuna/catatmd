@@ -99,9 +99,19 @@ jobs:
   #  1. Git-integration deploys were blocked outright for one collaborator. The
   #     project is on a Hobby plan, which only builds commits authored by the
   #     account owner, so a push from the other contributor failed with
-  #     TEAM_ACCESS_REQUIRED (13/08/26, commit c2321c4). A token-authenticated
-  #     CLI deploy is attributed to the token owner, so authorship stops
-  #     mattering.
+  #     TEAM_ACCESS_REQUIRED (13/08/26, commit c2321c4).
+  #
+  #     This job was originally written on the assumption that a
+  #     token-authenticated CLI deploy is attributed to the token owner, so
+  #     authorship would stop mattering. That assumption is wrong, and the
+  #     evidence is in the deployment record: the CLI attaches the checkout's
+  #     git metadata, and Vercel applies the same author restriction to it.
+  #     Of the last 100 deployments, every BLOCKED one was authored by a
+  #     non-owner and every owner-authored one built, across both paths. So a
+  #     merge of a collaborator-authored commit still does not reach
+  #     production. Moving deployment here did fix reason 2 below and made the
+  #     failure visible instead of silent, but the plan limit needs a plan
+  #     decision.
   #  2. Git-integration deploys ignored CI. A red build shipped, and worse, a
   #     green build silently did not: after #50 merged, Vercel reported the
   #     deployment Ready while catatmd.vercel.app kept serving the previous
@@ -155,16 +165,61 @@ jobs:
       # `--meta commitSha` is set explicitly rather than relying on the CLI's git
       # auto-detection, because the identity check below reads it back and must
       # not depend on how the CLI happened to infer provenance.
+      #
+      # `--no-wait` because `vercel deploy` blocks silently on a deployment
+      # Vercel has refused to build: observed 13/08/26 on 511de77, which sat 14
+      # minutes at "Building..." and then hit the job timeout. GitHub reports a
+      # timed-out job as "cancelled", which is indistinguishable at a glance
+      # from a superseded run, so the real cause was invisible. The readiness
+      # check below owns the waiting instead, bounded and with a named verdict.
       - name: Deploy prebuilt output
         id: deploy
         run: |
-          url="$(vercel deploy --prebuilt --prod \
+          url="$(vercel deploy --prebuilt --prod --no-wait \
             --meta commitSha="$GITHUB_SHA" \
             --token="$VERCEL_TOKEN")"
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "Deployed: $url"
+          echo "Created: $url"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      # A deployment that never becomes READY must fail here, loudly and with a
+      # reason, rather than surfacing later as a confusing alias mismatch.
+      - name: Wait for the deployment to be ready
+        timeout-minutes: 10
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+
+          host="${DEPLOYMENT_URL#https://}"
+          url="https://api.vercel.com/v13/deployments/$host?teamId=$VERCEL_ORG_ID"
+
+          state=""
+          for _ in $(seq 1 54); do
+            body="$(curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" "$url")"
+            state="$(printf '%s' "$body" | jq -r '.readyState // empty')"
+            case "$state" in
+              READY)
+                echo "Deployment is ready."
+                exit 0
+                ;;
+              BLOCKED)
+                author="$(printf '%s' "$body" | jq -r '.meta.githubCommitAuthorName // "unknown"')"
+                echo "::error::Vercel refused to build this deployment (BLOCKED). Commit author: $author. Production has NOT been updated. Every BLOCKED deployment on this project so far, over both the Git integration and this CLI path, has been for a commit authored by someone other than the Vercel account owner, which is the Hobby plan's collaborator restriction. That is a plan decision, not something this workflow can fix."
+                exit 1
+                ;;
+              ERROR | CANCELED)
+                echo "::error::Deployment ended in state $state. Production has NOT been updated."
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+
+          echo "::error::Deployment never became READY (last state: ${state:-unknown})."
+          exit 1
 
       # The step the whole job exists for.
       #
