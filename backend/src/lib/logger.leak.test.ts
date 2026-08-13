@@ -86,6 +86,11 @@ vi.mock('../middleware/require-session.js', () => ({
 
 const store = new Map<string, Record<string, unknown>>()
 
+const auditEvent = {
+  create: vi.fn(async () => ({})),
+  findFirst: vi.fn(async () => null),
+}
+
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
     consultation: {
@@ -101,7 +106,12 @@ vi.mock('../lib/prisma.js', () => ({
         },
       ),
     },
-    auditEvent: { create: vi.fn(async () => ({})) },
+    auditEvent,
+    // Appends run inside a transaction (issue #27); run the callback against
+    // the same table stub.
+    $transaction: vi.fn((run: (tx: { auditEvent: typeof auditEvent }) => unknown) =>
+      run({ auditEvent }),
+    ),
   },
 }))
 

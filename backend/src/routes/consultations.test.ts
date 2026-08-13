@@ -105,6 +105,28 @@ const TRANSCRIPT = {
 const store = new Map<string, Record<string, unknown>>()
 const audits: { action: string; consultationId: string; metadata?: unknown }[] = []
 
+const auditEvent = {
+  create: vi.fn(
+    async ({
+      data,
+    }: {
+      data: { action: string; consultationId: string; hash: string; metadata?: unknown }
+    }) => {
+      audits.push({
+        action: data.action,
+        consultationId: data.consultationId,
+        metadata: data.metadata,
+      })
+      chainHead = data.hash
+      return data
+    },
+  ),
+  findMany: vi.fn(async () => []),
+  findFirst: vi.fn(async () => (chainHead === null ? null : { hash: chainHead })),
+}
+
+let chainHead: string | null = null
+
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
     consultation: {
@@ -136,23 +158,13 @@ vi.mock('../lib/prisma.js', () => ({
         },
       ),
     },
-    auditEvent: {
-      create: vi.fn(
-        async ({
-          data,
-        }: {
-          data: { action: string; consultationId: string; metadata?: unknown }
-        }) => {
-          audits.push({
-            action: data.action,
-            consultationId: data.consultationId,
-            metadata: data.metadata,
-          })
-          return data
-        },
-      ),
-      findMany: vi.fn(async () => []),
-    },
+    auditEvent,
+    // Appends run inside a transaction so the head read and the insert are
+    // atomic (issue #27). The stand-in just runs the callback against the same
+    // table stub.
+    $transaction: vi.fn((run: (tx: { auditEvent: typeof auditEvent }) => unknown) =>
+      run({ auditEvent }),
+    ),
   },
 }))
 
@@ -173,6 +185,7 @@ afterAll(() => server.close())
 beforeEach(() => {
   store.clear()
   audits.length = 0
+  chainHead = null
 })
 
 function seed(status: string, extra: Record<string, unknown> = {}) {

@@ -141,6 +141,17 @@ model AuditEvent {
   action    String
   createdAt DateTime @default(now())
 
+  /// Append order. Used only to find the chain head cheaply and without ties;
+  /// `prevHash` is what actually defines the order of the chain.
+  seq Int @unique @default(autoincrement())
+
+  /// Hash of the preceding row, or 'genesis' for the first chained row. Unique,
+  /// so two concurrent appends cannot silently fork the chain. Null on rows
+  /// written before the chain existed (issue #27, docs/trd.md §15).
+  prevHash String? @unique
+  /// This row's hash over ids and event type only, never `metadata`.
+  hash     String?
+
   /// Detector labels that fired during de-identification, e.g. ["NRIC","NAME"].
   /// Labels only, never values.
   metadata Json?
