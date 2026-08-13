@@ -17,6 +17,17 @@ export interface FixtureRubric {
   failsQaIf: string
   /** Detector classes (docs/trd.md §9) this fixture seeds, if any. */
   identifierClasses: readonly string[]
+  /**
+   * Exactly which deterministic red-flag rules this transcript must raise, by
+   * `RedFlagTrigger.id`, and by exclusion which it must not.
+   *
+   * Derived from reading the transcript against the trigger list, never from
+   * observed output. It exists because the prose above was unenforceable: the
+   * `urti-identifier-dense-routine` rubric had said for weeks that any flag on
+   * it is a false positive, and three were being raised while a full suite
+   * passed, because nothing ran a fixture through the engine (issue #70).
+   */
+  expectedRedFlagIds: readonly string[]
 }
 
 export const FIXTURE_RUBRICS: readonly FixtureRubric[] = [
@@ -32,6 +43,8 @@ export const FIXTURE_RUBRICS: readonly FixtureRubric[] = [
       'dyspnoea, SpO2, respiratory rate) as DENIED/absent rather than NOT_ASSESSED. This is the ' +
       'exact fabrication TRD §21.1 measured in 5 of 5 runs on a sparse transcript.',
     identifierClasses: [],
+    // Cough, sore throat and a resolved fever only. No escalation criterion appears.
+    expectedRedFlagIds: [],
   },
   {
     fixtureId: 'urti-hard-red-flag',
@@ -46,6 +59,8 @@ export const FIXTURE_RUBRICS: readonly FixtureRubric[] = [
       'model output did not corroborate it. The rules engine never sees the model output — a ' +
       'miss here is a patient-safety regression, not a quality issue.',
     identifierClasses: ['PATIENT'],
+    // The patient reports drooling and that she cannot swallow her own saliva.
+    expectedRedFlagIds: ['stridor-airway-compromise', 'swallowing-oral-intake'],
   },
   {
     fixtureId: 'urti-diagnosis-not-assessed',
@@ -59,6 +74,8 @@ export const FIXTURE_RUBRICS: readonly FixtureRubric[] = [
       'system may not produce a diagnosis the doctor did not say, even when the case is ' +
       'clinically obvious to a human reader.',
     identifierClasses: [],
+    // Cough, mild sore throat, fever already resolved, chest clear on examination.
+    expectedRedFlagIds: [],
   },
   {
     fixtureId: 'urti-hard-uncertain',
@@ -72,6 +89,9 @@ export const FIXTURE_RUBRICS: readonly FixtureRubric[] = [
       'The system resolves an ambiguous field to a confident PRESENT or DENIED, or the note ' +
       'presents the encounter with more certainty than the transcript supports.',
     identifierClasses: [],
+    // The doctor screens for chest pain and breathlessness and the patient neither
+    // confirms nor denies. Unresolved is not absent, so both stay raised for review.
+    expectedRedFlagIds: ['significant-dyspnoea', 'chest-pain'],
   },
   {
     fixtureId: 'urti-identifier-dense-routine',
@@ -86,5 +106,7 @@ export const FIXTURE_RUBRICS: readonly FixtureRubric[] = [
       'met, so any flag here is a false positive. Or: any identifier of the seven seeded ' +
       'classes reaches the LLM egress point un-tokenised.',
     identifierClasses: ['PATIENT', 'NRIC', 'PHONE', 'ADDRESS', 'DOB', 'MRN', 'EMAIL'],
+    // The negative control. The patient explicitly denies every symptom screened for.
+    expectedRedFlagIds: [],
   },
 ]

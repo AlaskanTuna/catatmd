@@ -466,6 +466,27 @@ interface RedFlagTrigger {
 - Runs independently of, and is never gated by, the LLM call — `docs/prd.md` §8 (Primary Flow) step 3 states rules run "regardless of model output."
 - Every trigger whose `matcher` returns non-null becomes a `RedFlag` with `source: 'rule'`, `ruleId: trigger.id`, `evidence` set to the matched span.
 
+### Whose Words Assert The Symptom (Issue #70)
+
+**Status: `Built`.** A matcher originally tested every turn as though it asserted whatever it mentioned. A doctor working through a review of systems therefore raised a flag for each symptom she asked about: `urti-identifier-dense-routine` produced three, one of them `EMERGENCY`, while the patient denied all three in the following turn. That fixture's rubric had said for as long as it existed that any flag on it is a false positive.
+
+Two narrow rules now decide whether a matched span asserts anything. Both default to firing, because the direction this engine must fail in is toward too many flags.
+
+| Rule                    | Applies to                  | Effect                                                                                     |
+| ----------------------- | --------------------------- | ------------------------------------------------------------------------------------------ |
+| **Question resolution** | A doctor turn ending in `?` | Contributes a match unless the immediately following patient turn opens with a denial      |
+| **Adjacent negation**   | Any turn                    | A match is skipped when an unambiguous negator sits directly before it, in the same clause |
+
+A patient turn always asserts, including a question of their own ("is it bad that I am coughing up blood?"). A doctor's statement always asserts, so an observed finding ("I can hear stridor") still fires.
+
+**Why questions are not simply discarded**, which was the obvious fix and a worse one: a patient answering "Yes, since this morning" to "Any chest pain?" never says the words. The question is the only place the symptom is named, so dropping it would lose the flag entirely. That case is covered by a test.
+
+**Negation is scoped deliberately tightly.** Only the run of text since the last clause break counts, and a "but" ends the negation's reach, so "no fever but chest pain" still fires. A denial frequently repeats the phrase it denies, which is why "no pain in the chest" needed handling at all.
+
+**Residual false-negative risk, stated rather than implied.** A patient who answers a screening question with a bare denial and then contradicts it later in the same turn is not modelled. So is a negator separated from its subject by more than a clause. Both are judged less likely than the failure they replace, which fired on essentially every consultation, because alert fatigue is a false-negative mechanism wearing a false-positive costume: a flag that is always present is a flag nobody reads.
+
+**The rubrics are now executable.** Each `FixtureRubric` carries `expectedRedFlagIds`, derived by reading the transcript against the trigger list rather than by recording output, and a test asserts exact equality for every fixture. The prose alone could not fail a build, which is how three false flags survived a passing suite.
+
 ### Merge Rule — The Zero-Suppression Invariant
 
 - Assembly is a union, never a filter: `finalRedFlags = ruleFlags.concat(modelCandidates)`.
