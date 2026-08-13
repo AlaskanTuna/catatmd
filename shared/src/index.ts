@@ -326,13 +326,32 @@ export const ConsultationSchema = z.object({
 // ─── LLM response contracts (docs/trd.md §12) ────────────────────────────────
 
 /**
- * Operation 1. The prompt never asks for a diagnosis, differential, or
- * impression — only for the diagnosis the doctor stated, if any.
+ * Operation 1a. The 34-assertion checklist (29 clinical fields plus the five
+ * operational ones) and nothing else. The prompt never asks for a diagnosis,
+ * differential, or impression, only for the diagnosis the doctor stated.
+ *
+ * Split out from `note_and_gaps` on 13/08/26 (docs/trd.md §19 row 19). One
+ * combined response averaged 3,337 completion tokens and ranged over 533 of
+ * them, and it is that variance rather than the mean that pushed runs past the
+ * provider's reliable ceiling and past CAP-1's 30s budget: 2 of 8 measured runs
+ * exceeded it, the worst at 36.1s. Asking for the fixed checklist on its own
+ * makes the response nearly constant-size, measured at 2,652 to 2,779 tokens
+ * (a spread of 127), because every key is known in advance and only the spans
+ * vary.
+ */
+export const ClinicalFactsResponseSchema = z.object({
+  clinicalFacts: LlmClinicalFactsSchema,
+  operational: LlmOperationalBlockSchema,
+})
+
+/**
+ * Operation 1b. The generated-prose half, run concurrently with 1a against the
+ * same transcript. It carries no dependency on the facts call: the note is
+ * written from the transcript rather than composed from the assertions
+ * (docs/trd.md §12), so ordering the two would only cost wall-clock.
  */
 export const NoteAndGapsResponseSchema = z.object({
   note: SoapNoteSchema,
-  clinicalFacts: LlmClinicalFactsSchema,
-  operational: LlmOperationalBlockSchema,
   /**
    * Bounded for the same reason as `medicationsDispensed`. The checklist holds
    * 29 fields, so more than 30 gaps cannot correspond to anything real, and an
@@ -439,6 +458,7 @@ export type ClinicalSuggestion = z.infer<typeof ClinicalSuggestionSchema>
 export type ConsultationAnalysis = z.infer<typeof ConsultationAnalysisSchema>
 export type ConsultationStatus = z.infer<typeof ConsultationStatusSchema>
 export type Consultation = z.infer<typeof ConsultationSchema>
+export type ClinicalFactsResponse = z.infer<typeof ClinicalFactsResponseSchema>
 export type NoteAndGapsResponse = z.infer<typeof NoteAndGapsResponseSchema>
 export type SuggestionsAndRedFlagsResponse = z.infer<
   ReturnType<typeof makeSuggestionsAndRedFlagsSchema>
