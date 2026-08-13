@@ -128,11 +128,7 @@ jobs:
       PRODUCTION_DOMAIN: catatmd.vercel.app
 
     steps:
-      # Full history: the final assertion asks whether the commit production
-      # serves is an ancestor of this one, which a shallow clone cannot answer.
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -170,97 +166,93 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      # The step that would have caught the #50 incident. Vite emits a
-      # content-hashed entry chunk, so comparing the hash the build produced
-      # against the one the production domain serves answers "did the thing we
-      # just built actually become the live site" rather than "did the API
-      # accept our request".
-      - name: Assert the production domain serves this build
+      # The step the whole job exists for.
+      #
+      # `vercel deploy --prod` creates a production deployment but does not
+      # reliably move the production alias onto it. Observed three times on
+      # 13/08/26: `vercel promote` returning 409 while the domain served an older
+      # build, an older tree taking the alias from a newer deployment, and a run
+      # where a correct new deployment was created and the alias simply stayed
+      # where it was. So "the deploy command exited 0" says nothing about what
+      # the domain serves, and this asserts the thing that actually matters.
+      #
+      # Identity, not content, is the primary check, and it drives the repair.
+      # Content alone is insufficient: a backend-only or docs-only commit
+      # produces a byte-identical bundle, so a stale alias still serves the
+      # expected hash. Comparing deployment ids is exact in both directions, and
+      # it stays correct if Vercel ever deduplicates an identical build, because
+      # the deploy step then returns that same deployment and the ids still match.
+      - name: Assert the production domain serves this deployment
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
 
-          expected="$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' \
-            .vercel/output/static/index.html | head -1)"
-          if [ -z "$expected" ]; then
-            echo "::error::Could not fingerprint the build output"
+          api() { curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" "$1"; }
+          host="${DEPLOYMENT_URL#https://}"
+
+          deployed_id="$(api \
+            "https://api.vercel.com/v13/deployments/$host?teamId=$VERCEL_ORG_ID" \
+            | jq -r '.id // empty')"
+          if [ -z "$deployed_id" ]; then
+            echo "::error::Could not resolve the deployment just created ($host)"
             exit 1
           fi
-          echo "Expecting $expected"
+          echo "Deployed $deployed_id from $GITHUB_SHA"
 
-          serves_expected() {
-            curl -fsSL --max-time 20 "https://$PRODUCTION_DOMAIN/" 2>/dev/null \
-              | grep -qF "$expected"
+          alias_target() {
+            api "https://api.vercel.com/v4/aliases/$PRODUCTION_DOMAIN?teamId=$VERCEL_ORG_ID" \
+              | jq -r '.deploymentId // empty'
           }
 
-          # Propagation is not instant, so a first miss is not yet a failure.
+          # Aliasing is not instant, so a first miss is not yet a failure.
           for _ in 1 2 3 4 5 6; do
-            if serves_expected; then
-              echo "$PRODUCTION_DOMAIN serves this build."
+            [ "$(alias_target)" = "$deployed_id" ] && {
+              echo "$PRODUCTION_DOMAIN resolves to this deployment."
               exit 0
-            fi
+            }
             sleep 10
           done
 
-          # Reached only when Vercel considers the deploy done but the alias did
-          # not move. Repair it explicitly rather than leaving a green job over
-          # a stale site.
+          # Reached whenever the deploy succeeded but the alias stayed put, which
+          # is the normal case rather than the exception. Repair explicitly.
           echo "::warning::Alias did not move on its own; repointing $PRODUCTION_DOMAIN"
           vercel alias set "$DEPLOYMENT_URL" "$PRODUCTION_DOMAIN" --token="$VERCEL_TOKEN"
 
           for _ in 1 2 3 4 5 6; do
-            if serves_expected; then
-              echo "$PRODUCTION_DOMAIN serves this build after an explicit alias set."
+            [ "$(alias_target)" = "$deployed_id" ] && {
+              echo "$PRODUCTION_DOMAIN resolves to this deployment after an explicit alias set."
+              exit 0
+            }
+            sleep 10
+          done
+
+          live="$(alias_target)"
+          echo "::error::$PRODUCTION_DOMAIN still resolves to ${live:-an unknown deployment}, not $deployed_id. The deploy reported success and the alias could not be moved onto it."
+          exit 1
+
+      # Confirmation, not the gate. If the ids match but the bytes do not, the
+      # deployment itself is wrong rather than the alias, which is a different
+      # fault and worth naming separately.
+      - name: Confirm the served bundle matches the build
+        run: |
+          set -euo pipefail
+
+          expected="$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' \
+            .vercel/output/static/index.html | head -1)"
+          if [ -z "$expected" ]; then
+            echo "::warning::Could not fingerprint the build output; skipping byte confirmation"
+            exit 0
+          fi
+
+          for _ in 1 2 3; do
+            if curl -fsSL --max-time 20 "https://$PRODUCTION_DOMAIN/" | grep -qF "$expected"; then
+              echo "$PRODUCTION_DOMAIN serves $expected."
               exit 0
             fi
             sleep 10
           done
 
-          echo "::error::$PRODUCTION_DOMAIN is not serving $expected. The deploy reported success but the live site is stale."
-          exit 1
-
-      # The content check above is necessary but not sufficient. A backend-only
-      # or docs-only merge produces a byte-identical frontend bundle, so a stale
-      # alias would still serve the "expected" hash and the check would pass
-      # while production had not moved at all. This asserts identity rather than
-      # content: the deployment the domain resolves to must be the one built
-      # from this commit.
-      #
-      # It is also what names the 22:03 failure precisely. A deploy of an older
-      # commit taking the alias from a newer one is production moving backwards,
-      # which is a different fault from content simply being stale, and it
-      # deserves its own message.
-      - name: Assert the alias resolves to this commit
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          api() { curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" "$1"; }
-
-          deployment_id="$(api \
-            "https://api.vercel.com/v4/aliases/$PRODUCTION_DOMAIN?teamId=$VERCEL_ORG_ID" \
-            | jq -r '.deploymentId // empty')"
-          if [ -z "$deployment_id" ]; then
-            echo "::error::Could not resolve $PRODUCTION_DOMAIN to a deployment"
-            exit 1
-          fi
-
-          live_sha="$(api \
-            "https://api.vercel.com/v13/deployments/$deployment_id?teamId=$VERCEL_ORG_ID" \
-            | jq -r '.meta.commitSha // .meta.githubCommitSha // empty')"
-
-          if [ "$live_sha" = "$GITHUB_SHA" ]; then
-            echo "$PRODUCTION_DOMAIN resolves to this commit ($GITHUB_SHA)."
-            exit 0
-          fi
-
-          if [ -n "$live_sha" ] && git merge-base --is-ancestor "$GITHUB_SHA" "$live_sha" 2>/dev/null; then
-            echo "::error::$PRODUCTION_DOMAIN serves $live_sha, which is ahead of this commit. A newer deploy won the race."
-            exit 1
-          fi
-
-          echo "::error::PRODUCTION MOVED BACKWARDS. $PRODUCTION_DOMAIN resolves to a deployment built from ${live_sha:-an unknown commit}, not $GITHUB_SHA. A deploy of an older tree has taken the production alias."
+          echo "::error::$PRODUCTION_DOMAIN resolves to the right deployment but is not serving $expected."
           exit 1
