@@ -17,15 +17,12 @@ import { Wordmark } from '../ui/Wordmark.js'
  */
 
 /*
- * Both destinations are reachable signed out, which is the constraint that
- * decides this list rather than a judgement about what is interesting. The
- * footer renders on the public landing page, and `/guidelines` is auth-gated,
- * so a visitor clicking it was bounced to `/login` with the intent discarded.
+ * Reachable signed out, which is the constraint that decides this list rather
+ * than a judgement about what is interesting. The footer renders on the public
+ * landing page, and `/guidelines` is auth-gated, so a visitor clicking it was
+ * bounced to `/login` with the intent discarded.
  */
-const LINKS = [
-  { to: '/login', label: 'Try the Demo' },
-  { to: '/privacy', label: 'Privacy and Data Protection' },
-]
+const LINKS = [{ to: '/privacy', label: 'Privacy and Data Protection' }]
 
 export function SiteFooter({ className }: { className?: string }) {
   const footer = useRef<HTMLElement>(null)
@@ -52,7 +49,12 @@ export function SiteFooter({ className }: { className?: string }) {
 
   return (
     <footer ref={footer} className={cn('site-footer', className)} data-print="hide">
-      <div className="mx-auto flex h-full max-w-6xl flex-col items-center justify-center gap-4 px-6 text-center">
+      {/* max-w-6xl px-6 is the header's column, repeated here so the footer's
+          right edge lands on the same vertical as the Sign In button rather
+          than near it. Right-aligned to that column, not to the viewport: past
+          about 1400px a viewport-flush footer drifts away from everything else
+          on the page and stops reading as part of the same grid. */}
+      <div className="mx-auto flex h-full max-w-6xl flex-col items-end justify-center gap-3 px-6 py-10 text-right">
         <span className="flex items-center gap-2">
           <Mark className="size-6" />
           <Wordmark tone="inverse" className="text-xl" />
@@ -60,7 +62,7 @@ export function SiteFooter({ className }: { className?: string }) {
 
         <nav
           aria-label="Footer"
-          className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm font-medium text-accent-ink"
+          className="flex flex-wrap items-center justify-end gap-x-6 gap-y-2 text-sm font-medium text-accent-ink"
         >
           {LINKS.map(({ to, label }) => (
             <Link key={to} to={to} className="underline underline-offset-2 hover:no-underline">

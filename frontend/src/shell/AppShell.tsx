@@ -44,7 +44,12 @@ export function AppShell() {
             when it expands: content shifting under a hover would be worse than
             the dimming it replaces. On small screens the dock is at the bottom,
             so the padding moves there to clear it. */}
-        <main className="px-4 pt-6 pb-28 md:py-6 md:pr-6 md:pl-24">
+        {/* Every signed-in route renders a bare `mx-auto max-w-*` container with
+            no vertical spacing of its own, so this padding is the only thing
+            between a page header and the top of the viewport. The bottom half
+            also has to clear two different things: the mobile dock below md,
+            and the sticky approve bar on the review screen. */}
+        <main className="px-4 pt-8 pb-32 md:py-10 md:pr-6 md:pl-24">
           <Outlet />
         </main>
       </div>
