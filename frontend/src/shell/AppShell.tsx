@@ -1,5 +1,9 @@
 import { useCallback, useState } from 'react'
 import { Outlet, useMatch } from 'react-router-dom'
+import { DemoStepBar } from '../demo/DemoStepBar.js'
+import { DemoTourProvider } from '../demo/DemoTour.js'
+import { HelpButton } from '../demo/HelpButton.js'
+import { Spotlight } from '../demo/Spotlight.js'
 import { cn } from '../lib/cn.js'
 import { CursorGlow } from '../ui/CursorGlow.js'
 import { MobileDock } from './MobileDock.js'
@@ -30,31 +34,43 @@ export function AppShell() {
   const suppressFooter = reviewMatch != null && reviewMatch.params.id !== 'new'
 
   return (
-    <div className="reveal-shell">
-      <div className={cn('reveal-page dot-grid', suppressFooter && 'reveal-page--no-footer')}>
-        <CursorGlow />
+    // The tour provider wraps the shell rather than the app, so it sits inside
+    // the authenticated boundary: it walks real consultations and has nothing
+    // to narrate on the marketing routes.
+    <DemoTourProvider>
+      <div className="reveal-shell">
+        <div className={cn('reveal-page dot-grid', suppressFooter && 'reveal-page--no-footer')}>
+          <CursorGlow />
 
-        <SidebarIsland onExpandedChange={onExpandedChange} />
+          <SidebarIsland onExpandedChange={onExpandedChange} />
 
-        <div className="scrim" data-visible={dimmed} data-print="hide" aria-hidden />
+          <div className="scrim" data-visible={dimmed} data-print="hide" aria-hidden />
 
-        <MobileDock />
+          <MobileDock />
 
-        {/* On md+ the left offset clears the collapsed island and never reflows
-            when it expands: content shifting under a hover would be worse than
-            the dimming it replaces. On small screens the dock is at the bottom,
-            so the padding moves there to clear it. */}
-        {/* Every signed-in route renders a bare `mx-auto max-w-*` container with
-            no vertical spacing of its own, so this padding is the only thing
-            between a page header and the top of the viewport. The bottom half
-            also has to clear two different things: the mobile dock below md,
-            and the sticky approve bar on the review screen. */}
-        <main className="px-4 pt-8 pb-32 md:py-10 md:pr-6 md:pl-24">
-          <Outlet />
-        </main>
+          {/* On md+ the left offset clears the collapsed island and never reflows
+              when it expands: content shifting under a hover would be worse than
+              the dimming it replaces. On small screens the dock is at the bottom,
+              so the padding moves there to clear it. */}
+          {/* Every signed-in route renders a bare `mx-auto max-w-*` container with
+              no vertical spacing of its own, so this padding is the only thing
+              between a page header and the top of the viewport. The bottom half
+              also has to clear two different things: the mobile dock below md,
+              and the sticky approve bar on the review screen. */}
+          <main className="px-4 pt-8 pb-32 md:py-10 md:pr-6 md:pl-24">
+            <Outlet />
+          </main>
+        </div>
+
+        {!suppressFooter && <SiteFooter />}
+
+        {/* Outside the page layer: the spotlight ring and the step bar sit above
+            the sidebar and the scrim, and a coachmark clipped by the surface it
+            is pointing at would defeat itself. */}
+        <HelpButton />
+        <DemoStepBar />
+        <Spotlight />
       </div>
-
-      {!suppressFooter && <SiteFooter />}
-    </div>
+    </DemoTourProvider>
   )
 }
