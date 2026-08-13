@@ -7,7 +7,9 @@ import { errorHandler } from './middleware/error-handler.js'
 import { analyzeRateLimit } from './middleware/rate-limit.js'
 import { requireSession } from './middleware/require-session.js'
 import { authRouter } from './routes/auth.js'
+import { consultationsRouter } from './routes/consultations.js'
 import { healthRouter } from './routes/health.js'
+import { referenceRouter } from './routes/reference.js'
 
 /** Routes that carry clinical data. Everything here requires a session. */
 const PROTECTED_PREFIXES = ['/api/consultations', '/api/fixtures', '/api/guidelines']
@@ -40,10 +42,12 @@ export function createApp() {
   // whichever router later owns this path.
   app.post('/api/consultations/:id/analyze', analyzeRateLimit)
 
-  // ── Clinical routers mount here ──────────────────────────────────────────
-  // Anything added below inherits the session guard and the analyze limiter
-  // above, and must stay above `errorHandler` — an error handler registered
-  // before a router never sees that router's errors.
+  // ── Clinical routers ─────────────────────────────────────────────────────
+  // These inherit the session guard and the analyze limiter above, and must
+  // stay above `errorHandler` — an error handler registered before a router
+  // never sees that router's errors.
+  app.use('/api', referenceRouter)
+  app.use('/api/consultations', consultationsRouter)
 
   app.use(errorHandler)
 

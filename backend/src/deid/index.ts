@@ -64,10 +64,18 @@ export function deidentify(text: string, vault = new RequestTokenVault()): Deide
  * every turn rather than a new one per turn (docs/trd.md §9, §12).
  */
 export function deidentifyTranscript(transcript: Transcript): DeidentificationResult {
-  const serialised = transcript.turns
+  return deidentify(serialiseTranscript(transcript))
+}
+
+/**
+ * Exported because the evidence check (§21.4) must match spans against text in
+ * **exactly** this format. Two copies of a format that has to stay
+ * byte-identical is a drift bug waiting to happen, so there is one.
+ */
+export function serialiseTranscript(transcript: Transcript): string {
+  return transcript.turns
     .map((turn) => `${turn.speaker === 'doctor' ? 'Doctor' : 'Patient'}: ${turn.text}`)
     .join('\n')
-  return deidentify(serialised)
 }
 
 /**
