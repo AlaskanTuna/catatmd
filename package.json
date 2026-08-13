@@ -24,7 +24,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write . && prettier --write --no-error-on-unmatched-pattern '*.{md,yml,yaml}' 'docs/**/*.md'",
     "format:check": "biome format . && prettier --check --no-error-on-unmatched-pattern '*.{md,yml,yaml}' 'docs/**/*.md'",
-    "typecheck": "bun run --cwd shared build && bun run --cwd backend typecheck && bun run --cwd frontend typecheck",
+    "typecheck": "bun run --cwd shared build && bun run --cwd shared typecheck && bun run --cwd backend typecheck && bun run --cwd frontend typecheck",
     "test": "bun run --cwd shared build && bun run --cwd shared test && bun run --cwd backend test && bun run --cwd frontend test",
     "build": "bun run --cwd shared build && bunx prisma generate --schema prisma/schema.prisma && bun run --cwd backend build && bun run --cwd frontend build",
     "start": "bun run --cwd backend start",

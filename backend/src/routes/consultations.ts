@@ -16,7 +16,7 @@ import { deriveGaps } from '../gaps/index.js'
 import { CORPUS_VERSION } from '../guidelines/index.js'
 import { assertOwnedConsultation } from '../lib/authz.js'
 import { HttpError } from '../lib/http-error.js'
-import { getLLMClient, LLMResponseError } from '../lib/llm/index.js'
+import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
 import { prisma } from '../lib/prisma.js'
 import { ACTIVE_RED_FLAG_LIST_VERSION, evaluateRedFlags, mergeRedFlags } from '../redflags/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
@@ -215,7 +215,7 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
       data: { status: 'awaiting_review', analysis },
     })
 
-    const llm = getLLMClient()
+    const llm = getLLMDescriptor()
     await recordAuditEvent({
       action: 'consultation.analysis_completed',
       actorId: actor,

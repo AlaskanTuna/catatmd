@@ -24,7 +24,11 @@ All three are on free tiers by design. Render free instances spin down when idle
 
 ## Status
 
-This repository is currently a **scaffold**. The PHI boundary types, the LLM adapter, the environment contract, and the health route are implemented. The de-identification gate itself, the red-flag rules engine, the guideline corpus, and the review UI are specified but not yet built. `docs/trd.md` tags every section `Built`, `Specified`, or `Open`, and never describes unwritten code as if it exists.
+**The backend is built; the review UI is not.** As of 13/08/26 the de-identification gate, the deterministic red-flag engine, the Malaysian guideline corpus, the structured-extraction pipeline with its evidence-bound assertion check, the gaps engine, authentication and the synthetic fixtures are all implemented and tested. The React review UI remains a Vite scaffold, and the hosted-ASR adapter is specified rather than built.
+
+`docs/trd.md` tags every section `Built`, `Specified`, or `Open`, and never describes unwritten code as if it exists. Where implementation contradicted the specification, the TRD records which won and why rather than quietly conforming — see §3 (the assertion schema had to split in two), §5 and §7.
+
+**No clinician has reviewed any of it**, and all data is synthetic. See Known Limitations.
 
 ---
 
@@ -93,10 +97,14 @@ transcript ──► deid gate ──► LLMClient ──► provider
 - **The vault is request-scoped.** It is never a singleton, never attached to a database row, never logged, and is discarded when the handler returns.
 - **Audit events record detector _labels_, never values** (`["NRIC","NAME"]`), so the audit trail cannot become a second leak vector (`docs/trd.md` §15).
 
-`LLMClient.generate()` accepts only a `Deidentified` branded string, so passing a plain `string` — an accidental leak — is a compile error, not a code-review question. **Two enforcement points are not yet compiler-level, and are stated rather than glossed:**
+`LLMClient.generate()` accepts only a `Deidentified` branded string, so passing a plain `string` — an accidental leak — is a compile error, not a code-review question. Two further enforcement points were open gaps in earlier drafts and were **closed on 13/08/26**:
 
-- **Minting is a convention, not a lock.** `markDeidentified` is exported from `backend/src/deid/types.ts`, so any module can call it directly rather than going through the gate (`docs/trd.md` §5; open decision §19 row 1).
-- **`DEID_FAIL_CLOSED` is checked at boot only.** It is validated in `backend/src/config/env.ts` but never read at the egress point in `OpenAICompatibleClient`, so it has no runtime effect on requests today (`docs/trd.md` §7; open decision §19 row 2).
+- **Minting is now locked, not a convention.** `markDeidentified` is no longer exported. It lives module-private inside `backend/src/deid/`, so branding a raw string anywhere else is a compile error (`docs/trd.md` §5; decision §19 row 1, closed).
+- **`DEID_FAIL_CLOSED` now has runtime effect.** `OpenAICompatibleClient.generate()` re-runs the full detector inventory over the outbound payload immediately before the network call and refuses to send if anything fires (`docs/trd.md` §7; decision §19 row 2, closed).
+
+The two sit at different tiers deliberately. The first stops the convenient bypass at compile time; the second catches the determined one — a `value as Deidentified` cast, which no type system can prevent — at runtime. The guard's exception carries **detector labels only, never matched values**, so the failure path cannot itself become a leak.
+
+What remains honest to say: a deliberate cast still compiles. The claim is that it cannot reach a provider undetected, not that it cannot be written.
 
 Detection is pattern-based and best-effort — see Known Limitations.
 
