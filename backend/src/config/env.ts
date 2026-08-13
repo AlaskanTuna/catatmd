@@ -19,6 +19,16 @@ const EnvSchema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z.string().url(),
 
+  // Shared demo account behind "Sign in as guest" (#29). Optional: absent
+  // credentials disable the guest route rather than failing boot, so a
+  // deployment that does not want a public demo simply omits them.
+  GUEST_EMAIL: z.string().email().optional(),
+  GUEST_PASSWORD: z.string().min(8).optional(),
+
+  // Password for the two seeded demo doctors. Consumed by prisma/seed.ts only;
+  // absent in normal runtime, which is why it is optional.
+  SEED_DOCTOR_PASSWORD: z.string().min(8).optional(),
+
   LLM_PROVIDER: z.enum(['qwen', 'gemini', 'deepseek']).default('qwen'),
 
   QWEN_API_KEY: z.string().optional(),
@@ -52,6 +62,15 @@ if (env.NODE_ENV === 'production' && env.LLM_PROVIDER === 'gemini') {
     'LLM_PROVIDER=gemini is local-dev-only. The free tier permits Google to use ' +
       'submitted content for product improvement and human review; it must never ' +
       'sit on a path that could carry patient-derived text.',
+  )
+}
+
+if (env.NODE_ENV === 'production' && env.LLM_PROVIDER === 'deepseek') {
+  throw new Error(
+    'LLM_PROVIDER=deepseek is benchmarking-only. The hosted API processes and ' +
+      'stores data in the PRC, which raises an unresolved PDPA 2010 s.129 ' +
+      'cross-border transfer question; it must never sit on a path that could ' +
+      'carry patient-derived text.',
   )
 }
 
