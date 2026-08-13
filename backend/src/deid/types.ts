@@ -14,10 +14,20 @@ declare const brand: unique symbol
 
 export type Deidentified = string & { readonly [brand]: 'deidentified' }
 
-/** Only `deid/` may call this. */
-export function markDeidentified(value: string): Deidentified {
-  return value as Deidentified
-}
+/**
+ * Minting is **not** exported (docs/trd.md §19 row 1, closed 13/08/26).
+ *
+ * This function used to be exported, which meant any file could import it and
+ * brand a raw string without detection ever running — the type system
+ * guaranteed the *shape* of what reached `LLMClient` but not its *provenance*.
+ * It now lives module-private to `deid/index.ts`, so that specific escape hatch
+ * is a compile error rather than a convention.
+ *
+ * A deliberate `value as Deidentified` cast is still possible — TypeScript
+ * cannot prevent that — which is why it is not the only control: the egress
+ * guard in `deid/index.ts` re-scans every payload immediately before it leaves
+ * the process, and a smuggled value fails there at runtime.
+ */
 
 /**
  * Maps pseudonymous tokens back to the original spans. Request-scoped and
