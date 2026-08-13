@@ -375,6 +375,7 @@ The argument is not that this product avoids the question; it is that the design
 - **The de-identification gate** (`backend/src/deid/`) is the primary control for anything reaching an LLM. Transcripts are stored raw at rest inside the API's own database, not tokenised (Q9) — defensible only in combination with encryption at rest, in-region hosting, and doctor-scoped access control.
 - **DeepSeek (PRC).** `LLM_PROVIDER=deepseek` is available for benchmarking and is a second, distinct cross-border question. `backend/src/config/env.ts` currently guards **only** `gemini` in production; there is no equivalent guard for `deepseek`. Recorded as an open gap — `docs/trd.md` §7 and §19 row 9.
 - **Retention, deletion, DPIA.** The MVP stores synthetic transcripts indefinitely — no retention schedule, no deletion or access-request path (`docs/trd.md` §4). Both are prerequisites before real patient data, and a DPIA must precede any production deployment. A production deployment would also trigger DPO appointment and breach-notification duties under the amended PDPA. Retention period undecided — §19 row 11.
+- **Engineering DPIA.** The production data-flow map, processor position, PDPA assessment, proposed rights mechanism, and residual risks are in [`dpia.md`](./dpia.md). It is engineering input for legal review, not legal sign-off.
 
 ---
 
