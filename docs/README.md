@@ -60,6 +60,16 @@ Table stakes are named as table stakes: doctor-approves-everything, "does not di
 
 Acceptance criteria for each live in `docs/prd.md` §9.
 
+![CatatMD doctor journey, from consultation to approved note. The doctor consults in-room with the patient still present, then starts a consultation from one of four inputs: a bundled fixture, pasted text, an uploaded .txt or .json file, or live audio transcribed on the doctor's device by default. The transcript is saved as a draft consultation, passed through the de-identification gate, and sent as safe text to the language model, which returns a structured note, documentation gaps, cited suggestions and red-flag candidates only. Real names are restored before anything is saved or shown. Separately, and before the model call, a deterministic rules engine checks red flags against the original transcript and never shows its results to the model, while a deterministic checklist derives documentation gaps from the note's assertion states. Findings are assembled as a union and never filtered. The doctor reviews, edits, acknowledges red flags without removing them, and approves; the approved note is locked and final, copyable and exportable as PDF. The hosted transcription adapter is drawn dashed outside the trust boundary: it is reachable only by per-consultation consent, and is specified rather than built.](assets/user-journey.drawio.png)
+
+Three claims the diagram is drawn to make checkable:
+
+- **The model never sees a patient identifier.** The de-identification gate sits between the stored transcript and the only egress point, and the request-scoped vault restores real names only on the way back.
+- **The model never sees the rules engine's output**, so it cannot suppress a red flag it was never shown.
+- **The model cannot subtract.** Assembly is a union in both directions: deterministic red flags and deterministic gaps stand whether or not the model mentions them (`docs/trd.md` §10, §12).
+
+`approved` is terminal and reachable only through an explicit doctor action. The hosted transcription path is drawn dashed and outside the boundary because it is the one route by which audio can leave the device, entered only by a recorded per-consultation act (`docs/trd.md` §20).
+
 ### The Note Is Not Just SOAP
 
 **SOAP is a review scaffold, not a Malaysian norm.** No Malaysian regulation mandates it — MMC Guideline 002/2006 requires contemporaneous, chronological, signed entries and never mentions SOAP. What _is_ enforced is the payer contract: condition → treatment → itemised medication dispensed → MC days → referral. Two of those fields have no home in SOAP at all, because the Malaysian GP dispenses in-house and issues the MC in the room.
@@ -219,6 +229,10 @@ Fuller treatment in `docs/prd.md` §12; every unresolved engineering question is
 Bun workspaces · TypeScript · Zod (shared contracts) · Express 5 · Prisma 6 · better-auth · React 19 + Vite 7 + Tailwind 4 · Supabase Postgres · Vitest · Biome
 
 Hosting: frontend → Vercel · backend → Render (Singapore) · database → Supabase (Singapore). All three in-region by design.
+
+![CatatMD technical stack. Inside the trust boundary: React, TypeScript, Vite and Tailwind on Vercel; Node, Express and Bun on Render Singapore, carrying the deid PHI gate, the lib/llm client, and the routes, redflags, guidelines and audit modules; PostgreSQL, Prisma and Supabase in Singapore. Outside it: the Qwen language model, reachable only through lib/llm, and the specified-but-unbuilt hosted ASR adapter.](assets/tech-stack.drawio.png)
+
+Two claims the diagram is drawn to make checkable. `lib/llm/` is the **only** text egress, and everything crossing that line has already passed `deid/`. Speech-to-text runs on the device, so the hosted ASR adapter is the one other path out of the boundary, which is why it is drawn dashed and labelled specified, not built.
 
 ```
 shared/          @shared/types — Zod schemas, built first, imported by both sides
