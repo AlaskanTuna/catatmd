@@ -106,6 +106,12 @@
 @layer base {
   :root {
     color-scheme: light;
+    /* Texture, not content. Held far below the line colour so the grid reads
+     * as paper under the page rather than as a table someone forgot to style. */
+    --grid-dot: oklch(0.245 0.008 160 / 0.07);
+    /* Bare oklch components, not a colour: the pointer trail composes its own
+     * alpha per disc, and a finished colour cannot have one substituted in. */
+    --glow: 0.47 0.089 168;
     --z-base: 0;
     --z-sticky: 10;
     --z-scrim: 20;
@@ -117,6 +123,10 @@
 
   :root[data-theme='dark'] {
     color-scheme: dark;
+    /* Lighter dots on a dark ground, and weaker: the same alpha that reads as
+     * texture on near-white reads as dirt on near-black. */
+    --grid-dot: oklch(0.945 0.004 160 / 0.05);
+    --glow: 0.72 0.11 168;
     --color-ground: oklch(0.155 0.006 160);
     --color-surface: oklch(0.215 0.007 160);
     --color-sunken: oklch(0.135 0.005 160);
@@ -229,6 +239,106 @@
   .scrim[data-visible='true'] {
     opacity: 1;
   }
+
+  /*
+   * The public shell is two layers, not one column.
+   *
+   * The footer is fixed at the bottom of the viewport for the whole session and
+   * the page is an opaque sheet lying on top of it. Scrolling to the end slides
+   * that sheet up and uncovers what was already there, which is why the reveal
+   * costs no scroll listener, no observer and no JavaScript at all: nothing
+   * animates, the occluder just moves.
+   *
+   * The reserve below the page and the footer's height are one variable on
+   * purpose. As two literals they drift the first time either side changes, and
+   * the failure is silent and one-directional. Too small a reserve leaves the
+   * footer's top row hidden behind the page, which nobody sees unless they
+   * scroll to the bottom at the width that broke.
+   */
+  .marketing-shell {
+    --footer-h: 23rem;
+  }
+
+  .marketing-page {
+    position: relative;
+    z-index: var(--z-sticky);
+    min-height: 100vh;
+    margin-bottom: var(--footer-h);
+    /* Opaque, and that is the whole mechanism. A translucent page would show
+     * the footer through itself from the first paint and the reveal would
+     * never happen. */
+    background-color: var(--color-ground);
+    background-image: radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 0);
+    background-size: 18px 18px;
+  }
+
+  .marketing-footer {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: var(--z-base);
+    height: var(--footer-h);
+    background-color: var(--color-accent);
+    color: var(--color-accent-ink);
+  }
+
+  /*
+   * The pointer trail, painted between the page's own background and its
+   * content.
+   *
+   * `z-index: -1` inside `.marketing-page` is doing precise work. A negative
+   * index paints after the ancestor's background and before its in-flow
+   * descendants, so the glow washes over the dot grid and passes behind every
+   * word. `z-index: 0` looks like a near-miss of the same thing and is not:
+   * positioned descendants at 0 sit above in-flow content in the paint order,
+   * which would put the glow on top of the text.
+   */
+  .cursor-glow {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 400ms var(--ease-out-quart);
+  }
+
+  .cursor-glow-dot {
+    position: fixed;
+    top: 0;
+    left: 0;
+    border-radius: var(--radius-pill);
+    will-change: transform;
+    /* `/ 0` rather than `transparent`: some engines interpolate transparent
+     * through grey and leave a dirty fringe on a tinted ground. */
+    background: radial-gradient(
+      circle,
+      oklch(var(--glow) / var(--dot-alpha, 0.05)) 0%,
+      oklch(var(--glow) / 0) 70%
+    );
+  }
+
+  /*
+   * Below md the reveal is switched off rather than resized.
+   *
+   * Stacking the columns roughly doubles the footer, so holding the effect on a
+   * phone would reserve most of a viewport as dead scroll to uncover something
+   * a normal footer shows for free. The flourish is a large-screen one, and on
+   * a phone `position: fixed` also has to fight the browser chrome resizing the
+   * viewport mid-scroll. Static here means the footer sizes to its own content
+   * and the reserve is not a number anyone has to keep correct.
+   */
+  @media (width < 48rem) {
+    .marketing-page {
+      margin-bottom: 0;
+    }
+
+    .marketing-footer {
+      position: static;
+      height: auto;
+    }
+  }
 }
 
 @layer utilities {
@@ -303,6 +413,17 @@
 
   [data-print='block'] {
     display: block !important;
+  }
+
+  /* A capped, scrolling region is a screen affordance. On paper it silently
+   * cuts whatever sits below the fold, and the one region it applies to is the
+   * safety rail, so the failure would be a printed note missing red flags.
+   * Sticky positioning goes with it: a sticky element in a paged medium has no
+   * sensible meaning. */
+  [data-print='expand'] {
+    position: static !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 
   .glass,

@@ -1,4 +1,4 @@
-import { FileText, Moon, PanelLeft, Plus, Sun } from 'lucide-react'
+import { BookMarked, FileText, Moon, PanelLeft, Plus, Sun } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
@@ -19,6 +19,7 @@ interface Item {
 const ITEMS: Item[] = [
   { to: '/consultations', label: 'Consultations', icon: FileText, tour: 'nav-consultations' },
   { to: '/consultations/new', label: 'New consultation', icon: Plus, tour: 'nav-new' },
+  { to: '/guidelines', label: 'Guidelines', icon: BookMarked, tour: 'nav-guidelines' },
 ]
 
 /**

@@ -7,6 +7,7 @@ import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
+import { PageHeader } from '../ui/PageHeader.js'
 
 /**
  * One parser for every input path (#2).
@@ -92,10 +93,11 @@ export function ConsultationNew() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-2xl font-semibold tracking-tight">New Consultation</h1>
-      <p className="mt-1 text-sm text-ink-muted">
-        Every bundled case is synthetic. No real patient data enters this system.
-      </p>
+      <PageHeader
+        title="New Consultation"
+        subtitle="Every bundled case is synthetic. No real patient data enters this system."
+        art="/art/new-consultation.webp"
+      />
 
       <div role="tablist" aria-label="Transcript source" className="mt-6 flex flex-wrap gap-1">
         {TABS.map(({ id, label, Icon }) => (
