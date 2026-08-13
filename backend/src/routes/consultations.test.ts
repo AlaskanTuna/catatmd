@@ -1,5 +1,6 @@
 import type { Server } from 'node:http'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ACTIVE_CLINICAL_VERSIONS } from '../clinical-versions/index.js'
 
 /**
  * The analyse pipeline is mocked at the module seam so these tests exercise the
@@ -28,7 +29,8 @@ vi.mock('../analysis/index.js', () => ({
   })),
 }))
 
-vi.mock('../gaps/index.js', () => ({
+vi.mock('../gaps/index.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   deriveGaps: vi.fn(() => [
     { id: 'derived-gap', question: 'Duration?', rationale: 'Needed', priority: 'high' },
   ]),
@@ -80,7 +82,7 @@ const TRANSCRIPT = {
 
 /** Minimal in-memory stand-in for the two tables these routes touch. */
 const store = new Map<string, Record<string, unknown>>()
-const audits: { action: string; consultationId: string }[] = []
+const audits: { action: string; consultationId: string; metadata?: unknown }[] = []
 
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
@@ -114,10 +116,20 @@ vi.mock('../lib/prisma.js', () => ({
       ),
     },
     auditEvent: {
-      create: vi.fn(async ({ data }: { data: { action: string; consultationId: string } }) => {
-        audits.push({ action: data.action, consultationId: data.consultationId })
-        return data
-      }),
+      create: vi.fn(
+        async ({
+          data,
+        }: {
+          data: { action: string; consultationId: string; metadata?: unknown }
+        }) => {
+          audits.push({
+            action: data.action,
+            consultationId: data.consultationId,
+            metadata: data.metadata,
+          })
+          return data
+        },
+      ),
       findMany: vi.fn(async () => []),
     },
   },
@@ -260,6 +272,16 @@ describe('analyse output', () => {
       'consultation.analysis_started',
       'consultation.analysis_completed',
     ])
+
+    // Compared against the aggregator itself rather than literal ids, so a
+    // version bump does not need this assertion edited, but dropping an
+    // artefact from the stamp still fails it (issue #16).
+    const completed = audits.find((a) => a.action === 'consultation.analysis_completed')
+
+    expect(completed?.metadata).toMatchObject({
+      discardedFieldIds: ['fever'],
+      versions: { clinicalContent: ACTIVE_CLINICAL_VERSIONS },
+    })
   })
 })
 
