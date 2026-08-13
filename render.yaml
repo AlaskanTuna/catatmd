@@ -27,7 +27,7 @@ services:
       - key: QWEN_BASE_URL
         value: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
       - key: QWEN_MODEL
-        value: qwen-flash
+        value: qwen3.7-flash
       - key: DEID_FAIL_CLOSED
         value: 'true'
       # Verbosity only. No level widens what may be written: redaction in

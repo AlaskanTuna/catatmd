@@ -33,7 +33,7 @@ const EnvSchema = z.object({
 
   QWEN_API_KEY: z.string().optional(),
   QWEN_BASE_URL: z.string().url().default('https://dashscope-intl.aliyuncs.com/compatible-mode/v1'),
-  QWEN_MODEL: z.string().default('qwen-flash'),
+  QWEN_MODEL: z.string().default('qwen3.7-flash'),
 
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-3.5-flash-lite'),
