@@ -255,6 +255,16 @@
     color: var(--color-ink-muted);
     opacity: 1;
   }
+
+  /* Chromium paints its own clear affordance inside `type="search"`, in its own
+   * style and at its own position. Every search field here supplies one that
+   * matches the design system, so leaving the native one gives the field two
+   * clear buttons side by side and makes the user work out which is which.
+   * The type stays `search` for the `searchbox` role it carries. */
+  input[type='search']::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
 
 @layer components {
@@ -318,7 +328,10 @@
    * scroll to the bottom at the width that broke.
    */
   .reveal-shell {
-    --footer-h: 7.5rem;
+    /* 12rem = 192px, against 109.5px of content inside 40px of padding either
+       side. Measured, not chosen: 11.5rem clipped the content by 5.5px, and the
+       clipping is invisible until someone scrolls to the bottom. */
+    --footer-h: 12rem;
   }
 
   /*
