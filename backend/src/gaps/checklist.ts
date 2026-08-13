@@ -1,4 +1,15 @@
 import type { ClinicalAssertion, ClinicalFacts, OperationalBlock } from '@shared/types'
+import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
+
+/**
+ * Bumped whenever an entry is added, removed, or its selector, priority or
+ * wording changes. Recorded with every analysis (docs/trd.md §15) so a past
+ * set of gaps can be traced back to the checklist that produced it.
+ */
+export const GAP_CHECKLIST_VERSION: ClinicalArtefactVersion = {
+  id: 'gap-checklist-v1',
+  effectiveDate: '2026-08-13',
+}
 
 /**
  * Materiality rule (GitHub issue #6; docs/prd.md §12 alert fatigue).

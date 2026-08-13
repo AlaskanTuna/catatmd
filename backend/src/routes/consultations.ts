@@ -11,14 +11,14 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { analyseNote } from '../analysis/index.js'
 import { type AnalysisFailureReason, getAuditHistory, recordAuditEvent } from '../audit/index.js'
+import { ACTIVE_CLINICAL_VERSIONS } from '../clinical-versions/index.js'
 import { DeidentificationError, deidentifyTranscript } from '../deid/index.js'
 import { deriveGaps } from '../gaps/index.js'
-import { CORPUS_VERSION } from '../guidelines/index.js'
 import { assertOwnedConsultation } from '../lib/authz.js'
 import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
 import { prisma } from '../lib/prisma.js'
-import { ACTIVE_RED_FLAG_LIST_VERSION, evaluateRedFlags, mergeRedFlags } from '../redflags/index.js'
+import { evaluateRedFlags, mergeRedFlags } from '../redflags/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
 
 export const consultationsRouter = Router()
@@ -226,8 +226,7 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
         versions: {
           provider: llm.provider,
           model: llm.model,
-          redFlagListVersion: ACTIVE_RED_FLAG_LIST_VERSION,
-          guidelineCorpusVersion: CORPUS_VERSION,
+          clinicalContent: ACTIVE_CLINICAL_VERSIONS,
         },
       },
     })

@@ -453,6 +453,8 @@ interface RedFlagTrigger {
 }
 ```
 
+`listVersion` is `RED_FLAG_LIST_VERSION.id`, and every entry carries the same value. The list is one of the three versioned clinical artefacts stamped on each analysis; see §15 (Clinical Content Versioning).
+
 ### Evaluation
 
 - `evaluateRedFlags(transcript: Transcript): RedFlag[]` — a pure function over the transcript directly. It runs in-process and never leaves the API, so it does not need to pass through `deid/` first (§9 exists for the LLM egress path only).
@@ -495,6 +497,8 @@ interface GuidelineChunk {
   quote?: string      // short verbatim excerpt — only permitted when verbatimAllowed
 }
 ```
+
+The corpus as a whole carries `GUIDELINE_CORPUS_VERSION`, one of the three versioned clinical artefacts stamped on each analysis; see §15 (Clinical Content Versioning). Per-chunk source versions are not modelled, and the reason is recorded there.
 
 `sourceLicence` and `verbatimAllowed` were added 13/08/26 because the licensing difference between sources is legally load-bearing and the schema previously had no way to express it. `verbatimAllowed: false` means the chunk may be summarised and linked but never quoted; a `quote` present on such a chunk is a corpus-authoring defect and should fail a corpus validation test.
 
@@ -688,7 +692,7 @@ Matches `docs/prd.md` §8 (Primary Flow) exactly: `draft →(create) draft →(a
 | `consultation.created`            | `POST /api/consultations`                                            | —                                                                         |
 | `consultation.asr_hosted_used`    | `POST /api/consultations` where `transcript.source === 'asr_hosted'` | `—` — the fact of the hosted path, never any audio, chunk, or text        |
 | `consultation.analysis_started`   | `POST /api/consultations/:id/analyze` begins                         | —                                                                         |
-| `consultation.analysis_completed` | analyse pipeline succeeds                                            | `{ detected: string[] }` — detector labels only (§9)                      |
+| `consultation.analysis_completed` | analyse pipeline succeeds                                            | `{ detected, discardedFieldIds, versions }` — see below                   |
 | `consultation.analysis_failed`    | analyse pipeline throws                                              | `{ reason: string }` — a short failure category, never the raw error text |
 | `consultation.edited`             | `PATCH /api/consultations/:id`                                       | —                                                                         |
 | `redflag.acknowledged`            | doctor acknowledges a red flag                                       | `{ redFlagId: string }`                                                   |
@@ -699,9 +703,50 @@ Every row also carries `actorId` (the authenticated doctor) and `consultationId`
 
 **Why `consultation.asr_hosted_used` fires at creation rather than at consent.** The doctor's consent to hosted transcription happens in the browser, before a `Consultation` row exists — `docs/prd.md` §8 step 1 creates the row only once a `Transcript` does. An event written at the moment of consent would therefore have no `consultationId` to hang on, which is the one field that makes the audit trail navigable. The event is instead written by `POST /api/consultations` on the declared `source` (§3), which is the first point at which the fact and the consultation id coexist. The consequence is stated plainly: like `source` itself, this row records a **client-asserted** fact.
 
+### Clinical Content Versioning
+
+**Status: `Built`** (issue #16). Clinical content changes on a different cadence from code, so it is versioned data rather than conditionals spread through the application. Three artefacts carry a version, each defined in the file it describes:
+
+| Artefact          | Version Constant           | Defined In                         |
+| ----------------- | -------------------------- | ---------------------------------- |
+| Red-flag rule set | `RED_FLAG_LIST_VERSION`    | `backend/src/redflags/triggers.ts` |
+| Gap checklist     | `GAP_CHECKLIST_VERSION`    | `backend/src/gaps/checklist.ts`    |
+| Guideline corpus  | `GUIDELINE_CORPUS_VERSION` | `backend/src/guidelines/corpus.ts` |
+
+Each is a `ClinicalArtefactVersion` (`backend/src/clinical-versions/types.ts`):
+
+```
+interface ClinicalArtefactVersion {
+  id: string             // stable name; what the audit trail records
+  effectiveDate: string  // ISO 8601 date the version took effect
+}
+```
+
+`id` and `effectiveDate` are separate because they answer different questions. `id` must stay stable once a run has recorded it; `effectiveDate` is editorial and may be set ahead of the authoring date.
+
+**One stamping path.** `backend/src/clinical-versions/index.ts` collects the three into `ACTIVE_CLINICAL_VERSIONS`, which is what the analyse route writes. The metadata on `consultation.analysis_completed` as built:
+
+```
+{
+  detected: string[],            // de-identification detector labels only (§9)
+  discardedFieldIds: string[],   // fields the §21.4 evidence check dropped
+  versions: {
+    provider: string,            // LLM provider and model (§6)
+    model: string,
+    clinicalContent: { redFlagList, gapChecklist, guidelineCorpus },
+  },
+}
+```
+
+Because `AuditEvent` is append-only, a past analysis keeps the versions it ran under even after the artefacts are revised. That is what makes "which rules were active when this note was approved?" answerable, and it is why the stamp lives here rather than on `Consultation.analysis`, which is overwritten on re-analysis.
+
+**Enforcement.** `backend/src/clinical-versions/no-stray-clinical-constants.test.ts` scans `backend/src` and `frontend/src` and fails the build on either a whole single-quoted literal equal to a trigger or checklist id, or a guideline scoring-system name, outside the three data files. Tests and `backend/src/fixtures/` are exempt. The id set is read from the data at runtime, never listed in the test, so it cannot go stale. The second check exists because the scoring systems carry the thresholds the two Malaysian sources disagree on (§11): a hard-coded one is a manufactured consensus with nothing citing it.
+
+**Not versioned data, deliberately.** Per-chunk source versions are not modelled. `GuidelineChunk` (§11) carries `year`, and the edition sits inside `title` ("4th Edition"). Adding a structured `sourceVersion` would change a `@shared/types` schema and is raised on issue #31 rather than assumed.
+
 ### Forbidden Content
 
-Per `.claude/skills/healthcare-phi-compliance/SKILL.md`: no `AuditEvent.metadata` value may ever contain a transcript body, note text, gap/suggestion text, or a `TokenVault` entry. `metadata` is typed as `Json?` with no schema constraint today (§4); constraining its shape to a discriminated union keyed by `action` is proposed here but not yet implemented.
+Per `.claude/skills/healthcare-phi-compliance/SKILL.md`: no `AuditEvent.metadata` value may ever contain a transcript body, note text, gap/suggestion text, or a `TokenVault` entry. The column stays `Json?` in Prisma (§4), but `recordAuditEvent` now accepts only a discriminated union keyed by `action` (`backend/src/audit/index.ts`, issue #12), so a row carrying an unlisted metadata field is a compile error rather than a review catch.
 
 ---
 

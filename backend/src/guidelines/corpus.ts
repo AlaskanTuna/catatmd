@@ -1,11 +1,18 @@
 import { type GuidelineChunk, GuidelineChunkSchema } from '@shared/types'
+import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
 
 /**
  * Bumped whenever a chunk is added, removed, or its summary/threshold
- * changes. Recorded with every analysis (docs/trd.md §11) so a past
+ * changes. Recorded with every analysis (docs/trd.md §11, §15) so a past
  * suggestion can be traced back to the corpus state that produced it.
+ *
+ * This is the version of the corpus as an artefact. Each chunk separately
+ * carries its own source's `publisher` and `year`.
  */
-export const CORPUS_VERSION = '2026-08-13'
+export const GUIDELINE_CORPUS_VERSION: ClinicalArtefactVersion = {
+  id: 'guideline-corpus-v1',
+  effectiveDate: '2026-08-13',
+}
 
 /**
  * Source selection resolved 13/08/26 (docs/trd.md §11, §19 row 3, closed).
