@@ -567,6 +567,16 @@ The prompt is a Tier-4 control (§21.3) and is never relied on alone: the `NOT_A
 
 **Open** — how the review screen decides whether to show the scope notice is unresolved: inferring it from an empty `suggestions` array conflates "out of scope, suggestions suppressed" with "in scope, nothing to suggest," so a dedicated signal (e.g. an `outOfScope: boolean` alongside the analysis) may be needed instead. See §19.
 
+### Gap Assembly — Deterministic First, Model Strictly Additive
+
+**Ratified 13/08/26.** Both `analyseNote` (this section) and `deriveGaps` (§21.3's Tier-2 control) produce information gaps, and neither document previously said which wins.
+
+The rule is the red-flag merge rule (§10) applied to gaps: **deterministic gaps are authoritative and a model gap is appended only when its id is new.** Assembly is a union, never a filter.
+
+The reasoning is that the two failures are the same class. A model that silently drops a deterministic gap has suppressed a Tier-2 control, exactly as a model that drops a rule hit suppresses the engine — and `ClinicalFactsSchema`'s fixed key set exists precisely so that a field the transcript never touched surfaces whether or not the model mentions it. Letting model output subtract from that would return the guarantee to model behaviour.
+
+The two operations still run **concurrently**, not sequentially: `generateSuggestions` takes only the de-identified content and has no dependency on the note, so the "two sequential calls" phrasing above is a latency estimate rather than an ordering constraint. Serialising them would roughly double wall-clock against the target in row 8 for no safety gain.
+
 ### Retry / Failure Behaviour
 
 No automatic retry inside `LLMClient` (§6, `Built`) — a failure on either call throws `LLMResponseError`, which the `/analyze` route (§13) catches and translates into a reverted `Consultation.status` plus an error response. The doctor's only retry path is manually re-triggering analysis (`docs/prd.md` §8, step 5), matching CAP-5's "no autonomous action" constraint — nothing retries itself.
@@ -607,6 +617,7 @@ None of these exist yet — proposing them is this document's mandate under Q17 
 | `POST`  | `/api/consultations/:id/analyze` | session | —                                                                                                  | `200 { consultation }` / `409` / `500`                | allowed from `draft` or `awaiting_review` (re-analysis); `409` from `analyzing` or `approved`; on `LLMResponseError`, status reverts to its pre-call value and `500` returns `ErrorEnvelopeSchema` |
 | `PATCH` | `/api/consultations/:id`         | session | `{ editedNote?: Partial<SoapNote>, acknowledgedRedFlagIds?: string[], reviewedGapIds?: string[] }` | `200 { consultation }` / `409`                        | only while `awaiting_review`; `409` once `approved`                                                                                                                                                |
 | `POST`  | `/api/consultations/:id/approve` | session | —                                                                                                  | `200 { consultation }` / `409`                        | requires `awaiting_review` with `analysis` attached (CAP-5); sets `status: approved`, `approvedAt`, writes `consultation.approved` (§15)                                                           |
+| `GET`   | `/api/consultations/:id/history` | session | —                                                                                                  | `200 { events: AuditEventView[] }` / `404`            | **Ratified 13/08/26.** Chronological `AuditEvent` list, ownership-scoped. Returns `action`, `actorId`, `createdAt` and `metadata` only — never a transcript, note, or vault entry (§15)            |
 
 ### Gap — Red-Flag Acknowledgment And Gap Review Have No Columns Yet
 
