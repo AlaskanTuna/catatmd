@@ -78,6 +78,19 @@ model Verification {
   @@map("verification")
 }
 
+/// better-auth's rate-limit counters. Persisted rather than in-memory because
+/// the API runs on a free Render instance that spins down when idle — an
+/// in-memory limiter resets on every cold start, which is exactly when a
+/// brute-force attempt would resume.
+model RateLimit {
+  id          String @id
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+
+  @@map("rate_limit")
+}
+
 // ─── Clinical domain ─────────────────────────────────────────────────────────
 
 enum ConsultationStatus {
@@ -104,6 +117,12 @@ model Consultation {
   /// Doctor's edited copy of the note. Kept separate so the AI output and the
   /// approved clinical record are never conflated.
   editedNote Json?
+
+  /// Array of `RedFlag.id` the doctor has acknowledged. Acknowledgment is
+  /// additive only — a red flag is never removed or downgraded by it.
+  acknowledgedRedFlagIds Json?
+  /// Array of `InformationGap.id` the doctor has marked as reviewed.
+  reviewedGapIds         Json?
 
   approvedAt DateTime?
   createdAt  DateTime  @default(now())

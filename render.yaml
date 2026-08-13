@@ -30,3 +30,13 @@ services:
         value: qwen-flash
       - key: DEID_FAIL_CLOSED
         value: 'true'
+      # Guest sign-in (#29). Credentials stay server-side — the /api/auth/guest
+      # route exchanges them for a real session, so the demo password is never
+      # in the SPA bundle. Without these set in the dashboard the guest button
+      # 404s in production, and the seed must be run against prod once.
+      - key: GUEST_EMAIL
+        sync: false
+      - key: GUEST_PASSWORD
+        sync: false
+      - key: SEED_DOCTOR_PASSWORD
+        sync: false
