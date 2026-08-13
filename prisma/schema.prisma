@@ -105,6 +105,7 @@ enum ConsultationStatus {
 model Consultation {
   id     String             @id @default(cuid())
   status ConsultationStatus @default(draft)
+  erasedAt DateTime?
 
   /// Owning doctor. Every read path scopes on this; see the authz helper.
   doctorId String
@@ -160,7 +161,7 @@ model AuditEvent {
   actor   User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
   consultationId String?
-  consultation   Consultation? @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  consultation   Consultation? @relation(fields: [consultationId], references: [id], onDelete: Restrict)
 
   @@index([consultationId, createdAt])
   @@index([actorId, createdAt])

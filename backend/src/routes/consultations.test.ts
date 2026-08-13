@@ -130,11 +130,19 @@ let chainHead: string | null = null
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
     consultation: {
-      findFirst: vi.fn(async ({ where }: { where: { id: string; doctorId: string } }) => {
-        const row = store.get(where.id)
-        return row && row.doctorId === where.doctorId ? { ...row } : null
-      }),
-      findMany: vi.fn(async () => [...store.values()]),
+      findFirst: vi.fn(
+        async ({ where }: { where: { id: string; doctorId: string; erasedAt: null } }) => {
+          const row = store.get(where.id)
+          return row && row.doctorId === where.doctorId && row.erasedAt === where.erasedAt
+            ? { ...row }
+            : null
+        },
+      ),
+      findMany: vi.fn(async ({ where }: { where: { doctorId: string; erasedAt: null } }) =>
+        [...store.values()].filter(
+          (row) => row.doctorId === where.doctorId && row.erasedAt === where.erasedAt,
+        ),
+      ),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const row = {
           id: 'c1',
@@ -145,6 +153,7 @@ vi.mock('../lib/prisma.js', () => ({
           approvedAt: null,
           acknowledgedRedFlagIds: null,
           reviewedGapIds: null,
+          erasedAt: null,
           ...data,
         }
         store.set(row.id as string, row)
@@ -199,6 +208,7 @@ function seed(status: string, extra: Record<string, unknown> = {}) {
     approvedAt: null,
     acknowledgedRedFlagIds: null,
     reviewedGapIds: null,
+    erasedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...extra,
@@ -504,5 +514,17 @@ describe('ownership', () => {
     )
 
     expect(res.status).toBe(404)
+  })
+})
+
+describe('erased consultations', () => {
+  it('are absent from the list and return 404 on detail', async () => {
+    seed('awaiting_review', { erasedAt: new Date() })
+
+    const list = await call('GET', '/api/consultations')
+    const detail = await call('GET', '/api/consultations/c1')
+
+    expect((await list.json()) as { consultations: unknown[] }).toEqual({ consultations: [] })
+    expect(detail.status).toBe(404)
   })
 })

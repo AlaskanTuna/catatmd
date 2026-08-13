@@ -14,7 +14,7 @@ import { prisma } from './prisma.js'
  */
 export async function assertOwnedConsultation(id: string, doctorId: string): Promise<Consultation> {
   const consultation = await prisma.consultation.findFirst({
-    where: { id, doctorId },
+    where: { id, doctorId, erasedAt: null },
   })
 
   if (!consultation) {
