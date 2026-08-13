@@ -62,7 +62,7 @@ export function Login() {
       */}
       <aside className="relative hidden w-1/2 flex-col justify-between bg-accent p-10 lg:flex">
         <Link to="/" className="flex items-center gap-2.5 text-accent-ink">
-          <Mark className="size-7 brightness-0 invert" />
+          <Mark className="size-6" />
           <Wordmark tone="inverse" className="text-xl" />
         </Link>
 
@@ -89,7 +89,7 @@ export function Login() {
             to="/"
             className="flex items-center gap-2 text-base font-semibold tracking-tight lg:invisible"
           >
-            <Mark className="size-6" />
+            <Mark className="size-6 text-accent" />
             <Wordmark className="text-lg" />
           </Link>
           <ThemeToggle />

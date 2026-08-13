@@ -62,9 +62,10 @@ Information gaps are **not** severity. They render as dotted-outline chips in `-
 
 ## Typography
 
-One family, multiple weights. Product UI does not need a display pairing, and a second family here would be noise across the many small labels this interface carries.
+Two families, paired on a contrast axis. The interface itself is one sans across many small labels; the serif is confined to headings and the landing page, which is the marketing surface the original single-family rule assumed did not exist.
 
 - **Family:** Inter Variable, `system-ui` fallback. Large x-height, real tabular figures for timestamps and vitals.
+- **Headings:** Source Serif 4 Variable, `Georgia` fallback. A text serif drawn to be read, not a display face.
 - **Scale:** fixed rem, ratio 1.2. `0.75 / 0.8125 / 0.875 / 1 / 1.125 / 1.375 / 1.75 / 2.25 rem`. No `clamp()`; users view at consistent DPI and a fluid heading in a side rail looks worse, not better.
 - **Body floor:** 16px in the note, 14px for metadata. Never below.
 - **Line height:** 1.6 in note prose, 1.5 in UI, 1.3 on headings.
@@ -72,7 +73,13 @@ One family, multiple weights. Product UI does not need a display pairing, and a 
 - **Tabular figures** on every timestamp, vital, and MC-day count so columns do not shimmer.
 - `text-wrap: balance` on headings, `pretty` on prose.
 
-No serif anywhere in the app. The research permits one serif accent word on a marketing surface; this product has no marketing surface worth spending a second family on.
+No serif inside the clinical surfaces. Headings and the landing page carry it; the note, the checklist, and every label around them stay Inter, where the small sizes and dense labelling are what the sans is for.
+
+### The Logotype
+
+- **Face:** Mafins, and only ever the wordmark. A display serif drawn for 48px and up is a legibility risk at the 16px a note is read at.
+- **Delivery:** outlines, not live text. `Wordmark.tsx` carries the real Mafins glyphs as SVG paths, so the lockup's proportions are settled once instead of re-derived from `em` arithmetic at every render, and no font load sits on the logo's critical path. The source woff2 and the generator live in `docs/brand/`.
+- **The mark** is vector and takes its colour from `currentColor`, so one file serves both themes and the accent panel. It is drawn for 24px: the stroke holds 2.3px at 16px, and the aperture stays open enough that the chestpiece never welds to the C.
 
 ## Material And Elevation
 
