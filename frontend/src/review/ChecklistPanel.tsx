@@ -106,24 +106,25 @@ export function ChecklistPanel({
             Operational
           </h3>
           <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
-            {(
-              [
-                ['diagnosis', operational.diagnosis],
-                ['mcDays', operational.mcDays],
-                ['referral', operational.referral],
-                ['followUp', operational.followUp],
-              ] as const
-            ).map(([field, assertion]) => (
-              <div key={field} className="flex items-baseline justify-between gap-2">
-                <dt className="text-sm text-ink">{humanise(field)}</dt>
-                <dd className="flex items-center gap-1.5">
-                  {assertion.value && (
-                    <span className="text-xs text-ink-muted">{assertion.value}</span>
-                  )}
-                  <AssertionStateBadge state={assertion.state} />
-                </dd>
-              </div>
-            ))}
+            {/* Derived from the block itself rather than listed here.
+                A hard-coded field id in a component is a clinical constant
+                that no version stamp describes (issue #16's guard), and
+                deriving it means a new field appears without a UI change. */}
+            {Object.entries(operational)
+              .filter(([field]) => field !== 'medicationsDispensed')
+              .map(([field, assertion]) => (
+                <div key={field} className="flex items-baseline justify-between gap-2">
+                  <dt className="text-sm text-ink">{humanise(field)}</dt>
+                  <dd className="flex items-center gap-1.5">
+                    {(assertion as ClinicalAssertion).value && (
+                      <span className="text-xs text-ink-muted">
+                        {(assertion as ClinicalAssertion).value}
+                      </span>
+                    )}
+                    <AssertionStateBadge state={(assertion as ClinicalAssertion).state} />
+                  </dd>
+                </div>
+              ))}
           </dl>
           {operational.medicationsDispensed.length > 0 && (
             <p className="mt-2 text-sm text-ink">
