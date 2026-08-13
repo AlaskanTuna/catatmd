@@ -1,4 +1,5 @@
 import type { Transcript } from '@shared/types'
+import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
 import type { RedFlagTrigger } from './types.js'
 
 /**
@@ -7,8 +8,14 @@ import type { RedFlagTrigger } from './types.js'
  * (MOH NAG 4th ed. 2024, Abdullah et al. 2024, Ooi et al. 2022) rather than
  * NICE, whose licence forbids AI use. Where those sources restate Centor /
  * McIsaac, this list expresses them in our own words per docs/trd.md §10.
+ *
+ * Bumped whenever a trigger is added, removed, or its matcher or severity
+ * changes. Recorded with every analysis (docs/trd.md §15).
  */
-export const ACTIVE_RED_FLAG_LIST_VERSION = '2026-08-13'
+export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
+  id: 'redflag-list-v1',
+  effectiveDate: '2026-08-13',
+}
 
 const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string | null => {
   for (const turn of transcript.turns) {
@@ -44,7 +51,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /\bha?emoptysis\b/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
-    listVersion: ACTIVE_RED_FLAG_LIST_VERSION,
+    listVersion: RED_FLAG_LIST_VERSION.id,
   },
   {
     id: 'significant-dyspnoea',
@@ -61,7 +68,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /gasping\s+for\s+(?:air|breath)/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
-    listVersion: ACTIVE_RED_FLAG_LIST_VERSION,
+    listVersion: RED_FLAG_LIST_VERSION.id,
   },
   {
     id: 'chest-pain',
@@ -74,7 +81,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /tight(?:ness)?\s+in\s+(?:my|the|his|her)\s+chest/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
-    listVersion: ACTIVE_RED_FLAG_LIST_VERSION,
+    listVersion: RED_FLAG_LIST_VERSION.id,
   },
   {
     id: 'stridor-airway-compromise',
@@ -90,7 +97,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /voice\s+sounds?\s+muffled/i,
       ]),
     clinicalSource: DELPHI_AIRWAY_NOTE,
-    listVersion: ACTIVE_RED_FLAG_LIST_VERSION,
+    listVersion: RED_FLAG_LIST_VERSION.id,
   },
   {
     id: 'swallowing-oral-intake',
@@ -106,7 +113,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /no\s+oral\s+intake/i,
       ]),
     clinicalSource: DELPHI_AIRWAY_NOTE,
-    listVersion: ACTIVE_RED_FLAG_LIST_VERSION,
+    listVersion: RED_FLAG_LIST_VERSION.id,
   },
   {
     /**
@@ -132,6 +139,6 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
       "(NAG 2024, Abdullah et al. 2024, Ooi et al. 2022); this trigger matches the clinician's " +
       'own stated severity assessment rather than an invented cutoff — see docs/trd.md §10 ' +
       '"What Stays Undecided".',
-    listVersion: ACTIVE_RED_FLAG_LIST_VERSION,
+    listVersion: RED_FLAG_LIST_VERSION.id,
   },
 ]

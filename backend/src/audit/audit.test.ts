@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ACTIVE_CLINICAL_VERSIONS } from '../clinical-versions/index.js'
 import { prisma } from '../lib/prisma.js'
 import { type AuditEventInput, getAuditHistory, recordAuditEvent } from './index.js'
 
@@ -46,8 +47,7 @@ describe('recordAuditEvent', () => {
         versions: {
           provider: 'qwen',
           model: 'qwen-flash',
-          redFlagListVersion: '2026-08-13',
-          guidelineCorpusVersion: '2026-08-13',
+          clinicalContent: ACTIVE_CLINICAL_VERSIONS,
         },
       },
     })
@@ -58,8 +58,7 @@ describe('recordAuditEvent', () => {
       versions: {
         provider: 'qwen',
         model: 'qwen-flash',
-        redFlagListVersion: '2026-08-13',
-        guidelineCorpusVersion: '2026-08-13',
+        clinicalContent: ACTIVE_CLINICAL_VERSIONS,
       },
     })
   })
@@ -92,8 +91,7 @@ describe('recordAuditEvent', () => {
           versions: {
             provider: 'qwen',
             model: 'qwen-flash',
-            redFlagListVersion: 'v1',
-            guidelineCorpusVersion: 'v1',
+            clinicalContent: ACTIVE_CLINICAL_VERSIONS,
           },
         },
       },

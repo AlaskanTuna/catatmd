@@ -1,3 +1,4 @@
+import type { ACTIVE_CLINICAL_VERSIONS } from '../clinical-versions/index.js'
 import { prisma } from '../lib/prisma.js'
 
 /**
@@ -14,12 +15,16 @@ export type AnalysisFailureReason =
 /**
  * Which versions of the system produced one analysis (issue #12). Enough to
  * answer "what generated this note?" months later without guessing.
+ *
+ * `clinicalContent` is typed as the aggregator itself rather than a hand-listed
+ * set of fields (issue #16), so adding a versioned artefact cannot leave the
+ * stamp behind: the only way to satisfy this type is to write the whole of
+ * `ACTIVE_CLINICAL_VERSIONS`.
  */
 export interface AnalysisVersions {
   provider: string
   model: string
-  redFlagListVersion: string
-  guidelineCorpusVersion: string
+  clinicalContent: typeof ACTIVE_CLINICAL_VERSIONS
 }
 
 /**
