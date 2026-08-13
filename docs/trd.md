@@ -838,7 +838,14 @@ Vercel Hobby only builds commits authored by the account owner. This was origina
 | Every `BLOCKED` deployment was authored by a non-owner         | 10 of the last 100, across both the Git and CLI paths       |
 | Every owner-authored deployment built                          | same sample                                                 |
 
-**Consequence:** a merge of a collaborator-authored commit does not reach production. Squash-merge preserves the PR author, so this applies to roughly half of all merges. The CI `deploy` job now fails fast and names the author rather than hanging until the job timeout, but it cannot fix the restriction. Resolving it requires a plan decision (Vercel Pro, or moving the project to a team), not a workflow change.
+**Consequence, stated precisely.** An earlier revision of this section said a collaborator-authored merge "does not reach production", which overstated it in two ways worth correcting rather than quietly editing:
+
+- **The restriction is Vercel-only, so it is frontend-only.** The API deploys from Render, which applies no author restriction. Render's deploy history shows every recent commit reaching `live` regardless of author, including `717e05c` by the collaborator. Backend and documentation work is therefore unaffected.
+- **A blocked commit is delayed, not lost.** Vercel builds the whole checked-out tree, so an owner-authored merge carries every ancestor commit with it. `4504188` did exactly that for `717e05c`. A collaborator's frontend change goes live with the next owner-authored merge rather than never.
+
+What remains true is narrower but not harmless: a collaborator-authored frontend commit does not trigger a deploy of its own, and **nothing schedules the owner-authored merge that would carry it**, so the delay is unbounded rather than "until the next merge". Squash-merge preserves the PR author, so this applies to every PR that account opens.
+
+The CI `deploy` job now fails fast and names the author rather than hanging until the job timeout, but it cannot fix the restriction. Resolving it requires a plan decision (Vercel Pro, or moving the project to a team), not a workflow change.
 
 ### Render Service Definition (`render.yaml`)
 
