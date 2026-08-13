@@ -71,9 +71,32 @@ export const auth = betterAuth({
       sameSite: isHttps ? 'none' : 'lax',
       secure: isHttps,
     },
-    // Render terminates TLS at its proxy, so the socket address is the proxy's.
-    // Without this the rate limiter buckets every caller together.
-    ipAddress: { ipAddressHeaders: ['x-forwarded-for'] },
+    /**
+     * `cf-connecting-ip` first, and that ordering is the whole fix.
+     *
+     * Render fronts every service with Cloudflare (`cf-ray` is present on all
+     * responses), so `x-forwarded-for` arrives holding a **chain** — client,
+     * then one or more proxies. better-auth 1.6.27 refuses a multi-entry
+     * `x-forwarded-for` unless `trustedProxies` is configured
+     * (`getIPFromHeader`: `if (forwardedIps.length !== 1) return null`), which
+     * is correct — an unbounded chain is trivially spoofable, so guessing which
+     * entry is the client would be worse than declining.
+     *
+     * Declining, however, means `getIp()` returns null and every caller shares
+     * one bucket per path. Observed in production as:
+     * "Rate limiting could not determine a client IP and is falling back to a
+     * single shared per-path bucket."
+     *
+     * That is worse than no limiter: one client can exhaust the bucket for
+     * everyone, turning a brute-force control into a denial-of-service vector.
+     *
+     * `cf-connecting-ip` resolves it without a proxy allow-list to maintain.
+     * Cloudflare sets it to the true client address and overwrites any
+     * client-supplied value, so it is single-valued and not spoofable — which
+     * is exactly the shape `getIPFromHeader` accepts. `x-forwarded-for` stays
+     * as the fallback for any environment without Cloudflare in front.
+     */
+    ipAddress: { ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'] },
   },
 
   /**
