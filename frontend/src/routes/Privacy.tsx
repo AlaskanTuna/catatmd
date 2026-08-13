@@ -1,6 +1,5 @@
 import { ArrowLeft } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { ThemeToggle } from '../ui/ThemeToggle.js'
 
 /**
  * PDPA notice.
@@ -17,19 +16,15 @@ import { ThemeToggle } from '../ui/ThemeToggle.js'
  */
 export function Privacy() {
   return (
-    <div className="min-h-dvh">
-      <header className="mx-auto flex max-w-3xl items-center justify-between px-6 py-6">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 text-sm font-medium text-ink-muted transition-colors hover:text-ink"
-        >
-          <ArrowLeft aria-hidden className="size-4" />
-          Back
-        </Link>
-        <ThemeToggle />
-      </header>
-
-      <main className="mx-auto max-w-3xl px-6 pb-20">
+    <main className="mx-auto max-w-3xl px-6 pt-10 pb-20">
+      <Link
+        to="/"
+        className="inline-flex items-center gap-2 text-sm font-medium text-ink-muted transition-colors hover:text-ink"
+      >
+        <ArrowLeft aria-hidden className="size-4" />
+        Back
+      </Link>
+      <div className="mt-8">
         <h1 className="text-2xl font-semibold tracking-tight">Privacy and Data Protection</h1>
         <p className="mt-2 text-sm text-ink-muted">
           Personal Data Protection Act 2010 (Malaysia). Last updated 13 August 2026.
@@ -100,8 +95,8 @@ export function Privacy() {
             remains fully responsible for all clinical decisions.
           </p>
         </Section>
-      </main>
-    </div>
+      </div>
+    </main>
   )
 }
 

@@ -1,8 +1,5 @@
 import { ArrowRight, FileLock2, MapPin, Stethoscope, UserCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { Mark } from '../ui/Mark.js'
-import { ThemeToggle } from '../ui/ThemeToggle.js'
-import { Wordmark } from '../ui/Wordmark.js'
 
 /**
  * The only brand-register surface in the product, and the first thing an
@@ -36,46 +33,51 @@ const CLAIMS = [
   },
 ]
 
+const LIMITS = [
+  {
+    term: 'Not a registered medical device',
+    body: 'It is a prototype built for evaluation, and no clinician has reviewed its output in a validation study.',
+  },
+  {
+    term: 'Not real patient data',
+    body: 'Every consultation in it is simulated and was written for testing. The system is not connected to any clinical record system.',
+  },
+  {
+    term: 'Not general practice',
+    body: 'It is scoped to adult cough, sore throat, and related upper respiratory presentations, and it will tell you when a consultation falls outside that.',
+  },
+]
+
 export function Landing() {
   return (
-    <div className="min-h-dvh">
-      <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
-        <span className="flex items-center gap-2">
-          <Mark className="size-6 text-accent" />
-          <Wordmark className="text-xl" />
-        </span>
-        <div className="flex items-center gap-1">
-          <ThemeToggle />
-          <Link
-            to="/login"
-            className="rounded-control px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-sunken"
-          >
-            Sign in
-          </Link>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-5xl px-6">
-        <section className="py-14 sm:py-20">
+    <main className="mx-auto max-w-5xl px-6">
+      {/* Two columns, and the art is the second one rather than a backdrop
+          behind the words. The single-column version left half the viewport
+          empty at every width above `lg`, which is what made the page read as
+          a document rather than as a product. Below `lg` the art is dropped
+          instead of shrunk: at that size it would be competing with the
+          heading for the same 400px. */}
+      <section className="grid items-center gap-10 py-14 sm:py-20 lg:grid-cols-[1.1fr_0.9fr]">
+        <div>
           <p className="text-sm font-medium text-accent">
             Prototype · adult upper respiratory consultations
           </p>
           {/* Fixed rem, not clamp. The ceiling stays well under the 6rem
               shouting line, and the copy is tested at every breakpoint so a
               long word cannot overflow a narrow column. */}
-          <h1 className="mt-4 max-w-3xl text-3xl font-semibold leading-tight tracking-tight sm:text-[2.75rem]">
+          <h1 className="mt-4 text-3xl font-semibold leading-tight tracking-tight sm:text-[2.75rem]">
             The consultation is already documented. It just needs you to check it.
           </h1>
-          <p className="mt-5 max-w-2xl text-lg leading-relaxed text-ink-muted">
+          <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink-muted">
             CatatMD turns a GP consultation transcript into a structured clinical note, tells you
             what the consultation did not establish, and shows its working. You review, edit, and
             approve. It does not diagnose.
           </p>
 
-          <div className="mt-8 flex flex-wrap items-center gap-3">
+          <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-3">
             <Link
               to="/login"
-              className="inline-flex h-12 items-center gap-2 rounded-control bg-accent px-6 text-base font-medium text-accent-ink transition-colors hover:bg-accent-hover"
+              className="inline-flex h-12 items-center gap-2 rounded-pill bg-accent px-7 text-base font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97]"
             >
               Try the Demo
               <ArrowRight aria-hidden className="size-4" />
@@ -85,48 +87,53 @@ export function Landing() {
               Hosted in Singapore
             </span>
           </div>
-        </section>
+        </div>
 
-        <section aria-labelledby="claims" className="border-t border-line py-14">
-          <h2 id="claims" className="text-xl font-semibold tracking-tight">
-            Three Things This Product Does Differently
-          </h2>
-          <p className="mt-2 max-w-2xl text-ink-muted">
-            Each one is an architectural property rather than a policy, which means it holds whether
-            or not the model behaves.
-          </p>
-          {/* Not an identical card grid: no boxes, no icons-in-circles, just
+        <img
+          src="/art/hero.webp"
+          alt=""
+          aria-hidden="true"
+          className="hidden w-full max-w-md justify-self-end lg:block"
+        />
+      </section>
+
+      <section aria-labelledby="claims" className="border-t border-line py-14">
+        <h2 id="claims" className="text-xl font-semibold tracking-tight">
+          Three Things This Product Does Differently
+        </h2>
+        <p className="mt-2 max-w-2xl text-ink-muted">
+          Each one is an architectural property rather than a policy, which means it holds whether
+          or not the model behaves.
+        </p>
+        {/* Not an identical card grid: no boxes, no icons-in-circles, just
               a definition list with a rule between entries. */}
-          <dl className="mt-8 grid gap-8 sm:grid-cols-3">
-            {CLAIMS.map(({ Icon, title, body }) => (
-              <div key={title}>
-                <Icon aria-hidden className="size-5 text-accent" />
-                <dt className="mt-3 font-semibold">{title}</dt>
-                <dd className="mt-2 text-sm leading-relaxed text-ink-muted">{body}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
+        <dl className="mt-8 grid gap-8 sm:grid-cols-3">
+          {CLAIMS.map(({ Icon, title, body }) => (
+            <div key={title}>
+              <Icon aria-hidden className="size-5 text-accent" />
+              <dt className="mt-3 font-semibold">{title}</dt>
+              <dd className="mt-2 text-sm leading-relaxed text-ink-muted">{body}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
 
-        <section className="border-t border-line py-14">
-          <div className="max-w-2xl">
-            <h2 className="text-xl font-semibold tracking-tight">What This Is Not</h2>
-            <p className="mt-3 leading-relaxed text-ink-muted">
-              This is a prototype built for evaluation. It is not a registered medical device, no
-              clinician has reviewed its output in a validation study, and every consultation in it
-              is simulated. It is scoped to adult cough, sore throat, and related upper respiratory
-              presentations, and it will tell you when a consultation falls outside that.
-            </p>
-          </div>
-        </section>
-      </main>
-
-      <footer className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 border-t border-line px-6 py-8 text-sm text-ink-muted">
-        <span>Simulated data only. Not for clinical use.</span>
-        <Link to="/privacy" className="underline underline-offset-2 hover:text-ink">
-          Privacy and Data Protection
-        </Link>
-      </footer>
-    </div>
+      {/* Three limits, one per line, rather than the single paragraph this
+          was. The facts are unchanged; what changed is that a reader can now
+          take them one at a time. A block of caveats is the place a reader
+          skims first and remembers least, which is the opposite of what a
+          disclaimer is for. */}
+      <section className="border-t border-line py-14">
+        <h2 className="text-xl font-semibold tracking-tight">What This Is Not</h2>
+        <dl className="mt-6 flex max-w-2xl flex-col gap-5">
+          {LIMITS.map(({ term, body }) => (
+            <div key={term}>
+              <dt className="font-semibold">{term}</dt>
+              <dd className="mt-1 leading-relaxed text-ink-muted">{body}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    </main>
   )
 }

@@ -25,6 +25,12 @@ export function Card({ className, children, ...props }: HTMLAttributes<HTMLDivEl
   )
 }
 
+/**
+ * The motif is doing real work here rather than decorating. An empty list is
+ * the one screen with nothing on it to look at, so it is where the product
+ * most reads as unfinished, and an open, empty box says "nothing here yet"
+ * faster than the sentence underneath it does.
+ */
 export function EmptyState({
   title,
   body,
@@ -35,7 +41,8 @@ export function EmptyState({
   action?: ReactNode
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-card border border-dashed border-line px-6 py-14 text-center">
+    <div className="flex flex-col items-center gap-3 rounded-card border border-dashed border-line px-6 py-12 text-center">
+      <img src="/art/empty-state.webp" alt="" aria-hidden="true" className="mb-1 size-28" />
       <h2 className="text-lg font-semibold">{title}</h2>
       <p className="max-w-sm text-sm text-ink-muted">{body}</p>
       {action}
