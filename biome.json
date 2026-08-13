@@ -13,7 +13,8 @@
       "!graphify-out",
       "!prisma/migrations",
       "!.claude/skills",
-      "!.agents/skills"
+      "!.agents/skills",
+      "!frontend/src/index.css"
     ]
   },
   "formatter": {
