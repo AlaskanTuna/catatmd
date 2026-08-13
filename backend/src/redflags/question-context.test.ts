@@ -106,6 +106,56 @@ describe('a question is not an assertion, but silence about the answer is not a 
   })
 })
 
+/**
+ * Suppression binds a question to the turn immediately after it. Real
+ * consultations interleave, so every other shape must fail open: a spurious
+ * flag costs a doctor one dismissal, a suppressed one costs the thing this
+ * engine exists to prevent.
+ */
+describe('interleaved turns fail open', () => {
+  it('fires when the patient asks a clarifying question before answering', () => {
+    expect(
+      ruleIds(
+        transcript([
+          { speaker: 'doctor', text: 'Any chest pain?' },
+          { speaker: 'patient', text: 'Which one doctor, the front or the side?' },
+          { speaker: 'patient', text: 'No, none of that.' },
+        ]),
+      ),
+    ).toEqual(['chest-pain'])
+  })
+
+  it('fires for the earlier question when two are answered at once', () => {
+    expect(
+      ruleIds(
+        transcript([
+          { speaker: 'doctor', text: 'Any chest pain?' },
+          { speaker: 'doctor', text: 'And any coughing up blood?' },
+          { speaker: 'patient', text: 'No, none of that.' },
+        ]),
+      ),
+    ).toEqual(['chest-pain'])
+  })
+
+  it('fires when the doctor speaks again before the patient replies', () => {
+    expect(
+      ruleIds(
+        transcript([
+          { speaker: 'doctor', text: 'Any chest pain?' },
+          { speaker: 'doctor', text: 'Take your time.' },
+          { speaker: 'patient', text: 'No, none of that.' },
+        ]),
+      ),
+    ).toEqual(['chest-pain'])
+  })
+
+  it('fires when the question is the last turn and nothing answers it', () => {
+    expect(ruleIds(transcript([{ speaker: 'doctor', text: 'Any chest pain?' }]))).toEqual([
+      'chest-pain',
+    ])
+  })
+})
+
 describe('a denial that repeats the phrase it denies', () => {
   it('does not fire on "no pain in the chest"', () => {
     expect(
