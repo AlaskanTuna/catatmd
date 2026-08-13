@@ -80,17 +80,46 @@ const ClinicalAssertionShape = z.object({
 })
 
 /**
- * What the model is permitted to emit. Deliberately *not* refined.
+ * What the model is permitted to emit.
  *
- * The evidence rule cannot live at the decoding boundary: measured against
- * qwen-flash on 13/08/26, the model emits `{ state: 'DENIED', value: 'no
- * fever' }` with no span. Enforcing the rule in `safeParse` would throw
- * `LLMResponseError` and the doctor would get nothing at all. docs/trd.md §21.4
- * specifies the opposite behaviour — the check runs *after* `safeParse` and
- * downgrades the individual fact to `NOT_ASSESSED`, so one unsupported
- * assertion costs one gap prompt rather than the whole analysis.
+ * `value` and `evidence` are **required here but optional in the persisted
+ * schema**, and that asymmetry is the whole point. Under strict JSON-Schema
+ * decoding an optional property is simply absent from `required`, and the model
+ * takes that permission every time: measured against qwen-flash on a 3,085-word
+ * consultation, **0 of 18** `PRESENT`/`DENIED` assertions carried a span. The
+ * evidence check (docs/trd.md §21.4) then downgraded every one of them, so a
+ * thorough consultation produced a note asserting nothing and 23 documentation
+ * gaps. The safety property held; the product did not.
+ *
+ * Requiring the field flipped that to **18 of 18 emitted, 12 of 18 matching
+ * verbatim** on the same transcript, with `diagnosis` correctly `PRESENT`.
+ *
+ * The empty string is permitted so `NOT_ASSESSED` stays the cheapest path
+ * (docs/trd.md §3, ratification condition 1): a field the transcript never
+ * touched costs `"value":"","evidence":""` and nothing more. The condition
+ * forbids a field being implicitly required to be *filled*, which this respects
+ * — it requires only that the key be present.
+ *
+ * It is deliberately **not** refined. Enforcing the span rule at the decoding
+ * boundary would throw `LLMResponseError` and leave the doctor with nothing;
+ * §21.4 wants the individual fact downgraded instead.
  */
-export const LlmClinicalAssertionSchema = ClinicalAssertionShape
+export const LlmClinicalAssertionSchema = z.object({
+  state: AssertionStateSchema,
+  /**
+   * Bounded, like `evidence` below. An unbounded string under strict decoding
+   * is the other runaway vector alongside an unbounded array, and a normalised
+   * concept label has no business being longer than this.
+   */
+  value: z.string().max(120),
+  /**
+   * A span long enough to carry the finding and no longer. The bound does
+   * double duty: it caps output tokens, and it pushes the model toward the
+   * short single-turn quote that the evidence check can actually match — a
+   * span that wanders across speaker turns is exactly the one that fails.
+   */
+  evidence: z.string().max(400),
+})
 
 /**
  * The persisted and API-facing contract, applied *after* the §21.4 evidence
@@ -172,7 +201,7 @@ export const ClinicalFactsSchema = buildClinicalFacts(
 )
 
 export const LlmClinicalFactsSchema = buildClinicalFacts(
-  LlmClinicalAssertionSchema.default({ state: 'NOT_ASSESSED' }),
+  LlmClinicalAssertionSchema.default({ state: 'NOT_ASSESSED', value: '', evidence: '' }),
 )
 
 // ─── Malaysian operational block ─────────────────────────────────────────────
@@ -191,7 +220,17 @@ export const LlmClinicalFactsSchema = buildClinicalFacts(
 const buildOperationalBlock = <T extends z.ZodType>(field: T) =>
   z.object({
     diagnosis: field,
-    medicationsDispensed: z.array(field).default([]),
+    /**
+     * Bounded deliberately. An unbounded array under strict decoding is a
+     * runaway vector: measured against qwen-flash, a single `note_and_gaps`
+     * call occasionally failed to terminate, generating 16,384 completion
+     * tokens without closing the response. `maxItems` makes the ceiling
+     * structural (Tier 1) rather than a token budget to tune — raising
+     * `max_tokens` only buys a longer loop.
+     *
+     * Twenty dispensed items is far beyond any single GP consultation.
+     */
+    medicationsDispensed: z.array(field).max(20).default([]),
     mcDays: field,
     referral: field,
     followUp: field,
@@ -202,7 +241,7 @@ export const OperationalBlockSchema = buildOperationalBlock(
 )
 
 export const LlmOperationalBlockSchema = buildOperationalBlock(
-  LlmClinicalAssertionSchema.default({ state: 'NOT_ASSESSED' }),
+  LlmClinicalAssertionSchema.default({ state: 'NOT_ASSESSED', value: '', evidence: '' }),
 )
 
 // ─── Missing clinical information ────────────────────────────────────────────
@@ -294,7 +333,12 @@ export const NoteAndGapsResponseSchema = z.object({
   note: SoapNoteSchema,
   clinicalFacts: LlmClinicalFactsSchema,
   operational: LlmOperationalBlockSchema,
-  gaps: z.array(InformationGapSchema),
+  /**
+   * Bounded for the same reason as `medicationsDispensed`. The checklist holds
+   * 29 fields, so more than 30 gaps cannot correspond to anything real, and an
+   * unbounded array is where a strict-decoding loop escapes.
+   */
+  gaps: z.array(InformationGapSchema).max(30),
 })
 
 /**

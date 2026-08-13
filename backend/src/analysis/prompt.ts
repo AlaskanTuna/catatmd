@@ -22,6 +22,13 @@ Produce four things from the transcript:
    place a diagnosis may appear is the structured "diagnosis" field in the
    operational block below, and only when the doctor said it out loud.
 
+   This holds even when the doctor did name a condition. Recording it in the
+   "diagnosis" field is correct; repeating it in "assessment" is not. Write
+   the assessment as what was found — symptoms, duration, examination
+   findings — and stop there. Do not use the words "diagnosis", "impression",
+   or "differential" anywhere in the note or in gap text; a field containing
+   them is discarded in code, so using them costs you the field.
+
 2. A per-field clinical-fact assertion for every symptom, history item,
    observation, and examination finding in the checklist. Each assertion
    carries a state (PRESENT, DENIED, CLINICIAN_OBSERVED, NOT_ASSESSED,
@@ -33,6 +40,17 @@ Produce four things from the transcript:
      from the transcript that supports it — not a summary, not a paraphrase.
      If you cannot quote the transcript directly, do not use PRESENT or
      DENIED.
+   - An evidence span is checked against the transcript by exact text match,
+     so three things break it and all three are avoidable. Quote from
+     **one speaker turn only** — never join a question and its answer into a
+     single span, and never include the "Doctor:" or "Patient:" label.
+     Never abbreviate with "..." or any ellipsis. Never tidy up wording,
+     spelling, or grammar: copy it exactly as written, Manglish and all.
+     A shorter span that matches beats a longer one that does not — quote
+     the few words that carry the finding, not the whole turn.
+   - Where a field genuinely has no supporting text, leave "evidence" as an
+     empty string and use NOT_ASSESSED. An empty string is expected and
+     costs you nothing.
    - NOT_ASSESSED is the correct and cheapest answer whenever the transcript
      is silent on a topic. Using NOT_ASSESSED is never a failure. A topic
      nobody raised must be NOT_ASSESSED, never DENIED — inventing a negative

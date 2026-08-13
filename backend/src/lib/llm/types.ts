@@ -30,6 +30,8 @@ export interface GenerateRequest<T> {
   /** Name given to the provider's structured-output schema. */
   schemaName: string
   temperature?: number
+  /** Output ceiling. Defaults to 8192 at the adapter; see `note_and_gaps`. */
+  maxTokens?: number
 }
 
 export class LLMResponseError extends Error {

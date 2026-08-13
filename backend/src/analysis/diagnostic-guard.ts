@@ -1,5 +1,4 @@
 import type { InformationGap, SoapNote } from '@shared/types'
-import { LLMResponseError } from '../lib/llm/index.js'
 
 /**
  * Tier-3 guard (docs/trd.md §21.3) for docs/prd.md §10: the SOAP assessment
@@ -18,25 +17,51 @@ function containsDiagnosticProse(text: string): boolean {
   return DIAGNOSTIC_PHRASING.some((pattern) => pattern.test(text))
 }
 
-/** Throws `LLMResponseError` naming the offending field id, never its content. */
-export function assertNoDiagnosticProse(note: SoapNote, gaps: readonly InformationGap[]): void {
-  const fields: ReadonlyArray<readonly [string, string]> = [
-    ['note.assessment', note.assessment],
-    ...gaps.flatMap(
-      (gap) =>
-        [
-          [`gap.${gap.id}.question`, gap.question],
-          [`gap.${gap.id}.rationale`, gap.rationale],
-        ] as const,
-    ),
-  ]
+export interface DiagnosticGuardResult {
+  note: SoapNote
+  gaps: InformationGap[]
+  /** Field ids suppressed. Ids only — never the offending content. */
+  suppressedFieldIds: string[]
+}
 
-  for (const [fieldId, text] of fields) {
-    if (containsDiagnosticProse(text)) {
-      throw new LLMResponseError(
-        `note_and_gaps response contains diagnostic language in ${fieldId}`,
-        'note_and_gaps',
-      )
-    }
+/**
+ * Suppresses the offending field rather than rejecting the response.
+ *
+ * This used to throw, which was the wrong runtime behaviour for a Tier-3
+ * control and inconsistent with the evidence check beside it: §21.4 downgrades
+ * the individual fact precisely so one bad field does not cost the doctor the
+ * whole analysis. Throwing here did exactly that — a single stray "diagnosis"
+ * in the assessment discarded a 26-second run, and the doctor's only recourse
+ * was to trigger it again and hope.
+ *
+ * §21.4's asymmetry argument applies unchanged. A blanked assessment costs the
+ * doctor one field they were going to edit anyway, and the structured
+ * `diagnosis` field still carries the answer. A lost analysis costs the whole
+ * consultation.
+ *
+ * The rate is worth watching rather than ignoring: `suppressedFieldIds` is
+ * recorded on the audit event for the same reason `discardedFieldIds` is
+ * (§21.7 — the downgrade rate is itself a quality signal).
+ */
+export function stripDiagnosticProse(
+  note: SoapNote,
+  gaps: readonly InformationGap[],
+): DiagnosticGuardResult {
+  const suppressedFieldIds: string[] = []
+
+  let assessment = note.assessment
+  if (containsDiagnosticProse(assessment)) {
+    assessment = ''
+    suppressedFieldIds.push('note.assessment')
   }
+
+  const keptGaps = gaps.filter((gap) => {
+    if (containsDiagnosticProse(gap.question) || containsDiagnosticProse(gap.rationale)) {
+      suppressedFieldIds.push(`gap.${gap.id}`)
+      return false
+    }
+    return true
+  })
+
+  return { note: { ...note, assessment }, gaps: keptGaps, suppressedFieldIds }
 }
