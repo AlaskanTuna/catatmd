@@ -1,6 +1,6 @@
 import { BookMarked, FileText, Moon, PanelLeft, Plus, Sun } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
 import { useTheme } from '../lib/theme.js'
 import { Mark } from '../ui/Mark.js'
@@ -17,8 +17,8 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { to: '/consultations/new', label: 'New Consultation', icon: Plus, tour: 'nav-new' },
   { to: '/consultations', label: 'Consultations', icon: FileText, tour: 'nav-consultations' },
-  { to: '/consultations/new', label: 'New consultation', icon: Plus, tour: 'nav-new' },
   { to: '/guidelines', label: 'Guidelines', icon: BookMarked, tour: 'nav-guidelines' },
 ]
 
@@ -92,7 +92,11 @@ export function SidebarIsland({
         expanded ? 'w-58' : 'w-16',
       )}
     >
-      <div className="flex items-center gap-2 px-2 py-3">
+      <Link
+        to="/"
+        aria-label="CatatMD home"
+        className="flex items-center gap-2 rounded-control px-2 py-3 transition-colors duration-150 hover:bg-sunken/60"
+      >
         <Mark className="size-6 text-accent" />
         <Wordmark
           className={cn(
@@ -100,7 +104,7 @@ export function SidebarIsland({
             expanded ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
         />
-      </div>
+      </Link>
 
       <ul className="mt-2 flex flex-1 flex-col gap-1">
         {ITEMS.map(({ to, label, icon: Icon, tour }) => (
@@ -150,7 +154,7 @@ export function SidebarIsland({
               expanded ? 'opacity-100' : 'pointer-events-none opacity-0',
             )}
           >
-            {resolved === 'dark' ? 'Light theme' : 'Dark theme'}
+            {resolved === 'dark' ? 'Light Theme' : 'Dark Theme'}
           </span>
         </button>
 
@@ -170,7 +174,7 @@ export function SidebarIsland({
               expanded ? 'opacity-100' : 'pointer-events-none opacity-0',
             )}
           >
-            {pinned ? 'Unpin' : 'Pin open'}
+            {pinned ? 'Unpin' : 'Pin Open'}
           </span>
         </button>
       </div>

@@ -99,7 +99,7 @@ export function ConsultationReview() {
               onClick={() => setShowTranscript((value) => !value)}
               aria-expanded={showTranscript}
             >
-              {showTranscript ? 'Hide transcript' : 'Transcript'}
+              {showTranscript ? 'Hide Transcript' : 'Transcript'}
             </Button>
             {approved && (
               <Button icon={<Printer className="size-4" />} onClick={() => window.print()}>
@@ -258,7 +258,7 @@ export function ConsultationReview() {
                   aria-expanded={showAllGaps}
                   className="mt-1 self-start rounded-control px-2 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-sunken"
                 >
-                  {showAllGaps ? 'Show fewer' : `Show all ${analysis.gaps.length} missing items`}
+                  {showAllGaps ? 'Show Fewer' : `Show All ${analysis.gaps.length} Missing Items`}
                 </button>
               )}
             </Panel>

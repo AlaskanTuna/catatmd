@@ -55,7 +55,7 @@
   --color-scrollbar-hover: oklch(0.245 0.008 160 / 0.38);
 
   /* Chrome only. Never behind text a doctor acts on. */
-  --color-glass: oklch(1 0 0 / 0.72);
+  --color-glass: oklch(1 0 0 / 0.58);
   --color-glass-line: oklch(1 0 0 / 0.55);
   --color-scrim: oklch(0.245 0.008 160 / 0.32);
 
@@ -157,7 +157,7 @@
     --color-scrollbar: oklch(0.945 0.004 160 / 0.2);
     --color-scrollbar-hover: oklch(0.945 0.004 160 / 0.34);
 
-    --color-glass: oklch(0.225 0.007 160 / 0.72);
+    --color-glass: oklch(0.225 0.007 160 / 0.6);
     --color-glass-line: oklch(1 0 0 / 0.1);
     --color-scrim: oklch(0.12 0.005 160 / 0.5);
   }
@@ -318,7 +318,7 @@
    * scroll to the bottom at the width that broke.
    */
   .reveal-shell {
-    --footer-h: 23rem;
+    --footer-h: 7.5rem;
   }
 
   /*
@@ -344,6 +344,13 @@
     /* Opaque, and that is the whole mechanism. A translucent page would show
      * the footer through itself from the first paint and the reveal would
      * never happen. */
+  }
+
+  /* The consultation review screen has no footer to reveal, so the reserve
+   * that uncovers it must go too, or the page ends in a screen of empty
+   * scroll. */
+  .reveal-page--no-footer {
+    margin-bottom: 0;
   }
 
   .site-footer {

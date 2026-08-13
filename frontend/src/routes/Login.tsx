@@ -175,7 +175,7 @@ export function Login() {
             <p className="mt-8 text-xs text-ink-muted">
               By signing in you accept that this is an evaluation prototype.{' '}
               <Link to="/privacy" className="underline underline-offset-2 hover:text-ink">
-                Privacy and data protection
+                Privacy and Data Protection
               </Link>
             </p>
           </div>
