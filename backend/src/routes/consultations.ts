@@ -17,6 +17,7 @@ import { deriveGaps } from '../gaps/index.js'
 import { assertOwnedConsultation } from '../lib/authz.js'
 import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
+import { logger, timeStage } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
 import { evaluateRedFlags, mergeRedFlags } from '../redflags/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
@@ -171,15 +172,24 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
   })
 
   try {
-    const { text, vault, detected } = deidentifyTranscript(transcript.data)
+    const { text, vault, detected } = await timeStage('deidentification', () =>
+      deidentifyTranscript(transcript.data),
+    )
+
+    // Labels and a count, never the matched values (GitHub issue #15).
+    logger.info('de-identification complete', {
+      consultationId: consultation.id,
+      detectorLabels: detected,
+      detectorCount: detected.length,
+    })
 
     // Runs on the raw transcript, in-process, regardless of model output. It
     // never leaves the API, so it needs no gate.
-    const ruleFlags = evaluateRedFlags(transcript.data)
+    const ruleFlags = await timeStage('rules', () => evaluateRedFlags(transcript.data))
 
     const [noteResult, suggestionResult] = await Promise.all([
-      analyseNote(text, text),
-      generateSuggestions(text),
+      timeStage('note_generation', () => analyseNote(text, text)),
+      timeStage('retrieval', () => generateSuggestions(text)),
     ])
 
     const rehydrate = (value: string) => vault.rehydrate(value)
@@ -210,10 +220,12 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
       })),
     }
 
-    const updated = await prisma.consultation.update({
-      where: { id: consultation.id },
-      data: { status: 'awaiting_review', analysis },
-    })
+    const updated = await timeStage('persistence', () =>
+      prisma.consultation.update({
+        where: { id: consultation.id },
+        data: { status: 'awaiting_review', analysis },
+      }),
+    )
 
     const llm = getLLMDescriptor()
     await recordAuditEvent({

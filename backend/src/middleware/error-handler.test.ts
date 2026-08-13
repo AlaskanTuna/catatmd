@@ -52,8 +52,15 @@ describe('errorHandler', () => {
     spy.mockRestore()
   })
 
+  // Logging moved from `console.error` to `lib/logger.ts` in issue #15, so the
+  // assertion now reads the log drain rather than the console. The intent is
+  // unchanged: the class is recorded, the message never is.
   it('never writes the error message to the log', () => {
-    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const lines: string[] = []
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      lines.push(String(chunk))
+      return true
+    })
 
     errorHandler(
       new Error('transcript: patient reports chest pain'),
@@ -62,11 +69,34 @@ describe('errorHandler', () => {
       vi.fn(),
     )
 
-    const logged = spy.mock.calls.flat().join(' ')
-    expect(logged).not.toContain('chest pain')
-    expect(logged).toContain('Error')
-
     spy.mockRestore()
+
+    const logged = lines.join('')
+    expect(logged).not.toContain('chest pain')
+    expect(logged).toContain('"errorName":"Error"')
+    expect(logged).toContain('"errorClass":"internal_error"')
+  })
+
+  it('classifies a de-identification failure distinctly from a model failure', () => {
+    const lines: string[] = []
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      lines.push(String(chunk))
+      return true
+    })
+
+    class DeidentificationError extends Error {
+      override name = 'DeidentificationError'
+    }
+    class LLMResponseError extends Error {
+      override name = 'LLMResponseError'
+    }
+
+    errorHandler(new DeidentificationError('x'), {} as Request, mockRes(), vi.fn())
+    errorHandler(new LLMResponseError('y'), {} as Request, mockRes(), vi.fn())
+    spy.mockRestore()
+
+    expect(lines.join('')).toContain('"errorClass":"deidentification_error"')
+    expect(lines.join('')).toContain('"errorClass":"model_error"')
   })
 
   it('delegates to express when headers are already sent', () => {

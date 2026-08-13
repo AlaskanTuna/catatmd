@@ -5,6 +5,7 @@ import helmet from 'helmet'
 import { env } from './config/env.js'
 import { errorHandler } from './middleware/error-handler.js'
 import { analyzeRateLimit } from './middleware/rate-limit.js'
+import { requestContext } from './middleware/request-context.js'
 import { requireSession } from './middleware/require-session.js'
 import { authRouter } from './routes/auth.js'
 import { consultationsRouter } from './routes/consultations.js'
@@ -20,6 +21,10 @@ export function createApp() {
   // Render terminates TLS at its proxy, so the socket address is the proxy's.
   // Without this, express-rate-limit buckets every caller into one buffer.
   app.set('trust proxy', 1)
+
+  // First, so every response carries `x-request-id` and no later middleware can
+  // log without a request id in scope (GitHub issue #15).
+  app.use(requestContext)
 
   // CSP is left at helmet's default: the SPA is served by Vercel, not by this
   // API, so this process only ever emits JSON (docs/trd.md §16).

@@ -30,6 +30,11 @@ services:
         value: qwen-flash
       - key: DEID_FAIL_CLOSED
         value: 'true'
+      # Verbosity only. No level widens what may be written: redaction in
+      # backend/src/lib/logger.ts is unconditional, and there is deliberately
+      # no flag that unlocks raw clinical content (GitHub issue #15).
+      - key: LOG_LEVEL
+        value: info
       # Guest sign-in (#29). Credentials stay server-side — the /api/auth/guest
       # route exchanges them for a real session, so the demo password is never
       # in the SPA bundle. Without these set in the dashboard the guest button

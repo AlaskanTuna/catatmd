@@ -42,6 +42,11 @@ const EnvSchema = z.object({
   DEEPSEEK_BASE_URL: z.string().url().default('https://api.deepseek.com'),
   DEEPSEEK_MODEL: z.string().default('deepseek-v4-flash'),
 
+  // Verbosity only. No level widens what may be written: redaction in
+  // lib/logger.ts is unconditional, so there is no debug flag that unlocks raw
+  // content (GitHub issue #15, non-goals).
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+
   DEID_FAIL_CLOSED: z
     .enum(['true', 'false'])
     .default('true')
