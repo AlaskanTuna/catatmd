@@ -1,16 +1,16 @@
 # Graph Report - ai-clinical-assistant  (2026-08-13)
 
 ## Corpus Check
-- 32 files · ~17,195 words
+- 32 files · ~23,725 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 452 nodes · 454 edges · 41 communities (40 shown, 1 thin omitted)
+- 490 nodes · 492 edges · 48 communities (47 shown, 1 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `4f8b197c`
+- Built from commit: `fea7fd12`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -51,18 +51,25 @@
 - 7. Environment Contract
 - 15. Audit Logging
 - 8. HTTP Surface As Built
+- 5. Market Fit
+- 11. Regulatory Posture
+- 12. Known Limitations
+- 14. Demo Script
+- 1. Domain Background
+- 13. Success Metrics
+- 6. Scope
 
 ## God Nodes (most connected - your core abstractions)
 1. `TRD` - 22 edges
 2. `scripts` - 17 edges
 3. `compilerOptions` - 16 edges
 4. `PRD` - 16 edges
-5. `includes` - 8 edges
-6. `lint-staged` - 8 edges
-7. `17. Environments & Deployment` - 8 edges
-8. `9. De-Identification Pipeline` - 7 edges
-9. `21. LLM Guardrail Architecture` - 7 edges
-10. `scripts` - 6 edges
+5. `9. De-Identification Pipeline` - 9 edges
+6. `includes` - 8 edges
+7. `lint-staged` - 8 edges
+8. `3. Shared Contracts (`@shared/types`)` - 8 edges
+9. `17. Environments & Deployment` - 8 edges
+10. `21. LLM Guardrail Architecture` - 8 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `GenerateRequest` --references--> `Deidentified`  [EXTRACTED]
@@ -76,11 +83,11 @@
 ## Hyperedges (group relationships)
 - **PHI Boundary Components** — backend_src_deid, backend_src_lib_llm [EXTRACTED 1.00]
 
-## Communities (41 total, 1 thin omitted)
+## Communities (48 total, 1 thin omitted)
 
 ### Community 0 - "Root Project Configuration"
-Cohesion: 0.06
-Nodes (30): dependencies, @prisma/client, engines, node, @prisma/client, license, name, private (+22 more)
+Cohesion: 0.05
+Nodes (37): dependencies, @prisma/client, engines, node, @prisma/client, license, lint-staged, AGENTS.md (+29 more)
 
 ### Community 1 - "Backend Dependencies"
 Cohesion: 0.08
@@ -155,16 +162,16 @@ Cohesion: 0.25
 Nodes (8): 17. Environments & Deployment, CI, Free-Tier Auto-Pause Mitigation, Free-Tier Seats And Collaborator Access, Migration Flow, Pooled Versus Direct URL Split, Render Service Definition (`render.yaml`), Topology
 
 ### Community 25 - "lint-staged"
-Cohesion: 0.25
-Nodes (7): lint-staged, AGENTS.md, biome.json, CLAUDE.md, commitlint.config.js, {docs,.github}/**/*.{md,yml,yaml}, {shared,backend,frontend}/**/*.{ts,tsx,js,json}
+Cohesion: 0.14
+Nodes (13): 10. Safety Constraints, 15. Proposal Source Map, 2. Problem Statement, 3. Aim & Objectives, 4. Who It Is For, 7. Product Principles, 8. Primary Flow, Aim (+5 more)
 
 ### Community 26 - "PRD"
-Cohesion: 0.08
-Nodes (23): CAP-1 … CAP-5, CAP-1 — Generate A Structured Clinical Note, CAP-2 — Identify Missing Clinical Information, CAP-3 — Detect Predefined Red Flags And Escalation Triggers, CAP-4 — Provide Clinical Suggestions With Cited References, CAP-5 — Doctor Reviews, Edits, And Approves Before Saving, Clinical Scope, Demo Script (+15 more)
+Cohesion: 0.33
+Nodes (6): 9. Capabilities & Acceptance Criteria, CAP-1 — Generate A Structured Clinical Note, CAP-2 — Identify Missing Documentation, CAP-3 — Detect Predefined Red Flags And Escalation Triggers, CAP-4 — Provide Clinical Suggestions With Cited References, CAP-5 — Doctor Reviews, Edits, And Approves Before Saving
 
 ### Community 27 - "9. De-Identification Pipeline"
-Cohesion: 0.29
-Nodes (7): 9. De-Identification Pipeline, Audit Surface, Detector Inventory, Fail-Closed Semantics, Recall Limitation, Token Format, Vault Lifecycle
+Cohesion: 0.22
+Nodes (9): 9. De-Identification Pipeline, Audit Surface, Detector Inventory, Detector Shape — `pattern + score + context`, Fail-Closed Semantics, Recall Limitation, Token Format, Vault Lifecycle (+1 more)
 
 ### Community 28 - "10. Red-Flag Rules Engine"
 Cohesion: 0.33
@@ -175,12 +182,12 @@ Cohesion: 0.33
 Nodes (6): 12. LLM Prompt & Response Contracts, Latency Budget Tension (Open), Operation 1 — `note_and_gaps`, Operation 2 — `suggestions_and_red_flags`, Retry / Failure Behaviour, Scope Notice For Non-URTI Presentations
 
 ### Community 30 - "3. Shared Contracts (`@shared/types`)"
-Cohesion: 0.33
-Nodes (6): 3. Shared Contracts (`@shared/types`), Clinical Note & Analysis, Consultation Lifecycle, Load-Bearing Semantics, Structured Clinical-Information Schema — Proposal, Transcript
+Cohesion: 0.25
+Nodes (8): 3. Shared Contracts (`@shared/types`), Clinical Note & Analysis, Consultation Lifecycle, Load-Bearing Semantics, Malaysian Operational Block, Ratification Conditions (Research-Imposed), Structured Clinical-Information Schema — Ratified 13/08/26, Transcript
 
 ### Community 31 - "21. LLM Guardrail Architecture"
-Cohesion: 0.29
-Nodes (7): 21.1 Measured Finding — Fabricated Clinical Negatives, 21.2 Provider Constraint — Strict Structured Output Is Not Universal, 21.3 Control Tiers, 21.4 Evidence-Bound Assertion — The Primary Control, 21.5 Transcript As Untrusted Input, 21.6 What Stays Open, 21. LLM Guardrail Architecture
+Cohesion: 0.25
+Nodes (8): 21.1 Measured Finding — Fabricated Clinical Negatives, 21.2 Provider Constraint — Strict Structured Output Is Not Universal, 21.3 Control Tiers, 21.4 Evidence-Bound Assertion — The Primary Control, 21.5 Transcript As Untrusted Input, 21.6 Independent Corroboration Of The §21.1 Mechanism, 21.7 What Stays Open, 21. LLM Guardrail Architecture
 
 ### Community 32 - "vercel.json"
 Cohesion: 0.29
@@ -195,12 +202,12 @@ Cohesion: 0.40
 Nodes (5): 13. API Contracts, Gap — Red-Flag Acknowledgment And Gap Review Have No Columns Yet, New Response Schemas Proposed For `@shared/types`, Routes, State Machine Cross-Check
 
 ### Community 35 - "20. Browser-Side ASR Contract"
-Cohesion: 0.40
-Nodes (5): 20. Browser-Side ASR Contract, Interaction With Existing Contracts, Open, What Crosses The Network, Where Transcription Runs
+Cohesion: 0.33
+Nodes (6): 20. Browser-Side ASR Contract, Interaction With Existing Contracts, Model, Delivery, And Runtime — Resolved 13/08/26 (§19 Row 13, Closed), Threat: ASR Is A Second Fabrication Surface, What Crosses The Network, Where Transcription Runs
 
 ### Community 36 - "11. Guideline Corpus"
-Cohesion: 0.50
-Nodes (4): 11. Guideline Corpus, Candidate Set Reaching The Prompt, Chunk Record Shape, Schema-Enforced Rejection
+Cohesion: 0.33
+Nodes (6): 11. Guideline Corpus, Candidate Set Reaching The Prompt, Chunk Record Shape, One Source Per Chunk — A Safety Requirement, Not A Style Rule, Schema-Enforced Rejection, Source Selection — Resolved 13/08/26 (§19 Row 3, Closed)
 
 ### Community 37 - "4. Data Model (Prisma)"
 Cohesion: 0.50
@@ -218,8 +225,36 @@ Nodes (3): 15. Audit Logging, `AuditEvent.action` Taxonomy, Forbidden Content
 Cohesion: 0.67
 Nodes (3): 8. HTTP Surface As Built, Middleware Stack (In Order), Routes
 
+### Community 41 - "5. Market Fit"
+Cohesion: 0.33
+Nodes (6): 5. Market Fit, Commercial Path — Stated As Estimate, Not Finding, Ground Already Occupied — Not Claimed As Novel, Positioning, The Scribe Function Is Already Commoditised Here, What Is Table Stakes Versus What Is Differentiating
+
+### Community 42 - "11. Regulatory Posture"
+Cohesion: 0.40
+Nodes (5): 11. Regulatory Posture, Data Protection, Intended Purpose Statement, The Architecture Is The Compliance Strategy, The Concession, Volunteered
+
+### Community 43 - "12. Known Limitations"
+Cohesion: 0.40
+Nodes (5): 12. Known Limitations, Audio And ASR, Clinical And Evidential, Language, Product And Delivery
+
+### Community 44 - "14. Demo Script"
+Cohesion: 0.40
+Nodes (5): 14. Demo Script, Close, Fixture Content, Guardrail Reel (~60 Seconds), Happy Path
+
+### Community 45 - "1. Domain Background"
+Cohesion: 0.40
+Nodes (5): 1. Domain Background, The Load-Bearing Gap In This Picture, The Setting, What The Note Actually Is, Who Reads The Note
+
+### Community 46 - "13. Success Metrics"
+Cohesion: 0.50
+Nodes (4): 13. Success Metrics, Evaluation Reported In The Proposal, Future Production Metrics, MVP Success
+
+### Community 47 - "6. Scope"
+Cohesion: 0.50
+Nodes (4): 6. Scope, In Scope, Out Of Scope, Out-Of-Scope Presentations At Runtime
+
 ## Knowledge Gaps
-- **290 isolated node(s):** `name`, `private`, `license`, `type`, `dev` (+285 more)
+- **318 isolated node(s):** `name`, `private`, `license`, `type`, `dev` (+313 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **1 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -228,15 +263,15 @@ _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `TRD` connect `Frontend Scripts` to `6. LLM Port & Adapter`, `13. API Contracts`, `20. Browser-Side ASR Contract`, `11. Guideline Corpus`, `4. Data Model (Prisma)`, `7. Environment Contract`, `15. Audit Logging`, `8. HTTP Surface As Built`, `CI Workflow`, `9. De-Identification Pipeline`, `10. Red-Flag Rules Engine`, `12. LLM Prompt & Response Contracts`, `3. Shared Contracts (`@shared/types`)`, `21. LLM Guardrail Architecture`?**
   _High betweenness centrality (0.033) - this node is a cross-community bridge._
+- **Why does `PRD` connect `lint-staged` to `5. Market Fit`, `11. Regulatory Posture`, `12. Known Limitations`, `14. Demo Script`, `1. Domain Background`, `13. Success Metrics`, `6. Scope`, `PRD`?**
+  _High betweenness centrality (0.011) - this node is a cross-community bridge._
 - **Why does `devDependencies` connect `Development Tooling` to `Root Project Configuration`?**
-  _High betweenness centrality (0.008) - this node is a cross-community bridge._
+  _High betweenness centrality (0.007) - this node is a cross-community bridge._
 - **What connects `name`, `private`, `license` to the rest of the system?**
-  _290 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _318 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Root Project Configuration` be split into smaller, more focused modules?**
-  _Cohesion score 0.06451612903225806 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05128205128205128 - nodes in this community are weakly interconnected._
 - **Should `Backend Dependencies` be split into smaller, more focused modules?**
   _Cohesion score 0.07692307692307693 - nodes in this community are weakly interconnected._
 - **Should `Code Formatting Rules` be split into smaller, more focused modules?**
   _Cohesion score 0.08 - nodes in this community are weakly interconnected._
-- **Should `Clinical Data Models` be split into smaller, more focused modules?**
-  _Cohesion score 0.08695652173913043 - nodes in this community are weakly interconnected._
