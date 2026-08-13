@@ -36,7 +36,7 @@ export function Guidelines() {
   const groups = groupByPublisher(guidelines.data ?? [])
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-4xl">
       <PageHeader
         title="Guideline Corpus"
         subtitle="The closed set of sources the model may cite. Anything outside it fails validation."
