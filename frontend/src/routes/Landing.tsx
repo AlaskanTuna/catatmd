@@ -35,15 +35,15 @@ const CLAIMS = [
 
 const LIMITS = [
   {
-    term: 'Not a registered medical device',
+    term: 'Not a Registered Medical Device',
     body: 'It is a prototype built for evaluation, and no clinician has reviewed its output in a validation study.',
   },
   {
-    term: 'Not real patient data',
+    term: 'Not Real Patient Data',
     body: 'Every consultation in it is simulated and was written for testing. The system is not connected to any clinical record system.',
   },
   {
-    term: 'Not general practice',
+    term: 'Not General Practice',
     body: 'It is scoped to adult cough, sore throat, and related upper respiratory presentations, and it will tell you when a consultation falls outside that.',
   },
 ]

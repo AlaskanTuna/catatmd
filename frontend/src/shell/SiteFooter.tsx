@@ -1,4 +1,3 @@
-import { ArrowRight } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
@@ -13,21 +12,19 @@ import { Wordmark } from '../ui/Wordmark.js'
  * always there rather than scrolling a panel into view. Nothing animates; the
  * occluder simply moves. See `.reveal-page` / `.site-footer`.
  *
- * Signed-in pages get it too. The safeguards and the residency claims are not
- * marketing copy that stops being true after login, and a product whose every
- * screen just ends is the "skeleton" feeling this redesign is answering.
+ * Signed-in pages get it too: a product whose every screen just ends is the
+ * "skeleton" feeling this redesign is answering.
  */
 
-const SAFEGUARDS = [
-  'Identifiers are tokenised before any model call',
-  'Red-flag rules run as code, never as a prompt',
-  'The treating doctor approves every note',
-]
-
-const RESIDENCY = [
-  ['Application', 'Vercel · Singapore'],
-  ['API', 'Render · Singapore'],
-  ['Database', 'Supabase · Singapore'],
+/*
+ * Both destinations are reachable signed out, which is the constraint that
+ * decides this list rather than a judgement about what is interesting. The
+ * footer renders on the public landing page, and `/guidelines` is auth-gated,
+ * so a visitor clicking it was bounced to `/login` with the intent discarded.
+ */
+const LINKS = [
+  { to: '/login', label: 'Try the Demo' },
+  { to: '/privacy', label: 'Privacy and Data Protection' },
 ]
 
 export function SiteFooter({ className }: { className?: string }) {
@@ -55,56 +52,27 @@ export function SiteFooter({ className }: { className?: string }) {
 
   return (
     <footer ref={footer} className={cn('site-footer', className)} data-print="hide">
-      <div className="mx-auto flex h-full max-w-6xl flex-col justify-center px-6 py-10">
-        <div className="grid gap-8 sm:grid-cols-2 md:grid-cols-[1.6fr_1fr_1fr] md:gap-10">
-          <div className="sm:col-span-2 md:col-span-1">
-            <span className="flex items-center gap-2">
-              <Mark className="size-6" />
-              <Wordmark tone="inverse" className="text-xl" />
-            </span>
-            <p className="mt-3 max-w-xs text-sm leading-relaxed text-accent-ink">
-              A GP consultation transcript becomes a structured note you review, edit and approve.
-              It does not diagnose.
-            </p>
-            <Link
-              to="/login"
-              className="mt-5 inline-flex h-10 items-center gap-2 rounded-pill border border-accent-ink/35 px-5 text-sm font-medium text-accent-ink transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-ink/12 active:scale-[0.97]"
-            >
-              Try the Demo
-              <ArrowRight aria-hidden className="size-4" />
+      <div className="mx-auto flex h-full max-w-6xl flex-col items-center justify-center gap-4 px-6 text-center">
+        <span className="flex items-center gap-2">
+          <Mark className="size-6" />
+          <Wordmark tone="inverse" className="text-xl" />
+        </span>
+
+        <nav
+          aria-label="Footer"
+          className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm font-medium text-accent-ink"
+        >
+          {LINKS.map(({ to, label }) => (
+            <Link key={to} to={to} className="underline underline-offset-2 hover:no-underline">
+              {label}
             </Link>
-          </div>
+          ))}
+        </nav>
 
-          <div>
-            <h2 className="text-sm font-semibold text-accent-ink">Safeguards</h2>
-            <ul className="mt-3 flex flex-col gap-2 text-sm leading-snug text-accent-ink">
-              {SAFEGUARDS.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <h2 className="text-sm font-semibold text-accent-ink">Hosted in Singapore</h2>
-            <dl className="mt-3 flex flex-col gap-2 text-sm leading-snug text-accent-ink">
-              {RESIDENCY.map(([tier, where]) => (
-                <div key={tier} className="flex flex-wrap gap-x-2">
-                  <dt className="font-medium">{tier}</dt>
-                  <dd>{where}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        </div>
-
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-accent-ink/20 pt-5 text-xs text-accent-ink">
-          <span>
-            Prototype for evaluation. Not a registered medical device. Simulated data only.
-          </span>
-          <Link to="/privacy" className="underline underline-offset-2">
-            Privacy and Data Protection
-          </Link>
-        </div>
+        <p className="max-w-md text-xs text-accent-ink/80">
+          This is a prototype built for evaluation, not a registered medical device, and it uses
+          simulated data only.
+        </p>
       </div>
     </footer>
   )

@@ -61,7 +61,7 @@ export function NoteEditor({
                     edited ? 'bg-accent/12 text-accent' : 'bg-sunken text-ink-muted',
                   )}
                 >
-                  {edited ? 'You edited this' : 'AI generated'}
+                  {edited ? 'You Edited This' : 'AI Generated'}
                 </span>
                 {!readOnly && !isEditing && (
                   <Button
@@ -85,7 +85,7 @@ export function NoteEditor({
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   rows={5}
-                  className="w-full rounded-control border border-line bg-surface p-3 text-base leading-relaxed focus:border-accent"
+                  className="w-full rounded-control border border-line bg-surface p-3 text-sm leading-relaxed focus:border-accent"
                 />
                 <div className="mt-2 flex gap-2">
                   <Button
@@ -107,7 +107,7 @@ export function NoteEditor({
             ) : (
               <p
                 data-provenance={edited ? 'edited' : 'ai'}
-                className="mt-2 max-w-[68ch] whitespace-pre-wrap text-base leading-relaxed text-ink"
+                className="mt-2 max-w-[68ch] whitespace-pre-wrap text-sm leading-relaxed text-ink"
               >
                 {value || (
                   <span className="text-ink-muted">

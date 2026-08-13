@@ -17,7 +17,7 @@ const LABELS: Record<AssertionState, string> = {
   PRESENT: 'Present',
   DENIED: 'Denied',
   CLINICIAN_OBSERVED: 'Observed',
-  NOT_ASSESSED: 'Not assessed',
+  NOT_ASSESSED: 'Not Assessed',
   UNKNOWN: 'Unknown',
   NOT_APPLICABLE: 'N/A',
 }

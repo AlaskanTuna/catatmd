@@ -20,7 +20,7 @@ export function ThemeToggle({ className }: { className?: string }) {
       type="button"
       onClick={() => setPreference(next)}
       aria-label={next === 'dark' ? 'Switch to dark theme' : 'Switch to light theme'}
-      title={next === 'dark' ? 'Dark theme' : 'Light theme'}
+      title={next === 'dark' ? 'Dark Theme' : 'Light Theme'}
       className={cn(
         'inline-flex size-10 items-center justify-center rounded-control',
         'text-ink-muted transition-colors duration-150 hover:bg-sunken hover:text-ink',

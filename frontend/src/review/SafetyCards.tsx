@@ -100,7 +100,7 @@ function ProvenanceMark({ source }: { source: RedFlag['source'] }) {
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 rounded-full border border-dashed border-ink-muted/50 px-2 py-0.5 text-2xs font-medium text-ink-muted">
-      AI suggested
+      AI Suggested
     </span>
   )
 }
@@ -128,7 +128,7 @@ export function GapCard({
       data-tour="gap"
       className={cn(
         'rounded-card border border-dashed p-4 page-break-avoid',
-        reviewed ? 'border-line bg-sunken/40' : 'border-ink-muted/40',
+        reviewed ? 'border-line bg-sunken' : 'border-ink-muted/40 bg-surface',
       )}
     >
       <div className="flex items-start gap-2">
@@ -149,7 +149,7 @@ export function GapCard({
           </span>
         ) : (
           <Button size="sm" variant="ghost" onClick={onReview}>
-            Mark reviewed
+            Mark Reviewed
           </Button>
         )}
       </div>
@@ -211,7 +211,7 @@ export function SuggestionCard({
                     rel="noreferrer noopener"
                     className="mt-2 inline-block text-xs font-medium text-accent underline underline-offset-2"
                   >
-                    Open source
+                    Open Guideline
                   </a>
                 </div>
               )}

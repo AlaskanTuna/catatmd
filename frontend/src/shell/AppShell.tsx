@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useMatch } from 'react-router-dom'
+import { cn } from '../lib/cn.js'
 import { CursorGlow } from '../ui/CursorGlow.js'
 import { MobileDock } from './MobileDock.js'
 import { SidebarIsland } from './SidebarIsland.js'
@@ -21,9 +22,16 @@ export function AppShell() {
   const [dimmed, setDimmed] = useState(false)
   const onExpandedChange = useCallback((expanded: boolean) => setDimmed(expanded), [])
 
+  // The review screen is a working surface with a sticky approve bar, not a
+  // page that ends: the reveal footer is wrong there. `/consultations/new`
+  // matches the same pattern, so it is excluded explicitly rather than
+  // caught by the param shape.
+  const reviewMatch = useMatch('/consultations/:id')
+  const suppressFooter = reviewMatch != null && reviewMatch.params.id !== 'new'
+
   return (
     <div className="reveal-shell">
-      <div className="reveal-page dot-grid">
+      <div className={cn('reveal-page dot-grid', suppressFooter && 'reveal-page--no-footer')}>
         <CursorGlow />
 
         <SidebarIsland onExpandedChange={onExpandedChange} />
@@ -41,7 +49,7 @@ export function AppShell() {
         </main>
       </div>
 
-      <SiteFooter />
+      {!suppressFooter && <SiteFooter />}
     </div>
   )
 }
