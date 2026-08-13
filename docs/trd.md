@@ -923,6 +923,19 @@ Source: `render.yaml` (repo root).
 
 `QWEN_MODEL` pins the same untested default flagged in Open #6 below — the value is already committed to the deploy config before the exact model id has been confirmed against a live Model Studio account.
 
+#### `render.yaml` Is Not Authoritative For Env Vars On A Live Service
+
+**Learned the hard way on 14/08/26.** A Blueprint seeds environment variables when the service is created. After that the service's own values win, and editing `render.yaml` in the repository changes nothing on a service that already exists.
+
+The failure this produced: `QWEN_MODEL` was corrected in `render.yaml`, merged, and deployed, while production carried on running the old value. The repository asserted a pin that production did not honour, and nothing anywhere reported a disagreement.
+
+Two rules follow, both of which cost time to discover:
+
+- **Changing a `value:` env var in `render.yaml` requires setting it on the service as well.** The CLI has no command for this; use the API (`PUT /v1/services/{id}/env-vars/{key}`) or the dashboard.
+- **Setting an env var does not redeploy.** The API accepts the change and the running instance keeps the old value until a deploy is triggered (`POST /v1/services/{id}/deploys`). A verification run immediately after setting the variable will still exercise the old one, which is exactly what happened here.
+
+Treat `render.yaml` as the definition used at creation and as documentation thereafter. It is not a control surface for a running service, and a reader cannot tell the difference from the file alone.
+
 ### Pooled Versus Direct URL Split
 
 `DATABASE_URL` (Supavisor pooler, `:6543`, `pgbouncer=true`) is used by the running app; `DIRECT_URL` (`:5432`) is used only by `prisma migrate` — both already `Built` in `EnvSchema` (§7), `.env.example`, and `render.yaml`.
