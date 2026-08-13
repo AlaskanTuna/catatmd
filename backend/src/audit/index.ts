@@ -54,7 +54,7 @@ export interface AnalysisVersions {
  * that can hold a transcript body, note text, gap or suggestion text, or a
  * vault entry — only identifiers, detector labels, and version stamps.
  */
-export type AuditEventInput =
+export type ConsultationAuditEvent =
   | { action: 'consultation.created' }
   | { action: 'consultation.asr_hosted_used' }
   | { action: 'consultation.analysis_started' }
@@ -75,50 +75,94 @@ export type AuditEventInput =
   | { action: 'consultation.approved' }
 
 /**
+ * Auth events belong to an actor but to no consultation (issue #14). They are
+ * split out so `consultationId` can stay **required** on everything above
+ * rather than being loosened to optional across the whole taxonomy, which would
+ * let a consultation event be recorded without the consultation it describes.
+ */
+export type AuthAuditEvent = { action: 'auth.session.created' }
+
+export type AuditEventInput = ConsultationAuditEvent | AuthAuditEvent
+
+/**
+ * How many times an append may lose the race for the chain head before giving
+ * up. Three is enough that exhausting it means something is actually wrong
+ * rather than that two requests arrived together.
+ */
+const CHAIN_HEAD_ATTEMPTS = 3
+
+/** Prisma's unique-constraint violation. */
+const UNIQUE_VIOLATION = 'P2002'
+
+function isChainHeadRace(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code: unknown }).code === UNIQUE_VIOLATION
+  )
+}
+
+/**
  * Appends one audit row, linked to the current chain head. Append-only by
- * construction: this module exposes no update or delete, and nothing else in
- * the codebase writes `auditEvent`.
+ * construction: this module exposes no update or delete.
+ *
+ * **This is the only place in the codebase that may write `auditEvent`**, and
+ * `no-stray-audit-writes.test.ts` fails the build if that stops being true. It
+ * was a comment before issue #55, and a comment is what let the auth hook write
+ * unchained rows for as long as it did.
  *
  * `id` and `createdAt` are minted here rather than left to their column
  * defaults, because both are hash inputs and the database would otherwise not
  * produce them until after the hash had to be computed.
  *
- * The transaction is what keeps the head read and the append atomic. The unique
- * constraint on `prevHash` is the backstop: under enough write concurrency two
- * appends can still read the same head, and the constraint turns that into a
- * loud failure rather than a silently forked chain. A deployment with real
- * write concurrency wants a retry here.
+ * The transaction keeps the head read and the append atomic; the unique
+ * constraint on `prevHash` is the backstop that turns a lost race into an error
+ * rather than a silently forked chain. Losing that race is a normal event now
+ * that login writes to the chain and the guest account is shared, so it is
+ * retried rather than surfaced.
  */
 export async function recordAuditEvent(
-  event: AuditEventInput & { actorId: string; consultationId: string },
+  event:
+    | (ConsultationAuditEvent & { actorId: string; consultationId: string })
+    | (AuthAuditEvent & { actorId: string }),
 ): Promise<void> {
-  const { action, actorId, consultationId } = event
+  const { action, actorId } = event
+  const consultationId = 'consultationId' in event ? event.consultationId : undefined
   const metadata = 'metadata' in event ? event.metadata : undefined
 
-  await prisma.$transaction(async (tx) => {
-    const head = await tx.auditEvent.findFirst({
-      where: { hash: { not: null } },
-      orderBy: { seq: 'desc' },
-      select: { hash: true },
-    })
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        const head = await tx.auditEvent.findFirst({
+          where: { hash: { not: null } },
+          orderBy: { seq: 'desc' },
+          select: { hash: true },
+        })
 
-    const row = {
-      prevHash: head?.hash ?? AUDIT_CHAIN_GENESIS,
-      id: randomUUID(),
-      action,
-      actorId,
-      consultationId,
-      createdAt: new Date(),
+        const row = {
+          prevHash: head?.hash ?? AUDIT_CHAIN_GENESIS,
+          id: randomUUID(),
+          action,
+          actorId,
+          consultationId: consultationId ?? null,
+          createdAt: new Date(),
+        }
+
+        await tx.auditEvent.create({
+          data: {
+            ...row,
+            hash: computeAuditHash(row),
+            metadata: metadata === undefined ? undefined : JSON.parse(JSON.stringify(metadata)),
+          },
+        })
+      })
+
+      return
+    } catch (error) {
+      if (attempt >= CHAIN_HEAD_ATTEMPTS || !isChainHeadRace(error)) throw error
     }
-
-    await tx.auditEvent.create({
-      data: {
-        ...row,
-        hash: computeAuditHash(row),
-        metadata: metadata === undefined ? undefined : JSON.parse(JSON.stringify(metadata)),
-      },
-    })
-  })
+  }
 }
 
 /**

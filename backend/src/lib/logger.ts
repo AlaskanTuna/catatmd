@@ -65,6 +65,10 @@ export const ERROR_CLASSES = [
   'deidentification_error',
   'validation_error',
   'auth_error',
+  // Its own class rather than `internal_error`: a dropped audit write is a gap
+  // in the tamper-evident chain (issue #55), and an on-call engineer has to be
+  // able to spot it without opening a payload.
+  'audit_write_error',
   'internal_error',
 ] as const
 

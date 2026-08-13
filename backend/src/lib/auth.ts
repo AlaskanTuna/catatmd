@@ -1,6 +1,8 @@
 import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
+import { recordAuditEvent } from '../audit/index.js'
 import { env } from '../config/env.js'
+import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 
 /**
@@ -102,14 +104,35 @@ export const auth = betterAuth({
   /**
    * Auth audit trail (issue #14). Actor id and event type only — never an
    * email, a password, a session token, an IP, or any clinical content.
+   *
+   * Routed through `recordAuditEvent` so the row joins the hash chain. Writing
+   * `prisma.auditEvent.create` here directly is what issue #55 fixed: it
+   * produced session rows with no `prevHash`, permanently outside the
+   * tamper-evidence the chain exists to provide.
+   *
+   * **This is the one audit write that fails open.** Every consultation path
+   * propagates a failed append, because a note whose approval was not recorded
+   * should not read as approved. Sign-in is the opposite: after the retry in
+   * `recordAuditEvent` is exhausted, locking a doctor out of a clinical system
+   * because an audit row lost a race is the worse failure. The drop is logged
+   * under its own error class rather than swallowed, so the gap is visible.
    */
   databaseHooks: {
     session: {
       create: {
         after: async (session) => {
-          await prisma.auditEvent.create({
-            data: { action: 'auth.session.created', actorId: session.userId },
-          })
+          try {
+            await recordAuditEvent({
+              action: 'auth.session.created',
+              actorId: session.userId,
+            })
+          } catch (error) {
+            logger.error('audit write dropped', {
+              actorId: session.userId,
+              errorClass: 'audit_write_error',
+              errorName: error instanceof Error ? error.name : 'UnknownError',
+            })
+          }
         },
       },
     },
