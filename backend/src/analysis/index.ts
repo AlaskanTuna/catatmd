@@ -1,7 +1,7 @@
 import { NoteAndGapsResponseSchema } from '@shared/types'
 import type { Deidentified } from '../deid/types.js'
 import { getLLMClient } from '../lib/llm/index.js'
-import { assertNoDiagnosticProse } from './diagnostic-guard.js'
+import { stripDiagnosticProse } from './diagnostic-guard.js'
 import { applyEvidenceCheck } from './evidence.js'
 import { NOTE_AND_GAPS_SYSTEM_PROMPT } from './prompt.js'
 import type { NoteAndGapsResult } from './types.js'
@@ -36,13 +36,14 @@ export async function analyseNote(
     transcriptText,
   )
 
-  assertNoDiagnosticProse(response.note, response.gaps)
+  const guarded = stripDiagnosticProse(response.note, response.gaps)
 
   return {
-    note: response.note,
+    note: guarded.note,
     clinicalFacts,
     operational,
-    gaps: response.gaps,
+    gaps: guarded.gaps,
     discardedFieldIds,
+    suppressedFieldIds: guarded.suppressedFieldIds,
   }
 }

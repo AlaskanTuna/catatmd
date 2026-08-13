@@ -263,7 +263,7 @@ describe('GUARANTEE — unknown is never recorded as negative', () => {
     // response arrives — every checklist key present, defaults filled in.
     const modelOutput = LlmClinicalFactsSchema.parse({
       symptoms: {
-        haemoptysis: { state: 'DENIED', value: 'denies haemoptysis' },
+        haemoptysis: { state: 'DENIED', value: 'denies haemoptysis', evidence: '' },
         cough: { state: 'PRESENT', value: 'cough', evidence: 'Cough 3 days' },
       },
       history: {},

@@ -68,18 +68,34 @@ describe('ClinicalAssertionSchema', () => {
 })
 
 describe('the decoding schema is permissive, the persistence schema is strict', () => {
-  it('lets the model return an evidence-less DENIED, so one bad fact cannot fail the whole run', () => {
-    // Measured against qwen-flash 13/08/26: it emits exactly this shape.
-    const emitted = { state: 'DENIED', value: 'no fever' }
+  it('requires the model to emit the evidence key, since an optional one was never filled', () => {
+    // Measured: with `evidence` optional, 0 of 18 PRESENT/DENIED assertions
+    // carried a span. Requiring the key took that to 18 of 18.
+    expect(
+      LlmClinicalAssertionSchema.safeParse({ state: 'DENIED', value: 'no fever' }).success,
+    ).toBe(false)
+  })
+
+  it('lets an empty span through decoding, so one bad fact cannot fail the whole run', () => {
+    const emitted = { state: 'DENIED', value: 'no fever', evidence: '' }
     expect(LlmClinicalAssertionSchema.safeParse(emitted).success).toBe(true)
     expect(ClinicalAssertionSchema.safeParse(emitted).success).toBe(false)
+  })
+
+  it('keeps NOT_ASSESSED the cheapest path — empty strings, no content required', () => {
+    const result = LlmClinicalAssertionSchema.safeParse({
+      state: 'NOT_ASSESSED',
+      value: '',
+      evidence: '',
+    })
+    expect(result.success).toBe(true)
   })
 
   it('accepts a whole model response whose assertions carry no spans', () => {
     const result = NoteAndGapsResponseSchema.safeParse({
       note: { subjective: 'Cough 3 days.', objective: '', assessment: '', plan: '' },
       clinicalFacts: {
-        symptoms: { fever: { state: 'DENIED', value: 'no fever' } },
+        symptoms: { fever: { state: 'DENIED', value: 'no fever', evidence: '' } },
         history: {},
         observations: {},
         examination: {},

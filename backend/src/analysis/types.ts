@@ -12,4 +12,6 @@ export interface NoteAndGapsResult {
   operational: OperationalBlock
   gaps: InformationGap[]
   discardedFieldIds: string[]
+  /** Fields blanked or dropped by the diagnostic-prose guard. Ids only. */
+  suppressedFieldIds: string[]
 }

@@ -44,6 +44,12 @@ export class OpenAICompatibleClient implements LLMClient {
     const completion = await this.client.chat.completions.create({
       model: this.model,
       temperature: request.temperature ?? 0.2,
+      // The `note_and_gaps` response carries 34 assertions, each with a state,
+      // a value and an evidence span, and measured at 3,324 completion tokens
+      // on a 3,000-word consultation. That is close enough to the provider's
+      // default output ceiling that some runs spill over and return truncated
+      // JSON — which surfaces as a parse failure well after the real cause.
+      max_tokens: request.maxTokens ?? 8192,
       messages: [
         { role: 'system', content: request.system },
         { role: 'user', content: request.content },
@@ -58,9 +64,20 @@ export class OpenAICompatibleClient implements LLMClient {
       },
     })
 
-    const raw = completion.choices[0]?.message.content
+    const choice = completion.choices[0]
+    const raw = choice?.message.content
     if (!raw) {
       throw new LLMResponseError('Provider returned an empty response', request.operation)
+    }
+
+    // Distinguished from malformed JSON deliberately. A truncated response is
+    // also unparseable, so without this the failure reads as a provider bug
+    // when it is a budget problem with a different fix.
+    if (choice?.finish_reason === 'length') {
+      throw new LLMResponseError(
+        'Provider response hit the output token limit and was truncated',
+        request.operation,
+      )
     }
 
     let parsed: unknown
