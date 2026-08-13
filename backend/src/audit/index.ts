@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { ACTIVE_CLINICAL_VERSIONS } from '../clinical-versions/index.js'
+import type { ProfileId } from '../clinical-profiles/index.js'
+import type { ActiveClinicalVersions } from '../clinical-versions/index.js'
 import { prisma } from '../lib/prisma.js'
 import {
   AUDIT_CHAIN_GENESIS,
@@ -40,7 +41,7 @@ export type AnalysisFailureReason =
 export interface AnalysisVersions {
   provider: string
   model: string
-  clinicalContent: typeof ACTIVE_CLINICAL_VERSIONS
+  clinicalContent: ActiveClinicalVersions
 }
 
 /**
@@ -65,6 +66,7 @@ export type ConsultationAuditEvent =
         detected: readonly string[]
         /** Field ids forced to NOT_ASSESSED by the evidence check. Ids, never content. */
         discardedFieldIds: readonly string[]
+        profileId: ProfileId
         versions: AnalysisVersions
       }
     }

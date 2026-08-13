@@ -1,4 +1,5 @@
 import type { Transcript } from '@shared/types'
+import type { ProfileId } from '../clinical-profiles/types.js'
 import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
 import type { RedFlagTrigger } from './types.js'
 
@@ -13,9 +14,16 @@ import type { RedFlagTrigger } from './types.js'
  * changes. Recorded with every analysis (docs/trd.md §15).
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v1',
-  effectiveDate: '2026-08-13',
+  id: 'redflag-list-v2',
+  effectiveDate: '2026-08-14',
 }
+
+const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
+const URTI_AND_UTI_PROFILES: readonly ProfileId[] = [
+  'adult-acute-urti',
+  'adult-acute-uncomplicated-uti',
+]
+const UTI_PROFILES: readonly ProfileId[] = ['adult-acute-uncomplicated-uti']
 
 const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string | null => {
   for (const turn of transcript.turns) {
@@ -52,6 +60,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
     listVersion: RED_FLAG_LIST_VERSION.id,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'significant-dyspnoea',
@@ -69,6 +78,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
     listVersion: RED_FLAG_LIST_VERSION.id,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'chest-pain',
@@ -82,6 +92,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
     listVersion: RED_FLAG_LIST_VERSION.id,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'stridor-airway-compromise',
@@ -98,6 +109,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
       ]),
     clinicalSource: DELPHI_AIRWAY_NOTE,
     listVersion: RED_FLAG_LIST_VERSION.id,
+    profiles: URTI_PROFILES,
   },
   {
     id: 'swallowing-oral-intake',
@@ -114,6 +126,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
       ]),
     clinicalSource: DELPHI_AIRWAY_NOTE,
     listVersion: RED_FLAG_LIST_VERSION.id,
+    profiles: URTI_PROFILES,
   },
   {
     /**
@@ -140,5 +153,111 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
       'own stated severity assessment rather than an invented cutoff — see docs/trd.md §10 ' +
       '"What Stays Undecided".',
     listVersion: RED_FLAG_LIST_VERSION.id,
+    profiles: URTI_AND_UTI_PROFILES,
   },
+]
+
+const UTI_SCOPE_NOTE =
+  'MOH National Antimicrobial Guideline (NAG) 4th ed. 2024, urinary tract infection guidance: ' +
+  'this prototype surfaces a deliberately broad escalation prompt when the transcript describes ' +
+  'a feature that can fall outside an uncomplicated adult primary-care presentation. No clinician ' +
+  'has reviewed this trigger content.'
+
+export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
+  {
+    id: 'uti-systemic-features',
+    label: 'Fever, chills, or rigors reported, needs your attention',
+    severity: 'urgent',
+    matcher: (transcript) =>
+      findSpan(transcript, [
+        /\bfever(?:ish)?\b/i,
+        /\bchills?\b/i,
+        /\brigors?\b/i,
+        /\bshiver(?:ing)?\b/i,
+      ]),
+    clinicalSource: UTI_SCOPE_NOTE,
+    listVersion: RED_FLAG_LIST_VERSION.id,
+    profiles: UTI_PROFILES,
+  },
+  {
+    id: 'uti-flank-or-back-pain',
+    label: 'Flank or back pain reported, needs your attention',
+    severity: 'urgent',
+    matcher: (transcript) =>
+      findSpan(transcript, [
+        /\bflank\b/i,
+        /\bloin\b/i,
+        /\bkidney\s+pain\b/i,
+        /(?:pain|ache)\s+(?:in\s+)?(?:my\s+)?(?:lower\s+)?back\b/i,
+      ]),
+    clinicalSource: UTI_SCOPE_NOTE,
+    listVersion: RED_FLAG_LIST_VERSION.id,
+    profiles: UTI_PROFILES,
+  },
+  {
+    id: 'uti-systemic-deterioration',
+    label: 'Possible systemic deterioration reported, needs your attention',
+    severity: 'emergency',
+    matcher: (transcript) =>
+      findSpan(transcript, [
+        /\bconfus(?:ed|ion)\b/i,
+        /\bfaint(?:ed|ing)?\b/i,
+        /\bvery\s+drowsy\b/i,
+        /\bextremely\s+weak\b/i,
+        /\bfeeling\s+very\s+unwell\b/i,
+      ]),
+    clinicalSource: UTI_SCOPE_NOTE,
+    listVersion: RED_FLAG_LIST_VERSION.id,
+    profiles: UTI_PROFILES,
+  },
+  {
+    id: 'uti-pregnancy-mentioned',
+    label: 'Pregnancy or possible pregnancy mentioned, needs your attention',
+    severity: 'urgent',
+    matcher: (transcript) =>
+      findSpan(transcript, [
+        /\bpregnan(?:t|cy)\b/i,
+        /\bmissed\s+(?:my\s+)?period\b/i,
+        /\btrying\s+for\s+(?:a\s+)?baby\b/i,
+      ]),
+    clinicalSource: UTI_SCOPE_NOTE,
+    listVersion: RED_FLAG_LIST_VERSION.id,
+    profiles: UTI_PROFILES,
+  },
+  {
+    id: 'uti-unable-to-pass-urine',
+    label: 'Unable to pass urine reported, needs your attention',
+    severity: 'emergency',
+    matcher: (transcript) =>
+      findSpan(transcript, [
+        /(?:can'?t|cannot|unable\s+to)\s+(?:pass|pee|urinate)/i,
+        /\bnot\s+passing\s+(?:any\s+)?urine\b/i,
+        /\bno\s+urine\s+(?:is\s+)?coming\s+out\b/i,
+      ]),
+    clinicalSource: UTI_SCOPE_NOTE,
+    listVersion: RED_FLAG_LIST_VERSION.id,
+    profiles: UTI_PROFILES,
+  },
+  {
+    id: 'uti-potentially-complicating-context',
+    label: 'Potentially complicating urinary context reported, needs your attention',
+    severity: 'urgent',
+    matcher: (transcript) =>
+      findSpan(transcript, [
+        /\b(?:urinary\s+)?catheter(?:ised|ized)?\b/i,
+        /\bkidney\s+(?:disease|failure|transplant)\b/i,
+        /\bsingle\s+kidney\b/i,
+        /\bimmunosuppress(?:ed|ion)\b/i,
+        /\bdiabetes?\b/i,
+        /\bmale\b/i,
+      ]),
+    clinicalSource: UTI_SCOPE_NOTE,
+    listVersion: RED_FLAG_LIST_VERSION.id,
+    profiles: UTI_PROFILES,
+  },
+]
+
+export const ALL_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
+  ...REDFLAG_TRIGGERS,
+  ...UTI_REDFLAG_TRIGGERS,
 ]

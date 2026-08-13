@@ -359,6 +359,21 @@ describe('analyse output', () => {
       versions: { clinicalContent: ACTIVE_CLINICAL_VERSIONS },
     })
   })
+
+  it('persists the selected profile id in analysis and completion audit metadata', async () => {
+    await call('POST', '/api/consultations/c1/analyze', {
+      profileId: 'adult-acute-uncomplicated-uti',
+    })
+
+    expect(store.get('c1')?.analysis).toMatchObject({
+      profileId: 'adult-acute-uncomplicated-uti',
+    })
+    expect(
+      audits.find((audit) => audit.action === 'consultation.analysis_completed')?.metadata,
+    ).toMatchObject({
+      profileId: 'adult-acute-uncomplicated-uti',
+    })
+  })
 })
 
 describe('state machine — patch', () => {

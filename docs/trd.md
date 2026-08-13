@@ -697,7 +697,7 @@ Matches `docs/prd.md` §8 (Primary Flow) exactly: `draft →(create) draft →(a
 | `consultation.created`            | `POST /api/consultations`                                            | —                                                                         |
 | `consultation.asr_hosted_used`    | `POST /api/consultations` where `transcript.source === 'asr_hosted'` | `—` — the fact of the hosted path, never any audio, chunk, or text        |
 | `consultation.analysis_started`   | `POST /api/consultations/:id/analyze` begins                         | —                                                                         |
-| `consultation.analysis_completed` | analyse pipeline succeeds                                            | `{ detected, discardedFieldIds, versions }` — see below                   |
+| `consultation.analysis_completed` | analyse pipeline succeeds                                            | `{ detected, discardedFieldIds, profileId, versions }` — see below        |
 | `consultation.analysis_failed`    | analyse pipeline throws                                              | `{ reason: string }` — a short failure category, never the raw error text |
 | `consultation.edited`             | `PATCH /api/consultations/:id`                                       | —                                                                         |
 | `redflag.acknowledged`            | doctor acknowledges a red flag                                       | `{ redFlagId: string }`                                                   |
@@ -735,10 +735,11 @@ interface ClinicalArtefactVersion {
 {
   detected: string[],            // de-identification detector labels only (§9)
   discardedFieldIds: string[],   // fields the §21.4 evidence check dropped
+  profileId: string,             // selected clinical workflow profile
   versions: {
     provider: string,            // LLM provider and model (§6)
     model: string,
-    clinicalContent: { redFlagList, gapChecklist, guidelineCorpus },
+    clinicalContent: { redFlagList, gapChecklist, guidelineCorpus, clinicalProfile },
   },
 }
 ```
@@ -748,6 +749,32 @@ Because `AuditEvent` is append-only, a past analysis keeps the versions it ran u
 **Enforcement.** `backend/src/clinical-versions/no-stray-clinical-constants.test.ts` scans `backend/src` and `frontend/src` and fails the build on either a whole single-quoted literal equal to a trigger or checklist id, or a guideline scoring-system name, outside the three data files. Tests and `backend/src/fixtures/` are exempt. The id set is read from the data at runtime, never listed in the test, so it cannot go stale. The second check exists because the scoring systems carry the thresholds the two Malaysian sources disagree on (§11): a hard-coded one is a manufactured consensus with nothing citing it.
 
 **Not versioned data, deliberately.** Per-chunk source versions are not modelled. `GuidelineChunk` (§11) carries `year`, and the edition sits inside `title` ("4th Edition"). Adding a structured `sourceVersion` would change a `@shared/types` schema and is raised on issue #31 rather than assumed.
+
+### Clinical Workflow Profiles
+
+**Status: `Built`** (issue #21). A clinical profile selects the active red-flag rules, gap checklist entries, guideline chunks, and note template for one adult acute primary-care workflow. The selection is a lookup from `profileId`, never a profile-specific branch in the analysis pipeline.
+
+| Profile ID                      | Scope                                                               | Version Constant                                |
+| ------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------- |
+| `adult-acute-urti`              | Adult acute cough, sore throat, and upper-respiratory presentations | `ADULT_ACUTE_URTI_PROFILE_VERSION`              |
+| `adult-acute-uncomplicated-uti` | Adult acute primary-care presentations with urinary symptoms        | `ADULT_ACUTE_UNCOMPLICATED_UTI_PROFILE_VERSION` |
+
+Each rule, checklist entry, and guideline chunk carries its own `profiles` membership in the data file that owns it. `backend/src/clinical-profiles/` filters that data by `profileId`. It does not keep a separate registry of clinical ids, so the executable guard against stray clinical constants remains intact.
+
+The second profile is adult acute uncomplicated urinary tract infection. It is a useful proof because it is a different body system while remaining within acute adult primary care, and it uses the MOH National Antimicrobial Guideline 2024 source already represented in the corpus. Its deterministic rules deliberately over-trigger for fever or rigors, flank or back pain, systemic deterioration, pregnancy, urinary retention, potentially complicating context, and concerning vital signs. Its five gap entries are limited to the existing structured schema's safety-relevant observations and drug-allergy field. The shared schema does not yet capture urinary symptoms, pregnancy status, renal history, or catheter status, so this is a constrained workflow proof rather than a clinically complete urinary assessment.
+
+**No clinician has reviewed this content.** The second profile is not clinically validated and must not be presented as such.
+
+### Profile Persistence And Migration Path
+
+The selected identifier is stored with the exact JSON key `profileId` in both existing JSON surfaces:
+
+- `Consultation.analysis.profileId`
+- `AuditEvent.metadata.profileId` for `consultation.analysis_completed`
+
+The completed-analysis stamp includes the selected profile's `ClinicalArtefactVersion` alongside the red-flag, checklist, and corpus versions. This ensures every profile must have a version before it can be recorded.
+
+This deliberately avoids a `Consultation.profileId` column and a Prisma migration while profiles remain prototype configuration. If profile selection becomes a durable query or reporting requirement, add a nullable `Consultation.profileId` column, backfill it from `analysis.profileId`, validate parity with the audit metadata, switch reads and writes to the column, then retain the JSON key for historical analyses. The JSON key is already named `profileId`, so that promotion requires no data-key rename.
 
 ### Tamper-Evidence: The Hash Chain
 

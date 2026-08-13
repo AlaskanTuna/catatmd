@@ -1,9 +1,10 @@
 import { ClinicalFactsResponseSchema, NoteAndGapsResponseSchema } from '@shared/types'
+import { type ClinicalProfile, getClinicalProfile } from '../clinical-profiles/index.js'
 import type { Deidentified } from '../deid/types.js'
 import { getLLMClient } from '../lib/llm/index.js'
 import { stripDiagnosticProse } from './diagnostic-guard.js'
 import { applyEvidenceCheck } from './evidence.js'
-import { CLINICAL_FACTS_SYSTEM_PROMPT, NOTE_AND_GAPS_SYSTEM_PROMPT } from './prompt.js'
+import { buildClinicalFactsSystemPrompt, buildNoteAndGapsSystemPrompt } from './prompt.js'
 import type { NoteAndGapsResult } from './types.js'
 
 export { buildEvidenceLinks, type EvidenceLink } from './note.js'
@@ -33,20 +34,21 @@ export type { NoteAndGapsResult } from './types.js'
 export async function analyseNote(
   content: Deidentified,
   transcriptText: string,
+  profile: ClinicalProfile = getClinicalProfile(),
 ): Promise<NoteAndGapsResult> {
   const client = getLLMClient()
 
   const [facts, prose] = await Promise.all([
     client.generate({
       operation: 'clinical_facts',
-      system: CLINICAL_FACTS_SYSTEM_PROMPT,
+      system: buildClinicalFactsSystemPrompt(profile),
       content,
       schema: ClinicalFactsResponseSchema,
       schemaName: 'clinical_facts',
     }),
     client.generate({
       operation: 'note_and_gaps',
-      system: NOTE_AND_GAPS_SYSTEM_PROMPT,
+      system: buildNoteAndGapsSystemPrompt(profile),
       content,
       schema: NoteAndGapsResponseSchema,
       schemaName: 'note_and_gaps',
