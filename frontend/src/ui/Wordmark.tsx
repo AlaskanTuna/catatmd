@@ -30,13 +30,24 @@ export function Wordmark({
     // The element carries the text itself, so it needs no accessible name of
     // its own; the subsetted face changes the glyphs available, never the
     // string a screen reader receives.
-    <span
-      className={cn('inline-flex items-baseline font-logo leading-none tracking-tight', className)}
-    >
-      Catat
+    <span className={cn('inline-flex items-center font-logo leading-none', className)}>
+      {/*
+        Positive tracking, not negative. Mafins is a display serif with tight
+        fitting drawn for 48px and up; at the 18 to 24px this lockup actually
+        appears at, the default fit closes the counters and the word reads as
+        one dark shape. Opening it up is what makes it legible small.
+      */}
+      <span className="tracking-[0.03em]">Catat</span>
+      {/*
+        Set slightly smaller than the word and padded symmetrically, so the
+        badge reads as a companion to "Catat" rather than competing with it.
+        Centred rather than baseline-aligned: a baseline box inherits the
+        font's descender space and sits visibly low against caps.
+      */}
       <span
         className={cn(
-          'ml-[0.1em] inline-block rounded-[0.22em] px-[0.18em] pt-[0.12em] pb-[0.06em]',
+          'ml-[0.22em] inline-block rounded-[0.2em] px-[0.26em] py-[0.2em]',
+          'text-[0.82em] tracking-[0.02em]',
           tone === 'inverse' ? 'bg-accent-ink text-accent' : 'bg-accent text-accent-ink',
         )}
       >
