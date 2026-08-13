@@ -1,1 +1,258 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+
+/*
+ * Design tokens. The authority is docs/DESIGN.md; this file implements it.
+ *
+ * Tokens are named by role, never by material. There is no --paper and no
+ * --cream: a material name invites a second material, and the warm-near-white
+ * body ground is one nudge away from the cream that reads as a template.
+ */
+
+@theme {
+  /* ── Light, the default and the design target ─────────────────────────── */
+  --color-ground: oklch(0.978 0.004 85);
+  --color-surface: oklch(1 0 0);
+  --color-sunken: oklch(0.955 0.005 85);
+  --color-ink: oklch(0.245 0.008 160);
+  --color-ink-muted: oklch(0.47 0.012 160);
+  --color-line: oklch(0.895 0.004 85);
+  --color-accent: oklch(0.47 0.089 168);
+  --color-accent-hover: oklch(0.405 0.082 168);
+  --color-accent-ink: oklch(1 0 0);
+
+  /* Severity. One grammar: solid card, coloured rule, icon, word label. */
+  --color-emergency: oklch(0.486 0.192 27);
+  --color-emergency-rule: oklch(0.552 0.208 28);
+  --color-urgent: oklch(0.535 0.132 60);
+  --color-urgent-rule: oklch(0.703 0.163 62);
+  --color-advisory: oklch(0.457 0.164 258);
+  --color-advisory-rule: oklch(0.457 0.164 258);
+
+  /* Chrome only. Never behind text a doctor acts on. */
+  --color-glass: oklch(1 0 0 / 0.72);
+  --color-glass-line: oklch(1 0 0 / 0.55);
+  --color-scrim: oklch(0.245 0.008 160 / 0.32);
+
+  --font-sans:
+    'Inter var', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Fixed rem scale, ratio 1.2. No clamp: product UI is viewed at a
+   * consistent DPI, and a fluid heading inside a 360px rail looks worse. */
+  --text-2xs: 0.75rem;
+  --text-xs: 0.8125rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-float: 16px;
+
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/*
+ * Dark is derived, not inverted. The ground keeps the same faint green cast so
+ * the accent still belongs to it, and every severity colour is re-derived so
+ * its contrast is verified on this ground rather than assumed from the light
+ * ramp. A severity colour that passes on white routinely fails on near-black.
+ */
+@layer base {
+  :root {
+    color-scheme: light;
+    --z-base: 0;
+    --z-sticky: 10;
+    --z-scrim: 20;
+    --z-sidebar: 30;
+    --z-modal: 40;
+    --z-toast: 50;
+    --z-tooltip: 60;
+  }
+
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --color-ground: oklch(0.185 0.006 160);
+    --color-surface: oklch(0.225 0.007 160);
+    --color-sunken: oklch(0.165 0.006 160);
+    --color-ink: oklch(0.945 0.004 160);
+    --color-ink-muted: oklch(0.72 0.01 160);
+    --color-line: oklch(0.305 0.008 160);
+    --color-accent: oklch(0.72 0.11 168);
+    --color-accent-hover: oklch(0.78 0.115 168);
+    --color-accent-ink: oklch(0.185 0.006 160);
+
+    --color-emergency: oklch(0.72 0.165 30);
+    --color-emergency-rule: oklch(0.72 0.165 30);
+    --color-urgent: oklch(0.79 0.145 70);
+    --color-urgent-rule: oklch(0.79 0.145 70);
+    --color-advisory: oklch(0.76 0.115 245);
+    --color-advisory-rule: oklch(0.76 0.115 245);
+
+    --color-glass: oklch(0.225 0.007 160 / 0.72);
+    --color-glass-line: oklch(1 0 0 / 0.1);
+    --color-scrim: oklch(0.12 0.005 160 / 0.5);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-ground);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    /* Timestamps, vitals and MC-day counts sit in columns. Proportional
+     * figures make those columns shimmer as values change. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+    line-height: 1.3;
+    letter-spacing: -0.015em;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Never removed. A clinical tool has a keyboard path through it by
+   * requirement (issue #30), and an invisible focus ring makes that path
+   * unusable while still technically existing. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::placeholder {
+    /* Not the muted default: placeholder text needs the same 4.5:1 as body. */
+    color: var(--color-ink-muted);
+    opacity: 1;
+  }
+}
+
+@layer components {
+  /*
+   * Chrome material. Applied to the sidebar island, the top bar, the action
+   * dock and modals. Never to a note, a red flag, a gap or a suggestion: a
+   * translucent surface has a contrast ratio that depends on whatever scrolls
+   * behind it, so it cannot be verified once and held.
+   */
+  .glass {
+    background-color: var(--color-glass);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid var(--color-glass-line);
+    box-shadow:
+      0 1px 2px oklch(0 0 0 / 0.04),
+      0 8px 24px -8px oklch(0 0 0 / 0.12);
+  }
+
+  /* The one scrim. A single fixed layer carries the blur for the whole app;
+   * filtering the content subtree instead janks on every hover. */
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-scrim);
+    background-color: var(--color-scrim);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      opacity 180ms var(--ease-out-quart),
+      backdrop-filter 180ms var(--ease-out-quart);
+  }
+
+  .scrim[data-visible='true'] {
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  /*
+   * Motion degrades to an instant state change, never to no state change
+   * (issue #30). Every animated element is authored in its final visual state
+   * and the transition is the enhancement, so an element can never be left
+   * transparent because an animation did not run.
+   *
+   * Blur is dropped rather than reduced. It is the most expensive part of the
+   * effect and the most hostile to vestibular disorders, which is a medical
+   * accessibility setting and frequently set by exactly our users.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+
+    .scrim {
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+  }
+}
+
+/*
+ * Print is a clinical document, not a screenshot of an app (issue #26).
+ * Chrome, navigation and controls go; the note, the date, the approving
+ * clinician and every red flag with its resolution state stay.
+ *
+ * Provenance survives without colour, because clinic printers are monochrome
+ * and "which parts did the AI write" must not depend on a colour cartridge.
+ */
+@media print {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+    font-size: 11pt;
+  }
+
+  [data-print='hide'] {
+    display: none !important;
+  }
+
+  [data-print='block'] {
+    display: block !important;
+  }
+
+  .glass,
+  .scrim {
+    display: none !important;
+  }
+
+  [data-provenance='edited'] {
+    border-left: none;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+  }
+
+  a[href]::after {
+    content: ' (' attr(href) ')';
+    font-size: 9pt;
+  }
+
+  .page-break-avoid {
+    break-inside: avoid;
+  }
+}

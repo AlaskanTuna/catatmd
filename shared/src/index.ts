@@ -299,6 +299,23 @@ export const ConsultationAnalysisSchema = z.object({
   gaps: z.array(InformationGapSchema),
   redFlags: z.array(RedFlagSchema),
   suggestions: z.array(ClinicalSuggestionSchema),
+  /**
+   * The reviewed checklist, surfaced rather than discarded.
+   *
+   * `docs/prd.md` §10 requires that a field the consultation never touched
+   * reads as unestablished rather than as absent, and Demo Script step 5 asks
+   * an evaluator to see exactly that. Both are unsatisfiable if the facts stay
+   * inside the analysis pipeline: a UI cannot render a `NOT_ASSESSED` it was
+   * never sent, and "we checked 29 fields" is not a claim a reviewer can
+   * verify from four paragraphs of prose.
+   *
+   * Optional because consultations analysed before 13/08/26 have no facts
+   * persisted. A reader must treat absence as "not recorded by this version",
+   * never as "nothing was assessed" (which is the exact confusion §10 exists
+   * to prevent) and the UI says so in as many words.
+   */
+  clinicalFacts: ClinicalFactsSchema.optional(),
+  operational: OperationalBlockSchema.optional(),
 })
 
 // ─── Consultation lifecycle ──────────────────────────────────────────────────
