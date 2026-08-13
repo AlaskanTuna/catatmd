@@ -14,47 +14,71 @@ Both themes ship. Light is the default and the design target; dark is fully deri
 
 OKLCH throughout. Tokens are named by **role**, never by material, so nothing invites a second cream.
 
+Token names carry the `--color-` prefix because Tailwind 4's `@theme` block is the
+source of truth, and that is where a utility like `bg-surface` is generated from.
+Values below are lifted from `frontend/src/index.css`; ratios are computed against
+the ground in the same theme.
+
 ### Light
 
-| Token              | Value                    | Hex       | Role                                                                  |
-| ------------------ | ------------------------ | --------- | --------------------------------------------------------------------- |
-| `--ground`         | `oklch(0.978 0.004 85)`  | `#FAF9F7` | Body background                                                       |
-| `--surface`        | `oklch(1 0 0)`           | `#FFFFFF` | Cards, note surface, any panel carrying safety content                |
-| `--surface-sunken` | `oklch(0.955 0.005 85)`  | `#F2F0ED` | Transcript rail, inset wells                                          |
-| `--ink`            | `oklch(0.245 0.008 160)` | `#1F2421` | Body text, 15.1:1 on ground                                           |
-| `--ink-muted`      | `oklch(0.470 0.012 160)` | `#5C6560` | Metadata, labels, 6.4:1 on ground                                     |
-| `--line`           | `oklch(0.895 0.004 85)`  | `#E4E1DD` | Borders, dividers                                                     |
-| `--accent`         | `oklch(0.470 0.089 168)` | `#0F6B5C` | Approve, active state, links. 6.2:1 on ground, 6.5:1 under white text |
-| `--accent-hover`   | `oklch(0.405 0.082 168)` | `#0A5347` |                                                                       |
+| Token                  | Value                    | Hex       | Role                                                            |
+| ---------------------- | ------------------------ | --------- | --------------------------------------------------------------- |
+| `--color-ground`       | `oklch(0.945 0.005 85)`  | `#EEEDE9` | Body background                                                 |
+| `--color-surface`      | `oklch(1 0 0)`           | `#FFFFFF` | Cards, note surface, any panel carrying safety content          |
+| `--color-sunken`       | `oklch(0.915 0.006 85)`  | `#E5E3DE` | Transcript rail, inset wells                                    |
+| `--color-ink`          | `oklch(0.245 0.008 160)` | `#1D221F` | Body text, 13.8:1 on ground                                     |
+| `--color-ink-muted`    | `oklch(0.47 0.012 160)`  | `#555D58` | Metadata, labels, 5.8:1 on ground                               |
+| `--color-line`         | `oklch(0.895 0.004 85)`  | `#DDDCD9` | Borders, dividers                                               |
+| `--color-accent`       | `oklch(0.47 0.089 168)`  | `#136A51` | Approve, active state, links. 5.5:1 on ground, 6.5:1 on surface |
+| `--color-accent-hover` | `oklch(0.405 0.082 168)` | `#005740` | 7.4:1 on ground                                                 |
+
+**The ground is recessed, and that is load-bearing.** It sat at `0.978` against a
+`1.0` surface, which is not a step a viewer can see, so every card needed a border
+to exist at all and the whole interface read as flat. Dropping it to `0.945` lifts
+cards by contrast with the ground rather than by outlining them, which is why the
+border is now optional. The cost is real and worth stating: every dark-on-ground
+ratio fell by roughly 1.3 points. Everything still clears AA, and `--color-ink`
+at 13.8:1 has room to spare, but this is the number to re-check before the ground
+moves again.
 
 ### Dark
 
 Not an inversion. The ground keeps the same faint green cast so the accent still belongs to it, and every severity colour is re-derived rather than reused.
 
-| Token              | Value                    | Hex       | Contrast on ground                        |
-| ------------------ | ------------------------ | --------- | ----------------------------------------- |
-| `--ground`         | `oklch(0.185 0.006 160)` | `#141816` |                                           |
-| `--surface`        | `oklch(0.225 0.007 160)` | `#1C211E` |                                           |
-| `--surface-sunken` | `oklch(0.165 0.006 160)` | `#101413` |                                           |
-| `--ink`            | `oklch(0.945 0.004 160)` | `#EDF0EE` | 15.8:1                                    |
-| `--ink-muted`      | `oklch(0.720 0.010 160)` | `#A6B0AB` | 7.1:1                                     |
-| `--line`           | `oklch(0.305 0.008 160)` | `#2B322E` |                                           |
-| `--accent`         | `oklch(0.720 0.110 168)` | `#3FBFA6` | 8.1:1, carries dark ink on filled buttons |
+| Token               | Value                    | Hex       | Contrast on ground                        |
+| ------------------- | ------------------------ | --------- | ----------------------------------------- |
+| `--color-ground`    | `oklch(0.155 0.006 160)` | `#0A0D0B` |                                           |
+| `--color-surface`   | `oklch(0.215 0.007 160)` | `#171A18` |                                           |
+| `--color-sunken`    | `oklch(0.135 0.005 160)` | `#070908` |                                           |
+| `--color-ink`       | `oklch(0.945 0.004 160)` | `#EBEEEC` | 16.7:1                                    |
+| `--color-ink-muted` | `oklch(0.72 0.01 160)`   | `#A0A7A2` | 7.9:1                                     |
+| `--color-line`      | `oklch(0.305 0.008 160)` | `#2C302E` |                                           |
+| `--color-accent`    | `oklch(0.72 0.11 168)`   | `#54BB97` | 8.3:1, carries dark ink on filled buttons |
 
 ### Severity
 
 One grammar in both themes: **solid card, coloured top rule, icon, word label, ink body.** Never a tinted passage, never colour alone, never a left stripe.
 
-| Severity  | Light                          | Dark      | Ratio (light / dark)       |
-| --------- | ------------------------------ | --------- | -------------------------- |
-| Emergency | `#B32116` text, `#D5281B` rule | `#FF7A66` | 6.9:1 / 7.2:1              |
-| Urgent    | `#B85C00` text, `#ED8B00` rule | `#F5A623` | 4.7:1 / 9.0:1              |
-| Advisory  | `#005EB8` text, `#005EB8` rule | `#6FB3F2` | 6.6:1 / 8.2:1              |
-| Resolved  | `--ink-muted`, neutral rule    | same      | de-emphasised, never green |
+Severity cards sit on `--color-surface`, so these ratios are measured against the
+card, not the page ground.
+
+| Severity  | Light                             | Dark      | Text ratio on surface (light / dark) |
+| --------- | --------------------------------- | --------- | ------------------------------------ |
+| Emergency | `#B30D16` text, `#D0211F` rule    | `#FB7764` | 7.1:1 / 6.6:1                        |
+| Urgent    | `#A35700` text, `#E58400` rule    | `#F5A843` | 5.4:1 / 8.8:1                        |
+| Advisory  | `#0752B0` text, `#6FB8F5` rule    | `#6FB8F5` | 7.4:1 / 8.2:1                        |
+| Resolved  | `--color-ink-muted`, neutral rule | same      | de-emphasised, never green           |
+
+**One known weak spot.** The light Urgent _rule_ (`#E58400`) measures 2.8:1 on
+surface, under the 3:1 WCAG 1.4.11 asks of a graphical object that carries
+meaning. It is not the only channel, since every severity card also carries an
+icon and the word "Urgent", so 1.4.1 is satisfied and a colour-blind reader loses
+nothing. But the rule is doing real work at a glance and should be darkened when
+someone next touches the severity ramp. Recorded rather than quietly left.
 
 Green is reserved for Approve. A resolved red flag never turns green, because a doctor scanning for green would then be scanning for two different meanings.
 
-Information gaps are **not** severity. They render as dotted-outline chips in `--ink-muted`, because a gap is a prompt to ask something, not a warning.
+Information gaps are **not** severity. They render as solid cards with a **dashed** border in `--color-ink-muted`, because a gap is a prompt to ask something, not a warning. The fill is solid like every other content surface; the dashed edge is the only thing distinguishing them, and it is doing the whole job of keeping a gap from being read as a flag.
 
 ### Color Strategy
 
@@ -62,18 +86,21 @@ Information gaps are **not** severity. They render as dotted-outline chips in `-
 
 ## Typography
 
-Two families, paired on a contrast axis. The interface itself is one sans across many small labels; the serif is confined to headings and the landing page, which is the marketing surface the original single-family rule assumed did not exist.
+Two families, paired on a **contrast axis**: geometric against humanist, rather
+than the near-miss of two sans faces from the same family tree. No serif anywhere.
+The earlier pairing put a text serif on headings; it was replaced because a serif
+reads as editorial, and this is an instrument.
 
-- **Family:** Inter Variable, `system-ui` fallback. Large x-height, real tabular figures for timestamps and vitals.
-- **Headings:** Source Serif 4 Variable, `Georgia` fallback. A text serif drawn to be read, not a display face.
+- **Body, UI and every number:** Work Sans Variable, `system-ui` fallback. Humanist, large x-height, and it carries `tnum`, which is the reason it holds the clinical content: vitals and timestamps sit in columns and must not shimmer between rows.
+- **Headings and the wordmark:** Outfit Variable, falling back to Work Sans. Geometric, wide apertures, rounded terminals.
+- **Both are self-hosted**, never a CDN. A clinical application that fetches a font from a third party on every page load leaks a request pattern to that third party and adds a dependency the data-residency argument then has to explain.
 - **Scale:** fixed rem, ratio 1.2. `0.75 / 0.8125 / 0.875 / 1 / 1.125 / 1.375 / 1.75 / 2.25 rem`. No `clamp()`; users view at consistent DPI and a fluid heading in a side rail looks worse, not better.
-- **Body floor:** 16px in the note, 14px for metadata. Never below.
-- **Line height:** 1.6 in note prose, 1.5 in UI, 1.3 on headings.
-- **Measure:** 68ch cap on note text.
+- **Body floor:** 14px. The note prose sits at 14px alongside everything else on the review screen; it was 16px and was the only element on that page at a different size.
+- **Line height:** 1.5 in UI and body, 1.25 on headings, `leading-relaxed` on note prose.
+- **Measure:** 68ch cap on note text. Note that `ch` tracks the font size, so the 14px note renders a narrower column than the 16px one did, by design.
+- **Tracking:** `-0.01em` on headings. Outfit is already wide-set and geometric, so it takes less negative tracking than the serif it replaced before the counters start closing.
 - **Tabular figures** on every timestamp, vital, and MC-day count so columns do not shimmer.
 - `text-wrap: balance` on headings, `pretty` on prose.
-
-No serif inside the clinical surfaces. Headings and the landing page carry it; the note, the checklist, and every label around them stay Inter, where the small sizes and dense labelling are what the sans is for.
 
 ### The Logotype
 
@@ -89,15 +116,48 @@ This is where the Apple influence lives, and it is deliberately confined.
 
 The reasoning is not aesthetic. A translucent surface has a contrast ratio that depends on whatever scrolls behind it, so it cannot be verified once. Chrome carries icons and short labels at large sizes; content carries the clinical record.
 
-| Layer                            | Treatment                                                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Content                          | Opaque `--surface`, 1px `--line`, radius 12px, no shadow at rest                                  |
-| Raised content (menus, popovers) | Opaque, radius 12px, soft shadow                                                                  |
-| Chrome (sidebar, top bar, dock)  | `--surface` at 72% alpha, `backdrop-filter: blur(20px) saturate(150%)`, 1px hairline, radius 16px |
-| Scrim                            | Single fixed layer, `blur(8px)` plus 32% dim                                                      |
-| Modal                            | Opaque content on a scrim, radius 16px                                                            |
+| Layer                            | Treatment                                                                                                |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Content                          | Opaque `--color-surface`, radius 16px, shadow rather than a border at rest                               |
+| Raised content (menus, popovers) | Opaque, radius 16px, `--shadow-float`                                                                    |
+| Chrome (sidebar, top bar, dock)  | `--color-glass`, 58% alpha light and 60% dark, `backdrop-filter: blur(20px) saturate(150%)`, radius 22px |
+| Scrim                            | Single fixed layer, `blur(8px)` plus 32% dim light, 50% dark                                             |
+| Modal                            | Opaque content on a scrim, radius 22px                                                                   |
 
-Radii: 8px controls, 12px cards, 16px floating chrome, 999px chips. Nothing square, nothing pill-shaped that is not a chip.
+Radii: **10px controls, 16px cards, 22px floating chrome, 999px chips.** Roundness
+is a brand property here, not a default. The references this was built against carry
+their softness in the radius and the shadow rather than in blur, which is what lets
+clinical text sit on a fully opaque surface and still read as part of the same soft
+interface.
+
+**Every CTA is a rounded rectangle at the 10px control radius. Nothing you press
+is a pill.** Buttons were stadium-shaped until they were not; the shape now echoes
+the cards and inputs an action sits among instead of standing apart from them. The
+999px radius is reserved for **chips and status markers**, which are labels rather
+than controls: provenance marks, assertion states, citation IDs, count badges. That
+split is the whole rule, and it is what makes the shape language readable at a
+glance: round means "this is telling you something", rounded-rect means "this does
+something".
+
+It is enforced in one place, `ui/Button.tsx`, but three CTAs on the marketing and
+list screens hand-roll the same styling rather than using it. Those exist and must
+be changed in step; a sitewide shape rule that holds in the component and not on
+the landing page is worse than no rule.
+
+**Two implementation notes that have each already cost a shipped bug.**
+
+The glass needs **texture behind it**. `backdrop-filter` blurs whatever is behind
+it, so over a flat fill it has nothing to operate on and the chrome reads as merely
+translucent no matter how large the radius is. The dot grid under every page is
+what makes frost look like frost, which is why it is on both shells rather than
+just the marketing one.
+
+The `-webkit-backdrop-filter` declaration must come **first** and the standard
+property **last**. Written the other way the CSS minifier treats the pair as one
+property declared twice, keeps the last, and ships the prefix alone: the frost
+degrades to flat translucency in the production build while dev, which does not
+minify, looks perfect. Verify glass changes against `vite build`, never against
+the dev server.
 
 ### Z-Index Scale
 
@@ -121,15 +181,37 @@ A floating, rounded, glass panel on the left, detached from all four edges. Coll
 
 **While expanded**, a single fixed scrim covers everything beneath the sidebar and above the content: `blur(8px)` and a 32% dim. One element carries the effect; the content tree is never filtered, because filtering a large subtree on every hover janks.
 
-**Reduced motion:** the width change becomes instant, and the scrim drops to dim-only with no blur. Blur transitions are the most expensive and the most vestibular-hostile part of the effect. The sidebar still expands, still dims, still works.
+**Reduced motion:** the width change becomes instant and the scrim's _blur
+transition_ is dropped, but the blur itself stays. A static blurred layer is not
+motion; animating the blur is. The earlier rule removed the blur entirely, which
+suppressed an effect the preference was never asking about. The sidebar still
+expands, still dims, still frosts, still works.
+
+**The active nav item is tinted at `bg-accent/16`** where every other active state
+in the app is `/12`. It is the only one painted on glass with the scrim behind it,
+and at the current glass alpha the `/12` tint measured 4.05:1 with the island
+expanded, which is under AA.
 
 ## Layout
 
-- **App shell:** floating sidebar island left, content right, no fixed top bar on the review screen because vertical space is the scarce resource there.
-- **Review screen, three panels** per PRD §14: transcript (280px, sunken) · note (fluid, dominant, ~62%) · clinical safety rail (360px).
+- **App shell:** floating sidebar island left, content right, no fixed top bar on the review screen because vertical space is the scarce resource there. Below `md` the island is replaced by a bottom dock rather than shrunk, because it is the wrong shape for a thumb and hover does not exist there.
+- **Review screen, three panels** per PRD §14: transcript (280px, sunken) · note (fluid, dominant) · clinical safety rail (360px).
 - **The safety rail orders by severity, never chronologically.** Emergency first, always, and severity must be visible without scrolling.
-- **Below 1280px** the safety rail moves beneath the note. **Below 900px** the transcript collapses to a toggle. The panels never become tabs, because tabs hide safety content.
+- **Below `lg` (1024px) the safety rail moves _above_ the note, not below it.** On a narrow screen "visible without scrolling" can only mean first in source order. The transcript drops to a toggle at the same breakpoint. The panels never become tabs, because tabs hide safety content.
+- The rail scrolls itself rather than stretching the page. One guest consultation produces four flags and twenty-seven gaps, which made it the tallest column by a wide margin and left the other two beside a long empty gutter.
 - Density target: everything needed for a 60-second review inside one 1440×900 viewport.
+
+### The Footer Reveal
+
+The page is an opaque sheet lying on top of a footer that is fixed to the bottom
+of the viewport for the whole session. Scrolling to the end slides the sheet up
+and uncovers what was already there, so the reveal costs no scroll listener, no
+observer and no JavaScript: nothing animates, the occluder just moves.
+
+- `--footer-h` is **one variable** serving both the footer's height and the reserve below the page. As two literals they drift the first time either changes, and the failure is silent and one-directional: too small a reserve hides the footer's top row behind the page, which nobody sees unless they scroll to the bottom at the width that broke it. Measure the footer and set the variable from that.
+- Below `48rem` the reveal is switched off rather than resized. Stacking the content roughly doubles the footer, so holding the effect on a phone would reserve most of a viewport as dead scroll to uncover what a normal footer shows for free.
+- **`/consultations/:id` has no footer at all.** It is a working surface with a sticky approve bar, and the reserve is dropped with it so the page ends at its content. `/consultations/new` keeps its footer, so the route match is guarded on the id.
+- Footer content is right-aligned against the header's `max-w-6xl px-6` column, not the viewport. Past about 1400px a viewport-flush footer drifts away from everything else on the page and stops reading as part of the same grid.
 
 ## Motion
 
@@ -153,9 +235,14 @@ Every interactive element ships default, hover, focus, active, disabled, loading
 - **Skeletons, not spinners**, for content-shaped loading.
 - **Empty states teach the interface.** "No consultations yet" carries the action that creates one.
 - **Assertion states** render as a fixed vocabulary: `PRESENT`, `DENIED`, `CLINICIAN_OBSERVED`, `NOT_ASSESSED`, `UNKNOWN`, `NOT_APPLICABLE`. `NOT_ASSESSED` is visible and legible, never blank and never grey-to-invisible.
-- **Provenance is a visual property, not a legend.** Rule-sourced flags carry a solid marker and the word "Rule"; model-sourced carry an outlined marker and the word "AI suggested". Clinician-edited note text carries a left gutter mark and a "You edited this" affordance. All three survive into print.
+- **Provenance is a visual property, not a legend.** Rule-sourced flags carry a solid marker and the word "Rule"; model-sourced carry an outlined marker and the words "AI Suggested". Clinician-edited note text carries a "You Edited This" badge against the model's "AI Generated". The distinction is _computed_, by comparing the doctor's copy against the AI's original, which the API preserves byte-identical. That is what makes the label truthful rather than a flag someone remembered to set. All of it survives into print.
+- **Labels are Title Case; sentences are not.** `AGENTS.md` "Documentation Hygiene" governs UI copy as well as prose: headings, buttons, badges, nav items and table headers take Title Case, while anything that is a sentence, a helper line, an error, or model output stays as written.
 - **Citations** are monospace guideline-ID chips that expand in place, echoing the ID-constrained backend contract in the UI.
 
 ## Print
 
-A document, not a screenshot. Chrome, navigation, and controls are hidden; the note, consultation date, approving clinician, and every red flag with its resolution state remain. AI-generated versus clinician-edited stays distinguishable without colour, because most clinic printers are monochrome: edited passages carry a rule and a label, not a tint.
+A document, not a screenshot. Chrome, navigation, and controls are hidden; the note, the consultation date, and every red flag with its resolution state remain. AI-generated versus clinician-edited stays distinguishable **without colour**, because most clinic printers are monochrome: edited passages carry a dotted underline, not a tint.
+
+Two things paper needs that the screen does not. A capped, scrolling region is a screen affordance; on paper it silently cuts whatever sits below the fold, and the one region it applies to is the safety rail, so `[data-print="expand"]` makes it static and full-height. And gaps hidden behind the "show all" disclosure are restored by `print:block` rather than sliced out of the array, so paper never carries a truncated list with nothing to say it was truncated.
+
+> **Not yet true:** the approving clinician does not appear, on screen or on paper. `ApproveBar` renders the date and nothing else, so the exported document currently has no attribution. Tracked in issue #26, and it is the substantive gap in the export rather than a detail: the point of the approval gate is that the note becomes the doctor's.

@@ -28,7 +28,7 @@ export function MarketingShell() {
               <ThemeToggle />
               <Link
                 to="/login"
-                className="inline-flex h-10 items-center rounded-pill bg-accent px-5 text-sm font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97]"
+                className="inline-flex h-10 items-center rounded-control bg-accent px-5 text-sm font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97]"
               >
                 Sign In
               </Link>
