@@ -286,6 +286,7 @@ bun run test                  # vitest
 | This file                                 | The reader-facing narrative — what, how, and why                                           |
 | [`prd.md`](./prd.md)                      | Requirements, capabilities, acceptance criteria, scope, limitations                        |
 | [`trd.md`](./trd.md)                      | Canonical implementation reference — contracts, schemas, security posture                  |
+| [`dpia.md`](./dpia.md)                    | Production data-flow, PDPA engineering assessment, retention, rights, and residual risks   |
 | [`superpowers/research/`](./superpowers/) | The research phase behind the positioning and clinical claims, graded by evidence strength |
 
 ---
