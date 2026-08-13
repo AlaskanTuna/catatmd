@@ -1,0 +1,111 @@
+import type { ConsultationDetail } from '@shared/types'
+import { useMutation } from '@tanstack/react-query'
+import { CheckCircle2 } from 'lucide-react'
+import { useState } from 'react'
+import { ApiError, api } from '../lib/api.js'
+import { Button } from '../ui/Button.js'
+
+/**
+ * The approval gate (#10, CAP-5).
+ *
+ * Two steps, not one. WCAG 2.2 error prevention asks for confirmation on legal
+ * or medical commitments, and this is both: the doctor is taking responsibility
+ * for a clinical record. Nothing auto-approves, nothing approves on a timer,
+ * and the button is the only large filled accent element on the screen.
+ *
+ * Unacknowledged red flags do not *block* approval, and that is deliberate.
+ * A doctor may legitimately approve a note while judging a flag not applicable,
+ * and blocking would train them to clear flags reflexively to get past the
+ * gate. The count is stated instead, so the choice is informed rather than
+ * prevented.
+ */
+export function ApproveBar({
+  consultationId,
+  approved,
+  approvedAt,
+  unacknowledgedCount,
+  onApproved,
+}: {
+  consultationId: string
+  approved: boolean
+  approvedAt: Date | null
+  unacknowledgedCount: number
+  onApproved: (next: ConsultationDetail) => void
+}) {
+  const [confirming, setConfirming] = useState(false)
+
+  const approve = useMutation({
+    mutationFn: () => api.approve(consultationId),
+    onSuccess: (next) => {
+      setConfirming(false)
+      onApproved(next)
+    },
+  })
+
+  if (approved) {
+    return (
+      <div className="mt-6 flex items-center gap-2 rounded-[--radius-card] border border-accent/30 bg-accent/8 px-4 py-3">
+        <CheckCircle2 aria-hidden className="size-5 shrink-0 text-accent" />
+        <p className="text-sm">
+          <span className="font-medium text-accent">Approved</span>
+          {approvedAt && (
+            <span className="text-ink-muted">
+              {' '}
+              on{' '}
+              {new Intl.DateTimeFormat('en-MY', { dateStyle: 'medium', timeStyle: 'short' }).format(
+                approvedAt,
+              )}
+            </span>
+          )}
+          <span className="text-ink-muted">
+            . This record is final and can no longer be edited.
+          </span>
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="glass sticky bottom-4 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-[--radius-float] p-3"
+      style={{ zIndex: 'var(--z-sticky)' }}
+      data-print="hide"
+      data-tour="approve"
+    >
+      <div className="min-w-0">
+        {confirming ? (
+          <p className="text-sm font-medium">
+            You are taking responsibility for this note. It cannot be edited afterwards.
+          </p>
+        ) : (
+          <p className="text-sm text-ink-muted">
+            {unacknowledgedCount > 0
+              ? `${unacknowledgedCount} red flag${unacknowledgedCount === 1 ? '' : 's'} not yet acknowledged.`
+              : 'Reviewed and ready to sign off.'}
+          </p>
+        )}
+        {approve.error && (
+          <p role="alert" className="mt-1 text-sm text-emergency">
+            {approve.error instanceof ApiError ? approve.error.message : 'Approval failed.'}
+          </p>
+        )}
+      </div>
+
+      <div className="flex gap-2">
+        {confirming && (
+          <Button onClick={() => setConfirming(false)} disabled={approve.isPending}>
+            Cancel
+          </Button>
+        )}
+        <Button
+          variant="primary"
+          size="lg"
+          loading={approve.isPending}
+          onClick={() => (confirming ? approve.mutate() : setConfirming(true))}
+        >
+          {confirming ? 'Confirm approval' : 'Approve note'}
+        </Button>
+      </div>
+    </div>
+  )
+}
