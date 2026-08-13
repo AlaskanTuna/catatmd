@@ -1,0 +1,137 @@
+import type { Transcript } from '@shared/types'
+import type { RedFlagTrigger } from './types.js'
+
+/**
+ * docs/trd.md §10 "What Stays Undecided": no clinician has validated this
+ * list. It is sourced from the Malaysian corpus named in docs/trd.md §11
+ * (MOH NAG 4th ed. 2024, Abdullah et al. 2024, Ooi et al. 2022) rather than
+ * NICE, whose licence forbids AI use. Where those sources restate Centor /
+ * McIsaac, this list expresses them in our own words per docs/trd.md §10.
+ */
+export const ACTIVE_RED_FLAG_LIST_VERSION = '2026-08-13'
+
+const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string | null => {
+  for (const turn of transcript.turns) {
+    for (const pattern of patterns) {
+      const match = pattern.exec(turn.text)
+      if (match) return match[0]
+    }
+  }
+  return null
+}
+
+const NAG_SCOPE_NOTE =
+  'MOH National Antimicrobial Guideline (NAG) 4th ed. 2024, §C1/C3 (acute bronchitis / acute ' +
+  'pharyngitis): the antimicrobial-decision algorithms there presuppose an uncomplicated URTI ' +
+  'presentation; this finding sits outside that scope and needs clinical reassessment beyond ' +
+  'the antibiotic decision.'
+
+const DELPHI_AIRWAY_NOTE =
+  'Abdullah et al. (2024), Malaysian sore-throat Delphi consensus, Infect Drug Resist: the ' +
+  'McIsaac-scored antibiotic pathway that consensus establishes presupposes the absence of ' +
+  'airway or swallowing compromise; this finding sits outside that pathway.'
+
+export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
+  {
+    id: 'haemoptysis',
+    label: 'Haemoptysis reported — needs your attention',
+    severity: 'urgent',
+    matcher: (transcript) =>
+      findSpan(transcript, [
+        /cough(?:ing)?\s+up\s+blood/i,
+        /blood[- ]tinge?d?\s+(?:sputum|phlegm|mucus)/i,
+        /blood\s+in\s+(?:the\s+|my\s+|his\s+|her\s+)?(?:sputum|phlegm|mucus|cough)/i,
+        /\bha?emoptysis\b/i,
+      ]),
+    clinicalSource: NAG_SCOPE_NOTE,
+    listVersion: ACTIVE_RED_FLAG_LIST_VERSION,
+  },
+  {
+    id: 'significant-dyspnoea',
+    label: 'Significant breathlessness reported — needs your attention',
+    severity: 'emergency',
+    matcher: (transcript) =>
+      findSpan(transcript, [
+        /can'?t\s+breathe/i,
+        /cannot\s+breathe/i,
+        /difficult(?:y)?\s+breathing/i,
+        /short(?:ness)?\s+of\s+breath/i,
+        /\bbreathless(?:ness)?\b/i,
+        /struggling\s+to\s+breathe/i,
+        /gasping\s+for\s+(?:air|breath)/i,
+      ]),
+    clinicalSource: NAG_SCOPE_NOTE,
+    listVersion: ACTIVE_RED_FLAG_LIST_VERSION,
+  },
+  {
+    id: 'chest-pain',
+    label: 'Chest pain reported — needs your attention',
+    severity: 'urgent',
+    matcher: (transcript) =>
+      findSpan(transcript, [
+        /chest\s+pain/i,
+        /pain\s+in\s+(?:my|the|his|her)\s+chest/i,
+        /tight(?:ness)?\s+in\s+(?:my|the|his|her)\s+chest/i,
+      ]),
+    clinicalSource: NAG_SCOPE_NOTE,
+    listVersion: ACTIVE_RED_FLAG_LIST_VERSION,
+  },
+  {
+    id: 'stridor-airway-compromise',
+    label: 'Possible airway compromise (stridor) — needs your attention',
+    severity: 'emergency',
+    matcher: (transcript) =>
+      findSpan(transcript, [
+        /\bstridor\b/i,
+        /noisy\s+breathing/i,
+        /\bdrooling\b/i,
+        /\btrismus\b/i,
+        /muffled\s+voice/i,
+        /voice\s+sounds?\s+muffled/i,
+      ]),
+    clinicalSource: DELPHI_AIRWAY_NOTE,
+    listVersion: ACTIVE_RED_FLAG_LIST_VERSION,
+  },
+  {
+    id: 'swallowing-oral-intake',
+    label: 'Unable to swallow or maintain oral intake — needs your attention',
+    severity: 'urgent',
+    matcher: (transcript) =>
+      findSpan(transcript, [
+        /can'?t\s+swallow/i,
+        /unable\s+to\s+swallow/i,
+        /can'?t\s+(?:keep|hold)\s+(?:anything|fluids|food|water)\s+down/i,
+        /not\s+(?:been\s+)?able\s+to\s+(?:eat|drink)/i,
+        /refusing\s+to\s+(?:eat|drink)/i,
+        /no\s+oral\s+intake/i,
+      ]),
+    clinicalSource: DELPHI_AIRWAY_NOTE,
+    listVersion: ACTIVE_RED_FLAG_LIST_VERSION,
+  },
+  {
+    /**
+     * No numeric vital-sign cutoff (SpO2 / RR / HR / BP) attributable to
+     * docs/trd.md §11's corpus was located — NAG 2024, Abdullah et al. 2024,
+     * and Ooi et al. 2022 do not publish one for this scope, and no clinician
+     * is available to validate an invented number (docs/trd.md §10, Q7).
+     * Rather than invent a threshold, this trigger matches the clinician's
+     * own stated severity assessment of a vital sign in the transcript.
+     */
+    id: 'vital-signs-concern',
+    label: 'Vital sign described as critically abnormal — needs your attention',
+    severity: 'urgent',
+    matcher: (transcript) =>
+      findSpan(transcript, [
+        /oxygen\s+(?:level|saturation|sats?)\D{0,20}(?:low|dropping|falling|desaturat\w*)/i,
+        /(?:temperature|fever)\D{0,20}(?:very\s+high|extremely\s+high|not\s+coming\s+down|won'?t\s+come\s+down)/i,
+        /(?:heart\s+rate|pulse)\D{0,20}(?:very\s+fast|racing|dangerously\s+(?:high|fast))/i,
+        /blood\s+pressure\D{0,20}(?:very\s+low|dropping|dangerously\s+low)/i,
+      ]),
+    clinicalSource:
+      'No Malaysian-sourced numeric vital-sign threshold found in the docs/trd.md §11 corpus ' +
+      "(NAG 2024, Abdullah et al. 2024, Ooi et al. 2022); this trigger matches the clinician's " +
+      'own stated severity assessment rather than an invented cutoff — see docs/trd.md §10 ' +
+      '"What Stays Undecided".',
+    listVersion: ACTIVE_RED_FLAG_LIST_VERSION,
+  },
+]
