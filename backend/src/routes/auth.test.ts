@@ -1,6 +1,43 @@
 import type { Server } from 'node:http'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createApp } from '../app.js'
+
+/**
+ * better-auth reaches the database through the same client as everything else
+ * (`prismaAdapter(prisma)`, `../lib/auth.ts`), so mocking this one module takes
+ * every database path in this file offline at once: session resolution, sign-up,
+ * and the database-backed rate limiter that was persisting 429s across runs
+ * (issue #57).
+ *
+ * `requireSession` is deliberately NOT mocked. These tests exist to prove it
+ * rejects anonymous callers, so stubbing it would remove what is under test. It
+ * runs unmodified here and returns 401 because the mocked client resolves no
+ * session, which is the same code path a real anonymous request takes.
+ */
+vi.mock('../lib/prisma.js', () => {
+  const model = {
+    findFirst: async () => null,
+    findUnique: async () => null,
+    findMany: async () => [],
+    create: async ({ data }: { data: unknown }) => data,
+    update: async ({ data }: { data: unknown }) => data,
+    updateMany: async () => ({ count: 0 }),
+    upsert: async ({ create }: { create: unknown }) => create,
+    delete: async () => null,
+    deleteMany: async () => ({ count: 0 }),
+    count: async () => 0,
+  }
+
+  return {
+    prisma: new Proxy(
+      {},
+      {
+        get: (_target, property) =>
+          typeof property === 'string' && property.startsWith('$') ? async () => undefined : model,
+      },
+    ),
+  }
+})
 
 let server: Server
 let origin: string
