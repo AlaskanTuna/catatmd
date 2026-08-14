@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Loader2, X } from 'lucide-react'
 import { type CSSProperties, useEffect, useState } from 'react'
 import { cn } from '../lib/cn.js'
 import { useDemoTour } from './DemoTour.js'
@@ -20,7 +20,7 @@ const TOOLTIP_HALF = 184
 const EDGE = 16
 
 export function Spotlight() {
-  const { active, currentStep, steps, next, back, stop } = useDemoTour()
+  const { active, currentStep, steps, next, back, stop, preparing } = useDemoTour()
   const step = active && currentStep >= 0 ? steps[currentStep] : undefined
   const [rect, setRect] = useState<DOMRect | null>(null)
   const [radius, setRadius] = useState<string | null>(null)
@@ -137,12 +137,14 @@ export function Spotlight() {
       {rect && (
         <div
           aria-hidden
-          className="pointer-events-none fixed ring-2 ring-accent ring-offset-2 ring-offset-ground transition-[top,left,width,height] duration-200 ease-out-quart"
+          // Inset by the ring's own 2px so the gradient sits where the old
+          // `ring-2` did, hugging the target rather than eating into it.
+          className="tour-ring pointer-events-none fixed transition-[top,left,width,height] duration-200 ease-out-quart"
           style={{
-            top: rect.top,
-            left: rect.left,
-            width: rect.width,
-            height: rect.height,
+            top: rect.top - 2,
+            left: rect.left - 2,
+            width: rect.width + 4,
+            height: rect.height + 4,
             borderRadius: radius ?? undefined,
             zIndex: 'var(--z-modal)',
           }}
@@ -154,9 +156,12 @@ export function Spotlight() {
       <div
         role="alert"
         style={{ ...tooltipStyle, zIndex: 'var(--z-tooltip)', position: 'fixed' }}
-        className={cn(
-          'w-[22rem] max-w-[calc(100vw-2rem)] rounded-card border border-line bg-surface p-4 shadow-float',
-        )}
+        // `glass` rather than a solid surface: the card sits over the screen it
+        // is describing, and letting that screen show through is what keeps the
+        // tour reading as an overlay on the product rather than a page of its
+        // own. `shadow-float` stays, since glass alone does not lift it off a
+        // busy background.
+        className={cn('glass w-[22rem] max-w-[calc(100vw-2rem)] rounded-card p-4 shadow-float')}
       >
         <div className="flex items-start justify-between gap-3">
           <span className="text-2xs font-semibold tracking-wide text-accent uppercase">
@@ -188,13 +193,28 @@ export function Spotlight() {
               <ArrowLeft aria-hidden className="size-3.5" />
               Back
             </button>
+            {/* Named rather than a bare spinner. If the next stop is waiting on
+                the analysis the viewer should know that is what is happening,
+                since the alternative reading of a stalled button is a bug. */}
             <button
               type="button"
               onClick={next}
-              className="flex h-8 items-center gap-1.5 rounded-control bg-accent px-3 text-xs font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97]"
+              disabled={preparing}
+              className="flex h-8 items-center gap-1.5 rounded-control bg-accent px-3 text-xs font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97] disabled:pointer-events-none disabled:opacity-70"
             >
-              {currentStep === steps.length - 1 ? 'Finish' : 'Next'}
-              {currentStep < steps.length - 1 && <ArrowRight aria-hidden className="size-3.5" />}
+              {preparing ? (
+                <>
+                  <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                  Analysing
+                </>
+              ) : (
+                <>
+                  {currentStep === steps.length - 1 ? 'Finish' : 'Next'}
+                  {currentStep < steps.length - 1 && (
+                    <ArrowRight aria-hidden className="size-3.5" />
+                  )}
+                </>
+              )}
             </button>
           </div>
         </div>

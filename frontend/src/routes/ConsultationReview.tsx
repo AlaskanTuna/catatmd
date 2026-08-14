@@ -301,8 +301,18 @@ export function ConsultationReview() {
 
             <Panel title="Suggestions" count={analysis.suggestions.length}>
               {analysis.suggestions.length === 0 ? (
+                /* Three readings, not two, because the system distinguishes
+                   them and the reader deserves the same distinction. Absence is
+                   its own case: consultations analysed before `outOfScope`
+                   shipped have no value, and reading that as `false` would
+                   assert the corpus was consulted when nobody knows. */
                 <p className="text-sm text-ink-muted">
-                  No cited suggestions. This may be outside the guideline corpus&rsquo;s scope.
+                  {analysis.outOfScope === true &&
+                    'Outside the guideline corpus’s scope, so no suggestions were offered.'}
+                  {analysis.outOfScope === false &&
+                    'Within the guideline corpus’s scope, with nothing to suggest for this consultation.'}
+                  {analysis.outOfScope === undefined &&
+                    'No cited suggestions. This consultation was analysed before scope was recorded, so whether the corpus applied is not known.'}
                 </p>
               ) : (
                 analysis.suggestions.map((suggestion) => (

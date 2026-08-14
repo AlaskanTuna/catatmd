@@ -1,5 +1,7 @@
 import { Loader2, Play, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import { useMatch } from 'react-router-dom'
+import { cn } from '../lib/cn.js'
 import { TOUR_STEP_COUNT, useDemoTour } from './DemoTour.js'
 
 /**
@@ -17,6 +19,11 @@ import { TOUR_STEP_COUNT, useDemoTour } from './DemoTour.js'
 export function HelpButton() {
   const { active, preparing, start } = useDemoTour()
   const dialog = useRef<HTMLDialogElement>(null)
+
+  // The review screen is the one place with a sticky bar under this button, and
+  // `new` is excluded because the intake screen shares the route but not the bar.
+  const review = useMatch('/consultations/:id')
+  const overApproveBar = review !== null && review.params.id !== 'new'
 
   // A native <dialog> gives focus trapping, Escape, inertness of the page
   // behind it and the top layer for free. Hand-rolling those is how a modal
@@ -42,11 +49,26 @@ export function HelpButton() {
         aria-label="Take the guided tour"
         title="Guided Tour"
         style={{ zIndex: 'var(--z-sticky)' }}
-        // 7rem clears both pieces of bottom-docked chrome it would otherwise
-        // land on: the mobile dock below md, and the sticky approve bar on the
-        // review screen, which sits at the same right offset and is the primary
-        // action on the one screen where a help button must not compete.
-        className="glass fixed right-4 bottom-28 flex size-12 items-center justify-center rounded-full text-lg font-semibold text-accent transition-[transform,color] duration-150 ease-out-quart hover:text-accent-hover active:scale-[0.94] md:right-6"
+        /*
+         * Bottom-right corner, lifted only where something is genuinely under
+         * it. A single global offset was the previous approach and it parked
+         * the button 7rem up on every screen, which reads as misplaced on the
+         * majority that have no bottom chrome at all.
+         *
+         * The two things it must clear, measured rather than guessed:
+         * the mobile dock below `md` reaches about 4.5rem up (`bottom-3` plus a
+         * `min-h-12` row and padding), and the sticky approve bar on the review
+         * screen reaches about 5rem (`bottom-4` plus `p-3` around an `h-10`
+         * button). `bottom-24` is 6rem and clears both; everywhere else gets
+         * the corner.
+         *
+         * The approve bar shares this right offset and is the primary action on
+         * the one screen where a help button must not compete with it.
+         */
+        className={cn(
+          'glass fixed right-4 flex size-12 items-center justify-center rounded-full text-lg font-semibold text-accent transition-[transform,color] duration-150 ease-out-quart hover:text-accent-hover active:scale-[0.94] md:right-6',
+          overApproveBar ? 'bottom-24' : 'bottom-24 md:bottom-6',
+        )}
       >
         <span aria-hidden>?</span>
       </button>
@@ -82,8 +104,8 @@ export function HelpButton() {
               <span aria-hidden className="text-accent">
                 &middot;
               </span>
-              It runs the real pipeline on a simulated transcript, which takes up to a minute.
-              Nothing is mocked or replayed.
+              It runs the real pipeline on a simulated transcript. The analysis starts now and runs
+              while you walk the first couple of screens. Nothing is mocked or replayed.
             </li>
             <li className="flex gap-2">
               <span aria-hidden className="text-accent">
