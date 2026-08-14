@@ -1108,6 +1108,24 @@ On the `asr_hosted` path, that sentence stops being true, and the documentation 
 
 In both cases the resulting `Transcript` is submitted through the existing `POST /api/consultations` contract (§13). No new backend route is required; the only shared-schema change is `Transcript.source` (§3).
 
+#### The One Network Call The Local Path Does Make
+
+The claim above is about **patient data**, and stated without this it reads as broader than it is. On the `asr_local` path one request does leave the browser, and a reviewer watching the network tab will see it: the model weights are fetched from the Hugging Face CDN on first use (see Delivery, below). Naming it here rather than only in a delivery table is deliberate, because the section a reviewer checks for egress claims should be the section that discloses the egress.
+
+**The direction is what makes it safe, not a policy.** It is a download of public model weights, not an upload. No audio, no transcript, no identifier, and no consultation content is part of that request, because it happens before any of them exist.
+
+| Party            | What it observes                                                       |
+| ---------------- | ---------------------------------------------------------------------- |
+| Hugging Face CDN | The clinician device's IP address, which model was requested, and when |
+| Hugging Face CDN | **No** patient data of any kind, and no transcript                     |
+
+Two things follow that are worth stating plainly rather than leaving a reviewer to infer:
+
+- **Nothing that PDPA cross-border transfer rules attach to leaves the country on this path**, because no personal data of a patient is in the request. The clinician's IP is visible to a non-Malaysian CDN, which is a fact about the clinic's own network rather than a patient data transfer, and it is the same exposure as loading any third-party asset.
+- **It is removable.** Serving the weights from the application's own origin instead of the CDN eliminates the third-party request entirely, at the cost of hosting roughly 240 MB of static assets. That is a deployment decision rather than an architectural one, and it is the answer if a customer requires that no third-party endpoint be contacted at all. It also interacts with the COOP/COEP constraint noted below, which pulls in the same direction.
+
+Neither point is hypothetical for the reader: `asr_local` is **not built** (no `@huggingface/transformers` dependency is present in `frontend/`), so this describes the contract the implementation must hold to, not behaviour shipping today.
+
 ### Deciding Whether To Offer Audio — The Two-Stage Capability Probe
 
 The probe's job is to decide **whether to offer audio on this device at all** — not to silently pick a mode. Mode selection is the doctor's (see the governing rule); capability is a fact about the machine.
