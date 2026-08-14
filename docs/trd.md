@@ -286,6 +286,32 @@ One adapter class implements `LLMClient` for all three providers — Qwen, Gemin
 3. `temperature` defaults to `0.2` when `request.temperature` is not supplied.
 4. Validates the response with `request.schema.safeParse(parsed)` before returning — a non-conforming response is never returned as partially-trusted data.
 
+#### Measured Limit: Gemini Cannot Complete The Pipeline
+
+The sentence above says provider selection is a constructor parameter. That is true of the mechanism and currently **not** true of the outcome for one provider, so the limit is recorded here rather than discovered by whoever next sets `LLM_PROVIDER=gemini`.
+
+Measured 14/08/26 against `gemini-3.5-flash-lite` on the live OpenAI-compatible endpoint, sending each schema the pipeline actually uses, all with `strict: true`:
+
+| Call                        | JSON Schema size | Depth | Result                   |
+| --------------------------- | ---------------- | ----- | ------------------------ |
+| `note_and_gaps`             | 686 B            | 7     | HTTP 200, schema-valid   |
+| `suggestions_and_red_flags` | 1,312 B          | 7     | HTTP 200, schema-valid   |
+| `clinical_facts`            | 14,240 B         | 10    | **HTTP 400, empty body** |
+
+`clinical_facts` is the first call `analyseNote` makes, so the run dies there and nothing downstream is reached.
+
+Three things this is **not**, each ruled out by measurement rather than assumed:
+
+- **Not `strict`.** On a trivial schema, `strict: true`, `strict: false`, and `strict` omitted all return 200.
+- **Not a JSON Schema keyword.** The passing and failing schemas use the same feature set (`$schema`, `enum`, `additionalProperties`).
+- **Not the API key or the endpoint.** Two of the three real calls succeed on the same key in the same run.
+
+The remaining difference is scale: `clinical_facts` is roughly 20x larger, three levels deeper, and carries 997 properties against 48. The 400 has an empty body naming neither a size nor a depth cap, and size, depth and property count all co-vary, so **which limit binds is not established**.
+
+**Consequence:** Gemini is a configured provider that cannot currently run an analysis, and `AGENTS.md`'s constraint on it (local dev, synthetic data only) should be read as a rule about what it may be pointed at rather than a statement that it works. Production is unaffected: it runs Qwen, and a boot guard throws on `LLM_PROVIDER=gemini` regardless (§7).
+
+Tracked as GitHub issue #96. The fix worth doing is shrinking or splitting `clinical_facts`, which would reduce the largest prompt in the system for every provider rather than special-casing one, and is deliberately **not** bundled with this disclosure.
+
 ### Request Bounds
 
 **Status: `Built`** (issue #94). Both are constructor options on the shared adapter, so every call path inherits them and a new provider cannot be added without them.
@@ -967,6 +993,22 @@ Two consequences for the deploy path filter (§17, `changes` job):
 - It is therefore not a completeness guarantee. It answers "can this push have changed the bundle", never "is production equal to `main`".
 
 When a deploy-affecting change is made outside the repository, record it here in the same commit. That is the only mechanism this project has for making it visible to the next reader.
+
+#### A Third Instance: A Worktree's `.env` Is A Copy, Not A Link
+
+`.worktreeinclude` copies `.env` into a git worktree **at creation time**, so from that moment the worktree's environment is frozen and drifts from the main checkout silently. Same shape as the two above: something reads as authoritative, is not, and nothing reports the disagreement.
+
+Observed 14/08/26. A worktree created before `QWEN_MODEL` was re-pinned kept the superseded value, so every local analysis there failed with a 403 while identical code worked in the main checkout and in production. The failure is maximally misleading, because the repository is innocent: `.env.example`, `render.yaml` and the `env.ts` default all carried the correct value, so reading the repo pointed away from the cause, and `git pull` cannot fix it because `.env` is gitignored by design.
+
+The same applies to `DATABASE_URL`, `BETTER_AUTH_SECRET`, and every other copied key. A rotated secret fails the same way.
+
+Checking is cheap, and worth doing from a worktree before believing any environment-dependent failure:
+
+```bash
+diff <(sort .env) <(sort "$(git rev-parse --path-format=absolute --git-common-dir)/../.env") || echo DRIFTED
+```
+
+Automating it (a symlink, a session-start resync, or a warning) is tracked as GitHub issue #97 and deliberately left to the owner of `.worktreeinclude` rather than patched here, because a stale copy still boots and still looks like it is working, which makes the failure mode worse than the empty `.env` the mechanism was written to prevent.
 
 ### Pooled Versus Direct URL Split
 
