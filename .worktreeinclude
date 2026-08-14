@@ -4,6 +4,11 @@
 # this, a parallel session boots with no DATABASE_URL, no BETTER_AUTH_SECRET and
 # no LLM key, and every prisma command and most of the suite fails there.
 #
+# The copy is taken once, at creation time, and never refreshed. A worktree that
+# outlives an edit to either .env drifts silently from then on, which is why
+# .claude/hooks/env-drift.mjs names the disagreeing keys at session start
+# (issue #97). Do not assume this file keeps anything in sync.
+#
 # .gitignore syntax. Only paths that match AND are gitignored are copied, so a
 # tracked file listed here is never duplicated.
 .env

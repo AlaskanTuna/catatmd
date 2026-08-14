@@ -1011,19 +1011,20 @@ Treat `render.yaml` as the definition used at creation and as documentation ther
 
 #### Configuration That Lives Outside The Repository
 
-The `render.yaml` trap above is one instance of a shape worth naming, because it has now caught us twice: **the repository reads as authoritative, is not, and nothing reports the disagreement.** A reviewer reading the diff cannot see the divergence, and neither can CI.
+The `render.yaml` trap above is one instance of a shape worth naming, because it has now caught us three times: **the repository reads as authoritative, is not, and nothing reports the disagreement.** A reviewer reading the diff cannot see the divergence, and neither can CI.
 
 | Surface                 | What the repo cannot see                                                                              | How you would notice                                                                 |
 | ----------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Render env vars         | Service values win after creation; `render.yaml` only seeds them (above)                              | Compare `GET /v1/services/{id}/env-vars` against `render.yaml` before trusting a pin |
 | Vercel project settings | Build command, root directory, install command and env vars set in the dashboard override repo intent | `vercel inspect` the live deployment; the CI path filter cannot gate on them         |
+| Local `.env`            | Gitignored and per checkout, so a copy taken once keeps superseded values indefinitely                | `SessionStart` hook names the disagreeing keys (issue #97, below)                    |
 
 Two consequences for the deploy path filter (§17, `changes` job):
 
 - It gates on **repository paths only**. A dashboard-side settings change alters the deployed bundle while touching no file, so no filter can trigger on it. That is a known limit, not a defect to fix.
 - It is therefore not a completeness guarantee. It answers "can this push have changed the bundle", never "is production equal to `main`".
 
-When a deploy-affecting change is made outside the repository, record it here in the same commit. That is the only mechanism this project has for making it visible to the next reader.
+When a deploy-affecting change is made outside the repository, record it here in the same commit. For the two remote surfaces that is the only mechanism this project has for making it visible to the next reader. The third is the exception, because a local `.env` is the only one of the three the repository can read for itself.
 
 #### A Third Instance: A Worktree's `.env` Is A Copy, Not A Link
 
@@ -1039,7 +1040,17 @@ Checking is cheap, and worth doing from a worktree before believing any environm
 diff <(sort .env) <(sort "$(git rev-parse --path-format=absolute --git-common-dir)/../.env") || echo DRIFTED
 ```
 
-Automating it (a symlink, a session-start resync, or a warning) is tracked as GitHub issue #97 and deliberately left to the owner of `.worktreeinclude` rather than patched here, because a stale copy still boots and still looks like it is working, which makes the failure mode worse than the empty `.env` the mechanism was written to prevent.
+Automating it was tracked as GitHub issue #97, because a stale copy still boots and still looks like it is working, which makes the failure mode worse than the empty `.env` the mechanism was written to prevent.
+
+**Resolved as a warning rather than a resync.** `.claude/hooks/env-drift.mjs` runs at session start, so the drift announces itself instead of waiting to be suspected. It compares two ways: `.env` against the values `.env.example` commits, which needs no git relationship and therefore also covers a second clone rather than only a worktree; and, inside a linked worktree, `.env` against the main checkout's, which is the only way to reach a rotated secret, since a secret cannot be compared against anything tracked. It reports key names and never values, so the warning is safe to paste, and the `diff` above remains the way to see what actually differs.
+
+Three properties are deliberate:
+
+- **It warns, it does not resync.** A worktree can legitimately need its own `PORT`, `CORS_ORIGIN` or `DATABASE_URL`, so overwriting would break a real override to fix a rarer problem.
+- **It compares only keys the local `.env` sets.** An unset key falls through to the `EnvSchema` default in §7, which carries the pinned value, so absence is safe and a stale override is the dangerous case.
+- **A key is compared by value only if `.env.example` assigns it one.** The example is tracked, so any value in it is already public, and the secrets are exactly the entries left empty. That is a secret classifier with no hand-kept list to fall out of date.
+
+A symlink was rejected outright: symlinks already fail on a Windows checkout here, which is why the `.claude/skills/` entries land as plain text stubs.
 
 ### Pooled Versus Direct URL Split
 
