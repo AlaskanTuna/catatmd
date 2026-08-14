@@ -1,4 +1,6 @@
 import {
+  type ConsultationAnalysis,
+  ConsultationAnalysisSchema,
   type ConsultationDetail,
   ConsultationDetailSchema,
   type ConsultationListItem,
@@ -123,6 +125,35 @@ export const api = {
     request(`/consultations/${id}/analyze`, ConsultationEnvelope, { method: 'POST' }).then(
       (r) => r.consultation,
     ),
+
+  /**
+   * Runs the real pipeline and persists nothing (issue #80).
+   *
+   * The whole gate runs: de-identification, the model call, the deterministic
+   * rules engine, the evidence check. What it does not do is write a
+   * `Consultation` or an `AuditEvent` carrying one, which is what makes Demo
+   * Mode self-contained: there is no row to wipe when the tour ends, so the
+   * cleanup problem never arises.
+   *
+   * That mattered because cleanup is not available. Issue #64 moved
+   * `AuditEvent` to `onDelete: Restrict` so a delete cannot silently break the
+   * tamper-evident hash chain, and the tombstone erasure replacing it has no
+   * HTTP endpoint pending a retention decision. Creating rows the client could
+   * not remove would have been worse than creating none.
+   *
+   * It sits under `/consultations` rather than at `/analyze` because
+   * `requireSession` is mounted per prefix in `app.ts`: a new top-level prefix
+   * would be unauthenticated by default.
+   */
+  analyzeEphemeral: (transcript: Transcript, profileId?: string): Promise<ConsultationAnalysis> =>
+    request(
+      '/consultations/analyze-ephemeral',
+      z.object({ analysis: ConsultationAnalysisSchema }),
+      {
+        method: 'POST',
+        body: JSON.stringify(profileId ? { transcript, profileId } : { transcript }),
+      },
+    ).then((r) => r.analysis),
 
   patch: (
     id: string,

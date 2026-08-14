@@ -1,7 +1,27 @@
+import type { ConsultationDetail } from '@shared/types'
 import { useQueryClient } from '@tanstack/react-query'
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { api } from '../lib/api.js'
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { ApiError, api } from '../lib/api.js'
+
+/**
+ * The id the tour's own consultation answers to.
+ *
+ * Not a real row and never persisted. `ConsultationReview` recognises it and
+ * reads the detail out of this context instead of fetching, which is what keeps
+ * the demo on the same renderer as the real review screen. A second renderer is
+ * how "it narrates the real pipeline" quietly stops being true.
+ */
+export const DEMO_CONSULTATION_ID = 'demo-ephemeral'
 
 /**
  * The guided walkthrough's state machine (#28).
@@ -11,19 +31,24 @@ import { api } from '../lib/api.js'
  * de-identification gate, model call, rules engine and evidence check. There
  * are no hardcoded analysis payloads here and no stubbed responses.
  *
- * It also **creates nothing**. The original ask was for a self-contained mode
- * that makes its own consultations and deletes them afterwards, and that is not
- * buildable today: issue #64 moved `AuditEvent` to `onDelete: Restrict` so a
- * deletion can no longer silently break the tamper-evident hash chain, and the
- * tombstone erasure that replaced it has no HTTP endpoint on purpose, pending an
- * open retention decision. A tour that created rows it could not remove would be
- * worse than one that creates none, so this walks the seeded demo spread
- * instead. Those consultations came out of the real pipeline, which is what
- * keeps the no-mocking constraint satisfied.
+ * **It is self-contained: it analyses its own transcript and persists nothing**
+ * (issue #80). `analyze-ephemeral` runs the whole pipeline and writes no
+ * `Consultation`, so the analysis exists only in this component's state and
+ * ends when the tour does. "Wiped instantly on exit" is therefore true by
+ * construction rather than by a delete call that could fail or be skipped.
  *
- * The consequence worth knowing: the tour is **read-only**. It navigates and
- * explains. It never analyses, edits or approves on the user's behalf, which
- * also means it can never trip the approval gate the product exists to enforce.
+ * That shape was forced rather than preferred. Issue #64 moved `AuditEvent` to
+ * `onDelete: Restrict` so a deletion cannot silently break the tamper-evident
+ * hash chain, and the tombstone erasure replacing it has no HTTP endpoint
+ * pending a retention decision. There is no way to clean up after creating
+ * rows, so the answer is to create none.
+ *
+ * **The seeded walk survives as a fallback, and it announces itself.** If the
+ * live analysis fails, the tour walks the demo account's stored consultations
+ * instead, and says so on screen. Silently substituting prepared output would
+ * have the demo assert it is running the real pipeline at the exact moment an
+ * evaluator is judging that claim, which is a worse failure than a visible
+ * degradation.
  */
 
 /**
@@ -114,13 +139,67 @@ const TOUR_STEPS: TourStep[] = [
 
 export const TOUR_STEP_COUNT = TOUR_STEPS.length
 
+/**
+ * `live` means the tour analysed its own transcript through the real pipeline
+ * and is showing output that exists only in this browser tab. `seeded` means
+ * that call did not complete and it fell back to walking the demo account's
+ * stored consultations.
+ *
+ * The distinction is surfaced to the viewer rather than kept internal, and that
+ * is the whole point of tracking it. The demo's central claim is that it runs
+ * the real pipeline instead of a canned script; a fallback that stayed silent
+ * would have the tour assert something false at the exact moment it is being
+ * assessed. Failing loudly mid-demo is the wrong answer too. Falling back and
+ * saying so is the only option that is neither fragile nor dishonest.
+ */
+type TourMode = 'live' | 'seeded'
+
+/**
+ * Why the live analysis did not happen, separated because the two causes call
+ * for different actions from whoever is presenting.
+ *
+ * `rate_limited` is a 429 from the endpoint's own 5/min bucket, and it means the
+ * pipeline would have worked and was simply asked too soon, so waiting a minute
+ * restores the live path. `failed` is anything else, where retrying gains
+ * nothing. Collapsing the two would tell a presenter in a rehearsal that their
+ * pipeline is broken when they had only started the tour twice in quick
+ * succession.
+ *
+ * Both still fall back rather than erroring, because a tour that dies on screen
+ * is worse than a tour that degrades and says so.
+ */
+type FallbackReason = 'rate_limited' | 'failed'
+
 interface DemoTourValue {
   active: boolean
   /** 0-indexed; -1 when inactive. */
   currentStep: number
   steps: TourStep[]
-  /** True while the opening consultation is being resolved. */
+  /** True while the opening analysis is running. */
   preparing: boolean
+  mode: TourMode
+  /** Meaningful only while `mode` is `seeded`. */
+  fallbackReason: FallbackReason
+  /**
+   * The tour's own consultation, held only in React state.
+   *
+   * Never written to the database, never to `localStorage`, never to the query
+   * cache. Dropping this reference is the entire cleanup path, which is why
+   * "wiped instantly on exit" is true by construction rather than by a delete
+   * call that could fail or be skipped.
+   */
+  ephemeral: ConsultationDetail | null
+  /**
+   * Applies a review action to the in-memory consultation.
+   *
+   * Acknowledging a flag, marking a gap reviewed, editing the note and
+   * approving all reach the API by id on a stored consultation, and the tour's
+   * consultation has no id to reach. Without this every control on the review
+   * screen would 404 mid-demo, on the screen the demo exists to show. The
+   * transitions are the same ones the real screen performs; only the storage
+   * differs, and it is discarded when the tour ends.
+   */
+  updateEphemeral: (next: ConsultationDetail) => void
   start: () => void
   next: () => void
   back: () => void
@@ -182,8 +261,23 @@ async function pickConsultations(
     list.filter((item) => item.status === 'approved').map((item) => item.id),
   )
 
+  /*
+   * Red flags outrank an unapproved status when the two cannot both be had.
+   *
+   * The stored spread drifts, because approving a consultation during a demo is
+   * permanent and there is no un-approve. Observed exactly that: the only
+   * consultation carrying flags is now approved, which under a
+   * strictly-unapproved rule pushed the Red Flags stop onto a consultation with
+   * none. An approved consultation still renders its flag cards and only loses
+   * the approve bar, so preferring flags costs the Approval stop its ring and
+   * saves the more important one.
+   *
+   * The primary path does not have this problem: it analyses a fixture chosen
+   * for its flags and is never approved.
+   */
   const flagged =
     details.find((entry) => entry.analysis?.redFlags?.length && !approvedIds.has(entry.id))?.id ??
+    details.find((entry) => entry.analysis?.redFlags?.length)?.id ??
     details.find((entry) => !approvedIds.has(entry.id))?.id ??
     fallback
 
@@ -192,36 +286,154 @@ async function pickConsultations(
   return { flagged, cited }
 }
 
+/**
+ * Analyse a bundled fixture without persisting it.
+ *
+ * The fixture corpus is synthetic by mandate (`AGENTS.md`), so the transcript
+ * the demo analyses carries no patient data before de-identification even runs.
+ * The de-identification gate still runs on it, because the endpoint applies the
+ * same pipeline to every caller and a demo-shaped exception to the PHI boundary
+ * is exactly the kind of hole that stops being demo-shaped later.
+ */
+/*
+ * Not `fixtures[0]`, and the difference decides whether the demo works.
+ *
+ * The corpus is ordered for the intake screen, and its first entry is the
+ * gap-heavy case, which yields twenty-four gaps and **no red flags at all**.
+ * The tour's headline stop is the rule-versus-model distinction, so analysing
+ * that fixture would leave the single most important screen empty while every
+ * other step looked fine.
+ *
+ * `urti-hard-red-flag` produces the airway-compromise `EMERGENCY` marked `Rule`
+ * above model-sourced `URGENT` candidates, which is that distinction
+ * demonstrating itself without narration.
+ */
+const DEMO_FIXTURE_ID = 'urti-hard-red-flag'
+
+async function runEphemeral(): Promise<ConsultationDetail> {
+  const fixtures = await api.fixtures()
+  const fixture = fixtures.find((entry) => entry.id === DEMO_FIXTURE_ID) ?? fixtures[0]
+  if (!fixture) throw new Error('no fixtures available')
+
+  const analysis = await api.analyzeEphemeral(fixture.transcript)
+  const now = new Date()
+  return {
+    id: DEMO_CONSULTATION_ID,
+    status: 'awaiting_review',
+    createdAt: now,
+    updatedAt: now,
+    transcript: fixture.transcript,
+    analysis,
+    editedNote: null,
+    approvedAt: null,
+    approvedBy: null,
+    acknowledgedRedFlagIds: [],
+    reviewedGapIds: [],
+  }
+}
+
 export function DemoTourProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const queryClient = useQueryClient()
   const [active, setActive] = useState(false)
   const [currentStep, setCurrentStep] = useState(-1)
   const [preparing, setPreparing] = useState(false)
+  const [mode, setMode] = useState<TourMode>('live')
+  const [fallbackReason, setFallbackReason] = useState<FallbackReason>('failed')
+  const [ephemeral, setEphemeral] = useState<ConsultationDetail | null>(null)
   const [subjects, setSubjects] = useState<Subjects>({ flagged: null, cited: null })
+  /** Where the tour last sent the browser, so a user-driven navigation is
+      distinguishable from the tour's own. */
+  const expectedPath = useRef<string | null>(null)
 
-  const routeFor = useCallback((step: TourStep, resolved: Subjects) => {
-    if (!step.route.includes(':id')) return step.route
-    const id = resolved[step.subject ?? 'flagged'] ?? resolved.flagged
-    // Without an id there is nothing to review; the list is the honest
-    // destination rather than a route with a literal ":id" in it.
-    return id ? step.route.replace(':id', id) : '/consultations'
-  }, [])
+  const routeFor = useCallback(
+    (step: TourStep, resolved: Subjects, live: boolean) => {
+      if (!step.route.includes(':id')) return step.route
+      if (live && ephemeral) {
+        /*
+         * Live mode has one consultation, so every consultation step points at
+         * the same in-memory record, with one measured exception.
+         *
+         * The Citations stop needs a cited suggestion to point at, and whether
+         * the analysis produces one is a property of the transcript rather than
+         * a guarantee. The fixture chosen for its red flags is a severe
+         * presentation whose correct handling is "escalate now", and escalation
+         * is not a guideline-cited recommendation: analysing it against
+         * production returned five red flags and zero suggestions. Sending the
+         * Citations step there would leave the closed-corpus claim pointing at
+         * an element that does not exist.
+         *
+         * So that one step falls back to a stored consultation that does have a
+         * citation. Reading a seeded row persists nothing, so this costs the
+         * ephemeral guarantee nothing; the tour simply stops narrating its own
+         * analysis for the one stop its own analysis cannot illustrate.
+         */
+        const wantsCitation = step.subject === 'cited'
+        const hasCitation = (ephemeral.analysis?.suggestions?.length ?? 0) > 0
+        if (wantsCitation && !hasCitation && resolved.cited) {
+          return step.route.replace(':id', resolved.cited)
+        }
+        return step.route.replace(':id', DEMO_CONSULTATION_ID)
+      }
+      const id = resolved[step.subject ?? 'flagged'] ?? resolved.flagged
+      // Without an id there is nothing to review; the list is the honest
+      // destination rather than a route with a literal ":id" in it.
+      return id ? step.route.replace(':id', id) : '/consultations'
+    },
+    [ephemeral],
+  )
 
   const start = useCallback(async () => {
     setPreparing(true)
-    const resolved = await pickConsultations((consultation) =>
+
+    /*
+     * Both paths are resolved, concurrently, even when the live one succeeds.
+     *
+     * The seeded subjects are needed in live mode too, because the Citations
+     * step falls back to a stored consultation when the analysis produces no
+     * suggestions (see `routeFor`). Running them in sequence would add the
+     * scoring reads to a wait that is already dominated by the analysis, and
+     * running them at all is close to free: the reads finish in well under a
+     * second against a call that took roughly fifty against production, and
+     * they warm the cache the review screen is about to use.
+     */
+    const seeded = pickConsultations((consultation) =>
       queryClient.fetchQuery({
         queryKey: ['consultation', consultation],
         queryFn: () => api.getConsultation(consultation),
       }),
     ).catch(() => ({ flagged: null, cited: null }) as Subjects)
 
+    // Live first. The seeded walk is the fallback, not the plan.
+    //
+    // No automatic retry, deliberately. The endpoint allows 5/min per IP, so a
+    // retry on failure turns one flaky call into a 429 and reports a rate limit
+    // where the real fault was something else.
+    const own = await runEphemeral().catch((error: unknown) => {
+      setFallbackReason(
+        error instanceof ApiError && error.status === 429 ? 'rate_limited' : 'failed',
+      )
+      return null
+    })
+
+    const resolved = await seeded
+
+    setEphemeral(own)
     setSubjects(resolved)
+    setMode(own ? 'live' : 'seeded')
     setPreparing(false)
     setActive(true)
     setCurrentStep(0)
-    navigate(routeFor(TOUR_STEPS[0] as TourStep, resolved))
+
+    const first = TOUR_STEPS[0] as TourStep
+    const path = first.route.includes(':id')
+      ? own
+        ? first.route.replace(':id', DEMO_CONSULTATION_ID)
+        : routeFor(first, resolved, false)
+      : first.route
+    expectedPath.current = path
+    navigate(path)
   }, [navigate, queryClient, routeFor])
 
   const goTo = useCallback(
@@ -229,30 +441,58 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
       const step = TOUR_STEPS[index]
       if (!step) return
       setCurrentStep(index)
-      navigate(routeFor(step, subjects))
+      const path = routeFor(step, subjects, mode === 'live')
+      expectedPath.current = path
+      navigate(path)
     },
-    [subjects, navigate, routeFor],
+    [subjects, navigate, routeFor, mode],
   )
+
+  /**
+   * Ending the tour is the whole cleanup path.
+   *
+   * Dropping the reference is what "wiped instantly" means here: the analysis
+   * lived in React state and nowhere else, so there is no row to delete, no
+   * cache entry to invalidate and no request that can fail halfway. Exit,
+   * finish and interrupt all land on this one function so none of them can
+   * leave the data behind.
+   */
+  const stop = useCallback(() => {
+    setActive(false)
+    setCurrentStep(-1)
+    setEphemeral(null)
+    setSubjects({ flagged: null, cited: null })
+    expectedPath.current = null
+  }, [])
 
   const next = useCallback(() => {
     // The last step closes the tour rather than dead-ending on a disabled
     // button, so there is always exactly one obvious way forward.
     if (currentStep >= TOUR_STEPS.length - 1) {
-      setActive(false)
-      setCurrentStep(-1)
+      stop()
       return
     }
     goTo(currentStep + 1)
-  }, [currentStep, goTo])
+  }, [currentStep, goTo, stop])
 
   const back = useCallback(() => {
     if (currentStep > 0) goTo(currentStep - 1)
   }, [currentStep, goTo])
 
-  const stop = useCallback(() => {
-    setActive(false)
-    setCurrentStep(-1)
-  }, [])
+  /*
+   * "Interrupted" counts as an exit, per the requirement on issue #80.
+   *
+   * The tour navigates constantly, so a location change is only a user
+   * interruption when it lands somewhere the tour did not send it. Comparing
+   * against the path the tour last requested is what separates the two; a bare
+   * location listener would tear the tour down on its own first step.
+   */
+  useEffect(() => {
+    if (!active) return
+    if (expectedPath.current === null) return
+    if (location.pathname === expectedPath.current) return
+    stop()
+  }, [active, location.pathname, stop])
 
   const value = useMemo(
     () => ({
@@ -260,12 +500,18 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
       currentStep,
       steps: TOUR_STEPS,
       preparing,
+      mode,
+      fallbackReason,
+      ephemeral,
+      updateEphemeral: setEphemeral,
       start: () => void start(),
       next,
       back,
       stop,
     }),
-    [active, currentStep, preparing, start, next, back, stop],
+    // `setEphemeral` is a useState setter and stable by React contract, so it is
+    // deliberately absent here.
+    [active, currentStep, preparing, mode, fallbackReason, ephemeral, start, next, back, stop],
   )
 
   return <DemoTourContext.Provider value={value}>{children}</DemoTourContext.Provider>
