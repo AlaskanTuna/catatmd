@@ -2,7 +2,7 @@ import type { ConsultationDetail } from '@shared/types'
 import { useMutation } from '@tanstack/react-query'
 import { CheckCircle2 } from 'lucide-react'
 import { useState } from 'react'
-import { ApiError, api } from '../lib/api.js'
+import { ApiError } from '../lib/api.js'
 import { Button } from '../ui/Button.js'
 
 /**
@@ -20,14 +20,23 @@ import { Button } from '../ui/Button.js'
  * prevented.
  */
 export function ApproveBar({
-  consultationId,
+  approve: performApproval,
   approved,
   approvedAt,
   approvedBy,
   unacknowledgedCount,
   onApproved,
 }: {
-  consultationId: string
+  /**
+   * The approval transition itself, supplied by the caller.
+   *
+   * This component owns the *gate*: the two steps, the unacknowledged count,
+   * the wording. It deliberately does not own where the approval lands. Demo
+   * Mode's consultation is never stored (issue #80), so it approves in memory
+   * while a real one approves over the API, and both must pass through this
+   * same gate rather than one of them growing a second path around it.
+   */
+  approve: () => Promise<ConsultationDetail>
   approved: boolean
   approvedAt: Date | null
   approvedBy: string | null
@@ -37,7 +46,7 @@ export function ApproveBar({
   const [confirming, setConfirming] = useState(false)
 
   const approve = useMutation({
-    mutationFn: () => api.approve(consultationId),
+    mutationFn: performApproval,
     onSuccess: (next) => {
       setConfirming(false)
       onApproved(next)
