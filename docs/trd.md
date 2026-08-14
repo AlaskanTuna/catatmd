@@ -424,6 +424,17 @@ Three properties make this worth more than a duplicate of the first pass:
 
 The guard runs inside the adapter rather than being injected. This widens §2's row for `lib/llm/` from a type-only import of `deid/` to a runtime one — a deliberate, recorded change, on the reasoning that a guard a caller can omit by constructing the client differently is not a boundary.
 
+### Frontend Environment (`VITE_*`)
+
+A separate contract, and a smaller one. These are read by `frontend/` at build time and are **not** in `EnvSchema`, which validates the API's environment only. They were undocumented until #2 shipped a configuration knob that a deploying clinic actually needs to know exists.
+
+| Field                 | Purpose                                                                                                                                                             | Unset behaviour                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `VITE_API_URL`        | Origin of the API. A build without it sends every API call to the static origin instead, which is a failure the deploy job asserts against rather than trusts (§17) | Requests resolve against the SPA's own origin          |
+| `VITE_ASR_MODEL_HOST` | Origin for the on-device speech model's weights (§20). Set it to a mirror and the one third-party runtime request disappears                                        | Falls back to the HuggingFace CDN, which §20 discloses |
+
+**Anything prefixed `VITE_` is public.** Vite inlines it into the bundle, so a value with that prefix is shipped to every visitor. No secret may ever carry it, which is why neither field above is a credential and why `.env.example` documents API-side keys separately.
+
 ---
 
 ## 8. HTTP Surface As Built
@@ -1164,7 +1175,7 @@ Transcription is specified as a **port with two adapters**, deliberately mirrori
 
 | Adapter      | Implementation                                                                  | Status                                                                   | Where audio goes                |
 | ------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------- |
-| `asr_local`  | `whisper-small` via `@huggingface/transformers` v4, chunked in a **Web Worker** | the implementation target                                                | Nowhere — browser memory only   |
+| `asr_local`  | `whisper-small` via `@huggingface/transformers` v4, chunked in a **Web Worker** | **`Built`** (issue #2)                                                   | Nowhere — browser memory only   |
 | `asr_hosted` | `qwen3-asr-flash` on the Singapore endpoint, posting discrete chunks            | **`Specified`** — not built, and nothing in the repo implements it today | Alibaba Model Studio, Singapore |
 
 The rationale for shaping it as a port rather than a branch is the same one that justifies `LLMClient`: it is what lets "what happens when data residency requirements change" be answered with an architecture instead of an assertion. A second adapter that is written down, gated, and audited is a stronger answer than a single path that quietly becomes a second path the first time someone hits a slow laptop.
@@ -1206,9 +1217,20 @@ The claim above is about **patient data**, and stated without this it reads as b
 Two things follow that are worth stating plainly rather than leaving a reviewer to infer:
 
 - **Nothing that PDPA cross-border transfer rules attach to leaves the country on this path**, because no personal data of a patient is in the request. The clinician's IP is visible to a non-Malaysian CDN, which is a fact about the clinic's own network rather than a patient data transfer, and it is the same exposure as loading any third-party asset.
-- **It is removable.** Serving the weights from the application's own origin instead of the CDN eliminates the third-party request entirely, at the cost of hosting roughly 240 MB of static assets. That is a deployment decision rather than an architectural one, and it is the answer if a customer requires that no third-party endpoint be contacted at all. It also interacts with the COOP/COEP constraint noted below, which pulls in the same direction.
+- **It is removable, and the removal is shipped rather than described.** `VITE_ASR_MODEL_HOST` (§7) points the weight download at any origin, and the path layout under it matches HuggingFace's own (`{model}/resolve/{revision}/…`), so mirroring is a plain file copy rather than a rewrite. A clinic whose network policy forbids the fetch mirrors the files, serves them from the same origin as the app, and the on-device claim becomes an on-premises one with no third-party call at all. Left unset it defaults to the CDN, which is the disclosed behaviour above.
 
-Neither point is hypothetical for the reader: `asr_local` is **not built** (no `@huggingface/transformers` dependency is present in `frontend/`), so this describes the contract the implementation must hold to, not behaviour shipping today.
+##### Two Assets, Two Decisions
+
+The ONNX Runtime WASM (~23 MB) is served from the application's own origin; the model weights (~240 MB per model) are not. That is **two decisions with different inputs, not one mitigation half-applied**, and a reviewer who sees `ort-wasm` on our origin and the model on HuggingFace should be able to tell them apart:
+
+| Asset             | Served from                            | Why                                                                                                                                                |
+| ----------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ONNX Runtime WASM | Our origin, always                     | Bounded and fixed. Emitted into the build, so there is no reason to introduce a second third-party origin for it                                   |
+| Model weights     | HuggingFace CDN by default, mirrorable | ~240 MB per model whose bandwidth we would carry on every cache miss. Made configurable instead, so the cost falls to the deployment that needs it |
+
+The residency argument needs **one disclosed origin, not zero**, and is stronger for naming which and why than for implying third-party fetches were eliminated entirely.
+
+`asr_local` is **`Built`** as of issue #2, so this describes shipping behaviour rather than a contract to hold to. Measured on a real Malaysian English sample: 25 seconds of audio transcribed in 33 seconds on WASM, with the weights fetched once (~240 MB) and browser-cached after. The register held: the output keeps `lah` and renders "aunties" correctly, which is the exact word §20.1 recorded `whisper-base` mangling into "until".
 
 ### Deciding Whether To Offer Audio — The Two-Stage Capability Probe
 
@@ -1276,6 +1298,29 @@ True streaming is an optimisation available later, not the starting point. State
 **Never promise real-time.** Measured figures and their hardware caveats are in §20.1; the short version is that `whisper-small` ranges from comfortably faster than real time on a modern multi-core machine to **several times slower than real time** on a modest clinic PC, and the clinic's hardware is not ours to choose. Design consequences: transcribe in chunks in a Web Worker during the consultation, probe real-time factor on the first chunk and warn early if the device cannot keep up, show real progress, and keep the paste-a-transcript path as the primary route (`docs/prd.md` §14).
 
 **Check cross-origin isolation before counting on multi-threaded WASM.** COOP/COEP headers are required for `SharedArrayBuffer`, and enabling them on Vercel constrains cross-origin model fetches from the HF CDN — the two requirements pull against each other and must be resolved together, not sequentially.
+
+#### The Quantised Decoder Needs Graph Optimisation Disabled
+
+Recorded because every step of the diagnosis looked like the answer and was not, so without this someone will re-derive it. Found while building #2.
+
+The session refuses to open at all:
+
+```
+Can't create a session. qdq_actions.cc:137 TransposeDQWeightsForMatMulNBits
+Missing required scale: model.decoder.embed_tokens.weight_merged_0_scale
+```
+
+Three plausible causes, each eliminated by measurement rather than reasoning:
+
+| Hypothesis                  | Why it is wrong                                                                                                                  |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| A bad mirror                | The failure is identical on `Xenova/whisper-small` and `onnx-community/whisper-small`                                            |
+| The wrong dtype             | `decoder_model_merged_int8.onnx` is **byte-identical** (md5) to the `_quantized` file, so switching between them changes nothing |
+| The scale really is missing | That tensor name appears **341 times** in the decoder graph                                                                      |
+
+The failure is inside an ONNX Runtime **optimisation pass** that rewrites quantised MatMuls and cannot resolve the reference in this graph. `session_options: { graphOptimizationLevel: 'disabled' }` skips the pass and loads **the same weights, unchanged**.
+
+That distinction matters for anyone reviewing it later: this disables a graph rewrite, not a correctness check, and it does not alter the model or its output. It is a workaround for a runtime bug, not a quality trade.
 
 ### Threat: ASR Is A Second Fabrication Surface
 
