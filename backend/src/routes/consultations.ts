@@ -1,9 +1,12 @@
-import type { Consultation } from '@prisma/client'
+import type { Consultation, Prisma } from '@prisma/client'
 import {
   type ConsultationAnalysis,
   ConsultationAnalysisSchema,
   ConsultationDetailSchema,
   ConsultationListItemSchema,
+  type Disposition,
+  type DispositionInput,
+  DispositionInputSchema,
   type InformationGap,
   type SoapNote,
   SoapNoteSchema,
@@ -44,6 +47,30 @@ function doctorId(req: { doctorId?: string }): string {
  * JSON columns are `Json?` to Prisma, so this is the only place their shape is
  * actually checked.
  */
+/**
+ * Reads dispositions, projecting a pre-#10 row forward rather than migrating it.
+ *
+ * A consultation reviewed before dispositions existed carries only a list of
+ * ids, and every id in it meant "acknowledged". Deriving that on read is
+ * lossless and leaves the stored data untouched, which is preferable to a
+ * backfill that rewrites clinical review history to fit a newer shape.
+ *
+ * `decidedAt` is unknowable for those rows. `updatedAt` is the closest honest
+ * answer: the decision happened at or before the row was last written.
+ */
+function dispositionsFor(
+  stored: Prisma.JsonValue | null,
+  legacyIds: Prisma.JsonValue | null,
+  fallbackAt: Date,
+) {
+  if (stored !== null && stored !== undefined) return stored
+  return ((legacyIds as string[] | null) ?? []).map((id) => ({
+    id,
+    state: 'acknowledged' as const,
+    decidedAt: fallbackAt,
+  }))
+}
+
 function toDetail(row: Consultation, approvedBy: string | null = null) {
   return ConsultationDetailSchema.parse({
     id: row.id,
@@ -57,6 +84,12 @@ function toDetail(row: Consultation, approvedBy: string | null = null) {
     approvedBy,
     acknowledgedRedFlagIds: row.acknowledgedRedFlagIds ?? [],
     reviewedGapIds: row.reviewedGapIds ?? [],
+    redFlagDispositions: dispositionsFor(
+      row.redFlagDispositions,
+      row.acknowledgedRedFlagIds,
+      row.updatedAt,
+    ),
+    gapDispositions: dispositionsFor(row.gapDispositions, row.reviewedGapIds, row.updatedAt),
   })
 }
 
@@ -482,8 +515,33 @@ const PatchBodySchema = z
     editedNote: SoapNoteSchema.partial().optional(),
     acknowledgedRedFlagIds: z.array(z.string()).optional(),
     reviewedGapIds: z.array(z.string()).optional(),
+    redFlagDispositions: z.array(DispositionInputSchema).optional(),
+    gapDispositions: z.array(DispositionInputSchema).optional(),
   })
   .refine((body) => Object.keys(body).length > 0, { message: 'empty patch' })
+
+/**
+ * Applies decisions onto the stored set, last decision per id winning.
+ *
+ * A doctor revising a judgement is legitimate, so this is not append-only the
+ * way `acknowledgedRedFlagIds` is. The invariant that column protects is
+ * untouched by that: the red flag itself still lives in `analysis` and is never
+ * removed or downgraded here, and every change writes an `AuditEvent`, so the
+ * history of a reversal survives even though only the current state is stored.
+ */
+function applyDispositions(
+  stored: Prisma.JsonValue | null,
+  incoming: DispositionInput[],
+  decidedAt: Date,
+) {
+  const next = new Map(
+    ((stored as Disposition[] | null) ?? []).map((entry) => [entry.id, entry] as const),
+  )
+  for (const decision of incoming) {
+    next.set(decision.id, { ...decision, decidedAt })
+  }
+  return [...next.values()]
+}
 
 consultationsRouter.patch('/:id', async (req, res) => {
   const actor = doctorId(req)
@@ -536,6 +594,30 @@ consultationsRouter.patch('/:id', async (req, res) => {
   const newFlags = (patch.acknowledgedRedFlagIds ?? []).filter((id) => !previousFlags.has(id))
   const newGaps = (patch.reviewedGapIds ?? []).filter((id) => !previousGaps.has(id))
 
+  /*
+   * A decision is only an event when it changes something. Re-sending the same
+   * state on an unrelated patch would otherwise fill the audit trail with
+   * restatements and bury the reversals, which are the entries anyone reading
+   * this back actually cares about.
+   */
+  const decidedAt = new Date()
+  const priorFlagState = new Map(
+    ((consultation.redFlagDispositions as Disposition[] | null) ?? []).map(
+      (entry) => [entry.id, entry] as const,
+    ),
+  )
+  const priorGapState = new Map(
+    ((consultation.gapDispositions as Disposition[] | null) ?? []).map(
+      (entry) => [entry.id, entry] as const,
+    ),
+  )
+  const changed = (prior: Map<string, Disposition>, decision: DispositionInput) => {
+    const before = prior.get(decision.id)
+    return before?.state !== decision.state || before?.reason !== decision.reason
+  }
+  const flagDecisions = (patch.redFlagDispositions ?? []).filter((d) => changed(priorFlagState, d))
+  const gapDecisions = (patch.gapDispositions ?? []).filter((d) => changed(priorGapState, d))
+
   const updated = await prisma.consultation.update({
     where: { id: consultation.id },
     data: {
@@ -546,6 +628,24 @@ consultationsRouter.patch('/:id', async (req, res) => {
       ...(patch.reviewedGapIds === undefined
         ? {}
         : { reviewedGapIds: [...previousGaps, ...newGaps] }),
+      ...(patch.redFlagDispositions === undefined
+        ? {}
+        : {
+            redFlagDispositions: applyDispositions(
+              consultation.redFlagDispositions,
+              patch.redFlagDispositions,
+              decidedAt,
+            ),
+          }),
+      ...(patch.gapDispositions === undefined
+        ? {}
+        : {
+            gapDispositions: applyDispositions(
+              consultation.gapDispositions,
+              patch.gapDispositions,
+              decidedAt,
+            ),
+          }),
     },
   })
 
@@ -570,6 +670,33 @@ consultationsRouter.patch('/:id', async (req, res) => {
       actorId: actor,
       consultationId: consultation.id,
       metadata: { gapId },
+    })
+  }
+
+  /*
+   * The decision is audited; the reason text is not.
+   *
+   * A dismissal reason is clinician free text about a specific patient, so it
+   * is clinical content and falls under the same rule as note bodies and
+   * transcripts: ids and event types only. It is stored once, on the
+   * consultation, which is the clinical record and the right home for it.
+   * Copying it into `AuditEvent` would put unredacted clinical prose in a
+   * second table whose whole purpose is to be widely readable for verification.
+   */
+  for (const decision of flagDecisions) {
+    await recordAuditEvent({
+      action: 'redflag.disposition_set',
+      actorId: actor,
+      consultationId: consultation.id,
+      metadata: { redFlagId: decision.id, state: decision.state },
+    })
+  }
+  for (const decision of gapDecisions) {
+    await recordAuditEvent({
+      action: 'gap.disposition_set',
+      actorId: actor,
+      consultationId: consultation.id,
+      metadata: { gapId: decision.id, state: decision.state },
     })
   }
 

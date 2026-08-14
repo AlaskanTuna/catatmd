@@ -5,6 +5,7 @@ import {
   ConsultationDetailSchema,
   type ConsultationListItem,
   ConsultationListItemSchema,
+  type DispositionInput,
   ErrorEnvelopeSchema,
   type Fixture,
   FixtureSchema,
@@ -161,6 +162,8 @@ export const api = {
       editedNote?: Partial<SoapNote>
       acknowledgedRedFlagIds?: string[]
       reviewedGapIds?: string[]
+      redFlagDispositions?: DispositionInput[]
+      gapDispositions?: DispositionInput[]
     },
   ): Promise<ConsultationDetail> =>
     request(`/consultations/${id}`, ConsultationEnvelope, {
