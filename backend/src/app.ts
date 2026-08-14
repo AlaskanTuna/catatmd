@@ -4,7 +4,11 @@ import express from 'express'
 import helmet from 'helmet'
 import { env } from './config/env.js'
 import { errorHandler } from './middleware/error-handler.js'
-import { analyzeRateLimit, ephemeralAnalyzeRateLimit } from './middleware/rate-limit.js'
+import {
+  analyzeRateLimit,
+  ephemeralAnalyzeRateLimit,
+  eraseRateLimit,
+} from './middleware/rate-limit.js'
 import { requestContext } from './middleware/request-context.js'
 import { requireSession } from './middleware/require-session.js'
 import { authRouter } from './routes/auth.js'
@@ -50,6 +54,9 @@ export function createApp() {
   // transcript from the body, so it spends an LLM call without the caller
   // having stored anything first (#80).
   app.post('/api/consultations/analyze-ephemeral', ephemeralAnalyzeRateLimit)
+  // Destructive and irreversible rather than expensive, so its own bucket: an
+  // erase sweep must not be funded by an unspent analysis budget (#114).
+  app.post('/api/consultations/erase', eraseRateLimit)
 
   // ── Clinical routers ─────────────────────────────────────────────────────
   // These inherit the session guard and the analyze limiter above, and must

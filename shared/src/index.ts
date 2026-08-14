@@ -484,6 +484,38 @@ export const ConsultationListItemSchema = ConsultationSchema.pick({
 })
 
 /**
+ * How many consultations one erase request may carry.
+ *
+ * The handler erases sequentially rather than concurrently, because every
+ * erasure appends to the audit hash chain and `AuditEvent.prevHash` is unique
+ * precisely so two concurrent appends cannot silently fork it. A batch is
+ * therefore a serial run of transactions, and this bound is what keeps its
+ * duration predictable.
+ *
+ * `GET /api/consultations` is unpaginated, so a doctor holding more than this
+ * many cannot clear them in a single gesture. That is a known edge of the
+ * missing pagination rather than of erasure, and it fails loudly at validation
+ * instead of silently erasing a prefix of the selection.
+ */
+export const ERASE_BATCH_LIMIT = 100
+
+export const EraseConsultationsInputSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(ERASE_BATCH_LIMIT),
+})
+
+/**
+ * Partial success is a real outcome here, so it is in the contract rather than
+ * collapsed into a status code. An id lands in `failed` when the ownership gate
+ * refuses it, which covers both "not this doctor's" and "already erased" and
+ * deliberately does not distinguish them, for the same reason
+ * `assertOwnedConsultation` returns 404 rather than 403.
+ */
+export const EraseConsultationsResultSchema = z.object({
+  erased: z.array(z.string()),
+  failed: z.array(z.string()),
+})
+
+/**
  * What a doctor decided about a red flag or a gap.
  *
  * Three states rather than a boolean, because "I have seen this and it is
@@ -628,6 +660,8 @@ export type SuggestionsAndRedFlagsResponse = z.infer<
 >
 export type ConsultationListItem = z.infer<typeof ConsultationListItemSchema>
 export type ConsultationDetail = z.infer<typeof ConsultationDetailSchema>
+export type EraseConsultationsInput = z.infer<typeof EraseConsultationsInputSchema>
+export type EraseConsultationsResult = z.infer<typeof EraseConsultationsResultSchema>
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelopeSchema>
 export type Fixture = z.infer<typeof FixtureSchema>
 export type GuidelineChunk = z.infer<typeof GuidelineChunkSchema>

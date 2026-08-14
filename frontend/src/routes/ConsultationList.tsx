@@ -1,9 +1,11 @@
-import type { ConsultationStatus } from '@shared/types'
-import { useQuery } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import type { ConsultationListItem, ConsultationStatus } from '@shared/types'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Plus, Trash2 } from 'lucide-react'
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../lib/api.js'
+import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
+import { Button } from '../ui/Button.js'
 import { EmptyState, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
 
@@ -19,6 +21,20 @@ const STATUS: Record<ConsultationStatus, { label: string; className: string }> =
   approved: { label: 'Approved', className: 'border-accent/40 text-accent' },
 }
 
+/**
+ * How each status is named when counted in the erase confirmation.
+ *
+ * Separate from `STATUS.label` because these are read as nouns inside a
+ * sentence ("1 approved note") rather than as a chip on a row, and because the
+ * approved wording is the one a doctor most needs to register before agreeing.
+ */
+const ERASE_NOUN: Record<ConsultationStatus, { one: string; many: string }> = {
+  draft: { one: 'draft', many: 'drafts' },
+  analyzing: { one: 'consultation being analysed', many: 'consultations being analysed' },
+  awaiting_review: { one: 'consultation awaiting review', many: 'consultations awaiting review' },
+  approved: { one: 'approved note', many: 'approved notes' },
+}
+
 const formatDate = (value: Date) =>
   new Intl.DateTimeFormat('en-MY', {
     day: 'numeric',
@@ -27,11 +43,53 @@ const formatDate = (value: Date) =>
     minute: '2-digit',
   }).format(value)
 
+const CHECKBOX =
+  'size-4 shrink-0 cursor-pointer accent-accent disabled:cursor-not-allowed disabled:opacity-40'
+
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
+
 export function ConsultationList() {
+  const queryClient = useQueryClient()
   const { data, isPending } = useQuery({
     queryKey: ['consultations'],
     queryFn: api.listConsultations,
   })
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
+  const [notice, setNotice] = useState<string | null>(null)
+  const dialog = useRef<HTMLDialogElement>(null)
+
+  const consultations = data ?? []
+
+  // Derived from the rows rather than read straight out of state, so a
+  // selection cannot outlive the consultation it points at. Without this, a
+  // list that refreshed while the dialog was open could erase by an id the
+  // doctor could no longer see.
+  const selected = consultations.filter((c) => picked.has(c.id))
+  const allSelected = consultations.length > 0 && selected.length === consultations.length
+
+  const erase = useMutation({
+    mutationFn: () => api.eraseConsultations(selected.map((c) => c.id)),
+    onSuccess: ({ erased, failed }) => {
+      dialog.current?.close()
+      setPicked(new Set())
+      // Silent on a clean run: the rows disappearing is the confirmation, and a
+      // message saying so would be noise. A partial failure is the opposite and
+      // must never be swallowed by the rows that did go.
+      setNotice(
+        failed.length === 0
+          ? null
+          : `${count(erased.length, 'consultation')} erased. ${count(failed.length, 'other')} could not be, and may already have been erased elsewhere.`,
+      )
+      return queryClient.invalidateQueries({ queryKey: ['consultations'] })
+    },
+  })
+
+  const toggle = (id: string) =>
+    setPicked((current) => {
+      const next = new Set(current)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -50,7 +108,61 @@ export function ConsultationList() {
         }
       />
 
-      <div data-tour="consultation-list" className="mt-8 flex flex-col gap-2">
+      {notice && (
+        <p
+          role="status"
+          className="mt-6 rounded-card border border-urgent/40 bg-urgent/8 px-4 py-3 text-sm text-ink"
+        >
+          {notice}
+        </p>
+      )}
+
+      {consultations.length > 0 && (
+        <div
+          data-print="hide"
+          className="mt-8 flex min-h-9 items-center justify-between gap-4 border-b border-line pb-3"
+        >
+          <label className="flex cursor-pointer items-center gap-3 text-sm text-ink-muted">
+            <input
+              type="checkbox"
+              className={CHECKBOX}
+              checked={allSelected}
+              // A DOM property rather than an attribute: there is no
+              // `indeterminate` in HTML, only on the element.
+              ref={(el) => {
+                if (el) el.indeterminate = selected.length > 0 && !allSelected
+              }}
+              onChange={() =>
+                setPicked(allSelected ? new Set() : new Set(consultations.map((c) => c.id)))
+              }
+            />
+            <span aria-live="polite">
+              {selected.length === 0 ? 'Select all' : `${selected.length} selected`}
+            </span>
+          </label>
+
+          {selected.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>
+                Clear
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                icon={<Trash2 aria-hidden className="size-3.5" />}
+                onClick={() => {
+                  erase.reset()
+                  dialog.current?.showModal()
+                }}
+              >
+                Erase {selected.length}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div data-tour="consultation-list" className="mt-4 flex flex-col gap-2">
         {isPending &&
           [0, 1, 2].map((key) => <Skeleton key={key} className="h-18 w-full rounded-card" />)}
 
@@ -69,32 +181,150 @@ export function ConsultationList() {
           />
         )}
 
-        {data?.map((consultation) => {
+        {consultations.map((consultation) => {
           const status = STATUS[consultation.status]
+          const when = formatDate(consultation.createdAt)
           return (
-            <Link
+            <div
               key={consultation.id}
-              to={`/consultations/${consultation.id}`}
-              className="flex items-center justify-between gap-4 rounded-card border border-line bg-surface px-4 py-4 transition-colors hover:border-ink-muted/50"
+              className={cn(
+                'flex items-center gap-3 rounded-card border bg-surface pl-4 transition-colors',
+                picked.has(consultation.id)
+                  ? 'border-accent/50 bg-accent/4'
+                  : 'border-line hover:border-ink-muted/50',
+              )}
             >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{formatDate(consultation.createdAt)}</p>
-                <p className="mt-0.5 font-mono text-2xs text-ink-muted">
-                  {consultation.id.slice(0, 8)}
-                </p>
-              </div>
-              <span
-                className={cn(
-                  'shrink-0 rounded-full border px-2.5 py-1 text-2xs font-medium',
-                  status.className,
-                )}
+              {/* A sibling of the link, never a child of it: a control nested
+                  inside an anchor is not reachable as its own target. */}
+              <input
+                type="checkbox"
+                data-print="hide"
+                className={CHECKBOX}
+                checked={picked.has(consultation.id)}
+                onChange={() => toggle(consultation.id)}
+                aria-label={`Select consultation from ${when}`}
+              />
+              <Link
+                to={`/consultations/${consultation.id}`}
+                className="flex min-w-0 flex-1 items-center justify-between gap-4 py-4 pr-4"
               >
-                {status.label}
-              </span>
-            </Link>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{when}</p>
+                  <p className="mt-0.5 font-mono text-2xs text-ink-muted">
+                    {consultation.id.slice(0, 8)}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    'shrink-0 rounded-full border px-2.5 py-1 text-2xs font-medium',
+                    status.className,
+                  )}
+                >
+                  {status.label}
+                </span>
+              </Link>
+            </div>
           )
         })}
       </div>
+
+      <EraseDialog
+        ref={dialog}
+        selected={selected}
+        pending={erase.isPending}
+        error={erase.error}
+        onConfirm={() => erase.mutate()}
+      />
     </div>
+  )
+}
+
+/**
+ * The confirmation, and the one place the system is honest about what erasure
+ * actually is.
+ *
+ * It says "erased", not "deleted", because the row does not go.
+ * `eraseConsultation` nulls the clinical columns and stamps `erasedAt`, while
+ * the audit chain that references the consultation stays intact. Calling that a
+ * delete would be a comfortable lie in a product whose whole claim is a
+ * tamper-evident record.
+ *
+ * The status breakdown exists so the weight of the selection is visible at the
+ * moment of the decision. Approved notes are erasable, which is deliberate and
+ * follows docs/dpia.md: erasure serves a data-subject right that does not lapse
+ * because a doctor signed the note. But a doctor about to erase one should not
+ * discover that afterwards.
+ *
+ * A native <dialog>, for the same reason as the tour's: focus trapping, Escape
+ * and inertness of the page behind it, none of them hand-rolled.
+ */
+function EraseDialog({
+  ref,
+  selected,
+  pending,
+  error,
+  onConfirm,
+}: {
+  ref: React.Ref<HTMLDialogElement>
+  selected: ConsultationListItem[]
+  pending: boolean
+  error: unknown
+  onConfirm: () => void
+}) {
+  // Ordered by `STATUS`, so the heaviest line lands last.
+  const breakdown = (Object.keys(STATUS) as ConsultationStatus[])
+    .map((status) => ({ status, n: selected.filter((c) => c.status === status).length }))
+    .filter(({ n }) => n > 0)
+
+  const close = () => (ref as React.RefObject<HTMLDialogElement | null>).current?.close()
+
+  return (
+    <dialog
+      ref={ref}
+      data-print="hide"
+      aria-labelledby="erase-title"
+      className="m-auto w-[26rem] max-w-[calc(100vw-2rem)] rounded-card border border-line bg-surface p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
+    >
+      <div className="p-6">
+        <h2 id="erase-title" className="text-lg font-semibold">
+          Erase {count(selected.length, 'consultation')}?
+        </h2>
+
+        <ul className="mt-4 flex flex-col gap-1 text-sm">
+          {breakdown.map(({ status, n }) => (
+            <li
+              key={status}
+              // Approved is the line that changes the decision, so it is the one
+              // that is coloured. It still says the word, because colour is
+              // never the only carrier of a meaning here (issue #30).
+              className={status === 'approved' ? 'font-medium text-urgent' : 'text-ink-muted'}
+            >
+              {n} {n === 1 ? ERASE_NOUN[status].one : ERASE_NOUN[status].many}
+            </li>
+          ))}
+        </ul>
+
+        <p className="mt-4 text-sm leading-relaxed text-ink-muted">
+          The transcript, analysis and edited note are permanently erased. A tamper-evident audit
+          record that the consultation existed and was erased is retained, and cannot be removed.
+        </p>
+        <p className="mt-2 text-sm font-medium">This cannot be undone.</p>
+
+        {error != null && (
+          <p role="alert" className="mt-3 text-sm text-emergency">
+            {error instanceof ApiError ? error.message : 'Nothing was erased. Please try again.'}
+          </p>
+        )}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <Button onClick={close} disabled={pending}>
+            Cancel
+          </Button>
+          <Button variant="danger" loading={pending} onClick={onConfirm}>
+            Erase {selected.length}
+          </Button>
+        </div>
+      </div>
+    </dialog>
   )
 }

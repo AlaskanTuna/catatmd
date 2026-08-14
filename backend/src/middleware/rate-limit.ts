@@ -63,3 +63,25 @@ export const ephemeralAnalyzeRateLimit = rateLimit({
     error: { code: 'rate_limited', message: 'Too many analysis requests. Please retry shortly.' },
   },
 })
+
+/**
+ * Per-IP limiter for `POST /api/consultations/erase` (#114).
+ *
+ * Erasure spends no LLM call, so this is not a cost control. It is here because
+ * the route is destructive and irreversible: the batch bound stops one request
+ * erasing an unbounded number of consultations, and this stops a caller
+ * sidestepping that bound by sending many requests.
+ *
+ * Ten a minute is far above the handful of gestures a doctor tidying a list
+ * makes, and far below what a script sweeping ids would need.
+ */
+export const eraseRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: { code: 'rate_limited', message: 'Too many erase requests. Please retry shortly.' },
+  },
+})

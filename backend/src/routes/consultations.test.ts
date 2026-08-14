@@ -216,7 +216,7 @@ beforeEach(() => {
 })
 
 function seed(status: string, extra: Record<string, unknown> = {}) {
-  store.set('c1', {
+  const row = {
     id: 'c1',
     doctorId: 'doctor-1',
     status,
@@ -232,7 +232,10 @@ function seed(status: string, extra: Record<string, unknown> = {}) {
     createdAt: new Date(),
     updatedAt: new Date(),
     ...extra,
-  })
+  }
+  // Keyed by the row's own id so `extra` can seed a second consultation, which
+  // the erase-batch tests need. Defaults to 'c1' as before.
+  store.set(row.id as string, row)
 }
 
 /** A complete, schema-valid analysis — `toDetail` parses on the way out. */
@@ -854,5 +857,91 @@ describe('evidence links', () => {
     const cough = links.find((l) => l.fieldId === 'clinicalFacts.symptoms.cough')
     expect(cough?.speaker).toBe('patient')
     expect(cough?.offsetSeconds, 'absent timing must not become 0').toBeUndefined()
+  })
+})
+
+describe('erase', () => {
+  const erase = (ids: string[]) => call('POST', '/api/consultations/erase', { ids })
+
+  const listedIds = async () => {
+    const res = await call('GET', '/api/consultations')
+    const body = (await res.json()) as { consultations: { id: string }[] }
+    return body.consultations.map((c) => c.id)
+  }
+
+  it('erases the selection, leaves the rest, and drops them from the list', async () => {
+    seed('draft')
+    seed('awaiting_review', { id: 'c2' })
+    seed('draft', { id: 'c3' })
+
+    const res = await erase(['c1', 'c3'])
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ erased: ['c1', 'c3'], failed: [] })
+    expect(store.get('c1')?.erasedAt).toBeInstanceOf(Date)
+    expect(store.get('c2')?.erasedAt, 'an unselected row must be untouched').toBeNull()
+    // The list is what a doctor actually sees, so the tombstone has to be
+    // invisible there rather than merely flagged in the row.
+    await expect(listedIds()).resolves.toEqual(['c2'])
+  })
+
+  it('erases an approved consultation', async () => {
+    // Deliberate, and the DPIA is the reason: erasure serves a data-subject
+    // right that does not lapse because a doctor signed the note. The weight of
+    // the decision is carried by the confirmation counting approved notes, not
+    // by refusing here.
+    seed('approved', { approvedAt: new Date() })
+
+    await expect(erase(['c1']).then((r) => r.json())).resolves.toEqual({
+      erased: ['c1'],
+      failed: [],
+    })
+  })
+
+  it("reports another doctor's id as failed without erasing it, and still erases the rest", async () => {
+    seed('draft')
+    seed('draft', { id: 'c9', doctorId: 'doctor-2' })
+
+    const res = await erase(['c1', 'c9'])
+
+    await expect(res.json()).resolves.toEqual({ erased: ['c1'], failed: ['c9'] })
+    expect(store.get('c9')?.erasedAt, "another doctor's row must survive").toBeNull()
+  })
+
+  it('records one erasure audit event per consultation actually erased', async () => {
+    seed('draft')
+    seed('draft', { id: 'c2' })
+
+    await erase(['c1', 'c2', 'missing'])
+
+    expect(
+      audits.filter((a) => a.action === 'consultation.erased').map((a) => a.consultationId),
+    ).toEqual(['c1', 'c2'])
+  })
+
+  it('surfaces an unexpected database fault as a 500 rather than a per-id failure', async () => {
+    // The failed/erased split reports the ownership gate's 404 and nothing
+    // else. Folding a real fault into `failed` would render in the UI as a
+    // routine skip, so a write that broke would look like a row already gone.
+    seed('draft')
+    const { prisma } = await import('../lib/prisma.js')
+    vi.mocked(prisma.consultation.update).mockRejectedValueOnce(new Error('connection reset'))
+
+    const res = await erase(['c1'])
+
+    expect(res.status).toBe(500)
+    expect(await res.text()).not.toContain('connection reset')
+  })
+
+  it.each([
+    ['an empty selection', []],
+    ['more ids than one batch may carry', Array.from({ length: 101 }, (_, i) => `c${i}`)],
+  ])('rejects %s with 400', async (_label, ids) => {
+    seed('draft')
+
+    const res = await erase(ids)
+
+    expect(res.status).toBe(400)
+    expect(store.get('c1')?.erasedAt, 'a rejected batch must erase nothing').toBeNull()
   })
 })

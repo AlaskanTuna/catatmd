@@ -6,6 +6,8 @@ import {
   type ConsultationListItem,
   ConsultationListItemSchema,
   type DispositionInput,
+  type EraseConsultationsResult,
+  EraseConsultationsResultSchema,
   ErrorEnvelopeSchema,
   type Fixture,
   FixtureSchema,
@@ -170,6 +172,20 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }).then((r) => r.consultation),
+
+  /**
+   * Erases a selection (issue #114). A tombstone, not a delete: the clinical
+   * content goes, the audit chain that references the consultation stays, so
+   * the row cannot be removed without breaking tamper evidence.
+   *
+   * Partial success is normal rather than exceptional, so this resolves with
+   * both lists instead of rejecting when some ids do not land.
+   */
+  eraseConsultations: (ids: string[]): Promise<EraseConsultationsResult> =>
+    request('/consultations/erase', EraseConsultationsResultSchema, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
 
   approve: (id: string): Promise<ConsultationDetail> =>
     request(`/consultations/${id}/approve`, ConsultationEnvelope, { method: 'POST' }).then(

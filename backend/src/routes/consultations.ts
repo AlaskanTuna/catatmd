@@ -7,6 +7,8 @@ import {
   type Disposition,
   type DispositionInput,
   DispositionInputSchema,
+  ERASE_BATCH_LIMIT,
+  EraseConsultationsInputSchema,
   type InformationGap,
   type SoapNote,
   SoapNoteSchema,
@@ -16,6 +18,7 @@ import {
 import { Router } from 'express'
 import { z } from 'zod'
 import { analyseNote, buildEvidenceLinks } from '../analysis/index.js'
+import { eraseConsultation } from '../audit/erasure.js'
 import { type AnalysisFailureReason, getAuditHistory, recordAuditEvent } from '../audit/index.js'
 import {
   type ClinicalProfile,
@@ -767,4 +770,62 @@ consultationsRouter.post('/:id/approve', async (req, res) => {
   })
 
   res.json({ consultation: await toDetailWithApprover(updated) })
+})
+
+/**
+ * Erases a selection of consultations (issue #114).
+ *
+ * **This is a tombstone, not a delete, and the distinction is load-bearing.**
+ * `eraseConsultation` nulls the three PHI columns and stamps `erasedAt`; the
+ * row itself stays, because `AuditEvent.consultationId` is `onDelete: Restrict`
+ * and is a hash-chain input. Removing the row would orphan every audit event
+ * that references it and break tamper evidence, which is the one property the
+ * chain exists to provide. `.claude/rules/security.md` states that as a
+ * do-not-change; this route is the caller it was waiting for, not a relaxation
+ * of it.
+ *
+ * Any status may be erased, approved included. The DPIA frames erasure as
+ * serving a data-subject right, and that right does not stop applying because a
+ * doctor signed the note, so the weight of erasing an approved record is
+ * carried by the confirmation in the UI, which counts them, rather than by a
+ * block here.
+ *
+ * A collection-level POST rather than `DELETE /:id`, because one gesture should
+ * cost one rate-limit token rather than N, and because the ordering below has
+ * to be decided server-side.
+ */
+consultationsRouter.post('/erase', async (req, res) => {
+  const parsed = EraseConsultationsInputSchema.safeParse(req.body)
+  if (!parsed.success) {
+    throw new HttpError(
+      400,
+      'invalid_body',
+      `Supply between 1 and ${ERASE_BATCH_LIMIT} consultation ids to erase.`,
+    )
+  }
+
+  const actor = doctorId(req)
+  const erased: string[] = []
+  const failed: string[] = []
+
+  // Sequential, deliberately. Each erasure appends an audit row, and `prevHash`
+  // is unique so that two concurrent appends cannot fork the chain;
+  // `recordAuditEvent` retries a head race only three times, so a `Promise.all`
+  // over a selection this size would exhaust that and fail rows for a reason
+  // that has nothing to do with the request.
+  for (const id of parsed.data.ids) {
+    try {
+      await eraseConsultation(id, actor)
+      erased.push(id)
+    } catch (error) {
+      // The ownership gate's 404 is the expected miss: not this doctor's, or
+      // already erased. Neither justifies abandoning the rest of the batch.
+      // Anything else is a real fault and must not be flattened into a tidy
+      // per-id failure that the client would render as a routine skip.
+      if (!(error instanceof HttpError && error.status === 404)) throw error
+      failed.push(id)
+    }
+  }
+
+  res.json({ erased, failed })
 })
