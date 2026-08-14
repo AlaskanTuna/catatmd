@@ -968,7 +968,7 @@ Both Vercel and Render stay on **free tiers**, deliberately: Vercel Hobby is a s
 
 **Vercel Git-integration deploys are off entirely** (`vercel.json` → `git.deploymentEnabled: false`, issue #58). The CI `deploy` job is the only path to production. Do not reconnect the integration: it deployed without regard to CI status, and on pull requests it produced a permanently failing check that no branch could ever turn green. Render's Git integration is unaffected and still deploys the backend.
 
-#### The Hobby Author Restriction Is Not Bypassed By CI
+#### The Hobby Author Restriction, And How CI Works Around It
 
 Vercel Hobby only builds commits authored by the account owner. This was originally believed to affect Git-integration deploys only, on the reasoning that a token-authenticated CLI deploy is attributed to the token owner. **That reasoning is wrong**, and the deployment record disproves it:
 
@@ -984,9 +984,22 @@ Vercel Hobby only builds commits authored by the account owner. This was origina
 - **The restriction is Vercel-only, so it is frontend-only.** The API deploys from Render, which applies no author restriction. Render's deploy history shows every recent commit reaching `live` regardless of author, including `717e05c` by the collaborator. Backend and documentation work is therefore unaffected.
 - **A blocked commit is delayed, not lost.** Vercel builds the whole checked-out tree, so an owner-authored merge carries every ancestor commit with it. `4504188` did exactly that for `717e05c`. A collaborator's frontend change goes live with the next owner-authored merge rather than never.
 
-What remains true is narrower but not harmless: a collaborator-authored frontend commit does not trigger a deploy of its own, and **nothing schedules the owner-authored merge that would carry it**, so the delay is unbounded rather than "until the next merge". Squash-merge preserves the PR author, so this applies to every PR that account opens.
+**The Workaround, And Why It Works**
 
-The CI `deploy` job now fails fast and names the author rather than hanging until the job timeout, but it cannot fix the restriction. Resolving it requires a plan decision (Vercel Pro, or moving the project to a team), not a workflow change.
+A later revision of this section concluded that only a plan decision could resolve this. **That was also wrong.** The restriction applies to the git author the CLI _finds_, not to the token and not to the plan, and the CLI finds it by reading the git repository in its working directory. Give it a directory with no repository and there is no author to check.
+
+Measured 14/08/26, same build output, same token, same project, with `HEAD` at `1047bb1` (authored by the collaborator):
+
+| Deploy working directory              | `readyState` | Attached git author        |
+| ------------------------------------- | ------------ | -------------------------- |
+| The checkout                          | `BLOCKED`    | the collaborator's address |
+| A copy of `.vercel/` outside any repo | `READY`      | none                       |
+
+The `deploy` job therefore copies the build output to a temporary directory before calling `vercel deploy`, and asserts that directory is not inside a repository before using it. A collaborator's frontend change now deploys on its own merge.
+
+**What this costs.** The deployment carries no git metadata, so Vercel's dashboard cannot show which commit produced it. `--meta commitSha` is now the only provenance link between a deployment and a commit, which is why the identity check reads it back rather than trusting the CLI's inference.
+
+**What is still true.** Reconnecting the Git integration would reintroduce the restriction in full, because Vercel reads authorship from the push itself on that path and no working directory is involved.
 
 ### Render Service Definition (`render.yaml`)
 
