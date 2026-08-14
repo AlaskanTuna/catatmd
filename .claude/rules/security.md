@@ -118,7 +118,7 @@ OWASP promoted Software Supply Chain Failures to A03:2025, and it is this repo's
 - Before adding a dependency: prefer well-known, actively maintained packages, check open advisories, and avoid versions published in the last few days. Most malicious releases are pulled within hours, so a short cooldown catches them.
 - Keep the CI secret surface at one entry (`secrets.VERCEL_TOKEN`). Project and org IDs are identifiers, not credentials, and stay inline.
 - **Not built today:** no `bun audit`, no Dependabot or Renovate, no secret scanning, no SAST. The "Confidentiality check" greps engagement terms, not credentials. State this as an open gap rather than implying coverage.
-- Architectural invariants are best enforced by source-scanning guard tests, following `backend/src/audit/no-stray-audit-writes.test.ts` and `backend/src/clinical-versions/no-stray-clinical-constants.test.ts`. **The "no provider SDK outside `backend/src/lib/llm/`" rule has no such test yet**, and `backend/src/lib/llm/` has no test file at all. Adding both is the highest-value hardening available.
+- **Architectural invariants are enforced by source-scanning guard tests.** Three exist: `backend/src/audit/no-stray-audit-writes.test.ts`, `backend/src/clinical-versions/no-stray-clinical-constants.test.ts`, and `backend/src/lib/llm/no-stray-provider-sdk.test.ts`, which pins the single-provider-SDK rule under "LLM Egress" above. Follow that shape for any invariant the type system cannot express, and check the open issues rather than this line for which one is worth writing next.
 
 ## Changes That Need Explicit Human Sign-Off
 
