@@ -587,6 +587,28 @@
       animation-duration: 6s !important;
       animation-iteration-count: infinite !important;
     }
+
+    /*
+     * A busy spinner keeps spinning, for the same reason and a sharper one.
+     *
+     * The blanket rule collapses it to a single 0.01ms rotation, so it stops
+     * mid-turn and sits there. A frozen spinner does not read as "motion was
+     * politely reduced", it reads as **hung**, which is the exact opposite of
+     * the one thing it exists to say. Reported from a real Windows machine with
+     * animations switched off, during a transcription that was running fine.
+     *
+     * Safe on the merits, like the ring above: WCAG 2.3.3 exempts animation
+     * that is essential to the information being conveyed, and a 16px glyph
+     * rotating in place moves no content and no viewport.
+     *
+     * The percentage and remaining-time text next to it carry the same
+     * information without any motion at all, so this is belt and braces rather
+     * than the only signal. `data-motion="reduced"` still wins.
+     */
+    :root:not([data-motion='full']):not([data-motion='reduced']) .busy-spinner {
+      animation-duration: 1s !important;
+      animation-iteration-count: infinite !important;
+    }
   }
 
   :root[data-motion='reduced'] *,
