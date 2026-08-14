@@ -184,4 +184,18 @@ export const api = {
 
   guidelines: (): Promise<GuidelineChunk[]> =>
     request('/guidelines', GuidelinesEnvelope).then((r) => r.guidelines),
+
+  /**
+   * `database` is absent in production by design, so a missing field must be
+   * read as "no warning to give", never as a failure to check.
+   */
+  health: () =>
+    request(
+      '/health',
+      z.object({
+        status: z.string(),
+        provider: z.string().optional(),
+        database: z.enum(['local', 'remote', 'unreachable']).optional(),
+      }),
+    ),
 }

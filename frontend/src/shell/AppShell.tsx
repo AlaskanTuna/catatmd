@@ -6,6 +6,7 @@ import { HelpButton } from '../demo/HelpButton.js'
 import { Spotlight } from '../demo/Spotlight.js'
 import { cn } from '../lib/cn.js'
 import { CursorGlow } from '../ui/CursorGlow.js'
+import { LiveDataWarning } from './LiveDataWarning.js'
 import { MobileDock } from './MobileDock.js'
 import { SidebarIsland } from './SidebarIsland.js'
 import { SiteFooter } from './SiteFooter.js'
@@ -67,6 +68,7 @@ export function AppShell() {
         {/* Outside the page layer: the spotlight ring and the step bar sit above
             the sidebar and the scrim, and a coachmark clipped by the surface it
             is pointing at would defeat itself. */}
+        <LiveDataWarning />
         <HelpButton />
         <DemoStepBar />
         <Spotlight />
