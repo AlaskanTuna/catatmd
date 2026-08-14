@@ -1,16 +1,24 @@
 import { AlertTriangle, FileAudio, Loader2, Mic, Square } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '../ui/Button.js'
-import { TARGET_SAMPLE_RATE, type WorkerRequest, type WorkerResponse } from './protocol.js'
+import {
+  TARGET_SAMPLE_RATE,
+  type TranscriptSegment,
+  type WorkerRequest,
+  type WorkerResponse,
+} from './protocol.js'
 
 /**
  * Record a consultation and transcribe it on the device (issue #2).
  *
  * **Audio is a button that fills a textarea, not a second pipeline.** The
- * transcript lands in the same box as the paste path, goes through the same
- * `Doctor:` / `Patient:` parser, and is edited by the doctor before submission.
- * Whisper returns unlabelled prose, so the doctor applies the speaker prefixes;
- * diarisation is explicitly a non-goal rather than a missing feature.
+ * transcript still lands in the same box as the paste path and goes through
+ * the same `Doctor:` / `Patient:` parser. Since #118 the worker also returns
+ * Whisper's segment timing, from which the caller drafts per-line speaker
+ * labels for the doctor to review and apply. That is turn segmentation from
+ * timing and punctuation, not diarisation: no voice model runs, and the
+ * labels are guesses the doctor confirms line by line before anything enters
+ * the transcript.
  *
  * **No audio byte reaches the API.** Capture, decode and inference all happen
  * here and in the worker. The only thing that crosses the network is the model
@@ -58,7 +66,11 @@ async function toMono16k(blob: Blob): Promise<Float32Array> {
 
 type Phase = 'idle' | 'recording' | 'loading-model' | 'transcribing'
 
-export function AudioCapture({ onTranscript }: { onTranscript: (text: string) => void }) {
+export function AudioCapture({
+  onTranscript,
+}: {
+  onTranscript: (result: { text: string; segments: readonly TranscriptSegment[] }) => void
+}) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -68,6 +80,18 @@ export function AudioCapture({ onTranscript }: { onTranscript: (text: string) =>
   const worker = useRef<Worker | null>(null)
   const recorder = useRef<MediaRecorder | null>(null)
   const chunks = useRef<Blob[]>([])
+
+  /*
+   * Always the latest prop, never the closure the worker was created with.
+   * The worker is created once and its onmessage assigned once, so a plain
+   * closure would freeze the first render's onTranscript for every later
+   * recording. The caller's handler reads state (is the transcript empty,
+   * is a draft pending) to decide whether timestamps are trustworthy, and a
+   * stale read there re-attaches offsets from a restarted timebase, which is
+   * exactly the wrong-evidence-time bug the offsets rule exists to prevent.
+   */
+  const onTranscriptRef = useRef(onTranscript)
+  onTranscriptRef.current = onTranscript
 
   const thin = belowHardwareFloor() && !overridden
 
@@ -89,7 +113,7 @@ export function AudioCapture({ onTranscript }: { onTranscript: (text: string) =>
       if (message.type === 'result') {
         setPhase('idle')
         setProgress(null)
-        onTranscript(message.text)
+        onTranscriptRef.current({ text: message.text, segments: message.segments })
       }
       if (message.type === 'error') {
         setPhase('idle')
@@ -99,7 +123,7 @@ export function AudioCapture({ onTranscript }: { onTranscript: (text: string) =>
     }
     worker.current = instance
     return instance
-  }, [onTranscript])
+  }, [])
 
   useEffect(() => () => worker.current?.terminate(), [])
 
@@ -160,9 +184,10 @@ export function AudioCapture({ onTranscript }: { onTranscript: (text: string) =>
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-ink-muted">
-        Recording is transcribed on this device and never uploaded. The text lands in the box below,
-        unlabelled, for you to correct and mark with <code className="text-ink">Doctor:</code> and{' '}
-        <code className="text-ink">Patient:</code> before submitting.
+        Recording is transcribed on this device and never uploaded. The result appears below as
+        lines with guessed <code className="text-ink">Doctor</code> /{' '}
+        <code className="text-ink">Patient</code> labels, drawn from pauses and question marks, not
+        from the voices. Check every line, then apply them to the transcript.
       </p>
 
       {thin && (
