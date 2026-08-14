@@ -1125,6 +1125,17 @@ A symlink was rejected outright: symlinks already fail on a Windows checkout her
 
 Locally: `bun run db:migrate` (`prisma migrate dev`, against `DIRECT_URL`). In production: `render.yaml`'s `buildCommand` does not run `prisma migrate deploy`, and **it should not**. Render's `preDeployCommand` is a paid-tier feature, and it is unnecessary here regardless — Postgres is Supabase, not Render, so migrations are applied from a developer machine against `DIRECT_URL` and are already live by the time the API deploys. The earlier proposal to add a `preDeployCommand` is withdrawn.
 
+**The manual step is now flagged rather than remembered** (issue #132). The premise above holds only when someone actually applies the migration, and PR #124 merged and deployed with `notificationsClearedAt` absent from production. `GET /api/notifications` would have thrown on every screen, since the chrome polls it sitewide; it was caught by running `prisma migrate status` by hand before the deploy landed, which is luck rather than process.
+
+The `migrations` job in `.github/workflows/ci.yml` reads the migrations directory against the PR's base branch and emits a warning annotation plus a job summary naming each addition and the command to run. It deliberately **does not fail the build**: a migration has to merge before it can be applied, so blocking the merge would block the fix.
+
+It also deliberately holds **no production credential**. A check that could verify the database itself would need `DIRECT_URL` in Actions, and putting a production database credential in CI is a decision for an owner rather than a convenience for a workflow. That option stays open and unchosen.
+
+|                             |                                                 |
+| --------------------------- | ----------------------------------------------- |
+| `bun run db:status`         | What is pending against the configured database |
+| `bun run db:migrate:deploy` | Apply it                                        |
+
 ### CI
 
 **Status: `Built`** — `.github/workflows/ci.yml`, reinstated 13/08/26 (issue #13), extended to deployment 13/08/26 (issue #52). It answers §19 row 12 in practice: CI runs on every push to `main` and every pull request. The register row is left open pending the dependency-scan half of the question (§16), which is still not built.
