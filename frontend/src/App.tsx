@@ -9,6 +9,7 @@ import { Guidelines } from './routes/Guidelines.js'
 import { Landing } from './routes/Landing.js'
 import { Login } from './routes/Login.js'
 import { Privacy } from './routes/Privacy.js'
+import { Settings } from './routes/Settings.js'
 import { AppShell } from './shell/AppShell.js'
 import { MarketingShell } from './shell/MarketingShell.js'
 import { Skeleton } from './ui/Card.js'
@@ -54,6 +55,7 @@ export function App() {
           <Route path="/consultations/new" element={<ConsultationNew />} />
           <Route path="/consultations/:id" element={<ConsultationReview />} />
           <Route path="/guidelines" element={<Guidelines />} />
+          <Route path="/settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

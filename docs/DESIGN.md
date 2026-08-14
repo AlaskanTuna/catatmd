@@ -126,13 +126,17 @@ This is where the Apple influence lives, and it is deliberately confined.
 
 The reasoning is not aesthetic. A translucent surface has a contrast ratio that depends on whatever scrolls behind it, so it cannot be verified once. Chrome carries icons and short labels at large sizes; content carries the clinical record.
 
+**Floating surfaces are chrome, and that includes modals** (settled 15/08/26). An earlier revision of the table below said modals were opaque, which contradicted the sentence above listing them under glass; the contradiction is resolved in favour of glass. What keeps it safe is that everything floating sits over the scrim, which is already blurring and dimming whatever is behind it, so the backdrop a modal composites against is a controlled one rather than arbitrary scrolling content. Text on these surfaces stays at full-strength ink: a destructive confirmation is the last place to trade contrast for texture.
+
+**A selected row is still content.** Selection is expressed as a tint layered _over_ the opaque surface, never by replacing it. Setting an `--color-accent` alpha as the row's `background-color` removes the surface instead of tinting it, and the row goes translucent over the page's dot grid. That shipped once and read as muddy rather than selected.
+
 | Layer                            | Treatment                                                                                                |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Content                          | Opaque `--color-surface`, radius 16px, shadow rather than a border at rest                               |
-| Raised content (menus, popovers) | Opaque, radius 16px, `--shadow-float`                                                                    |
+| Raised content (menus, popovers) | `--color-glass`, radius 22px. These float above the page and carry chrome, not the record                |
 | Chrome (sidebar, top bar, dock)  | `--color-glass`, 58% alpha light and 60% dark, `backdrop-filter: blur(20px) saturate(150%)`, radius 22px |
 | Scrim                            | Single fixed layer, `blur(8px)` plus 32% dim light, 50% dark                                             |
-| Modal                            | Opaque content on a scrim, radius 22px                                                                   |
+| Modal                            | `--color-glass` on a scrim, radius 22px. Text on it stays full-strength ink                              |
 
 Radii: **10px controls, 16px cards, 22px floating chrome, 999px chips.** Roundness
 is a brand property here, not a default. The references this was built against carry

@@ -26,8 +26,17 @@ vi.mock('../middleware/require-session.js', () => ({
   },
 }))
 
+let clearedAt: Date | null = null
+
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
+    user: {
+      findUnique: vi.fn(async () => ({ notificationsClearedAt: clearedAt })),
+      update: vi.fn(async ({ data }: { data: { notificationsClearedAt: Date } }) => {
+        clearedAt = data.notificationsClearedAt
+        return {}
+      }),
+    },
     auditEvent: {
       findMany: vi.fn(
         async ({
@@ -35,12 +44,17 @@ vi.mock('../lib/prisma.js', () => ({
           take,
           select,
         }: {
-          where: { actorId: string; action: { in: string[] } }
+          where: { actorId: string; action: { in: string[] }; createdAt?: { gt: Date } }
           take: number
           select: Record<string, boolean>
         }) => {
           const matched = rows
-            .filter((r) => r.actorId === where.actorId && where.action.in.includes(r.action))
+            .filter(
+              (r) =>
+                r.actorId === where.actorId &&
+                where.action.in.includes(r.action) &&
+                (where.createdAt === undefined || r.createdAt > where.createdAt.gt),
+            )
             .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
             .slice(0, take)
           // Mirrors Prisma's `select`, so a column the route never asked for
@@ -70,6 +84,7 @@ afterAll(() => server.close())
 
 beforeEach(() => {
   rows.length = 0
+  clearedAt = null
 })
 
 let clock = 0
@@ -171,5 +186,34 @@ describe('route protection', () => {
     )
 
     expect(prefixes).toContain("'/api/notifications'")
+  })
+})
+
+describe('clearing the feed', () => {
+  it('hides what is in the feed without deleting any audit row', async () => {
+    seed('consultation.approved')
+    seed('consultation.erased')
+    expect((await feed()).body.notifications).toHaveLength(2)
+
+    const cleared = await fetch(`${origin}/api/notifications/clear`, { method: 'POST' })
+
+    expect(cleared.status).toBe(204)
+    expect((await feed()).body.notifications).toHaveLength(0)
+    // The point of the whole design: the feed is empty, the log is not.
+    // `AuditEvent` is append-only and is the tamper-evident record, so a clear
+    // that removed rows would be a defect rather than a feature.
+    expect(rows).toHaveLength(2)
+  })
+
+  it('still shows anything that happens after the clear', async () => {
+    seed('consultation.approved')
+    await fetch(`${origin}/api/notifications/clear`, { method: 'POST' })
+
+    // Stamped explicitly rather than through `seed`'s counter. The cursor is a
+    // real wall-clock time, so a row from the fixture clock is always behind it
+    // and this test would pass for the wrong reason.
+    seed('consultation.erased', { id: 'after', createdAt: new Date(Date.now() + 60_000) })
+
+    expect((await feed()).body.notifications.map((n) => n.id)).toEqual(['after'])
   })
 })

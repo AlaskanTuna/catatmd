@@ -208,6 +208,12 @@ export const api = {
   notifications: (): Promise<NotificationItem[]> =>
     request('/notifications', NotificationsEnvelope).then((r) => r.notifications),
 
+  /**
+   * Hides the feed. Deletes nothing: it moves a per-user cursor, and every
+   * audit row it stops showing is still in the append-only log.
+   */
+  clearNotifications: () => request('/notifications/clear', z.null(), { method: 'POST' }),
+
   guidelines: (): Promise<GuidelineChunk[]> =>
     request('/guidelines', GuidelinesEnvelope).then((r) => r.guidelines),
 

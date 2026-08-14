@@ -1,4 +1,4 @@
-import { BookMarked, FileText, PanelLeft, Plus } from 'lucide-react'
+import { BookMarked, FileText, PanelLeft, Plus, Settings } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
@@ -141,6 +141,28 @@ export function SidebarIsland({
       </ul>
 
       <div className="flex flex-col gap-1 border-t border-line/60 pt-2">
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            cn(
+              'flex h-11 items-center gap-3 rounded-control px-3 text-sm font-medium transition-colors duration-150',
+              isActive
+                ? 'bg-accent/16 text-accent'
+                : 'text-ink-muted hover:bg-sunken/60 hover:text-ink',
+            )
+          }
+        >
+          <Settings aria-hidden className="size-5 shrink-0" />
+          <span
+            className={cn(
+              'whitespace-nowrap transition-opacity duration-150',
+              expanded ? 'opacity-100' : 'pointer-events-none opacity-0',
+            )}
+          >
+            Settings
+          </span>
+        </NavLink>
+
         {/* Touch has no hover and a keyboard user should not have to hold
             focus to read a label. Pinning is the accessible equivalent. */}
         <button
