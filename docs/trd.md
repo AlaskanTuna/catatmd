@@ -18,6 +18,8 @@ This document does not restate what `docs/README.md` already carries (the capabi
 
 `docs/prd.md` owns product requirements, acceptance criteria, and scope. This document owns the contracts that realise them: module boundaries, schemas, data models, API surface, and the security and deployment posture.
 
+`docs/DESIGN.md` owns how the interface looks: the visual system, the severity grammar, and the rules a change must not break. This document owns what the browser will actually do with it, which is §24. A frontend change usually needs both, and the two are written so that neither restates the other.
+
 ### Status Tag Legend
 
 Every section below carries exactly one tag.
@@ -46,7 +48,7 @@ Per-module contract, read as "owns / may import / must never import":
 | `backend/src/redflags/`   | Deterministic escalation-trigger rules engine — currently an intent-stating README only                                      | `@shared/types`                                                                | An LLM provider SDK; must remain a pure function library              |
 | `backend/src/guidelines/` | Curated citation corpus — currently an intent-stating README only                                                            | `@shared/types`                                                                | —                                                                     |
 | `backend/src/routes/`     | HTTP surface — currently `health.ts` only                                                                                    | `express`, `lib/prisma.js`, `config/env.js`                                    | An LLM provider SDK; PHI must reach `deid/` before any LLM call       |
-| `frontend/`               | React SPA — consultation review UI, currently the Vite scaffold only                                                         | `@shared/types`, the backend HTTP API                                          | A provider SDK or the de-identification vault (both are backend-only) |
+| `frontend/`               | React SPA — consultation intake, review, and approval UI. Rendering constraints that dictate structure are in §24            | `@shared/types`, the backend HTTP API                                          | A provider SDK or the de-identification vault (both are backend-only) |
 
 The load-bearing rule that cuts across the table: **no module outside `backend/src/lib/llm/` may import an LLM provider SDK directly.** This is what makes the provider swappable and is stated as a module constraint, not a convention — see §5 for the compile-time mechanism that backs the PHI half of it.
 
@@ -1769,3 +1771,63 @@ That path puts identifiable data back onto a path the MVP deliberately keeps cle
 | HL7v2                              | **Not a primary contract.** | HL7v2 can be transformed by a clinic-specific integration gateway when a legacy EHR offers no FHIR endpoint, but it is not the system interface. Its message and segment mappings would be vendor-specific, make the approved document harder to preserve as one attested artefact, and would duplicate the safety-critical mapping work for every clinic.                                                                                                    |
 
 FHIR is the recommended future target, not a claim that any current clinic system can receive it. Each clinic integration must first demonstrate its supported FHIR version, profiles, endpoint behaviour, identity mapping, and receiving-record workflow against synthetic data before any real note is sent.
+
+---
+
+## 24. Frontend Rendering Constraints
+
+**Status: `Built`**
+
+Browser-level constraints that dictate component **structure** rather than styling. They are here because they cannot be discovered by reading the CSS: each one produces a build that looks correct in development and wrong in production, and each has already cost a shipped bug.
+
+**Split with `docs/DESIGN.md`.** That file owns the visual rules, including "glass is chrome only" and the one-line form of each constraint below. This section owns the mechanism, the components it binds, and how to verify a change. A frontend agent should read DESIGN.md for what the interface should look like and this section for what the browser will actually do.
+
+### Glass Inside Glass Is Always Flat
+
+An element with `backdrop-filter` establishes a **backdrop root**. A descendant's own `backdrop-filter` may only sample within that root, never the page behind it. Nested glass therefore blurs its ancestor's flat fill, which is a uniform colour, and the result is plain translucency with no frost.
+
+This is not a browser bug and there is no CSS that fixes it in place. The only fix is to stop being a descendant.
+
+| Surface                                                   | Escapes the backdrop root?                                                           |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `<dialog>` (`HelpButton`, `ConsultationList`, `Settings`) | **Yes, already.** The top layer is outside any backdrop root, so modals need nothing |
+| Dropover panels (notifications, account)                  | **Only by portal.** `ChromeCluster`, their parent, is `.glass`                       |
+| Anything new that floats over a glass ancestor            | **No.** Portal it                                                                    |
+
+**The standing pattern is `createPortal(panel, document.body)`**, as in `frontend/src/shell/Dropover.tsx`. Two consequences a naive portal gets wrong, both of which this codebase hit:
+
+- **Positioning.** The panel has left its wrapper, so `absolute` no longer places it. Measure from the trigger's `getBoundingClientRect()` and recompute on `scroll` (capturing, so nested scrollers fire) and `resize`.
+- **Dismissal.** The panel is no longer inside the wrapper, so an outside-click check written as `wrap.contains(target)` closes the panel on its own buttons. Test the panel node as well.
+
+Also carry `data-print="hide"` onto the portalled node when the original inherited print suppression from its parent. Leaving that parent for `body` silently makes a floating panel printable.
+
+### Verifying A Glass Change
+
+**Never the dev server.** Two of the three constraints here only manifest after a production build, and one only manifests in a specific DOM position.
+
+```bash
+bun run --cwd frontend build   # then serve dist, not `vite dev`
+```
+
+The decisive check is structural rather than visual, because frost at 86% panel alpha is subtle enough to argue about in a screenshot. Walk the open surface's ancestors and assert nothing between it and `body` establishes a backdrop root:
+
+```js
+for (let el = panel.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+  const s = getComputedStyle(el)
+  // Any of these establishes a backdrop root and flattens the frost.
+  console.log(el.className, s.backdropFilter, s.filter, s.opacity)
+}
+```
+
+`filter`, `opacity` below 1, `mask`, and `contain: paint` establish one for the same reason `backdrop-filter` does, so an unrelated animation or fade wrapper can flatten a surface that was previously correct.
+
+### The Two Constraints DESIGN.md Already Names
+
+Restated here only far enough to be findable, with the detail kept in DESIGN.md:
+
+- **Property order is load-bearing.** `-webkit-backdrop-filter` first, standard last. Reversed, the minifier keeps the last of what it reads as one duplicated property and ships the prefix alone, so the frost degrades to flat translucency in production while dev looks perfect.
+- **Glass needs texture behind it.** Over a flat fill there is nothing to blur. The page dot grid is what makes frost read as frost, which is why it is on both shells.
+
+### Public Build Inputs
+
+Anything prefixed `VITE_` is inlined into the bundle and is therefore public. The two the app reads are in §7. No secret may ever carry that prefix.
