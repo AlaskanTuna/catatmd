@@ -82,3 +82,6 @@ docs/assets/*.drawio.svg
 # already knows is a directory, so `git check-ignore .claude/worktrees` fails
 # before the directory exists, which is precisely when a skill tests it.
 .claude/worktrees
+
+# Eval reports are generated output, one per run
+evals/reports/

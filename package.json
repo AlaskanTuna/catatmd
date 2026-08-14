@@ -9,7 +9,8 @@
   "workspaces": [
     "shared",
     "backend",
-    "frontend"
+    "frontend",
+    "evals"
   ],
   "scripts": {
     "dev": "concurrently -n shared,backend,frontend -c cyan,green,magenta \"bun run --cwd shared dev\" \"bun run --cwd backend dev\" \"bun run --cwd frontend dev\"",
@@ -25,20 +26,21 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write . && prettier --write --no-error-on-unmatched-pattern '*.{md,yml,yaml}' 'docs/**/*.md'",
     "format:check": "biome format . && prettier --check --no-error-on-unmatched-pattern '*.{md,yml,yaml}' 'docs/**/*.md'",
-    "typecheck": "bun run --cwd shared build && bun run --cwd shared typecheck && bun run --cwd backend typecheck && bun run --cwd frontend typecheck",
-    "test": "bun run --cwd shared build && bun run --cwd shared test && bun run --cwd backend test && bun run --cwd frontend test",
+    "typecheck": "bun run --cwd shared build && bun run --cwd shared typecheck && bun run --cwd backend typecheck && bun run --cwd frontend typecheck && bun run --cwd evals typecheck",
+    "test": "bun run --cwd shared build && bun run --cwd shared test && bun run --cwd backend test && bun run --cwd frontend test && bun run --cwd evals test",
     "build": "bun run --cwd shared build && bunx prisma generate --schema prisma/schema.prisma && bun run --cwd backend build && bun run --cwd frontend build",
     "start": "bun run --cwd backend start",
-    "prepare": "husky"
+    "prepare": "husky",
+    "evals": "bun run --cwd shared build && bun run --cwd evals eval"
   },
   "lint-staged": {
-    "{shared,backend,frontend}/**/*.{ts,tsx,js,json}": "biome check --write --no-errors-on-unmatched",
     "{docs,.github}/**/*.{md,yml,yaml}": "prettier --write",
     "package.json": "biome check --write --no-errors-on-unmatched",
     "biome.json": "biome check --write --no-errors-on-unmatched",
     "commitlint.config.js": "biome check --write --no-errors-on-unmatched",
     "AGENTS.md": "prettier --write",
-    "CLAUDE.md": "prettier --write"
+    "CLAUDE.md": "prettier --write",
+    "{shared,backend,frontend,evals}/**/*.{ts,tsx,js,json}": "biome check --write --no-errors-on-unmatched"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.14",
