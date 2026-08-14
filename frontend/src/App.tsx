@@ -12,6 +12,7 @@ import { Privacy } from './routes/Privacy.js'
 import { AppShell } from './shell/AppShell.js'
 import { MarketingShell } from './shell/MarketingShell.js'
 import { Skeleton } from './ui/Card.js'
+import { Toaster } from './ui/Toaster.js'
 
 function RequireSession({ children }: { children: ReactNode }) {
   const session = useQuery({ queryKey: ['session'], queryFn: api.session, retry: false })
@@ -30,6 +31,9 @@ function RequireSession({ children }: { children: ReactNode }) {
 export function App() {
   return (
     <BrowserRouter>
+      {/* Outside <Routes> so a toast raised during a navigation is not
+          unmounted by the navigation that raised it. */}
+      <Toaster />
       <Routes>
         {/* Login is deliberately outside the marketing shell: it is a
             full-height split with its own brand pane, and a topbar and footer
