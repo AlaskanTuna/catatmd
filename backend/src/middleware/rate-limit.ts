@@ -65,6 +65,31 @@ export const ephemeralAnalyzeRateLimit = rateLimit({
 })
 
 /**
+ * Per-IP limiter for `POST /api/auth/guest`.
+ *
+ * This endpoint was limited by neither `express-rate-limit` nor better-auth,
+ * because it is registered ahead of the better-auth catch-all and so never
+ * reaches that router's own limiter. It mints a session for a shared account
+ * with no credential of the caller's own, which makes it the cheapest way in
+ * the system to obtain an actor that can then spend an analysis budget.
+ *
+ * Twenty a minute, which is loose enough for a demo audience arriving together
+ * behind one clinic NAT and tight enough that minting actors in bulk is not
+ * free. It sits on its own bucket so guest traffic cannot exhaust a signed-in
+ * doctor's allowance.
+ */
+export const guestSignInRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: { code: 'rate_limited', message: 'Too many sign-in attempts. Please retry shortly.' },
+  },
+})
+
+/**
  * Per-IP limiter for `POST /api/consultations/erase` (#114).
  *
  * Erasure spends no LLM call, so this is not a cost control. It is here because

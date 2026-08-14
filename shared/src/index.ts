@@ -12,9 +12,28 @@ import { z } from 'zod'
 
 export const SpeakerSchema = z.enum(['doctor', 'patient'])
 
+/**
+ * Bounds on how much text may enter the pipeline in one consultation.
+ *
+ * Until these existed the 1 MB request-body limit was the only ceiling, which
+ * is the wrong instrument: a body that size is roughly 300,000 words, and every
+ * one of them would be de-identified, sent to a model priced per token, and
+ * scanned again on the way back. The cost of an oversized transcript lands on
+ * the LLM bill and the request timeout rather than on the JSON parser, so the
+ * bound belongs on the shape rather than on the transport (OWASP LLM10,
+ * Unbounded Consumption).
+ *
+ * Sized well above any real GP consultation and well below anything expensive.
+ * The longest transcript measured during development ran about 3,000 words
+ * across roughly 120 turns, so a 600-turn ceiling is several times the real
+ * ceiling, and a turn longer than 4,000 characters is not a turn.
+ */
+export const MAX_TRANSCRIPT_TURNS = 600
+export const MAX_TURN_CHARACTERS = 4_000
+
 export const TranscriptTurnSchema = z.object({
   speaker: SpeakerSchema,
-  text: z.string().min(1),
+  text: z.string().min(1).max(MAX_TURN_CHARACTERS),
   /** Seconds from consultation start, when the source provides timing. */
   offsetSeconds: z.number().nonnegative().optional(),
 })
@@ -37,7 +56,7 @@ export const TranscriptSourceSchema = z.enum([
 
 export const TranscriptSchema = z.object({
   source: TranscriptSourceSchema,
-  turns: z.array(TranscriptTurnSchema).min(1),
+  turns: z.array(TranscriptTurnSchema).min(1).max(MAX_TRANSCRIPT_TURNS),
 })
 
 // ─── Structured clinical note (SOAP) ─────────────────────────────────────────
