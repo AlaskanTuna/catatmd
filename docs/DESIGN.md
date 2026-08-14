@@ -158,7 +158,7 @@ list screens hand-roll the same styling rather than using it. Those exist and mu
 be changed in step; a sitewide shape rule that holds in the component and not on
 the landing page is worse than no rule.
 
-**Two implementation notes that have each already cost a shipped bug.**
+**Three implementation notes that have each already cost a shipped bug.**
 
 The glass needs **texture behind it**. `backdrop-filter` blurs whatever is behind
 it, so over a flat fill it has nothing to operate on and the chrome reads as merely
@@ -172,6 +172,14 @@ property declared twice, keeps the last, and ships the prefix alone: the frost
 degrades to flat translucency in the production build while dev, which does not
 minify, looks perfect. Verify glass changes against `vite build`, never against
 the dev server.
+
+**Glass inside glass is always flat.** An element with `backdrop-filter` establishes a
+backdrop root, and a descendant's own `backdrop-filter` may only sample within it. A
+panel nested inside the chrome cluster therefore blurs the cluster's flat fill rather
+than the page, which is the first note's "nothing to operate on" arriving through the
+DOM instead of through a missing dot grid. Floating panels are portalled to `body` for
+this reason. Modals escape it already: a `<dialog>` renders in the top layer, which is
+outside any backdrop root.
 
 ### Z-Index Scale
 
