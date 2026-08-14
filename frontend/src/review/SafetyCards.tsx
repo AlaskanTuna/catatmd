@@ -1,4 +1,11 @@
-import type { ClinicalSuggestion, GuidelineChunk, InformationGap, RedFlag } from '@shared/types'
+import type {
+  ClinicalSuggestion,
+  Disposition,
+  DispositionInput,
+  GuidelineChunk,
+  InformationGap,
+  RedFlag,
+} from '@shared/types'
 import { AlertTriangle, Check, CircleAlert, HelpCircle, Info, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '../lib/cn.js'
@@ -21,16 +28,141 @@ const SEVERITY = {
   advisory: { label: 'Advisory', rule: 'bg-advisory-rule', text: 'text-advisory', Icon: Info },
 } as const
 
+const STATE_LABEL = {
+  acknowledged: 'Acknowledged, retained in the record',
+  dismissed: 'Dismissed, retained in the record',
+  not_applicable: 'Not clinically applicable, retained in the record',
+} as const
+
+/**
+ * The three-way decision on a finding (issue #10, AC4).
+ *
+ * **Every terminal label says "retained in the record", and that is the point.**
+ * A doctor dismissing an escalation trigger needs to see that they are recording
+ * a judgement rather than deleting a warning, because a control that reads like
+ * deletion invites clearing the rail to make it quiet.
+ *
+ * A reason is required to dismiss and cannot be given otherwise. Dismissing is
+ * the only one of the three that sets aside a safety signal on the doctor's own
+ * authority, so it is the one that has to be defensible later. Putting a
+ * mandatory box on the other two would train people to type "n/a" until the
+ * field means nothing.
+ *
+ * None of the three turns green. Green means approved on this screen, and a
+ * doctor should not have to hold two meanings for one colour.
+ */
+function DispositionControl({
+  findingId,
+  disposition,
+  onDecide,
+  acknowledgeLabel,
+}: {
+  findingId: string
+  disposition: Disposition | undefined
+  onDecide: (decision: DispositionInput) => void
+  acknowledgeLabel: string
+}) {
+  const [mode, setMode] = useState<'settled' | 'choosing' | 'reason'>('settled')
+  const [reason, setReason] = useState('')
+  const reasonId = `dismiss-reason-${findingId}`
+
+  if (disposition && mode === 'settled') {
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-muted">
+          <Check aria-hidden className="size-3.5" />
+          {STATE_LABEL[disposition.state]}
+        </span>
+        {disposition.reason && (
+          <span className="text-xs text-ink-muted">
+            <span className="font-medium text-ink">Reason:</span> {disposition.reason}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={() => setMode('choosing')}
+          className="rounded-control px-1.5 py-0.5 text-xs font-medium text-accent transition-colors hover:bg-sunken"
+        >
+          Change
+        </button>
+      </div>
+    )
+  }
+
+  if (mode === 'reason') {
+    const trimmed = reason.trim()
+    return (
+      <div className="flex flex-col gap-2">
+        <label htmlFor={reasonId} className="text-xs font-medium text-ink">
+          Why are you dismissing this?
+        </label>
+        <textarea
+          id={reasonId}
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          rows={2}
+          maxLength={500}
+          className="w-full rounded-control border border-line bg-surface p-2 text-sm text-ink outline-none focus-visible:border-accent"
+        />
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            disabled={trimmed.length === 0}
+            onClick={() => {
+              onDecide({ id: findingId, state: 'dismissed', reason: trimmed })
+              setMode('settled')
+              setReason('')
+            }}
+          >
+            Confirm Dismissal
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setMode('settled')}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        size="sm"
+        onClick={() => {
+          onDecide({ id: findingId, state: 'acknowledged' })
+          setMode('settled')
+        }}
+      >
+        {acknowledgeLabel}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => setMode('reason')}>
+        Dismiss
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => {
+          onDecide({ id: findingId, state: 'not_applicable' })
+          setMode('settled')
+        }}
+      >
+        Not Applicable
+      </Button>
+    </div>
+  )
+}
+
 export function RedFlagCard({
   flag,
-  acknowledged,
-  onAcknowledge,
+  disposition,
+  onDecide,
 }: {
   flag: RedFlag
-  acknowledged: boolean
-  onAcknowledge: () => void
+  disposition: Disposition | undefined
+  onDecide: (decision: DispositionInput) => void
 }) {
   const severity = SEVERITY[flag.severity]
+  const acknowledged = disposition !== undefined
 
   return (
     <Card className="overflow-hidden" data-tour={`flag-${flag.severity}`}>
@@ -63,21 +195,13 @@ export function RedFlagCard({
           </div>
         </div>
 
-        <div className="mt-3 flex items-center gap-2">
-          {acknowledged ? (
-            /* Acknowledged, never deleted. Issue #10: a dismissed flag is
-               retained with its resolution state, and stays in the printed
-               document. It also never turns green, because green means
-               approved and a doctor should not scan for two meanings. */
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-muted">
-              <Check aria-hidden className="size-3.5" />
-              Acknowledged, retained in the record
-            </span>
-          ) : (
-            <Button size="sm" onClick={onAcknowledge}>
-              Acknowledge
-            </Button>
-          )}
+        <div className="mt-3">
+          <DispositionControl
+            findingId={flag.id}
+            disposition={disposition}
+            onDecide={onDecide}
+            acknowledgeLabel="Acknowledge"
+          />
         </div>
       </div>
     </Card>
@@ -113,13 +237,14 @@ const GAP_PRIORITY = {
 
 export function GapCard({
   gap,
-  reviewed,
-  onReview,
+  disposition,
+  onDecide,
 }: {
   gap: InformationGap
-  reviewed: boolean
-  onReview: () => void
+  disposition: Disposition | undefined
+  onDecide: (decision: DispositionInput) => void
 }) {
+  const reviewed = disposition !== undefined
   return (
     /* Gaps are not severity. A gap is a prompt to ask something, not a
        warning, so it renders as a dotted-outline card in muted ink rather
@@ -142,16 +267,12 @@ export function GapCard({
         </div>
       </div>
       <div className="mt-3">
-        {reviewed ? (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-muted">
-            <Check aria-hidden className="size-3.5" />
-            Reviewed
-          </span>
-        ) : (
-          <Button size="sm" variant="ghost" onClick={onReview}>
-            Mark Reviewed
-          </Button>
-        )}
+        <DispositionControl
+          findingId={gap.id}
+          disposition={disposition}
+          onDecide={onDecide}
+          acknowledgeLabel="Mark Reviewed"
+        />
       </div>
     </div>
   )
