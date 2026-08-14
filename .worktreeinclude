@@ -1,0 +1,9 @@
+# Gitignored files copied into every worktree Claude Code creates.
+#
+# A worktree is a fresh checkout, so it starts with no untracked files. Without
+# this, a parallel session boots with no DATABASE_URL, no BETTER_AUTH_SECRET and
+# no LLM key, and every prisma command and most of the suite fails there.
+#
+# .gitignore syntax. Only paths that match AND are gitignored are copied, so a
+# tracked file listed here is never duplicated.
+.env
