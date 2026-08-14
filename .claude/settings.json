@@ -1,5 +1,18 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -f \"${CLAUDE_PROJECT_DIR}/.claude/hooks/env-drift.mjs\" ] || node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/env-drift.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking .env against the repo"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write|MultiEdit",
@@ -39,5 +52,5 @@
       }
     ]
   },
-  "description": "Shared with all collaborators. House-style guard blocks Edit/Write content that introduces an em dash or emoji. Impeccable design detector runs immediate-tier checks after Edit/Write/MultiEdit on UI files and a full-rule deep pass on Stop."
+  "description": "Shared with all collaborators. Env-drift guard reports at session start when the local gitignored .env disagrees with .env.example or with the main checkout, naming keys only and never values (issue #97); it does not fire on compaction. House-style guard blocks Edit/Write content that introduces an em dash or emoji. Impeccable design detector runs immediate-tier checks after Edit/Write/MultiEdit on UI files and a full-rule deep pass on Stop."
 }
