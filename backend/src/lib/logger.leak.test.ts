@@ -22,7 +22,12 @@ import { FIXTURES } from '../fixtures/index.js'
 const FIXTURE = FIXTURES.find((f) => f.id === 'urti-identifier-dense-routine')
 if (!FIXTURE) throw new Error('identifier-dense fixture missing')
 
-vi.mock('../analysis/index.js', () => ({
+// `importOriginal` so `buildEvidenceLinks` stays real. This test's value is
+// that it runs the actual analyse path and proves nothing from it reaches the
+// drain, so stubbing a link builder that carries verbatim transcript spans
+// would remove exactly the content it exists to chase.
+vi.mock('../analysis/index.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   analyseNote: vi.fn(async () => ({
     note: {
       subjective: '[PATIENT_1] reports cough and sore throat for two days.',
@@ -43,6 +48,13 @@ vi.mock('../analysis/index.js', () => ({
     },
     operational: {
       diagnosis: { state: 'PRESENT', value: 'URTI', evidence: '[PATIENT_1] likely has a URTI' },
+      // `OperationalBlockSchema` defaults every field, so the real `analyseNote`
+      // always returns all of them; omitting them made this a shape production
+      // never produces.
+      medicationsDispensed: [],
+      mcDays: { state: 'NOT_ASSESSED' },
+      referral: { state: 'NOT_ASSESSED' },
+      followUp: { state: 'NOT_ASSESSED' },
     },
     gaps: [
       {

@@ -7,7 +7,10 @@ import { ACTIVE_CLINICAL_VERSIONS } from '../clinical-versions/index.js'
  * state machine, the red-flag union and rehydration — not the model. The
  * modules themselves are covered by #3/#4/#5 and #6.
  */
-vi.mock('../analysis/index.js', () => ({
+// `importOriginal` so `buildEvidenceLinks` stays real: it is a pure mapping
+// worth exercising rather than stubbing, and a wholesale mock left it undefined.
+vi.mock('../analysis/index.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   analyseNote: vi.fn(async () => ({
     note: {
       subjective: '[PATIENT_1] reports a cough',
@@ -37,6 +40,12 @@ vi.mock('../analysis/index.js', () => ({
         { state: 'PRESENT', value: 'paracetamol', evidence: 'giving [PATIENT_1] paracetamol' },
       ],
       mcDays: { state: 'NOT_ASSESSED' },
+      // Present because `OperationalBlockSchema` defaults every field, so the
+      // real `analyseNote` always returns all of them. Omitting them here made
+      // the stub a shape production never produces, which went unnoticed until
+      // `buildEvidenceLinks` became the first consumer to read them (#10).
+      referral: { state: 'NOT_ASSESSED' },
+      followUp: { state: 'NOT_ASSESSED' },
     },
     gaps: [
       {
@@ -764,5 +773,86 @@ describe('POST /api/consultations/analyze-ephemeral', () => {
     const res = await call('POST', '/api/consultations/analyze-ephemeral', body([]))
 
     expect(res.status).toBe(400)
+  })
+})
+
+/**
+ * Evidence links (#10). The interesting property is not that links exist, it is
+ * what happens when a span cannot be attributed to exactly one turn: the trace
+ * must decline rather than guess, because a confidently wrong provenance on a
+ * clinical record is worse than an absent one.
+ */
+describe('evidence links', () => {
+  const linksOf = async (extra: Record<string, unknown> = {}) => {
+    seed('awaiting_review', extra)
+    await call('POST', '/api/consultations/c1/analyze')
+    const analysis = store.get('c1')?.analysis as {
+      evidenceLinks: {
+        fieldId: string
+        evidence: string
+        speaker?: string
+        offsetSeconds?: number
+      }[]
+    }
+    return analysis.evidenceLinks
+  }
+
+  it('carries one link per evidenced field, rehydrated', async () => {
+    const links = await linksOf()
+
+    expect(links.map((l) => l.fieldId)).toEqual([
+      'clinicalFacts.symptoms.cough',
+      'clinicalFacts.history.smoking',
+      'operational.diagnosis',
+      'operational.medicationsDispensed[0]',
+    ])
+    expect(links.every((l) => !l.evidence.includes('[PATIENT_1]'))).toBe(true)
+    expect(links[0]?.evidence).toContain('Ahmad')
+  })
+
+  it('attributes a span to the one turn that contains it', async () => {
+    const links = await linksOf({
+      transcript: {
+        source: 'paste',
+        turns: [
+          { speaker: 'doctor', text: 'What brings you in?', offsetSeconds: 0 },
+          { speaker: 'patient', text: 'I am Ahmad and Ahmad has a dry cough', offsetSeconds: 4.2 },
+        ],
+      },
+    })
+
+    const cough = links.find((l) => l.fieldId === 'clinicalFacts.symptoms.cough')
+    expect(cough?.speaker).toBe('patient')
+    expect(cough?.offsetSeconds).toBe(4.2)
+  })
+
+  /** The property that stops the trace inventing provenance. */
+  it('declines to attribute a span that appears in more than one turn', async () => {
+    const links = await linksOf({
+      transcript: {
+        source: 'paste',
+        turns: [
+          { speaker: 'patient', text: 'I am Ahmad and Ahmad has a dry cough', offsetSeconds: 1 },
+          { speaker: 'doctor', text: 'So Ahmad has a dry cough, noted', offsetSeconds: 9 },
+        ],
+      },
+    })
+
+    const cough = links.find((l) => l.fieldId === 'clinicalFacts.symptoms.cough')
+    expect(cough?.speaker, 'ambiguous attribution must resolve to nothing').toBeUndefined()
+    expect(cough?.offsetSeconds).toBeUndefined()
+  })
+
+  it('resolves the speaker but omits the offset when a transcript carries no timings', async () => {
+    const links = await linksOf({
+      transcript: {
+        source: 'paste',
+        turns: [{ speaker: 'patient', text: 'I am Ahmad and Ahmad has a dry cough' }],
+      },
+    })
+
+    const cough = links.find((l) => l.fieldId === 'clinicalFacts.symptoms.cough')
+    expect(cough?.speaker).toBe('patient')
+    expect(cough?.offsetSeconds, 'absent timing must not become 0').toBeUndefined()
   })
 })

@@ -292,6 +292,25 @@ export const ClinicalSuggestionSchema = z.object({
   citations: z.array(CitationSchema).min(1),
 })
 
+/**
+ * One established checklist field and the transcript span that evidenced it.
+ *
+ * `speaker` and `offsetSeconds` are optional and are resolved by locating the
+ * span in the transcript rather than asserted by the model. They are omitted
+ * when the span cannot be located in exactly one turn, or when the transcript
+ * carries no timings (`offsetSeconds` is itself optional on a turn, and a
+ * pasted or uploaded transcript has none). Omission means "not resolvable",
+ * never "the start of the consultation".
+ */
+export const EvidenceLinkSchema = z.object({
+  /** e.g. `clinicalFacts.symptoms.cough`, `operational.diagnosis`. */
+  fieldId: z.string(),
+  state: AssertionStateSchema,
+  evidence: z.string(),
+  speaker: SpeakerSchema.optional(),
+  offsetSeconds: z.number().nonnegative().optional(),
+})
+
 // ─── Analysis envelope ───────────────────────────────────────────────────────
 
 export const ConsultationAnalysisSchema = z.object({
@@ -316,6 +335,27 @@ export const ConsultationAnalysisSchema = z.object({
    */
   clinicalFacts: ClinicalFactsSchema.optional(),
   operational: OperationalBlockSchema.optional(),
+  /**
+   * Each established checklist field paired with the verbatim transcript span
+   * behind it, so a doctor can check what the system read rather than trusting
+   * it (GitHub issue #10, docs/trd.md §19 row 17).
+   *
+   * **These trace checklist fields, never note sentences.** The note is
+   * generated prose from a separate model call (§12) and is not composed from
+   * these facts, so no sentence in it has a provenance link and none can be
+   * recovered afterwards. Matching note text back to the transcript by
+   * similarity would manufacture provenance the system does not have, which in
+   * a clinical record is worse than showing none.
+   *
+   * Every span here already survived the evidence check (§21.4), so a link is
+   * a span that was matched against the de-identified transcript rather than
+   * one the model asserted.
+   *
+   * Optional for the same reason as `clinicalFacts`: consultations analysed
+   * before this shipped have none, and absence means "not recorded by this
+   * version", never "nothing was evidenced".
+   */
+  evidenceLinks: z.array(EvidenceLinkSchema).optional(),
   /**
    * Whether the consultation fell outside the guideline corpus, carried through
    * to the reader rather than stopping at the pipeline.
