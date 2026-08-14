@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { DispositionState } from '@shared/types'
 import type { ProfileId } from '../clinical-profiles/index.js'
 import type { ActiveClinicalVersions } from '../clinical-versions/index.js'
 import { prisma } from '../lib/prisma.js'
@@ -75,6 +76,15 @@ export type ConsultationAuditEvent =
   | { action: 'consultation.erased' }
   | { action: 'redflag.acknowledged'; metadata: { redFlagId: string } }
   | { action: 'gap.reviewed'; metadata: { gapId: string } }
+  /*
+   * The three-way disposition (issue #10). `state` is recorded and the
+   * dismissal reason deliberately is not: the reason is clinician free text
+   * about a specific patient, so it is clinical content and stays on the
+   * consultation, which is the clinical record. Copying it here would put
+   * unredacted prose in the table whose purpose is to be widely readable.
+   */
+  | { action: 'redflag.disposition_set'; metadata: { redFlagId: string; state: DispositionState } }
+  | { action: 'gap.disposition_set'; metadata: { gapId: string; state: DispositionState } }
   | { action: 'consultation.approved' }
 
 /**

@@ -1,4 +1,10 @@
-import type { ClinicalAssertion, ConsultationDetail, SoapNote } from '@shared/types'
+import type {
+  ClinicalAssertion,
+  ConsultationDetail,
+  Disposition,
+  DispositionInput,
+  SoapNote,
+} from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Printer, Sparkles } from 'lucide-react'
 import { useState } from 'react'
@@ -13,6 +19,25 @@ import { GapCard, RedFlagCard, SuggestionCard } from '../review/SafetyCards.js'
 import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
+
+/** The current decision about a finding, or `undefined` if none was made. */
+function byId(dispositions: Disposition[], id: string): Disposition | undefined {
+  return dispositions.find((entry) => entry.id === id)
+}
+
+/**
+ * Applies a decision in memory, matching what the API does on a stored row.
+ *
+ * The tour's consultation has no id to PATCH, so every control on this screen
+ * would 404 mid-demo without this. Last decision per id wins, exactly as
+ * `applyDispositions` does on the server, so the demo cannot drift from the
+ * behaviour it is demonstrating.
+ */
+function mergeDispositions(current: Disposition[], incoming: DispositionInput[]): Disposition[] {
+  const next = new Map(current.map((entry) => [entry.id, entry] as const))
+  for (const decision of incoming) next.set(decision.id, { ...decision, decidedAt: new Date() })
+  return [...next.values()]
+}
 
 const SEVERITY_ORDER = { emergency: 0, urgent: 1, advisory: 2 } as const
 
@@ -66,6 +91,17 @@ export function ConsultationReview() {
           ? { acknowledgedRedFlagIds: body.acknowledgedRedFlagIds }
           : {}),
         ...(body.reviewedGapIds ? { reviewedGapIds: body.reviewedGapIds } : {}),
+        ...(body.redFlagDispositions
+          ? {
+              redFlagDispositions: mergeDispositions(
+                current.redFlagDispositions,
+                body.redFlagDispositions,
+              ),
+            }
+          : {}),
+        ...(body.gapDispositions
+          ? { gapDispositions: mergeDispositions(current.gapDispositions, body.gapDispositions) }
+          : {}),
         updatedAt: new Date(),
       } as ConsultationDetail
     },
@@ -97,7 +133,10 @@ export function ConsultationReview() {
   const flags = [...(analysis?.redFlags ?? [])].sort(
     (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
   )
-  const unacknowledged = flags.filter((f) => !detail.acknowledgedRedFlagIds.includes(f.id))
+  // A flag counts as handled once any decision has been recorded about it,
+  // whichever of the three it was. The approve bar surfaces the count of
+  // undecided flags, not of un-acknowledged ones.
+  const unacknowledged = flags.filter((f) => byId(detail.redFlagDispositions, f.id) === undefined)
 
   // Transcript turns carry no id in the shared contract, and position *is*
   // their identity: the list is immutable for a given consultation and is
@@ -251,12 +290,8 @@ export function ConsultationReview() {
                   <RedFlagCard
                     key={flag.id}
                     flag={flag}
-                    acknowledged={detail.acknowledgedRedFlagIds.includes(flag.id)}
-                    onAcknowledge={() =>
-                      patch.mutate({
-                        acknowledgedRedFlagIds: [...detail.acknowledgedRedFlagIds, flag.id],
-                      })
-                    }
+                    disposition={byId(detail.redFlagDispositions, flag.id)}
+                    onDecide={(decision) => patch.mutate({ redFlagDispositions: [decision] })}
                   />
                 ))
               )}
@@ -279,10 +314,8 @@ export function ConsultationReview() {
                 >
                   <GapCard
                     gap={gap}
-                    reviewed={detail.reviewedGapIds.includes(gap.id)}
-                    onReview={() =>
-                      patch.mutate({ reviewedGapIds: [...detail.reviewedGapIds, gap.id] })
-                    }
+                    disposition={byId(detail.gapDispositions, gap.id)}
+                    onDecide={(decision) => patch.mutate({ gapDispositions: [decision] })}
                   />
                 </div>
               ))}

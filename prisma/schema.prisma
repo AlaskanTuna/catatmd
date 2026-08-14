@@ -121,9 +121,26 @@ model Consultation {
 
   /// Array of `RedFlag.id` the doctor has acknowledged. Acknowledgment is
   /// additive only — a red flag is never removed or downgraded by it.
+  ///
+  /// Superseded by `redFlagDispositions` for consultations reviewed after that
+  /// shipped, and kept because older rows carry only this form. A row with no
+  /// dispositions projects these forward as `acknowledged`, so both are read
+  /// and neither is migrated.
   acknowledgedRedFlagIds Json?
   /// Array of `InformationGap.id` the doctor has marked as reviewed.
   reviewedGapIds         Json?
+
+  /// The doctor's decision per red flag: acknowledged, dismissed with a reason,
+  /// or not clinically applicable (issue #10).
+  ///
+  /// A decision never alters the finding. The red flag stays in `analysis`
+  /// exactly as the rules engine produced it, which is what keeps the
+  /// never-removed-or-downgraded invariant above true even though a doctor can
+  /// now dismiss one. `AuditEvent` remains the authority for how a decision
+  /// changed over time; this column holds only the current state.
+  redFlagDispositions    Json?
+  /// The same, per `InformationGap.id`.
+  gapDispositions        Json?
 
   approvedAt DateTime?
   createdAt  DateTime  @default(now())

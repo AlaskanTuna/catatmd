@@ -329,6 +329,8 @@ async function runEphemeral(): Promise<ConsultationDetail> {
     approvedBy: null,
     acknowledgedRedFlagIds: [],
     reviewedGapIds: [],
+    redFlagDispositions: [],
+    gapDispositions: [],
   }
 }
 

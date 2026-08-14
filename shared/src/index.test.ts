@@ -290,6 +290,8 @@ describe('API envelope schemas', () => {
       approvedBy: null,
       acknowledgedRedFlagIds: [],
       reviewedGapIds: [],
+      redFlagDispositions: [],
+      gapDispositions: [],
     })
     expect(result.success).toBe(true)
   })
@@ -309,6 +311,8 @@ describe('API envelope schemas', () => {
       approvedBy: 'Dr Siti Rahman',
       acknowledgedRedFlagIds: [],
       reviewedGapIds: [],
+      redFlagDispositions: [],
+      gapDispositions: [],
     })
     expect(approved.success).toBe(true)
     if (approved.success) {

@@ -226,6 +226,8 @@ function seed(status: string, extra: Record<string, unknown> = {}) {
     approvedAt: null,
     acknowledgedRedFlagIds: null,
     reviewedGapIds: null,
+    redFlagDispositions: null,
+    gapDispositions: null,
     erasedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -472,6 +474,111 @@ describe('state machine — patch', () => {
 
     expect(store.get('c1')?.acknowledgedRedFlagIds).toEqual(['rf-1', 'rf-2'])
     expect(audits.filter((a) => a.action === 'redflag.acknowledged')).toHaveLength(1)
+  })
+})
+
+/**
+ * Issue #10 AC4. The three-way disposition is the one review control that can
+ * set a safety signal aside, so these pin the properties that make that safe
+ * rather than merely the happy path.
+ */
+describe('finding dispositions', () => {
+  it('refuses a dismissal with no reason', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    const res = await call('PATCH', '/api/consultations/c1', {
+      redFlagDispositions: [{ id: 'rf-1', state: 'dismissed' }],
+    })
+
+    expect(res.status).toBe(400)
+    expect(store.get('c1')?.redFlagDispositions).toBeNull()
+  })
+
+  it('refuses a reason on a state that is not a dismissal', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    const res = await call('PATCH', '/api/consultations/c1', {
+      redFlagDispositions: [{ id: 'rf-1', state: 'acknowledged', reason: 'not needed here' }],
+    })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('leaves the red flag itself untouched when one is dismissed', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+    const before = JSON.stringify(store.get('c1')?.analysis)
+
+    const res = await call('PATCH', '/api/consultations/c1', {
+      redFlagDispositions: [
+        { id: 'rf-1', state: 'dismissed', reason: 'Chronic, already worked up' },
+      ],
+    })
+
+    // The whole invariant in one assertion: a dismissal records a decision and
+    // never removes or downgrades the finding it refers to.
+    expect(res.status).toBe(200)
+    expect(JSON.stringify(store.get('c1')?.analysis)).toBe(before)
+    const detail = (await res.json()) as { consultation: { analysis: { redFlags: unknown[] } } }
+    expect(detail.consultation.analysis.redFlags).toHaveLength(ANALYSIS.redFlags.length)
+  })
+
+  it('keeps the dismissal reason out of the audit trail', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+    const reason = 'Patient has had this cough for years, chest clear on exam'
+
+    await call('PATCH', '/api/consultations/c1', {
+      redFlagDispositions: [{ id: 'rf-1', state: 'dismissed', reason }],
+    })
+
+    // A reason is clinician free text about a patient, so it is clinical
+    // content and belongs only on the consultation. The event records that a
+    // decision happened and which one, never the prose.
+    const event = audits.find((a) => a.action === 'redflag.disposition_set')
+    expect(event?.metadata).toEqual({ redFlagId: 'rf-1', state: 'dismissed' })
+    expect(JSON.stringify(audits)).not.toContain('chest clear')
+  })
+
+  it('records a reversal rather than silently overwriting it', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    await call('PATCH', '/api/consultations/c1', {
+      redFlagDispositions: [{ id: 'rf-1', state: 'acknowledged' }],
+    })
+    await call('PATCH', '/api/consultations/c1', {
+      redFlagDispositions: [{ id: 'rf-1', state: 'dismissed', reason: 'Resolved on review' }],
+    })
+
+    const stored = store.get('c1')?.redFlagDispositions as { id: string; state: string }[]
+    expect(stored).toHaveLength(1)
+    expect(stored[0]?.state).toBe('dismissed')
+    // Current state is one row; the history of getting there is the audit trail.
+    expect(audits.filter((a) => a.action === 'redflag.disposition_set')).toHaveLength(2)
+  })
+
+  it('does not re-audit a decision that changes nothing', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    await call('PATCH', '/api/consultations/c1', {
+      redFlagDispositions: [{ id: 'rf-1', state: 'acknowledged' }],
+    })
+    await call('PATCH', '/api/consultations/c1', {
+      redFlagDispositions: [{ id: 'rf-1', state: 'acknowledged' }],
+    })
+
+    expect(audits.filter((a) => a.action === 'redflag.disposition_set')).toHaveLength(1)
+  })
+
+  it('reads a pre-disposition row forward as acknowledged', async () => {
+    // Rows reviewed before #10 carry only the boolean form, and every id in it
+    // meant acknowledged. Projecting on read avoids rewriting review history.
+    seed('awaiting_review', { analysis: ANALYSIS, acknowledgedRedFlagIds: ['rf-1'] })
+
+    const res = await call('GET', '/api/consultations/c1')
+    const detail = (await res.json()) as { consultation: { redFlagDispositions: unknown } }
+
+    expect(detail.consultation.redFlagDispositions).toEqual([
+      { id: 'rf-1', state: 'acknowledged', decidedAt: expect.any(String) },
+    ])
   })
 })
 
