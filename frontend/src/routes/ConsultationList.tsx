@@ -1,13 +1,14 @@
 import type { ConsultationListItem, ConsultationStatus } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
 import { EmptyState, Skeleton } from '../ui/Card.js'
+import { Checkbox } from '../ui/Checkbox.js'
 import { PageHeader } from '../ui/PageHeader.js'
 
 /**
@@ -44,9 +45,6 @@ const formatDate = (value: Date) =>
     minute: '2-digit',
   }).format(value)
 
-const CHECKBOX =
-  'size-4 shrink-0 cursor-pointer accent-accent disabled:cursor-not-allowed disabled:opacity-40'
-
 const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
 export function ConsultationList() {
@@ -57,6 +55,9 @@ export function ConsultationList() {
   })
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
   const dialog = useRef<HTMLDialogElement>(null)
+  // Associated explicitly rather than by wrapping. The input lives inside the
+  // `Checkbox` component, so a wrapping label reads as having no control in it.
+  const selectAllId = useId()
 
   const consultations = data ?? []
 
@@ -112,14 +113,13 @@ export function ConsultationList() {
       />
 
       {consultations.length > 0 && (
-        <div
-          data-print="hide"
-          className="mt-8 flex min-h-9 items-center justify-between gap-4 border-b border-line pb-3"
-        >
-          <label className="flex cursor-pointer items-center gap-3 text-sm text-ink-muted">
-            <input
-              type="checkbox"
-              className={CHECKBOX}
+        <div data-print="hide" className="mt-8 flex min-h-9 items-center justify-between gap-4">
+          <label
+            htmlFor={selectAllId}
+            className="flex cursor-pointer items-center gap-3 text-sm text-ink-muted"
+          >
+            <Checkbox
+              id={selectAllId}
               checked={allSelected}
               // A DOM property rather than an attribute: there is no
               // `indeterminate` in HTML, only on the element.
@@ -183,17 +183,18 @@ export function ConsultationList() {
               key={consultation.id}
               className={cn(
                 'flex items-center gap-3 rounded-card border bg-surface pl-4 transition-colors',
+                // The tint is a layer over the surface, not a replacement for
+                // it: as a `background-color` it won the cascade and left the
+                // row translucent over the page's dot grid.
                 picked.has(consultation.id)
-                  ? 'border-accent/50 bg-accent/4'
+                  ? 'border-accent/50 bg-linear-to-r from-accent/8 to-accent/8'
                   : 'border-line hover:border-ink-muted/50',
               )}
             >
               {/* A sibling of the link, never a child of it: a control nested
                   inside an anchor is not reachable as its own target. */}
-              <input
-                type="checkbox"
+              <Checkbox
                 data-print="hide"
-                className={CHECKBOX}
                 checked={picked.has(consultation.id)}
                 onChange={() => toggle(consultation.id)}
                 aria-label={`Select consultation from ${when}`}
@@ -250,7 +251,10 @@ export function ConsultationList() {
  * discover that afterwards.
  *
  * A native <dialog>, for the same reason as the tour's: focus trapping, Escape
- * and inertness of the page behind it, none of them hand-rolled.
+ * and inertness of the page behind it, none of them hand-rolled. It is glass
+ * over the scrim, matching every other floating surface; the text on it stays
+ * at full-strength ink because a destructive confirmation is the last place to
+ * trade contrast for texture.
  */
 function EraseDialog({
   ref,
@@ -277,7 +281,7 @@ function EraseDialog({
       ref={ref}
       data-print="hide"
       aria-labelledby="erase-title"
-      className="m-auto w-[26rem] max-w-[calc(100vw-2rem)] rounded-card border border-line bg-surface p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
+      className="glass-panel m-auto w-[26rem] max-w-[calc(100vw-2rem)] rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
     >
       <div className="p-6">
         <h2 id="erase-title" className="text-lg font-semibold">

@@ -540,6 +540,24 @@ export const NotificationItemSchema = z.object({
 export const NOTIFICATION_FEED_LIMIT = 20
 
 /**
+ * The demo account's target state, shared so the seed script and the in-app
+ * restore cannot drift (issue #123).
+ *
+ * It lives here rather than in `prisma/seed-demo.ts` because two things now
+ * rebuild the demo: that script, and Settings for the guest account. If they
+ * disagreed, the account restored from the UI would not be the account the
+ * script produces, and only one of them would match what a demo was rehearsed
+ * against.
+ */
+export const DEMO_PLAN = [
+  { fixtureId: 'urti-gap-heavy', target: 'awaiting_review' },
+  { fixtureId: 'urti-hard-red-flag', target: 'awaiting_review' },
+  { fixtureId: 'urti-diagnosis-not-assessed', target: 'awaiting_review' },
+  { fixtureId: 'urti-identifier-dense-routine', target: 'approved' },
+  { fixtureId: 'urti-hard-uncertain', target: 'draft' },
+] as const satisfies readonly { fixtureId: string; target: ConsultationStatus }[]
+
+/**
  * How many consultations one erase request may carry.
  *
  * The handler erases sequentially rather than concurrently, because every

@@ -1,7 +1,7 @@
 import type { ConsultationDetail } from '@shared/types'
 import { useMutation } from '@tanstack/react-query'
 import { CheckCircle2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ApiError } from '../lib/api.js'
 import { Button } from '../ui/Button.js'
 
@@ -44,6 +44,24 @@ export function ApproveBar({
   onApproved: (next: ConsultationDetail) => void
 }) {
   const [confirming, setConfirming] = useState(false)
+
+  /*
+   * Publishes this bar's footprint so floating chrome can sit above it.
+   *
+   * It is set here rather than inferred from the route, because the route
+   * cannot tell the difference: an approved consultation renders the summary
+   * below instead of this bar, and a FAB lifted by route match then floats
+   * clear of nothing. Tying the offset to the bar's own lifetime makes it
+   * correct in both states without either component importing the other.
+   */
+  useEffect(() => {
+    if (approved) return
+    const root = document.documentElement
+    root.style.setProperty('--approve-bar-inset', '4rem')
+    return () => {
+      root.style.removeProperty('--approve-bar-inset')
+    }
+  }, [approved])
 
   const approve = useMutation({
     mutationFn: performApproval,

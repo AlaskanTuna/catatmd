@@ -76,7 +76,7 @@ export function Dropover({
             // The count is on the trigger's accessible name rather than only in
             // this dot, so it is not a purely visual signal.
             aria-hidden
-            className="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-pill bg-urgent px-1 text-[0.625rem] leading-4 font-semibold text-ink"
+            className="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-pill bg-notify px-1 text-[0.625rem] leading-4 font-semibold text-notify-ink"
           >
             {badge > 9 ? '9+' : badge}
           </span>
@@ -93,10 +93,12 @@ export function Dropover({
           // and `role="group"` would be a name repeated from the trigger.
           style={{ zIndex: 'var(--z-modal)' }}
           className={cn(
-            // Opaque, not glass. docs/DESIGN.md reserves translucency for
-            // chrome, and the moment a panel carries a list a doctor reads, it
-            // is content sitting in chrome rather than chrome.
-            'absolute top-11 w-80 max-w-[calc(100vw-2rem)] rounded-card border border-line bg-surface shadow-raised',
+            // Glass, matching every other floating surface in the app. These
+            // panels carry chrome (a status feed, an account menu) rather than
+            // clinical content, so docs/DESIGN.md's solid-panels-for-content
+            // rule does not bind here. The blur is what stops the page behind
+            // showing through as noise under the text.
+            'glass-panel absolute top-11 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-float',
             align === 'right' ? 'right-0' : 'left-0',
           )}
         >

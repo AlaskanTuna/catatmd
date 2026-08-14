@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Bell, LogOut, Moon, Sun, UserRound } from 'lucide-react'
+import { Bell, LogOut, Moon, Settings as SettingsIcon, Sun, UserRound } from 'lucide-react'
 import { useCallback, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import { useTheme } from '../lib/theme.js'
 import { Button } from '../ui/Button.js'
@@ -73,13 +73,13 @@ export function ChromeCluster() {
       </Dropover>
 
       <Dropover label="Account" icon={<UserRound aria-hidden className="size-4.5" />}>
-        {() => <AccountPanel />}
+        {(close) => <AccountPanel close={close} />}
       </Dropover>
     </div>
   )
 }
 
-function AccountPanel() {
+function AccountPanel({ close }: { close: () => void }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const session = useQuery({ queryKey: ['session'], queryFn: api.session, retry: false })
@@ -106,16 +106,26 @@ function AccountPanel() {
         <p className="text-sm text-ink-muted">Signed in.</p>
       )}
 
-      <Button
-        size="sm"
-        variant="secondary"
-        icon={<LogOut aria-hidden className="size-3.5" />}
-        loading={signOut.isPending}
-        onClick={() => signOut.mutate()}
-        className="mt-4 w-full"
-      >
-        Sign Out
-      </Button>
+      <div className="mt-4 flex flex-col gap-2">
+        <Link
+          to="/settings"
+          onClick={close}
+          className="flex h-8 items-center justify-center gap-1.5 rounded-control bg-surface text-xs font-medium text-ink shadow-raised transition-colors hover:bg-sunken"
+        >
+          <SettingsIcon aria-hidden className="size-3.5" />
+          Settings
+        </Link>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={<LogOut aria-hidden className="size-3.5" />}
+          loading={signOut.isPending}
+          onClick={() => signOut.mutate()}
+          className="w-full"
+        >
+          Sign Out
+        </Button>
+      </div>
 
       {signOut.error != null && (
         <p role="alert" className="mt-2 text-2xs text-emergency">

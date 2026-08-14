@@ -1,7 +1,7 @@
 import { NOTIFICATION_FEED_LIMIT, NotificationItemSchema } from '@shared/types'
 import { Router } from 'express'
 import { z } from 'zod'
-import { getActorNotifications } from '../audit/index.js'
+import { clearActorNotifications, getActorNotifications } from '../audit/index.js'
 import { HttpError } from '../lib/http-error.js'
 
 export const notificationsRouter = Router()
@@ -33,4 +33,18 @@ notificationsRouter.get('/notifications', async (req, res) => {
   // above: anything that ever appeared in `metadata` would fail here rather
   // than reach a client.
   res.json(FeedEnvelope.parse({ notifications: rows }))
+})
+
+/**
+ * Clears the feed for the calling doctor.
+ *
+ * **This does not delete anything, and the wording in the UI must not claim it
+ * does.** The feed is a read over `AuditEvent`, which is append-only and is the
+ * tamper-evident record of what the system did. Clearing moves a per-user
+ * cursor forward so the rows stop appearing; every one of them is still in the
+ * log, still chained, and still verifiable.
+ */
+notificationsRouter.post('/notifications/clear', async (req, res) => {
+  await clearActorNotifications(doctorId(req))
+  res.status(204).end()
 })

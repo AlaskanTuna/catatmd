@@ -1,4 +1,4 @@
-import { Loader2, Play, X } from 'lucide-react'
+import { Bot, Loader2, Play, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { useMatch } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
@@ -20,10 +20,11 @@ export function HelpButton() {
   const { active, preparing, start } = useDemoTour()
   const dialog = useRef<HTMLDialogElement>(null)
 
-  // The review screen is the one place with a sticky bar under this button, and
-  // `new` is excluded because the intake screen shares the route but not the bar.
+  // On a consultation record the corner belongs to the assistant rather than to
+  // the tour. `new` is excluded because the intake screen shares the route
+  // shape but is not a record.
   const review = useMatch('/consultations/:id')
-  const overApproveBar = review !== null && review.params.id !== 'new'
+  const onRecord = review !== null && review.params.id !== 'new'
 
   // A native <dialog> gives focus trapping, Escape, inertness of the page
   // behind it and the top layer for free. Hand-rolling those is how a modal
@@ -42,12 +43,16 @@ export function HelpButton() {
           layout, and the circle is what separates it from the interface it
           floats above. A bare glyph rather than lucide's `HelpCircle`, whose
           own ring would sit inside this one and read as a double border. */}
+      {/* The assistant's corner on a record, the tour's everywhere else. The
+          assistant has no behaviour yet, so it is disabled and says so rather
+          than accepting a click and doing nothing. */}
       <button
         type="button"
+        disabled={onRecord}
         onClick={() => dialog.current?.showModal()}
         data-print="hide"
-        aria-label="Take the guided tour"
-        title="Guided Tour"
+        aria-label={onRecord ? 'Assistant, not available yet' : 'Take the guided tour'}
+        title={onRecord ? 'Assistant (coming soon)' : 'Guided Tour'}
         style={{ zIndex: 'var(--z-sticky)' }}
         /*
          * Bottom-right corner, lifted only where something is genuinely under
@@ -66,17 +71,19 @@ export function HelpButton() {
          * the one screen where a help button must not compete with it.
          */
         className={cn(
-          'glass fixed right-4 flex size-12 items-center justify-center rounded-full text-lg font-semibold text-accent transition-[transform,color] duration-150 ease-out-quart hover:text-accent-hover active:scale-[0.94] md:right-6',
-          overApproveBar ? 'bottom-24' : 'bottom-24 md:bottom-6',
+          'glass fab-anchor fixed flex size-12 items-center justify-center rounded-full text-lg font-semibold text-accent transition-[transform,color] duration-150 ease-out-quart',
+          onRecord
+            ? 'cursor-not-allowed text-ink-muted'
+            : 'hover:text-accent-hover active:scale-[0.94]',
         )}
       >
-        <span aria-hidden>?</span>
+        {onRecord ? <Bot aria-hidden className="size-5" /> : <span aria-hidden>?</span>}
       </button>
 
       <dialog
         ref={dialog}
         data-print="hide"
-        className="m-auto w-[26rem] max-w-[calc(100vw-2rem)] rounded-card border border-line bg-surface p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
+        className="glass-panel m-auto w-[26rem] max-w-[calc(100vw-2rem)] rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
       >
         <div className="p-6">
           <div className="flex items-start justify-between gap-3">
