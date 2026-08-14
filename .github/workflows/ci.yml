@@ -117,10 +117,76 @@ jobs:
   #     deployment Ready while catatmd.vercel.app kept serving the previous
   #     build. That is why this job asserts what the domain actually serves
   #     rather than trusting the deploy step's exit code.
-  deploy:
-    name: Deploy to Vercel
+  # A deployment is a metered resource on this plan (100 per rolling 24 hours),
+  # and exceeding it does not fail loudly: Vercel returns `BLOCKED` with a null
+  # `errorCode`, a null `errorMessage` and a 0ms build, while the CLI prints
+  # "Your deployment failed. Please retry later." That reads like a build
+  # failure, so the natural response is to retry, which spends another slot and
+  # cannot succeed. Observed 14/08/26 at 97 of 100 (GitHub issue #82).
+  #
+  # Most of that budget went on commits that could not change the bundle. A
+  # docs-only change ran `vercel pull`, `build` and `deploy` to ship a
+  # byte-identical frontend. This job decides whether the push touched anything
+  # the deployed artefact is built from.
+  #
+  # It fails OPEN. If the previous commit cannot be resolved, which happens on a
+  # first push, a force push, or a re-run after history moved, it deploys. A
+  # wasted deployment costs one slot; a skipped one silently leaves production
+  # behind `main`, which is the failure the assertions further down exist to
+  # catch and is far more expensive.
+  #
+  # Expected consequence, so it is not later misread as drift: after a skipped
+  # deploy the production alias points at the deployment built from the last
+  # commit that touched these paths, not at `main`'s tip. The bundle it serves
+  # is byte-identical either way, which is the whole reason the deploy was
+  # skipped. Only the commit stamp differs. The backend is unaffected: Render
+  # deploys the API from its own trigger on every push, independently of this.
+  changes:
+    name: Detect deployable changes
     needs: verify
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      deployable: ${{ steps.filter.outputs.deployable }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether this push can change the deployed bundle
+        id: filter
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$BEFORE" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "Previous commit unavailable; deploying rather than guessing."
+            echo "deployable=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed="$(git diff --name-only "$BEFORE" "$GITHUB_SHA")"
+          echo "Changed files:"
+          echo "$changed" | sed 's/^/  /'
+
+          # `shared/` is here because the frontend imports @shared/types and the
+          # build inlines it. `vercel.json` and this workflow both change how the
+          # deployment is produced.
+          if echo "$changed" | grep -qE '^(frontend/|shared/|vercel\.json$|\.github/workflows/ci\.yml$)'; then
+            echo "deployable=true" >> "$GITHUB_OUTPUT"
+            echo "Deployable paths touched."
+          else
+            echo "deployable=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No deployable paths changed; skipping the Vercel deployment."
+          fi
+
+  deploy:
+    name: Deploy to Vercel
+    needs: [verify, changes]
+    if: needs.changes.outputs.deployable == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
