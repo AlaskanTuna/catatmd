@@ -484,6 +484,43 @@ export const ConsultationListItemSchema = ConsultationSchema.pick({
 })
 
 /**
+ * The events worth telling a doctor about after the fact (issue #116).
+ *
+ * A deliberate subset of the audit taxonomy, not all of it. `AuditEvent` records
+ * everything that happened, including starts, edits and per-finding
+ * dispositions; a feed of that is a log, and a log nobody reads is worse than no
+ * feed. These four are the ones with an outcome: work finished, work failed, a
+ * record was signed, a record was erased.
+ *
+ * Everything a notification carries is already constrained to an id and a member
+ * of this enum, because the audit row it comes from is. There is no free-text
+ * field to leak clinical content into, and that is a property of the substrate
+ * rather than a rule this feature has to remember to follow.
+ */
+export const NotificationActionSchema = z.enum([
+  'consultation.analysis_completed',
+  'consultation.analysis_failed',
+  'consultation.approved',
+  'consultation.erased',
+])
+
+/**
+ * `NotificationItem`, not `Notification`, because the DOM already has a
+ * `Notification` global for the Web Notifications API. A shared type shadowing
+ * it in browser code is a footgun for whoever later reaches for the real one.
+ */
+export const NotificationItemSchema = z.object({
+  id: z.string(),
+  action: NotificationActionSchema,
+  /** Absent only on a row written before consultations carried the link. */
+  consultationId: z.string().nullable(),
+  createdAt: z.coerce.date(),
+})
+
+/** How many notifications one request returns. */
+export const NOTIFICATION_FEED_LIMIT = 20
+
+/**
  * How many consultations one erase request may carry.
  *
  * The handler erases sequentially rather than concurrently, because every
@@ -660,6 +697,8 @@ export type SuggestionsAndRedFlagsResponse = z.infer<
 >
 export type ConsultationListItem = z.infer<typeof ConsultationListItemSchema>
 export type ConsultationDetail = z.infer<typeof ConsultationDetailSchema>
+export type NotificationAction = z.infer<typeof NotificationActionSchema>
+export type NotificationItem = z.infer<typeof NotificationItemSchema>
 export type EraseConsultationsInput = z.infer<typeof EraseConsultationsInputSchema>
 export type EraseConsultationsResult = z.infer<typeof EraseConsultationsResultSchema>
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelopeSchema>

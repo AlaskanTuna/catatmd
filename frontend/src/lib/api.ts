@@ -13,6 +13,8 @@ import {
   FixtureSchema,
   type GuidelineChunk,
   GuidelineChunkSchema,
+  type NotificationItem,
+  NotificationItemSchema,
   type SoapNote,
   type Transcript,
 } from '@shared/types'
@@ -71,6 +73,7 @@ const ConsultationEnvelope = z.object({ consultation: ConsultationDetailSchema }
 const ListEnvelope = z.object({ consultations: z.array(ConsultationListItemSchema) })
 const FixturesEnvelope = z.object({ fixtures: z.array(FixtureSchema) })
 const GuidelinesEnvelope = z.object({ guidelines: z.array(GuidelineChunkSchema) })
+const NotificationsEnvelope = z.object({ notifications: z.array(NotificationItemSchema) })
 
 /**
  * Audit events, read only for the provenance stamp on the review screen.
@@ -197,6 +200,13 @@ export const api = {
 
   fixtures: (): Promise<Fixture[]> =>
     request('/fixtures', FixturesEnvelope).then((r) => r.fixtures),
+
+  /**
+   * The doctor's own recent completed work, derived from `AuditEvent` (#116).
+   * Carries an id, an action enum and a consultation id, never free text.
+   */
+  notifications: (): Promise<NotificationItem[]> =>
+    request('/notifications', NotificationsEnvelope).then((r) => r.notifications),
 
   guidelines: (): Promise<GuidelineChunk[]> =>
     request('/guidelines', GuidelinesEnvelope).then((r) => r.guidelines),
