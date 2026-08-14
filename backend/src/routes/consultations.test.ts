@@ -167,6 +167,15 @@ vi.mock('../lib/prisma.js', () => ({
         },
       ),
     },
+    // Issue #26: an approved consultation names the clinician who approved it,
+    // so the detail serialiser resolves the owning doctor. Only reached once
+    // `approvedAt` is set, which is why every unapproved-path test passed
+    // before this stub existed.
+    user: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
+        where.id === 'doctor-1' ? { name: 'Dr Aminah Yusof' } : null,
+      ),
+    },
     auditEvent,
     // Appends run inside a transaction so the head read and the insert are
     // atomic (issue #27). The stand-in just runs the callback against the same
@@ -467,6 +476,33 @@ describe('state machine — approve', () => {
     expect(store.get('c1')?.status).toBe('approved')
     expect(store.get('c1')?.approvedAt).toBeInstanceOf(Date)
     expect(audits.map((a) => a.action)).toContain('consultation.approved')
+    // Issue #26: the export is a clinical document, and one that cannot say
+    // whose it is undercuts the record the approval gate exists to produce.
+    const { consultation } = (await res.json()) as { consultation: { approvedBy: string | null } }
+    expect(consultation.approvedBy).toBe('Dr Aminah Yusof')
+  })
+
+  it('names the approving clinician on a later read, not only in the approve response', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+    await call('POST', '/api/consultations/c1/approve')
+
+    const res = await call('GET', '/api/consultations/c1')
+
+    expect(res.status).toBe(200)
+    const { consultation } = (await res.json()) as { consultation: { approvedBy: string | null } }
+    expect(consultation.approvedBy).toBe('Dr Aminah Yusof')
+  })
+
+  it('leaves the clinician null until the approval transition has happened', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    const res = await call('GET', '/api/consultations/c1')
+
+    const { consultation } = (await res.json()) as {
+      consultation: { approvedAt: string | null; approvedBy: string | null }
+    }
+    expect(consultation.approvedAt).toBeNull()
+    expect(consultation.approvedBy).toBeNull()
   })
 
   it('refuses to approve a consultation with no analysis', async () => {

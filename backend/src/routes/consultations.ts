@@ -40,7 +40,7 @@ function doctorId(req: { doctorId?: string }): string {
  * JSON columns are `Json?` to Prisma, so this is the only place their shape is
  * actually checked.
  */
-function toDetail(row: Consultation) {
+function toDetail(row: Consultation, approvedBy: string | null = null) {
   return ConsultationDetailSchema.parse({
     id: row.id,
     status: row.status,
@@ -50,9 +50,32 @@ function toDetail(row: Consultation) {
     analysis: row.analysis ?? null,
     editedNote: row.editedNote ?? null,
     approvedAt: row.approvedAt,
+    approvedBy,
     acknowledgedRedFlagIds: row.acknowledgedRedFlagIds ?? [],
     reviewedGapIds: row.reviewedGapIds ?? [],
   })
+}
+
+/**
+ * Attaches the approving clinician's name (issue #26).
+ *
+ * Resolved from `doctorId` rather than from the approval audit event, because
+ * `assertOwnedConsultation` scopes every read and write on that column, so the
+ * owner is the only account that can reach the approve transition at all. If a
+ * clinic or admin boundary is ever added, that stops being true and the actor
+ * on the `consultation.approved` event becomes the authority instead. The
+ * `AuditEvent` row already records it, so the fix is a join, not a migration.
+ *
+ * Costs a query only on approved consultations; there is nothing to name until
+ * the transition has happened.
+ */
+async function toDetailWithApprover(row: Consultation) {
+  if (row.approvedAt === null) return toDetail(row)
+  const doctor = await prisma.user.findUnique({
+    where: { id: row.doctorId },
+    select: { name: true },
+  })
+  return toDetail(row, doctor?.name ?? null)
 }
 
 /**
@@ -148,12 +171,12 @@ consultationsRouter.post('/', async (req, res) => {
     })
   }
 
-  res.status(201).json({ consultation: toDetail(created) })
+  res.status(201).json({ consultation: await toDetailWithApprover(created) })
 })
 
 consultationsRouter.get('/:id', async (req, res) => {
   const consultation = await assertOwnedConsultation(req.params.id, doctorId(req))
-  res.json({ consultation: toDetail(consultation) })
+  res.json({ consultation: await toDetailWithApprover(consultation) })
 })
 
 /**
@@ -297,7 +320,7 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
       },
     })
 
-    res.json({ consultation: toDetail(updated) })
+    res.json({ consultation: await toDetailWithApprover(updated) })
   } catch (error) {
     // The doctor's only retry path is triggering analysis again — nothing
     // retries autonomously (docs/prd.md CAP-5).
@@ -412,7 +435,7 @@ consultationsRouter.patch('/:id', async (req, res) => {
     })
   }
 
-  res.json({ consultation: toDetail(updated) })
+  res.json({ consultation: await toDetailWithApprover(updated) })
 })
 
 consultationsRouter.post('/:id/approve', async (req, res) => {
@@ -446,5 +469,5 @@ consultationsRouter.post('/:id/approve', async (req, res) => {
     consultationId: consultation.id,
   })
 
-  res.json({ consultation: toDetail(updated) })
+  res.json({ consultation: await toDetailWithApprover(updated) })
 })

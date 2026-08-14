@@ -419,6 +419,22 @@ export const ConsultationListItemSchema = ConsultationSchema.pick({
 export const ConsultationDetailSchema = ConsultationSchema.extend({
   editedNote: SoapNoteSchema.nullable(),
   approvedAt: z.coerce.date().nullable(),
+  /**
+   * The clinician who approved, by name, and `null` until one has.
+   *
+   * Stated by the server rather than inferred by the client from the session.
+   * Today a consultation is only ever visible to the account that owns it, so
+   * the viewer and the approver are provably the same person and the client
+   * could shortcut this. That equivalence is an access-control property, not a
+   * fact about the document: the moment a clinic or admin boundary exists, a
+   * note would start being attributed to whoever opened it. An approval is the
+   * transition that makes the record someone's, so who performed it belongs in
+   * the payload.
+   *
+   * A name is not an identifier. A production deployment needs an MMC
+   * registration number, which the schema does not carry today.
+   */
+  approvedBy: z.string().nullable(),
   acknowledgedRedFlagIds: z.array(z.string()),
   reviewedGapIds: z.array(z.string()),
 })
