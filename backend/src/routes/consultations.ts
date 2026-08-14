@@ -1,10 +1,13 @@
 import type { Consultation } from '@prisma/client'
 import {
+  type ConsultationAnalysis,
+  ConsultationAnalysisSchema,
   ConsultationDetailSchema,
   ConsultationListItemSchema,
   type InformationGap,
   type SoapNote,
   SoapNoteSchema,
+  type Transcript,
   TranscriptSchema,
 } from '@shared/types'
 import { Router } from 'express'
@@ -12,6 +15,7 @@ import { z } from 'zod'
 import { analyseNote } from '../analysis/index.js'
 import { type AnalysisFailureReason, getAuditHistory, recordAuditEvent } from '../audit/index.js'
 import {
+  type ClinicalProfile,
   DEFAULT_PROFILE_ID,
   getClinicalProfile,
   ProfileIdSchema,
@@ -200,7 +204,83 @@ consultationsRouter.get('/:id/history', async (req, res) => {
  * de-identify first, run the deterministic rules on the raw transcript
  * in-process, send only de-identified content to the model, then merge as a
  * union so a model response can never suppress a rule hit.
+ *
+ * Shared by the stored route below and the ephemeral one (#80) so the two
+ * cannot drift. Demo Mode's claim is that it narrates the real pipeline, and
+ * that claim is only worth making while there is literally one pipeline.
+ *
+ * It persists nothing and writes no audit row: both are the caller's job,
+ * because that is exactly where the two routes legitimately differ.
  */
+async function runAnalysis(
+  transcript: Transcript,
+  profile: ClinicalProfile,
+  consultationId?: string,
+): Promise<{
+  analysis: ConsultationAnalysis
+  detected: readonly string[]
+  discardedFieldIds: readonly string[]
+}> {
+  const { text, vault, detected } = await timeStage('deidentification', () =>
+    deidentifyTranscript(transcript),
+  )
+
+  // Labels and a count, never the matched values (GitHub issue #15).
+  logger.info('de-identification complete', {
+    ...(consultationId === undefined ? {} : { consultationId }),
+    detectorLabels: detected,
+    detectorCount: detected.length,
+  })
+
+  // Runs on the raw transcript, in-process, regardless of model output. It
+  // never leaves the API, so it needs no gate.
+  const ruleFlags = await timeStage('rules', () =>
+    evaluateRedFlags(transcript, profile.redFlagTriggers),
+  )
+
+  const [noteResult, suggestionResult] = await Promise.all([
+    timeStage('note_generation', () => analyseNote(text, text, profile)),
+    timeStage('retrieval', () => generateSuggestions(text, profile)),
+  ])
+
+  const rehydrate = (value: string) => vault.rehydrate(value)
+
+  const analysis = {
+    note: {
+      subjective: rehydrate(noteResult.note.subjective),
+      objective: rehydrate(noteResult.note.objective),
+      assessment: rehydrate(noteResult.note.assessment),
+      plan: rehydrate(noteResult.note.plan),
+    },
+    profileId: profile.id,
+    gaps: mergeGaps(
+      deriveGaps(noteResult.clinicalFacts, noteResult.operational, profile.gapChecklist),
+      noteResult.gaps,
+    ).map((gap) => ({
+      ...gap,
+      question: rehydrate(gap.question),
+      rationale: rehydrate(gap.rationale),
+    })),
+    redFlags: mergeRedFlags(ruleFlags, suggestionResult.redFlags).map((flag) => ({
+      ...flag,
+      label: rehydrate(flag.label),
+      evidence: rehydrate(flag.evidence),
+    })),
+    // The reviewed checklist, surfaced rather than discarded. Without these
+    // the UI cannot render a `NOT_ASSESSED` it was never sent, and docs/prd.md
+    // §10's "unestablished, never absent" requirement has nothing to display
+    // (Demo Script step 5).
+    clinicalFacts: rehydrateAssertions(noteResult.clinicalFacts, rehydrate),
+    operational: rehydrateAssertions(noteResult.operational, rehydrate),
+    suggestions: suggestionResult.suggestions.map((suggestion) => ({
+      ...suggestion,
+      text: rehydrate(suggestion.text),
+    })),
+  }
+
+  return { analysis, detected, discardedFieldIds: noteResult.discardedFieldIds }
+}
+
 consultationsRouter.post('/:id/analyze', async (req, res) => {
   const actor = doctorId(req)
   const consultation = await assertOwnedConsultation(req.params.id, actor)
@@ -239,62 +319,11 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
   })
 
   try {
-    const { text, vault, detected } = await timeStage('deidentification', () =>
-      deidentifyTranscript(transcript.data),
+    const { analysis, detected, discardedFieldIds } = await runAnalysis(
+      transcript.data,
+      profile,
+      consultation.id,
     )
-
-    // Labels and a count, never the matched values (GitHub issue #15).
-    logger.info('de-identification complete', {
-      consultationId: consultation.id,
-      detectorLabels: detected,
-      detectorCount: detected.length,
-    })
-
-    // Runs on the raw transcript, in-process, regardless of model output. It
-    // never leaves the API, so it needs no gate.
-    const ruleFlags = await timeStage('rules', () =>
-      evaluateRedFlags(transcript.data, profile.redFlagTriggers),
-    )
-
-    const [noteResult, suggestionResult] = await Promise.all([
-      timeStage('note_generation', () => analyseNote(text, text, profile)),
-      timeStage('retrieval', () => generateSuggestions(text, profile)),
-    ])
-
-    const rehydrate = (value: string) => vault.rehydrate(value)
-
-    const analysis = {
-      note: {
-        subjective: rehydrate(noteResult.note.subjective),
-        objective: rehydrate(noteResult.note.objective),
-        assessment: rehydrate(noteResult.note.assessment),
-        plan: rehydrate(noteResult.note.plan),
-      },
-      profileId: profile.id,
-      gaps: mergeGaps(
-        deriveGaps(noteResult.clinicalFacts, noteResult.operational, profile.gapChecklist),
-        noteResult.gaps,
-      ).map((gap) => ({
-        ...gap,
-        question: rehydrate(gap.question),
-        rationale: rehydrate(gap.rationale),
-      })),
-      redFlags: mergeRedFlags(ruleFlags, suggestionResult.redFlags).map((flag) => ({
-        ...flag,
-        label: rehydrate(flag.label),
-        evidence: rehydrate(flag.evidence),
-      })),
-      // The reviewed checklist, surfaced rather than discarded. Without these
-      // the UI cannot render a `NOT_ASSESSED` it was never sent, and docs/prd.md
-      // §10's "unestablished, never absent" requirement has nothing to display
-      // (Demo Script step 5).
-      clinicalFacts: rehydrateAssertions(noteResult.clinicalFacts, rehydrate),
-      operational: rehydrateAssertions(noteResult.operational, rehydrate),
-      suggestions: suggestionResult.suggestions.map((suggestion) => ({
-        ...suggestion,
-        text: rehydrate(suggestion.text),
-      })),
-    }
 
     const updated = await timeStage('persistence', () =>
       prisma.consultation.update({
@@ -310,7 +339,7 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
       consultationId: consultation.id,
       metadata: {
         detected,
-        discardedFieldIds: noteResult.discardedFieldIds,
+        discardedFieldIds,
         profileId: profile.id,
         versions: {
           provider: llm.provider,
@@ -332,6 +361,111 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
       action: 'consultation.analysis_failed',
       actorId: actor,
       consultationId: consultation.id,
+      metadata: { reason: classifyFailure(error) },
+    })
+
+    throw new HttpError(500, 'analysis_failed', 'Analysis could not be completed.')
+  }
+})
+
+/**
+ * Bounds on a transcript that arrives in the request body (#80).
+ *
+ * Every other clinical route analyses a transcript the caller already stored,
+ * so the create route bounded it. This one takes it directly, and
+ * `TranscriptSchema` has `.min(1)` on turns and no upper bound at all, which
+ * would leave `express.json({ limit: '1mb' })` as the only thing between a
+ * guest session and an arbitrarily large prompt.
+ *
+ * Sized well above a real consultation rather than tightly: the longest
+ * fixture is a few thousand characters, so these bound abuse without being
+ * reachable by clinical use.
+ */
+const MAX_TURNS = 300
+const MAX_TURN_CHARS = 4_000
+const MAX_TRANSCRIPT_CHARS = 60_000
+
+const EphemeralBodySchema = z.object({
+  transcript: TranscriptSchema.superRefine((transcript, ctx) => {
+    if (transcript.turns.length > MAX_TURNS) {
+      ctx.addIssue({ code: 'custom', message: `A transcript may have at most ${MAX_TURNS} turns.` })
+    }
+    if (transcript.turns.some((turn) => turn.text.length > MAX_TURN_CHARS)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `A turn may be at most ${MAX_TURN_CHARS} characters.`,
+      })
+    }
+    const total = transcript.turns.reduce((sum, turn) => sum + turn.text.length, 0)
+    if (total > MAX_TRANSCRIPT_CHARS) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `A transcript may be at most ${MAX_TRANSCRIPT_CHARS} characters.`,
+      })
+    }
+  }),
+  profileId: ProfileIdSchema.optional(),
+})
+
+/**
+ * Demo Mode's ephemeral analysis (#80), authorised by the owner on 14/08/26.
+ *
+ * It runs the same pipeline as the stored route above and writes **no
+ * `Consultation`**, which is the whole point: Demo Mode has to be
+ * self-contained and wiped the moment it is exited, and if nothing is
+ * persisted there is nothing to wipe. That sidesteps the retention decision in
+ * docs/trd.md §19 rather than pre-empting it, and it avoids adding an erasure
+ * endpoint to serve a demo, which would route around a control that exists for
+ * audit integrity.
+ *
+ * **It is audited even though it persists nothing.** The endpoint cannot
+ * distinguish demo content from real content, so "it is only synthetic" is a
+ * property of intent rather than of the system, and an unaudited LLM egress
+ * would be a hole in the property the whole PHI boundary rests on. The row
+ * carries an actor and no consultation, which the hash chain already supports.
+ *
+ * No `:id`, so `assertOwnedConsultation` has nothing to scope. Authentication
+ * still applies: `/api/consultations` is in `PROTECTED_PREFIXES`, so
+ * `requireSession` runs before this. A tidier-looking `/api/analyze` would have
+ * been unauthenticated by default.
+ */
+consultationsRouter.post('/analyze-ephemeral', async (req, res) => {
+  const actor = doctorId(req)
+
+  const body = EphemeralBodySchema.safeParse(req.body)
+  if (!body.success) {
+    throw new HttpError(400, 'invalid_body', 'A valid transcript is required.')
+  }
+
+  const profile = getClinicalProfile(body.data.profileId ?? DEFAULT_PROFILE_ID)
+
+  try {
+    const { analysis, detected, discardedFieldIds } = await runAnalysis(
+      body.data.transcript,
+      profile,
+    )
+
+    const llm = getLLMDescriptor()
+    await recordAuditEvent({
+      action: 'consultation.ephemeral_analyzed',
+      actorId: actor,
+      metadata: {
+        detected,
+        discardedFieldIds,
+        profileId: profile.id,
+        versions: {
+          provider: llm.provider,
+          model: llm.model,
+          clinicalContent: getActiveClinicalVersions(profile),
+        },
+      },
+    })
+
+    res.json({ analysis: ConsultationAnalysisSchema.parse(analysis) })
+  } catch (error) {
+    await recordAuditEvent({
+      action: 'consultation.ephemeral_analysis_failed',
+      actorId: actor,
       metadata: { reason: classifyFailure(error) },
     })
 

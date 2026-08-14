@@ -38,3 +38,28 @@ export const analyzeRateLimit = rateLimit({
     error: { code: 'rate_limited', message: 'Too many analysis requests. Please retry shortly.' },
   },
 })
+
+/**
+ * Per-IP limiter for `POST /api/consultations/analyze-ephemeral` (#80).
+ *
+ * Tighter than `analyzeRateLimit`, and on its own bucket rather than sharing
+ * that one, for two reasons. The route is reachable from a guest session, and
+ * `POST /api/auth/guest` is limited by neither `express-rate-limit` nor
+ * better-auth, so anyone can mint an actor for free. And it takes a transcript
+ * in the request body instead of resolving one the caller already owns, so
+ * unlike every other clinical route it spends an LLM call without the caller
+ * having created anything first.
+ *
+ * A shared bucket would also let demo traffic exhaust a real doctor's analysis
+ * budget, which is the wrong way round.
+ */
+export const ephemeralAnalyzeRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: { code: 'rate_limited', message: 'Too many analysis requests. Please retry shortly.' },
+  },
+})

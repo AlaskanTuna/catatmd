@@ -564,3 +564,98 @@ describe('erased consultations', () => {
     expect(detail.status).toBe(404)
   })
 })
+
+/**
+ * Demo Mode's ephemeral analysis (#80). The property under test is not that it
+ * returns an analysis, it is that it returns one **without persisting
+ * anything** while still leaving an audit trail. Those two pull in opposite
+ * directions, which is why the endpoint needed a decision before it was built.
+ */
+describe('POST /api/consultations/analyze-ephemeral', () => {
+  const body = (turns: { speaker: string; text: string }[]) => ({
+    transcript: { source: 'paste', turns },
+  })
+
+  it('returns an analysis and writes no consultation', async () => {
+    const res = await call('POST', '/api/consultations/analyze-ephemeral', body(TRANSCRIPT.turns))
+    const json = (await res.json()) as { analysis: { note: { subjective: string } } }
+
+    expect(res.status).toBe(200)
+    expect(json.analysis.note.subjective).toContain('Ahmad')
+    expect(store.size, 'the ephemeral route must persist nothing').toBe(0)
+  })
+
+  it('audits the egress with an actor and no consultation', async () => {
+    await call('POST', '/api/consultations/analyze-ephemeral', body(TRANSCRIPT.turns))
+
+    expect(audits).toHaveLength(1)
+    expect(audits[0]?.action).toBe('consultation.ephemeral_analyzed')
+    // Stored as an explicit null rather than omitted: `recordAuditEvent`
+    // normalises it for Prisma, and `computeAuditHash` folds it in as ''.
+    expect(
+      audits[0]?.consultationId ?? null,
+      'nothing was persisted, so there is no consultation to point at',
+    ).toBeNull()
+  })
+
+  /**
+   * The row exists to record that an egress happened, never what was in it.
+   * Detector labels are the whole of what may be written.
+   */
+  it('records detector labels and never the values that fired them', async () => {
+    await call('POST', '/api/consultations/analyze-ephemeral', body(TRANSCRIPT.turns))
+
+    const metadata = audits[0]?.metadata as { detected: string[] }
+    expect(metadata.detected).toContain('PATIENT')
+    expect(JSON.stringify(metadata)).not.toContain('Ahmad')
+  })
+
+  /**
+   * It is the same pipeline as the stored route, so the safety invariant that
+   * matters most has to survive it: a model response can add candidates and can
+   * never suppress a deterministic hit.
+   */
+  it('still merges rule flags as a union with model candidates', async () => {
+    const res = await call('POST', '/api/consultations/analyze-ephemeral', body(TRANSCRIPT.turns))
+    const { analysis } = (await res.json()) as {
+      analysis: { redFlags: { ruleId?: string; source: string }[] }
+    }
+
+    expect(analysis.redFlags.map((f) => f.source).sort()).toEqual(['model', 'rule'])
+    expect(analysis.redFlags.find((f) => f.source === 'rule')?.ruleId).toBe('r1')
+  })
+
+  it('rejects a transcript with too many turns', async () => {
+    const turns = Array.from({ length: 301 }, () => ({ speaker: 'patient', text: 'cough' }))
+
+    const res = await call('POST', '/api/consultations/analyze-ephemeral', body(turns))
+
+    expect(res.status).toBe(400)
+    expect(store.size).toBe(0)
+  })
+
+  it('rejects a single turn over the character cap', async () => {
+    const turns = [{ speaker: 'patient', text: 'x'.repeat(4001) }]
+
+    const res = await call('POST', '/api/consultations/analyze-ephemeral', body(turns))
+
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects a transcript over the total character cap', async () => {
+    const turns = Array.from({ length: 20 }, () => ({
+      speaker: 'patient',
+      text: 'x'.repeat(3_500),
+    }))
+
+    const res = await call('POST', '/api/consultations/analyze-ephemeral', body(turns))
+
+    expect(res.status).toBe(400)
+  })
+
+  it('rejects an empty transcript, which TranscriptSchema already bounded', async () => {
+    const res = await call('POST', '/api/consultations/analyze-ephemeral', body([]))
+
+    expect(res.status).toBe(400)
+  })
+})

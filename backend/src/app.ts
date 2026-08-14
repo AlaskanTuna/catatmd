@@ -4,7 +4,7 @@ import express from 'express'
 import helmet from 'helmet'
 import { env } from './config/env.js'
 import { errorHandler } from './middleware/error-handler.js'
-import { analyzeRateLimit } from './middleware/rate-limit.js'
+import { analyzeRateLimit, ephemeralAnalyzeRateLimit } from './middleware/rate-limit.js'
 import { requestContext } from './middleware/request-context.js'
 import { requireSession } from './middleware/require-session.js'
 import { authRouter } from './routes/auth.js'
@@ -46,6 +46,10 @@ export function createApp() {
   // Registered ahead of the consultation routes themselves so the limiter runs
   // whichever router later owns this path.
   app.post('/api/consultations/:id/analyze', analyzeRateLimit)
+  // Separate bucket, and tighter: this one is guest-reachable and takes its
+  // transcript from the body, so it spends an LLM call without the caller
+  // having stored anything first (#80).
+  app.post('/api/consultations/analyze-ephemeral', ephemeralAnalyzeRateLimit)
 
   // ── Clinical routers ─────────────────────────────────────────────────────
   // These inherit the session guard and the analyze limiter above, and must

@@ -85,7 +85,33 @@ export type ConsultationAuditEvent =
  */
 export type AuthAuditEvent = { action: 'auth.session.created' }
 
-export type AuditEventInput = ConsultationAuditEvent | AuthAuditEvent
+/**
+ * Demo Mode's ephemeral analysis (#80). It spends a real LLM call and writes no
+ * `Consultation`, so it belongs to an actor and to no consultation for the same
+ * structural reason auth events do.
+ *
+ * It is audited despite persisting nothing. The endpoint cannot tell demo
+ * content from real content, so "it is only synthetic" is a property of intent
+ * rather than of the system, and an unaudited egress would be a hole in the one
+ * property the PHI boundary rests on. The row records **that** an analysis
+ * happened, never what was in it: the same labels-only rule as everything above.
+ */
+export type EphemeralAuditEvent =
+  | {
+      action: 'consultation.ephemeral_analyzed'
+      metadata: {
+        detected: readonly string[]
+        discardedFieldIds: readonly string[]
+        profileId: ProfileId
+        versions: AnalysisVersions
+      }
+    }
+  | {
+      action: 'consultation.ephemeral_analysis_failed'
+      metadata: { reason: AnalysisFailureReason }
+    }
+
+export type AuditEventInput = ConsultationAuditEvent | AuthAuditEvent | EphemeralAuditEvent
 
 /**
  * How many times an append may lose the race for the chain head before giving
@@ -128,7 +154,8 @@ function isChainHeadRace(error: unknown): boolean {
 export async function recordAuditEvent(
   event:
     | (ConsultationAuditEvent & { actorId: string; consultationId: string })
-    | (AuthAuditEvent & { actorId: string }),
+    | (AuthAuditEvent & { actorId: string })
+    | (EphemeralAuditEvent & { actorId: string }),
 ): Promise<void> {
   const { action, actorId } = event
   const consultationId = 'consultationId' in event ? event.consultationId : undefined
