@@ -11,7 +11,7 @@ import { PageHeader } from '../ui/PageHeader.js'
 const GUEST_EMAIL = 'guest@catatmd.demo'
 
 /**
- * Account settings (issue #123).
+ * Account settings (PR #124).
  *
  * **There is deliberately no "reset to factory".** This app stores no
  * server-side preferences: `User` carries an identity and nothing else, and the

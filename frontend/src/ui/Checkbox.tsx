@@ -4,7 +4,7 @@ import { cn } from '../lib/cn.js'
 
 /**
  * A checkbox that belongs to this design system rather than to the operating
- * system (issue #123).
+ * system (PR #124).
  *
  * The native control cannot be restyled past its accent colour in any engine
  * that matters, so a browser checkbox sitting beside `Button` and `Select` reads

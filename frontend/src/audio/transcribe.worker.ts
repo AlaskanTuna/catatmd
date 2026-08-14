@@ -139,6 +139,15 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     }
 
     const asr = await load()
+    /*
+     * The model is loaded; everything after this is inference. Without this
+     * the caller never leaves `loading-model`, because `ready` was only ever
+     * posted for an explicit `load` request and nothing sends one. The
+     * component's "Transcribing on this device" copy was therefore
+     * unreachable, and a long recording spent its whole run claiming to be
+     * downloading a model it had already cached.
+     */
+    post({ type: 'ready' })
     const output = await asr(event.data.audio, {
       /*
        * Pinned to English, never read from a locale or from the patient's
