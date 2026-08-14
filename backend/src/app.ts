@@ -8,6 +8,7 @@ import {
   analyzeRateLimit,
   ephemeralAnalyzeRateLimit,
   eraseRateLimit,
+  guestSignInRateLimit,
 } from './middleware/rate-limit.js'
 import { requestContext } from './middleware/request-context.js'
 import { requireSession } from './middleware/require-session.js'
@@ -41,6 +42,12 @@ export function createApp() {
   app.use(helmet())
   app.use(compression())
   app.use(cors({ origin: env.CORS_ORIGIN, credentials: true }))
+
+  // Ahead of the auth router, for the same reason the clinical limiters sit
+  // ahead of theirs. `/api/auth/guest` is registered before better-auth's
+  // catch-all and so never reaches that router's own limiter, which left the
+  // cheapest way to mint an actor unbounded.
+  app.post('/api/auth/guest', guestSignInRateLimit)
 
   // Before express.json() — better-auth consumes the raw request stream.
   app.use('/api', authRouter)

@@ -122,3 +122,42 @@ describe('sign-up (docs/trd.md §14, §19 row 4)', () => {
     expect(res.status).toBeGreaterThanOrEqual(400)
   })
 })
+
+describe('guest sign-in rate limit', () => {
+  /**
+   * `/api/auth/guest` is registered ahead of better-auth's catch-all, so it
+   * never reaches that router's own limiter and was bounded by nothing. It
+   * mints a session for a shared account without any credential of the
+   * caller's, which makes it the cheapest actor in the system to obtain.
+   *
+   * Driven from one fixed address, because the thing under test is precisely
+   * that requests from a single caller are counted together.
+   */
+  const CALLER = '203.0.113.77'
+
+  const guest = () =>
+    fetch(`${origin}/api/auth/guest`, {
+      method: 'POST',
+      headers: { 'x-forwarded-for': CALLER },
+    })
+
+  it('returns 429 once one caller exceeds the window', async () => {
+    let limited: Response | undefined
+
+    // One over the limit. Every earlier response is allowed to be anything the
+    // route decides, including the 404 it returns when no guest is configured:
+    // what matters is that the limiter counts requests rather than successes.
+    for (let attempt = 0; attempt <= 20; attempt += 1) {
+      const response = await guest()
+      if (response.status === 429) {
+        limited = response
+        break
+      }
+    }
+
+    expect(limited?.status, 'a 21st request in the window must be refused').toBe(429)
+    await expect(limited?.json()).resolves.toMatchObject({
+      error: { code: 'rate_limited' },
+    })
+  })
+})
