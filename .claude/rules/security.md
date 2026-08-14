@@ -43,7 +43,8 @@ Maps to OWASP LLM01 Prompt Injection, LLM02 Sensitive Information Disclosure, LL
 - **The transcript is untrusted input.** A patient or a dictation can contain text shaped like an instruction. The control is the response schema, not the prompt wording: closed schemas, enums, and no free-text escape hatch. Prompt-level defenses fail silently and do not count as controls.
 - Every model response is validated with `request.schema.safeParse` inside the adapter before it reaches a route. Never act on unparsed model output.
 - Schema failure messages can embed model output. They are currently contained because the route collapses them into a generic `HttpError(500, 'analysis_failed')` and the logger never writes `err.message`. Keep both ends of that.
-- **Not built today:** no request timeout, no `AbortController`, no pinned `maxRetries` on the `OpenAI` constructor. Any new LLM call path should set an explicit timeout rather than inherit SDK defaults.
+- **Request bounds are on the constructor, and belong there** (issue #94). `timeout: 60_000` and `maxRetries: 1` replace SDK defaults of 10 minutes and 2 retries, which compounded to roughly 30 minutes per operation because the SDK retries timeouts. Constructor-level, not per-request, so every call path inherits them. Do not move them to a call site, and do not add a provider that bypasses `OpenAICompatibleClient`. Pinned by `backend/src/lib/llm/openai-compatible.test.ts` (OWASP LLM10 Unbounded Consumption).
+- **Not built today:** no `AbortController`, so a client disconnect does not cancel an in-flight provider call. That is a quota control, not a bound on hang time; the timeout above is what bounds the hang.
 
 ## Clinical Safety Invariants
 

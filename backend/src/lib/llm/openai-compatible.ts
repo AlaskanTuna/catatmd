@@ -10,6 +10,27 @@ import {
 } from './types.js'
 
 /**
+ * Wall-clock bounds on a single provider call (GitHub issue #94).
+ *
+ * The SDK defaults are a 10-minute timeout and two silent retries, and it
+ * retries timeouts, so one operation could occupy roughly 30 minutes against
+ * CAP-1's 30-second budget. `max_tokens` below already bounds the response's
+ * *size*; nothing bounded its *time*.
+ *
+ * 60s is roughly 3x the measured worst case (docs/trd.md §19 row 19: mean
+ * 19.9s, worst 21.6s through the shipped `analyseNote`), so it cannot fire on a
+ * healthy call. One retry is kept because a *fast* transient failure, such as a
+ * refused connection inside the first second, still has room to finish inside
+ * the budget. It caps the pathological case at two minutes rather than thirty.
+ *
+ * Both sit on the constructor rather than on each request, so they cover every
+ * call path without opt-in. Same reasoning as the egress guard below: a bound a
+ * caller can skip by building the client differently is not a bound.
+ */
+const REQUEST_TIMEOUT_MS = 60_000
+const MAX_RETRIES = 1
+
+/**
  * One adapter covers all three providers — Qwen (Model Studio, Singapore),
  * DeepSeek, and Gemini all expose OpenAI-compatible chat completions with
  * JSON-schema structured output.
@@ -25,7 +46,12 @@ export class OpenAICompatibleClient implements LLMClient {
     readonly model: string,
     options: { apiKey: string; baseURL: string },
   ) {
-    this.client = new OpenAI({ apiKey: options.apiKey, baseURL: options.baseURL })
+    this.client = new OpenAI({
+      apiKey: options.apiKey,
+      baseURL: options.baseURL,
+      timeout: REQUEST_TIMEOUT_MS,
+      maxRetries: MAX_RETRIES,
+    })
   }
 
   async generate<T>(request: GenerateRequest<T>): Promise<T> {
