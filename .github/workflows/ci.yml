@@ -174,8 +174,13 @@ jobs:
 
           # `shared/` is here because the frontend imports @shared/types and the
           # build inlines it. `vercel.json` and this workflow both change how the
-          # deployment is produced.
-          if echo "$changed" | grep -qE '^(frontend/|shared/|vercel\.json$|\.github/workflows/ci\.yml$)'; then
+          # deployment is produced. The three root files are build inputs Vercel
+          # reads even when nothing under `frontend/` moved: `bun.lock` and the
+          # root `package.json` are what `installCommand: bun install` resolves
+          # against, and `frontend/tsconfig.json` extends `../tsconfig.json`, so
+          # `tsc -b` reads the root one. Each alternative is anchored by the
+          # leading `^`, so `backend/package.json` still skips correctly.
+          if echo "$changed" | grep -qE '^(frontend/|shared/|vercel\.json$|bun\.lock$|package\.json$|tsconfig\.json$|\.github/workflows/ci\.yml$)'; then
             echo "deployable=true" >> "$GITHUB_OUTPUT"
             echo "Deployable paths touched."
           else
