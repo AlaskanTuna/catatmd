@@ -1,8 +1,9 @@
 import type { Transcript, TranscriptSource, TranscriptTurn } from '@shared/types'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { FileUp, FolderOpen, Type } from 'lucide-react'
+import { FileUp, FolderOpen, Mic, Type } from 'lucide-react'
 import { type ChangeEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { AudioCapture } from '../audio/AudioCapture.js'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
@@ -41,6 +42,7 @@ const TABS = [
   { id: 'fixture', label: 'Bundled Case', Icon: FolderOpen },
   { id: 'paste', label: 'Paste', Icon: Type },
   { id: 'upload', label: 'Upload', Icon: FileUp },
+  { id: 'record', label: 'Record', Icon: Mic },
 ] as const
 
 export function ConsultationNew() {
@@ -170,6 +172,29 @@ export function ConsultationNew() {
                 className="mt-2 text-sm file:mr-3 file:min-h-10 file:rounded-control file:border file:border-line file:bg-surface file:px-3 file:text-sm file:font-medium"
               />
             </label>
+          </Card>
+        )}
+
+        {tab === 'record' && (
+          <Card className="p-6">
+            <AudioCapture
+              onTranscript={(transcribed) => {
+                /*
+                 * Appended, never replacing what is already there. A doctor may
+                 * record in passes, or have started typing, and silently
+                 * discarding either would lose clinical content the same way the
+                 * parser's dropped-continuation bug would have.
+                 *
+                 * `asr_local` is the honest provenance: transcribed on device.
+                 * It is client-asserted and the API cannot verify it, which is
+                 * why nothing in the safety architecture rests on it.
+                 */
+                setText((current) =>
+                  current ? `${current.trimEnd()}\n${transcribed}` : transcribed,
+                )
+                setSource('asr_local')
+              }}
+            />
           </Card>
         )}
 
