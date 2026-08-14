@@ -111,15 +111,17 @@ jobs:
   #
   #     This job was originally written on the assumption that a
   #     token-authenticated CLI deploy is attributed to the token owner, so
-  #     authorship would stop mattering. That assumption is wrong, and the
-  #     evidence is in the deployment record: the CLI attaches the checkout's
-  #     git metadata, and Vercel applies the same author restriction to it.
-  #     Of the last 100 deployments, every BLOCKED one was authored by a
-  #     non-owner and every owner-authored one built, across both paths. So a
-  #     merge of a collaborator-authored commit still does not reach
-  #     production. Moving deployment here did fix reason 2 below and made the
-  #     failure visible instead of silent, but the plan limit needs a plan
-  #     decision.
+  #     authorship would stop mattering. That assumption is wrong: the CLI
+  #     attaches the checkout's git metadata, and Vercel applies the same
+  #     author restriction to it.
+  #
+  #     It was then concluded that only a plan upgrade could fix this. That is
+  #     also wrong. The restriction is on the git author the CLI *finds*, not
+  #     on the token or the plan, so removing the repository from the deploy
+  #     step's working directory removes the author being checked. The two-arm
+  #     measurement is recorded on the staging step below. Collaborator commits
+  #     now deploy on their own merge rather than waiting for the next
+  #     owner-authored one to carry them.
   #  2. Git-integration deploys ignored CI. A red build shipped, and worse, a
   #     green build silently did not: after #50 merged, Vercel reported the
   #     deployment Ready while catatmd.vercel.app kept serving the previous
@@ -279,8 +281,43 @@ jobs:
       # timed-out job as "cancelled", which is indistinguishable at a glance
       # from a superseded run, so the real cause was invisible. The readiness
       # check below owns the waiting instead, bounded and with a named verdict.
+      # Deployed from a copy of the build output that sits outside the checkout,
+      # which is what makes a collaborator's commit deployable at all.
+      #
+      # Vercel Hobby refuses to build a deployment whose **git author** is not
+      # the account owner, and the CLI attaches that author by reading the git
+      # repository in its working directory. Running from a directory with no
+      # repository leaves it nothing to read, so there is no author to refuse.
+      #
+      # Measured 14/08/26 on the same build output, same token, same project,
+      # with HEAD at 1047bb1 (authored by the collaborator):
+      #
+      #   deployed from the checkout   -> readyState BLOCKED,
+      #                                   gitAuthor lingjingjie789@gmail.com
+      #   deployed from a git-less dir -> readyState READY, no author attached
+      #
+      # The cost is that Vercel's dashboard no longer shows a commit against the
+      # deployment. That is why `--meta commitSha` below is load-bearing rather
+      # than decorative: it is now the only provenance link, and the identity
+      # check further down reads it back.
+      - name: Stage build output outside the repository
+        id: stage
+        run: |
+          staging="$(mktemp -d)"
+          cp -R .vercel "$staging/.vercel"
+          # Assert the premise rather than trust it. If this ever ends up inside
+          # a repository, deploys would silently start being refused again for
+          # exactly one contributor, which is the failure this step exists to
+          # prevent and the hardest kind to spot.
+          if git -C "$staging" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            echo "::error::Staging directory $staging is inside a git repository, so Vercel would read a commit author from it and refuse a collaborator's deployment."
+            exit 1
+          fi
+          echo "dir=$staging" >> "$GITHUB_OUTPUT"
+
       - name: Deploy prebuilt output
         id: deploy
+        working-directory: ${{ steps.stage.outputs.dir }}
         run: |
           url="$(vercel deploy --prebuilt --prod --no-wait \
             --meta commitSha="$GITHUB_SHA" \
