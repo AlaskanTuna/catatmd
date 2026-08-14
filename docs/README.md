@@ -128,6 +128,8 @@ The claim stops there rather than going one word further, because on modest clin
 
 That last clause is the load-bearing one. Silently switching to hosted transcription because a device is slow would be a privacy control that fails **open** under load — degrading exactly when the doctor is least able to notice — so it is written down as rejected rather than left to an implementer's judgement. The hosted adapter is specified and audited but **not built**. See `docs/trd.md` §20.
 
+**One request does leave the browser on the on-device path, and it is named here rather than left to be discovered.** The speech model's weights are fetched from a public CDN the first time they are needed, then cached. It is a download of public model weights, not an upload: no audio, no transcript and no identifier is part of it, because the request happens before any of them exist. The CDN sees the clinic's IP address and which model was asked for, and nothing else. Nothing that data-residency rules attach to leaves the country on that path, because no patient data is in the request. If a deployment requires that no third-party endpoint be contacted at all, the weights can be served from the application's own origin instead, at the cost of hosting the model as a static asset. Who observes what is set out in full in `docs/trd.md` §20.
+
 ### The Provider Is A Swappable Adapter
 
 All three supported providers speak the OpenAI-compatible protocol and are selected by `LLM_PROVIDER`. This is a deliberate architectural commitment: it is what makes "what happens when data residency requirements change" answerable with a configuration change rather than a rewrite.
