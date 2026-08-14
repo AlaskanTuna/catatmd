@@ -7,13 +7,20 @@ vi.mock('../lib/llm/index.js', () => ({
 }))
 
 import { getClinicalProfile } from '../clinical-profiles/index.js'
-import type { Deidentified } from '../deid/types.js'
+import { deidentify } from '../deid/index.js'
 import { corpusIdsFor } from '../guidelines/index.js'
 import type { GenerateRequest } from '../lib/llm/types.js'
 import { generateSuggestions } from './index.js'
 
-const content =
-  'Doctor: What brings you in? Patient: [PATIENT_1] here, cough 3 days.' as Deidentified
+/**
+ * Minted through the gate rather than cast into the brand (issue #86). The text
+ * is already tokenised, so `deidentify` is a no-op on it and the fixture is
+ * unchanged; what changes is that this no longer asserts the value came through
+ * the gate, it demonstrates it.
+ */
+const { text: content } = deidentify(
+  'Doctor: What brings you in? Patient: [PATIENT_1] here, cough 3 days.',
+)
 
 const firstCorpusId = corpusIdsFor(getClinicalProfile().guidelineCorpus)[0]
 
