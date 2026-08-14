@@ -30,10 +30,13 @@ export class OpenAICompatibleClient implements LLMClient {
 
   async generate<T>(request: GenerateRequest<T>): Promise<T> {
     // The egress guard (docs/trd.md §19 row 2). `Deidentified` guarantees the
-    // *shape* of what arrives here, not its *provenance* — `markDeidentified`
-    // is exported, so a value could in principle be branded without ever
-    // passing through detection (§5). This re-scans the payload immediately
-    // before it leaves the process and refuses to send it if anything fires.
+    // *shape* of what arrives here, not its *provenance*, so a value could in
+    // principle be branded without ever passing through detection (§5).
+    // `markDeidentified` has been module-private to `deid/index.ts` since
+    // 13/08/26, which closed the import-it-and-brand-anything route; a
+    // deliberate `as Deidentified` cast remains possible, because TypeScript
+    // cannot prevent one. This re-scans the payload immediately before it
+    // leaves the process and refuses to send it if anything fires.
     //
     // It runs inside the adapter rather than being injected, because a guard a
     // caller can omit by constructing the client differently is not a boundary.
