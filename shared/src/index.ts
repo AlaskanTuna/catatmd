@@ -310,6 +310,7 @@ export const EvidenceLinkSchema = z.object({
   speaker: SpeakerSchema.optional(),
   offsetSeconds: z.number().nonnegative().optional(),
 })
+export type EvidenceLink = z.infer<typeof EvidenceLinkSchema>
 
 // ─── Analysis envelope ───────────────────────────────────────────────────────
 
