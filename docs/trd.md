@@ -936,6 +936,22 @@ Two rules follow, both of which cost time to discover:
 
 Treat `render.yaml` as the definition used at creation and as documentation thereafter. It is not a control surface for a running service, and a reader cannot tell the difference from the file alone.
 
+#### Configuration That Lives Outside The Repository
+
+The `render.yaml` trap above is one instance of a shape worth naming, because it has now caught us twice: **the repository reads as authoritative, is not, and nothing reports the disagreement.** A reviewer reading the diff cannot see the divergence, and neither can CI.
+
+| Surface                 | What the repo cannot see                                                                              | How you would notice                                                                 |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Render env vars         | Service values win after creation; `render.yaml` only seeds them (above)                              | Compare `GET /v1/services/{id}/env-vars` against `render.yaml` before trusting a pin |
+| Vercel project settings | Build command, root directory, install command and env vars set in the dashboard override repo intent | `vercel inspect` the live deployment; the CI path filter cannot gate on them         |
+
+Two consequences for the deploy path filter (§17, `changes` job):
+
+- It gates on **repository paths only**. A dashboard-side settings change alters the deployed bundle while touching no file, so no filter can trigger on it. That is a known limit, not a defect to fix.
+- It is therefore not a completeness guarantee. It answers "can this push have changed the bundle", never "is production equal to `main`".
+
+When a deploy-affecting change is made outside the repository, record it here in the same commit. That is the only mechanism this project has for making it visible to the next reader.
+
 ### Pooled Versus Direct URL Split
 
 `DATABASE_URL` (Supavisor pooler, `:6543`, `pgbouncer=true`) is used by the running app; `DIRECT_URL` (`:5432`) is used only by `prisma migrate` — both already `Built` in `EnvSchema` (§7), `.env.example`, and `render.yaml`.
