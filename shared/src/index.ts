@@ -316,6 +316,23 @@ export const ConsultationAnalysisSchema = z.object({
    */
   clinicalFacts: ClinicalFactsSchema.optional(),
   operational: OperationalBlockSchema.optional(),
+  /**
+   * Whether the consultation fell outside the guideline corpus, carried through
+   * to the reader rather than stopping at the pipeline.
+   *
+   * The model already produces this and `makeSuggestionsAndRedFlagsSchema`
+   * documents why it exists: an empty `suggestions` array conflates "out of
+   * scope, suggestions suppressed" with "in scope, nothing to suggest"
+   * (docs/trd.md §19 row 7). That reasoning only pays off if the distinction
+   * survives to the UI, and until now it was dropped when the analysis was
+   * assembled, leaving the review screen to hedge with "this **may be** outside
+   * the corpus's scope" about something the system already knew.
+   *
+   * Optional because consultations analysed before this shipped have no value
+   * persisted. Absence means "not recorded by this version" and must keep the
+   * old hedge, never be read as `false`.
+   */
+  outOfScope: z.boolean().optional(),
 })
 
 // ─── Consultation lifecycle ──────────────────────────────────────────────────

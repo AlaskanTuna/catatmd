@@ -42,6 +42,12 @@
   --color-accent-hover: oklch(0.405 0.082 168);
   --color-accent-ink: oklch(1 0 0);
 
+  /* The two stops of the coachmark ring's gradient. Same hue as the accent so
+   * the tour reads as part of the product, separated on lightness and chroma
+   * rather than hue so the travelling highlight is legible at 50% opacity. */
+  --color-tour-ring: oklch(0.52 0.096 168);
+  --color-tour-ring-lit: oklch(0.78 0.085 168);
+
   /* Severity. One grammar: solid card, coloured rule, icon, word label. */
   --color-emergency: oklch(0.486 0.192 27);
   --color-emergency-rule: oklch(0.552 0.208 28);
@@ -153,6 +159,11 @@
     --color-accent: oklch(0.72 0.11 168);
     --color-accent-hover: oklch(0.78 0.115 168);
     --color-accent-ink: oklch(0.185 0.006 160);
+
+    /* Inverted against light: the lit stop is the brighter one in both themes,
+     * but on a dark ground the base has to lift to stay visible at 50%. */
+    --color-tour-ring: oklch(0.68 0.1 168);
+    --color-tour-ring-lit: oklch(0.88 0.07 168);
 
     --color-emergency: oklch(0.72 0.165 30);
     --color-emergency-rule: oklch(0.72 0.165 30);
@@ -296,6 +307,49 @@
     box-shadow:
       0 1px 2px oklch(0 0 0 / 0.04),
       0 8px 24px -8px oklch(0 0 0 / 0.12);
+  }
+
+  /*
+   * The coachmark ring: a gradient that travels around the highlighted element.
+   *
+   * Drawn as a gradient-filled box with its own centre masked out, rather than
+   * as a border, because a border cannot carry a gradient that moves. The two
+   * masks composite to "paint the padding, punch out the content box", which
+   * leaves a 2px ring with a fully transparent middle so the element underneath
+   * is never tinted.
+   *
+   * At 50% opacity it marks without obscuring. A solid ring at full strength
+   * competes with the thing it is pointing at, which on this product is
+   * frequently a red flag.
+   */
+  .tour-ring {
+    opacity: 0.5;
+    padding: 2px;
+    background-image: linear-gradient(
+      105deg,
+      var(--color-tour-ring) 0%,
+      var(--color-tour-ring-lit) 25%,
+      var(--color-tour-ring) 50%,
+      var(--color-tour-ring-lit) 75%,
+      var(--color-tour-ring) 100%
+    );
+    background-size: 300% 100%;
+    animation: tour-ring-travel 6s linear infinite;
+    /* Prefix FIRST, standard LAST, for the same minifier reason as `.glass`. */
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+
+  @keyframes tour-ring-travel {
+    to {
+      background-position: -300% 0;
+    }
   }
 
   /* The one scrim. A single fixed layer carries the blur for the whole app;
@@ -476,6 +530,31 @@
 
     :root:not([data-motion='full']) .scrim {
       transition-property: opacity;
+    }
+
+    /*
+     * The coachmark ring keeps travelling, and this exemption is deliberate.
+     *
+     * The blanket rule above collapses every animation to 0.01ms, which is
+     * correct for decoration and wrong here: the travelling gradient is how the
+     * ring reads as the tour's pointer rather than as part of the highlighted
+     * component's own styling. Killing it does not reduce motion, it removes
+     * the affordance. Windows users who switch animations off for performance,
+     * which is the common reason, would silently get a worse tour than everyone
+     * else and no way to tell.
+     *
+     * Safe to exempt on the merits rather than merely convenient: WCAG 2.3.3
+     * targets motion that moves content or the viewport, and a colour stop
+     * sliding along a 2px ring at 50% opacity over six seconds moves neither.
+     * Nothing changes position, nothing parallaxes, nothing flashes.
+     *
+     * The explicit in-app setting below is still honoured. An OS-level flag is
+     * a broad hint; `data-motion="reduced"` is somebody choosing, in this
+     * product, and that choice wins over this exemption.
+     */
+    :root:not([data-motion='full']):not([data-motion='reduced']) .tour-ring {
+      animation-duration: 6s !important;
+      animation-iteration-count: infinite !important;
     }
   }
 
