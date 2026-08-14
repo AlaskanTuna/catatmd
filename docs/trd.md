@@ -1019,15 +1019,28 @@ Source: the `headers` block in `vercel.json`. The API is covered separately by `
 | `Permissions-Policy`         | `microphone=(self), camera=(), geolocation=(), ...` | **`microphone=(self)` is load-bearing**, see below.                                      |
 | `Cross-Origin-Opener-Policy` | `same-origin`                                       | Severs any opener relationship. Safe here because the app opens no cross-origin windows. |
 
-**Three entries look like they could be trimmed and cannot.** All three were established by loading the built app under the real policy and exercising the Record tab, not by reading documentation.
+**Four entries look like they could be trimmed and cannot.** All four were established by loading the built app under the real policy and exercising the Record tab, not by reading documentation.
 
 - **`'wasm-unsafe-eval'` in `script-src`.** The speech model is WebAssembly. Without this it cannot instantiate, and the failure appears as a broken Record tab rather than as an obvious policy error.
+- **`blob:` in `script-src`.** ONNX Runtime loads its execution backend by fetching it, wrapping the response in a `URL.createObjectURL` blob, and calling `import()` on that blob. A dynamic import is governed by `script-src`, not by `worker-src`, so `worker-src 'self' blob:` starts the worker and then the backend load inside it is blocked. The failure surfaces as `no available backend found. ERR: [wasm] TypeError: Failed to fetch dynamically imported module: blob:...`, **after** the model reports 100% downloaded, which reads as a model or network problem rather than a policy one.
 - **`microphone=(self)` in `Permissions-Policy`.** A policy that omits `microphone` denies it. Recording would be refused by the browser before any application code ran.
 - **`https://*.hf.co` in `connect-src`.** HuggingFace serves `huggingface.co` but **redirects model downloads to a different registrable path**, observed as `us.aws.cdn.hf.co`. Allowing only `huggingface.co` passes a superficial test, because the config and tokenizer files come from there, and then fails on the model weights.
 
 **`Cross-Origin-Embedder-Policy` is deliberately absent.** It would require every cross-origin response the speech model fetches to carry `Cross-Origin-Resource-Policy`, which the HuggingFace CDN does not send. Adding it would break transcription in exchange for a header this app gains nothing from, since it uses no `SharedArrayBuffer`.
 
-**How this was verified.** The production build was served locally under the exact policy string from `vercel.json`, same-origin with the API proxied, so that a CORS failure could not be mistaken for a CSP failure. The app was then exercised end to end including the Record tab. Zero violations were reported. A control run under `default-src *` behaved identically, which is what rules the policy out as the cause of any failure seen during that testing.
+**How this was verified.** The production build is served locally under the exact policy string from `vercel.json`, same-origin with the API proxied, so that a CORS failure cannot be mistaken for a CSP failure.
+
+**That method missed `blob:` once, and the reason is worth keeping.** The original verification drove the Record tab through the UI in a browser whose `transformers-cache` was already warm, so the backend load did not take the path that needs `blob:`. The policy then shipped and broke transcription for anyone arriving with a cold cache. Driving the UI is not a sufficient test of a policy, because the UI can be satisfied by cached state that a first-time visitor does not have.
+
+**So the check is now against the built worker directly**, which removes both the cache and the sign-in from the question:
+
+```js
+const w = new Worker('/assets/transcribe.worker-<hash>.js', { type: 'module' })
+w.onmessage = (e) => console.log(e.data) // expect { type: 'ready' }
+w.postMessage({ type: 'load' })
+```
+
+Run against two servers differing only in the policy string, this is a controlled A/B rather than an observation: without `blob:` in `script-src` it returns the `no available backend found` error above, with it the worker reports `ready`. `'unsafe-eval'` was checked the same way and is **not** required, so it stays out.
 
 ### Render Service Definition (`render.yaml`)
 
