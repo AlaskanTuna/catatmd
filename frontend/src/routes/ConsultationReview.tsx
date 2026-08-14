@@ -262,6 +262,7 @@ export function ConsultationReview() {
             <ChecklistPanel
               clinicalFacts={analysis.clinicalFacts}
               operational={analysis.operational}
+              evidenceLinks={analysis.evidenceLinks}
             />
           </section>
 

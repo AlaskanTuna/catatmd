@@ -1,11 +1,106 @@
-import type { ClinicalAssertion, ClinicalFacts, OperationalBlock } from '@shared/types'
+import type {
+  ClinicalAssertion,
+  ClinicalFacts,
+  EvidenceLink,
+  OperationalBlock,
+} from '@shared/types'
+import { Quote } from 'lucide-react'
 import { useState } from 'react'
+import { cn } from '../lib/cn.js'
 import { AssertionStateBadge } from '../ui/AssertionState.js'
 import { Card } from '../ui/Card.js'
 
 /** Field keys are camelCase in the contract; doctors do not read camelCase. */
 const humanise = (key: string) =>
   key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase())
+
+const timestamp = (seconds: number) =>
+  `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
+
+/**
+ * One checklist row, and its evidence when the field has any (issue #10, AC7).
+ *
+ * **The trace is on checklist fields rather than on note sentences, and that is
+ * a property of the pipeline rather than a shortcut.** The note and the facts
+ * are two independent model calls over the same transcript; the note is
+ * generated prose and is not composed from the facts, so no sentence in it
+ * carries a link back to a span and none can be recovered afterwards. Matching
+ * sentences to the transcript by similarity would manufacture provenance, and a
+ * wrong evidence link is worse than an absent one because it lends borrowed
+ * authority to a line nobody verified.
+ *
+ * What a field does carry is real: the span the evidence check already matched
+ * against the de-identified transcript.
+ *
+ * A row with no link is inert rather than a button that does nothing, so the
+ * affordance itself tells you which fields are traceable. `NOT_ASSESSED` fields
+ * have none by construction, which is the correct and expected case.
+ */
+function ChecklistRow({
+  label,
+  assertion,
+  link,
+}: {
+  label: string
+  assertion: ClinicalAssertion
+  link?: EvidenceLink
+}) {
+  const [open, setOpen] = useState(false)
+
+  const summary = (
+    <>
+      <dt className="text-sm text-ink">{label}</dt>
+      <dd className="flex items-center gap-1.5">
+        {assertion.value && <span className="text-xs text-ink-muted">{assertion.value}</span>}
+        <AssertionStateBadge state={assertion.state} />
+      </dd>
+    </>
+  )
+
+  if (!link) {
+    return <div className="flex items-baseline justify-between gap-2">{summary}</div>
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-baseline justify-between gap-2 rounded-control text-left transition-colors hover:bg-sunken"
+      >
+        {summary}
+        <Quote
+          aria-hidden
+          className={cn('size-3 shrink-0 self-center text-accent', open && 'opacity-60')}
+        />
+        <span className="sr-only">Show the transcript source for {label}</span>
+      </button>
+
+      {open && (
+        <div className="mt-1 mb-1.5 rounded-control border-l-2 border-accent/40 bg-sunken px-2.5 py-2">
+          {/*
+           * Speaker and timing are omitted when the span could not be located in
+           * exactly one turn, or when the transcript carries no timings at all.
+           * Saying so is the point: a missing offset must never render as 0:00,
+           * which would assert the finding came from the opening seconds.
+           */}
+          <p className="text-2xs font-medium uppercase tracking-wide text-ink-muted">
+            {link.speaker ? (
+              <>
+                {link.speaker === 'doctor' ? 'Doctor' : 'Patient'}
+                {link.offsetSeconds !== undefined && ` · ${timestamp(link.offsetSeconds)}`}
+              </>
+            ) : (
+              'Source not resolvable to a single turn'
+            )}
+          </p>
+          <p className="mt-1 text-sm text-ink">&ldquo;{link.evidence}&rdquo;</p>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const GROUPS: { key: keyof ClinicalFacts; label: string }[] = [
   { key: 'symptoms', label: 'Symptoms' },
@@ -32,11 +127,14 @@ const GROUPS: { key: keyof ClinicalFacts; label: string }[] = [
 export function ChecklistPanel({
   clinicalFacts,
   operational,
+  evidenceLinks,
 }: {
   clinicalFacts?: ClinicalFacts
   operational?: OperationalBlock
+  evidenceLinks?: EvidenceLink[]
 }) {
   const [open, setOpen] = useState(false)
+  const linkFor = (fieldId: string) => evidenceLinks?.find((entry) => entry.fieldId === fieldId)
 
   // Absence is not the same as "nothing was assessed", and conflating the two
   // would state the precise falsehood §10 exists to prevent.
@@ -86,15 +184,12 @@ export function ChecklistPanel({
             <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
               {Object.entries(clinicalFacts[key] as Record<string, ClinicalAssertion>).map(
                 ([field, assertion]) => (
-                  <div key={field} className="flex items-baseline justify-between gap-2">
-                    <dt className="text-sm text-ink">{humanise(field)}</dt>
-                    <dd className="flex items-center gap-1.5">
-                      {assertion.value && (
-                        <span className="text-xs text-ink-muted">{assertion.value}</span>
-                      )}
-                      <AssertionStateBadge state={assertion.state} />
-                    </dd>
-                  </div>
+                  <ChecklistRow
+                    key={field}
+                    label={humanise(field)}
+                    assertion={assertion}
+                    link={linkFor(`clinicalFacts.${key}.${field}`)}
+                  />
                 ),
               )}
             </dl>
@@ -113,17 +208,12 @@ export function ChecklistPanel({
             {Object.entries(operational)
               .filter(([field]) => field !== 'medicationsDispensed')
               .map(([field, assertion]) => (
-                <div key={field} className="flex items-baseline justify-between gap-2">
-                  <dt className="text-sm text-ink">{humanise(field)}</dt>
-                  <dd className="flex items-center gap-1.5">
-                    {(assertion as ClinicalAssertion).value && (
-                      <span className="text-xs text-ink-muted">
-                        {(assertion as ClinicalAssertion).value}
-                      </span>
-                    )}
-                    <AssertionStateBadge state={(assertion as ClinicalAssertion).state} />
-                  </dd>
-                </div>
+                <ChecklistRow
+                  key={field}
+                  label={humanise(field)}
+                  assertion={assertion as ClinicalAssertion}
+                  link={linkFor(`operational.${field}`)}
+                />
               ))}
           </dl>
           {operational.medicationsDispensed.length > 0 && (
