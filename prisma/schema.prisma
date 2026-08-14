@@ -21,6 +21,15 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  /// When this doctor last cleared their notification feed (issue #123).
+  ///
+  /// The feed is a read over `AuditEvent`, which is append-only, so "clear"
+  /// cannot mean "delete": the audit rows are the tamper-evident record and
+  /// must survive. This marks a point in time and the feed returns only what
+  /// happened after it, which hides the notifications without touching the
+  /// log they are derived from.
+  notificationsClearedAt DateTime?
+
   sessions      Session[]
   accounts      Account[]
   consultations Consultation[]

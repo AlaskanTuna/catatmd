@@ -264,10 +264,37 @@ export async function getAuditHistory(consultationId: string) {
  * it.
  */
 export async function getActorNotifications(actorId: string, limit: number) {
+  // "Cleared" is a read cursor, not a delete. `AuditEvent` is append-only and
+  // is the tamper-evident record, so clearing the feed moves this mark forward
+  // and the rows behind it stay exactly where they were.
+  const actor = await prisma.user.findUnique({
+    where: { id: actorId },
+    select: { notificationsClearedAt: true },
+  })
+
   return prisma.auditEvent.findMany({
-    where: { actorId, action: { in: NotificationActionSchema.options } },
+    where: {
+      actorId,
+      action: { in: NotificationActionSchema.options },
+      ...(actor?.notificationsClearedAt ? { createdAt: { gt: actor.notificationsClearedAt } } : {}),
+    },
     orderBy: { createdAt: 'desc' },
     take: limit,
     select: { id: true, action: true, consultationId: true, createdAt: true },
+  })
+}
+
+/**
+ * Moves the actor's feed cursor to now, hiding everything currently in it.
+ *
+ * Deliberately not an audited event. It changes nothing about the clinical
+ * record and nothing about what happened; it is a per-user view preference, and
+ * writing an audit row for dismissing a list would add noise to the one table
+ * whose value depends on every row mattering.
+ */
+export async function clearActorNotifications(actorId: string): Promise<void> {
+  await prisma.user.update({
+    where: { id: actorId },
+    data: { notificationsClearedAt: new Date() },
   })
 }

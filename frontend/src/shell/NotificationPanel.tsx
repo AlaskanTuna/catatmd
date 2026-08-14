@@ -1,9 +1,10 @@
 import type { NotificationAction, NotificationItem } from '@shared/types'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, CircleAlert, Sparkles, Trash2 } from 'lucide-react'
 import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../lib/api.js'
+import { Button } from '../ui/Button.js'
 import { Skeleton } from '../ui/Card.js'
 
 /**
@@ -61,9 +62,15 @@ function ago(value: Date) {
 }
 
 export function NotificationPanel({ onSeen, close }: { onSeen: () => void; close: () => void }) {
+  const queryClient = useQueryClient()
   const { data, isPending, isError } = useQuery({
     queryKey: ['notifications'],
     queryFn: api.notifications,
+  })
+
+  const clear = useMutation({
+    mutationFn: api.clearNotifications,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   })
 
   // The panel is mounted only while it is open, so mounting *is* the doctor
@@ -73,7 +80,24 @@ export function NotificationPanel({ onSeen, close }: { onSeen: () => void; close
 
   return (
     <div className="flex max-h-96 flex-col">
-      <h2 className="border-b border-line px-4 py-3 text-sm font-semibold">Notifications</h2>
+      <div className="flex items-center justify-between gap-2 border-b border-line/60 py-2 pr-2 pl-4">
+        <h2 className="text-sm font-semibold">Notifications</h2>
+        {(data?.length ?? 0) > 0 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={clear.isPending}
+            onClick={() => clear.mutate()}
+            // "Clear", not "Delete". The rows are audit events and they survive
+            // this: what changes is where this doctor's feed starts reading
+            // from. Wording that promised deletion would be a lie about the one
+            // table whose value is that nothing in it can be removed.
+            title="Stop showing these. The audit record is kept."
+          >
+            Clear All
+          </Button>
+        )}
+      </div>
 
       <div className="overflow-y-auto">
         {isPending && (

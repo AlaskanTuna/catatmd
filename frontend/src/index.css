@@ -63,12 +63,30 @@
   --color-advisory: oklch(0.457 0.164 258);
   --color-advisory-rule: oklch(0.457 0.164 258);
 
+  /* The unread-count dot, and deliberately NOT `--color-emergency`.
+   *
+   * The clinical palette means something: emergency, urgent and advisory are
+   * severities a doctor reads off a red flag. Painting a chrome badge with one
+   * of them spends that vocabulary on "you have mail" and makes the severity
+   * colours mean less everywhere they actually matter. This is a chrome red at
+   * hue 25, near the emergency red but its own token, so the two can move
+   * independently. `--color-urgent` was the previous value and reads brown:
+   * hue 60 at that lightness is amber, not red. */
+  --color-notify: oklch(0.55 0.2 25);
+  --color-notify-ink: oklch(1 0 0);
+
   /* Faint enough to disappear against the ground until the eye looks for it. */
   --color-scrollbar: oklch(0.245 0.008 160 / 0.22);
   --color-scrollbar-hover: oklch(0.245 0.008 160 / 0.38);
 
   /* Chrome only. Never behind text a doctor acts on. */
   --color-glass: oklch(1 0 0 / 0.58);
+  /* The same frost, backed more heavily, for floating surfaces that carry a
+   * list or a paragraph rather than a row of icons. 58% is right for a sidebar
+   * of glyphs and too thin under sentences: whatever is behind shows through as
+   * competing shapes. Raising the alpha keeps the material and gives the text a
+   * predictable ground. */
+  --color-glass-panel: oklch(1 0 0 / 0.86);
   --color-glass-line: oklch(1 0 0 / 0.55);
   --color-scrim: oklch(0.245 0.008 160 / 0.32);
 
@@ -172,10 +190,14 @@
     --color-advisory: oklch(0.76 0.115 245);
     --color-advisory-rule: oklch(0.76 0.115 245);
 
+    --color-notify: oklch(0.68 0.19 25);
+    --color-notify-ink: oklch(0.16 0.01 25);
+
     --color-scrollbar: oklch(0.945 0.004 160 / 0.2);
     --color-scrollbar-hover: oklch(0.945 0.004 160 / 0.34);
 
     --color-glass: oklch(0.225 0.007 160 / 0.6);
+    --color-glass-panel: oklch(0.225 0.007 160 / 0.88);
     --color-glass-line: oklch(1 0 0 / 0.1);
     --color-scrim: oklch(0.12 0.005 160 / 0.5);
   }
@@ -292,6 +314,15 @@
    * translucent surface has a contrast ratio that depends on whatever scrolls
    * behind it, so it cannot be verified once and held.
    */
+  /* Floating surfaces carrying text. Same frost, heavier ground. */
+  .glass-panel {
+    background-color: var(--color-glass-panel);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid var(--color-glass-line);
+    box-shadow: var(--shadow-float);
+  }
+
   .glass {
     background-color: var(--color-glass);
     /*
@@ -625,5 +656,29 @@
 
   .page-break-avoid {
     break-inside: avoid;
+  }
+}
+
+@layer components {
+  /*
+   * Where floating chrome parks in the bottom-right corner.
+   *
+   * Two offsets, because two different things can be under it. Below `md` the
+   * mobile dock occupies the bottom edge and the button has to clear it; from
+   * `md` up the dock is gone and the corner is free. `--approve-bar-inset` is
+   * added on top and is set only while the review screen's sticky approve bar
+   * is actually rendered, so the button drops back into the corner the moment
+   * a consultation is approved and that bar is replaced.
+   */
+  .fab-anchor {
+    right: calc(var(--spacing) * 4);
+    bottom: calc(5.5rem + var(--approve-bar-inset, 0px));
+  }
+
+  @media (width >= 48rem) {
+    .fab-anchor {
+      right: calc(var(--spacing) * 6);
+      bottom: calc(1.5rem + var(--approve-bar-inset, 0px));
+    }
   }
 }
