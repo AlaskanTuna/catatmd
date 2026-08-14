@@ -66,6 +66,28 @@ async function toMono16k(blob: Blob): Promise<Float32Array> {
 
 type Phase = 'idle' | 'recording' | 'loading-model' | 'transcribing'
 
+/**
+ * Roughly how much longer, from how long the finished chunks actually took.
+ *
+ * **Silent until it has two chunks to reason from.** One chunk is not a rate:
+ * the first carries the session warm-up, so extrapolating from it overstates
+ * the total badly, and a countdown that starts at nine minutes and then drops
+ * to four teaches people to disbelieve it. No estimate reads better than a
+ * wrong one.
+ *
+ * Rounded up to whole minutes above a minute, because the underlying rate is
+ * not steady enough to justify "3:47" and displaying seconds would imply a
+ * precision this cannot deliver.
+ */
+function estimateRemaining(done: number, total: number, elapsedMs: number): string | null {
+  if (done < 2 || done >= total) return null
+
+  const remainingMs = (elapsedMs / done) * (total - done)
+  if (remainingMs < 45_000) return 'under a minute left'
+
+  return `about ${Math.ceil(remainingMs / 60_000)} min left`
+}
+
 export function AudioCapture({
   onTranscript,
 }: {
@@ -76,6 +98,10 @@ export function AudioCapture({
   const [error, setError] = useState<string | null>(null)
   const [overridden, setOverridden] = useState(false)
   const [seconds, setSeconds] = useState(0)
+  const [chunkProgress, setChunkProgress] = useState<{ done: number; total: number } | null>(null)
+
+  /** When the current transcription started, for the remaining-time estimate. */
+  const startedAt = useRef<number | null>(null)
 
   const worker = useRef<Worker | null>(null)
   const recorder = useRef<MediaRecorder | null>(null)
@@ -109,15 +135,23 @@ export function AudioCapture({
       if (message.type === 'ready') {
         setProgress(null)
         setPhase('transcribing')
+        startedAt.current = Date.now()
+      }
+      if (message.type === 'transcribing') {
+        setChunkProgress({ done: message.done, total: message.total })
       }
       if (message.type === 'result') {
         setPhase('idle')
         setProgress(null)
+        setChunkProgress(null)
+        startedAt.current = null
         onTranscriptRef.current({ text: message.text, segments: message.segments })
       }
       if (message.type === 'error') {
         setPhase('idle')
         setProgress(null)
+        setChunkProgress(null)
+        startedAt.current = null
         setError(message.message)
       }
     }
@@ -139,6 +173,7 @@ export function AudioCapture({
     async (blob: Blob) => {
       setError(null)
       setPhase('loading-model')
+      setChunkProgress(null)
       try {
         const audio = await toMono16k(blob)
         const request: WorkerRequest = { type: 'transcribe', audio }
@@ -180,6 +215,33 @@ export function AudioCapture({
   }, [])
 
   const busy = phase === 'loading-model' || phase === 'transcribing'
+
+  /*
+   * One line that always says what is actually happening, and a bar only when
+   * there is a measured number behind it.
+   *
+   * The download half already had a real percentage. The transcribe half had
+   * nothing but prose, which on a consultation-length recording meant several
+   * minutes of a screen that could not be told apart from a hung one.
+   */
+  const percent =
+    chunkProgress === null ? null : Math.round((chunkProgress.done / chunkProgress.total) * 100)
+
+  const remaining =
+    chunkProgress === null || startedAt.current === null
+      ? null
+      : estimateRemaining(chunkProgress.done, chunkProgress.total, Date.now() - startedAt.current)
+
+  const status =
+    phase === 'loading-model'
+      ? progress === null
+        ? 'Preparing the speech model. The first run downloads it once and the browser caches it.'
+        : `Downloading the speech model, ${progress}%. This happens once.`
+      : percent === null
+        ? 'Transcribing on this device. Longer recordings take a few minutes.'
+        : `Transcribing on this device, ${percent}%${remaining === null ? '' : `, ${remaining}`}.`
+
+  const bar = phase === 'loading-model' ? progress : percent
 
   return (
     <div className="flex flex-col gap-3">
@@ -243,14 +305,35 @@ export function AudioCapture({
       )}
 
       {busy && (
-        <p className="flex items-center gap-2 text-sm text-ink-muted">
-          <Loader2 aria-hidden className="size-4 animate-spin" />
-          {phase === 'loading-model'
-            ? progress === null
-              ? 'Preparing the speech model. The first run downloads it once and the browser caches it.'
-              : `Downloading the speech model, ${progress}%. This happens once.`
-            : 'Transcribing on this device. Longer recordings take a few minutes.'}
-        </p>
+        <div className="flex flex-col gap-2">
+          <p className="flex items-center gap-2 text-sm text-ink-muted">
+            {/* `busy-spinner` exempts this from the blanket reduced-motion rule
+                in index.css. A spinner frozen mid-turn reads as hung, which is
+                the opposite of what it exists to say. */}
+            <Loader2 aria-hidden className="busy-spinner size-4 animate-spin" />
+            <span role="status">{status}</span>
+          </p>
+
+          {/* A real bar, driven by measured chunk completions rather than by an
+              animation, so its position means something. Width is a transition
+              rather than an animation, which the reduced-motion rule leaves
+              alone, so it still moves for everyone. */}
+          {bar !== null && (
+            <div
+              className="h-1 w-full overflow-hidden rounded-full bg-sunken"
+              role="progressbar"
+              aria-valuenow={bar}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Transcription progress"
+            >
+              <div
+                className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
+                style={{ width: `${bar}%` }}
+              />
+            </div>
+          )}
+        </div>
       )}
 
       {error && (
