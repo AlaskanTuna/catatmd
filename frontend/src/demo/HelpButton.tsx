@@ -70,24 +70,33 @@ export function HelpButton() {
           </div>
 
           <p className="mt-2 text-sm leading-relaxed text-ink-muted">
-            {TOUR_STEP_COUNT} steps through a real consultation: the transcript, the red flags and
-            where they came from, what the consultation never established, and the approval gate.
+            {TOUR_STEP_COUNT} steps through a consultation the tour analyses for you: the
+            transcript, the red flags and where they came from, what the consultation never
+            established, and the approval gate.
           </p>
 
-          {/* The two facts a clinician or an evaluator would otherwise have to
+          {/* The three facts a clinician or an evaluator would otherwise have to
               take on trust, stated before they agree to anything. */}
           <ul className="mt-4 flex flex-col gap-2 text-sm text-ink-muted">
             <li className="flex gap-2">
               <span aria-hidden className="text-accent">
                 &middot;
               </span>
-              Everything shown was produced by the real pipeline. Nothing is mocked or replayed.
+              It runs the real pipeline on a simulated transcript, which takes up to a minute.
+              Nothing is mocked or replayed.
             </li>
             <li className="flex gap-2">
               <span aria-hidden className="text-accent">
                 &middot;
               </span>
-              It only navigates and explains. Nothing is created, edited or approved for you.
+              Nothing is saved. The analysis exists only in this tab and is discarded when the tour
+              ends.
+            </li>
+            <li className="flex gap-2">
+              <span aria-hidden className="text-accent">
+                &middot;
+              </span>
+              Your own consultations are untouched.
             </li>
           </ul>
 
@@ -110,7 +119,7 @@ export function HelpButton() {
               ) : (
                 <Play aria-hidden className="size-4" />
               )}
-              {preparing ? 'Preparing' : 'Start Tour'}
+              {preparing ? 'Analysing' : 'Start Tour'}
             </button>
           </div>
         </div>

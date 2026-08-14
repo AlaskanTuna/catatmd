@@ -2,7 +2,8 @@ import type { ClinicalAssertion, ConsultationDetail, SoapNote } from '@shared/ty
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Printer, Sparkles } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams } from 'react-router-dom'
+import { DEMO_CONSULTATION_ID, useDemoTour } from '../demo/DemoTour.js'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
 import { ApproveBar } from '../review/ApproveBar.js'
@@ -24,9 +25,19 @@ export function ConsultationReview() {
   const [showTranscript, setShowTranscript] = useState(false)
   const [showAllGaps, setShowAllGaps] = useState(false)
 
+  /*
+   * Demo Mode's consultation is not stored, so there is nothing to fetch for it
+   * (issue #80). It renders through this component rather than through a
+   * demo-only screen deliberately: a second renderer would drift, and the claim
+   * the tour makes is that an evaluator is looking at the real review surface.
+   */
+  const tour = useDemoTour()
+  const isEphemeral = id === DEMO_CONSULTATION_ID
+
   const consultation = useQuery({
     queryKey: ['consultation', id],
     queryFn: () => api.getConsultation(id),
+    enabled: !isEphemeral,
   })
   const guidelines = useQuery({ queryKey: ['guidelines'], queryFn: api.guidelines })
 
@@ -36,12 +47,37 @@ export function ConsultationReview() {
   }
 
   const analyze = useMutation({ mutationFn: () => api.analyze(id), onSuccess: invalidate })
+
+  /*
+   * The ephemeral consultation has no row to PATCH, so review actions are
+   * applied in memory instead of over the wire. The state transition is
+   * identical to the stored path; only where it lands differs.
+   */
   const patch = useMutation({
-    mutationFn: (body: Parameters<typeof api.patch>[1]) => api.patch(id, body),
-    onSuccess: invalidate,
+    mutationFn: async (body: Parameters<typeof api.patch>[1]) => {
+      if (!isEphemeral) return api.patch(id, body)
+      const current = tour.ephemeral as ConsultationDetail
+      return {
+        ...current,
+        ...(body.editedNote
+          ? { editedNote: { ...current.analysis?.note, ...body.editedNote } }
+          : {}),
+        ...(body.acknowledgedRedFlagIds
+          ? { acknowledgedRedFlagIds: body.acknowledgedRedFlagIds }
+          : {}),
+        ...(body.reviewedGapIds ? { reviewedGapIds: body.reviewedGapIds } : {}),
+        updatedAt: new Date(),
+      } as ConsultationDetail
+    },
+    onSuccess: (next) => (isEphemeral ? tour.updateEphemeral(next) : invalidate(next)),
   })
 
-  if (consultation.isPending) {
+  if (isEphemeral && !tour.ephemeral) {
+    // The tour ended, which wiped it. Nothing to show and nothing to fetch.
+    return <Navigate to="/consultations" replace />
+  }
+
+  if (!isEphemeral && consultation.isPending) {
     return (
       <div className="mx-auto flex max-w-7xl flex-col gap-4">
         <Skeleton className="h-8 w-64" />
@@ -50,11 +86,10 @@ export function ConsultationReview() {
     )
   }
 
-  if (!consultation.data) {
+  const detail = isEphemeral ? tour.ephemeral : consultation.data
+  if (!detail) {
     return <p className="text-sm text-emergency">This consultation could not be loaded.</p>
   }
-
-  const detail = consultation.data
   const analysis = detail.analysis
   const approved = detail.status === 'approved'
   const note = detail.editedNote ?? analysis?.note ?? null
@@ -285,12 +320,24 @@ export function ConsultationReview() {
 
       {analysis && (
         <ApproveBar
-          consultationId={id}
+          approve={async () =>
+            isEphemeral
+              ? ({
+                  ...(tour.ephemeral as ConsultationDetail),
+                  status: 'approved',
+                  approvedAt: new Date(),
+                  // The demo has no signed-in identity distinct from the viewer,
+                  // and inventing a clinician name on a screen that teaches what
+                  // approval means would be the wrong thing to fake.
+                  approvedBy: null,
+                } as ConsultationDetail)
+              : api.approve(id)
+          }
           approved={approved}
           approvedAt={detail.approvedAt}
           approvedBy={detail.approvedBy}
           unacknowledgedCount={unacknowledged.length}
-          onApproved={invalidate}
+          onApproved={isEphemeral ? tour.updateEphemeral : invalidate}
         />
       )}
     </div>
