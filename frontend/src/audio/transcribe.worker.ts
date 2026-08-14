@@ -1,7 +1,18 @@
 /// <reference lib="webworker" />
 /// <reference types="@webgpu/types" />
-import { type AutomaticSpeechRecognitionPipeline, env, pipeline } from '@huggingface/transformers'
-import type { WorkerRequest, WorkerResponse } from './protocol.js'
+import {
+  type AutomaticSpeechRecognitionPipeline,
+  BaseStreamer,
+  env,
+  pipeline,
+} from '@huggingface/transformers'
+import {
+  CHUNK_LENGTH_S,
+  countChunks,
+  STRIDE_LENGTH_S,
+  type WorkerRequest,
+  type WorkerResponse,
+} from './protocol.js'
 
 /**
  * On-device speech recognition (issue #2, docs/trd.md §20).
@@ -204,7 +215,55 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
      * downloading a model it had already cached.
      */
     post({ type: 'ready' })
-    const output = await asr(event.data.audio, {
+
+    /*
+     * Real per-chunk progress, not an animation.
+     *
+     * The pipeline calls `generate()` once per audio chunk and `generate()`
+     * calls `streamer.end()` exactly once before it returns, so `end()` is a
+     * precise "one chunk finished" tick. `streamer` is a documented generation
+     * parameter and every kwarg here is spread into the generation config by
+     * `_call_whisper`, so this rides a public API rather than a private hook.
+     *
+     * `put` is required by the interface and deliberately does nothing: it
+     * fires per token, and posting at that rate would flood the main thread
+     * with messages to render a number that changes too fast to read.
+     */
+    const total = countChunks(event.data.audio.length)
+    let done = 0
+
+    class ChunkCounter extends BaseStreamer {
+      /** Required by the interface, and deliberately empty. See above. */
+      override put() {}
+      override end() {
+        done += 1
+        // Clamped because the count is a prediction of the pipeline's own
+        // windowing. If it is ever wrong, a progress bar that stops at 100 is a
+        // much smaller lie than one that reports 14 of 13.
+        post({ type: 'transcribing', done: Math.min(done, total), total })
+      }
+    }
+
+    /*
+     * The declared type for `streamer` is wrong, and it is the only thing
+     * corrected here.
+     *
+     * The library types it as `BaseStreamer & TextStreamer`, which demands a
+     * tokenizer and nine other members. But `generation/parameters.js`
+     * documents the parameter as a plain `BaseStreamer`, and `generate()` only
+     * ever calls `put()` and `end()` on it, both of which `ChunkCounter`
+     * implements by extending the exported base class.
+     *
+     * So the field is replaced rather than the object cast: every other option
+     * below stays fully checked, and exactly one documented cast bridges the
+     * bad declaration at the call.
+     */
+    type AsrOptions = Omit<NonNullable<Parameters<typeof asr>[1]>, 'streamer'> & {
+      streamer?: BaseStreamer
+    }
+
+    const options: AsrOptions = {
+      streamer: new ChunkCounter(),
       /*
        * Pinned to English, never read from a locale or from the patient's
        * recorded language (docs/prd.md §12).
@@ -219,8 +278,11 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       task: 'transcribe',
       // A consultation runs far past Whisper's 30-second window, so it is
       // chunked, with overlap so a word spoken across a boundary is not lost.
-      chunk_length_s: 30,
-      stride_length_s: 5,
+      // Shared with `countChunks`, which predicts how many times the model will
+      // run so progress can be a real fraction. Two copies of these numbers is
+      // how a progress bar starts lying.
+      chunk_length_s: CHUNK_LENGTH_S,
+      stride_length_s: STRIDE_LENGTH_S,
       /*
        * Segment timestamps feed the draft speaker labels (docs/trd.md §20.2).
        * Measured on this exact config before being relied on: 17 clean,
@@ -230,7 +292,9 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
        * still refuses anything malformed rather than trusting the type.
        */
       return_timestamps: true,
-    })
+    }
+
+    const output = await asr(event.data.audio, options as NonNullable<Parameters<typeof asr>[1]>)
 
     /*
      * Every part is joined, as before #118: a multi-part result must never
