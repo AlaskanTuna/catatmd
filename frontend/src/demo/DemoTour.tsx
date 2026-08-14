@@ -332,6 +332,62 @@ async function runEphemeral(): Promise<ConsultationDetail> {
   }
 }
 
+/**
+ * Which consultation a step's route points at.
+ *
+ * A pure function taking the analysis explicitly rather than a closure reading
+ * it from state, because the tour now starts before the analysis finishes. A
+ * step that waits for it resumes with the resolved value in hand, and a closure
+ * captured at render time would still hold the `null` it started with.
+ *
+ * `ephemeral` being non-null is what "live" means; there is no separate flag.
+ */
+function resolveStepRoute(
+  step: TourStep,
+  resolved: Subjects,
+  ephemeral: ConsultationDetail | null,
+): string {
+  if (!step.route.includes(':id')) return step.route
+
+  if (ephemeral) {
+    /*
+     * Live mode has one consultation, so every consultation step points at the
+     * same in-memory record, with one measured exception.
+     *
+     * The Citations stop needs a cited suggestion to point at, and whether the
+     * analysis produces one is a property of the transcript rather than a
+     * guarantee. The fixture chosen for its red flags is a severe presentation
+     * whose correct handling is "escalate now", and escalation is not a
+     * guideline-cited recommendation: analysing it against production returned
+     * five red flags and zero suggestions. Sending the Citations step there
+     * would leave the closed-corpus claim pointing at an element that does not
+     * exist.
+     *
+     * So that one step falls back to a stored consultation that does have a
+     * citation. Reading a seeded row persists nothing, so this costs the
+     * ephemeral guarantee nothing; the tour simply stops narrating its own
+     * analysis for the one stop its own analysis cannot illustrate.
+     */
+    const wantsCitation = step.subject === 'cited'
+    const hasCitation = (ephemeral.analysis?.suggestions?.length ?? 0) > 0
+    if (wantsCitation && !hasCitation && resolved.cited) {
+      return step.route.replace(':id', resolved.cited)
+    }
+    return step.route.replace(':id', DEMO_CONSULTATION_ID)
+  }
+
+  const id = resolved[step.subject ?? 'flagged'] ?? resolved.flagged
+  // Without an id there is nothing to review; the list is the honest
+  // destination rather than a route with a literal ":id" in it.
+  return id ? step.route.replace(':id', id) : '/consultations'
+}
+
+/** What the opening work resolves to, handed to whichever step waits on it. */
+interface TourData {
+  own: ConsultationDetail | null
+  resolved: Subjects
+}
+
 export function DemoTourProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -347,105 +403,98 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
       distinguishable from the tour's own. */
   const expectedPath = useRef<string | null>(null)
 
-  const routeFor = useCallback(
-    (step: TourStep, resolved: Subjects, live: boolean) => {
-      if (!step.route.includes(':id')) return step.route
-      if (live && ephemeral) {
-        /*
-         * Live mode has one consultation, so every consultation step points at
-         * the same in-memory record, with one measured exception.
-         *
-         * The Citations stop needs a cited suggestion to point at, and whether
-         * the analysis produces one is a property of the transcript rather than
-         * a guarantee. The fixture chosen for its red flags is a severe
-         * presentation whose correct handling is "escalate now", and escalation
-         * is not a guideline-cited recommendation: analysing it against
-         * production returned five red flags and zero suggestions. Sending the
-         * Citations step there would leave the closed-corpus claim pointing at
-         * an element that does not exist.
-         *
-         * So that one step falls back to a stored consultation that does have a
-         * citation. Reading a seeded row persists nothing, so this costs the
-         * ephemeral guarantee nothing; the tour simply stops narrating its own
-         * analysis for the one stop its own analysis cannot illustrate.
-         */
-        const wantsCitation = step.subject === 'cited'
-        const hasCitation = (ephemeral.analysis?.suggestions?.length ?? 0) > 0
-        if (wantsCitation && !hasCitation && resolved.cited) {
-          return step.route.replace(':id', resolved.cited)
-        }
-        return step.route.replace(':id', DEMO_CONSULTATION_ID)
-      }
-      const id = resolved[step.subject ?? 'flagged'] ?? resolved.flagged
-      // Without an id there is nothing to review; the list is the honest
-      // destination rather than a route with a literal ":id" in it.
-      return id ? step.route.replace(':id', id) : '/consultations'
-    },
-    [ephemeral],
-  )
+  /**
+   * The opening analysis, in flight.
+   *
+   * Held in a ref rather than state because nothing renders from it directly;
+   * it exists so a step that needs the consultation can await the same promise
+   * instead of racing it or starting a second one.
+   */
+  const data = useRef<Promise<TourData> | null>(null)
 
-  const start = useCallback(async () => {
-    setPreparing(true)
+  /*
+   * The tour opens immediately and the analysis catches up, rather than the
+   * tour waiting for the analysis.
+   *
+   * Running the real pipeline costs about 50 seconds against production, and
+   * blocking on it meant a minute of spinner before anything appeared, which
+   * reads as broken rather than as thorough. The first two stops, the
+   * consultation list and the intake screen, do not touch the analysis at all,
+   * so there is nothing to wait for until the third. By the time a viewer has
+   * read those two the call has usually landed, and if it has not, the wait
+   * happens at the stop that genuinely needs it, with the product on screen
+   * rather than a modal.
+   */
+  const start = useCallback(() => {
+    data.current = (async () => {
+      /*
+       * Both paths resolve concurrently, even when the live one succeeds.
+       *
+       * The seeded subjects are needed in live mode too, because the Citations
+       * step falls back to a stored consultation when the analysis produces no
+       * suggestions. The scoring reads finish in well under a second against a
+       * call taking roughly fifty, and they warm the cache the review screen is
+       * about to use.
+       */
+      const seeded = pickConsultations((consultation) =>
+        queryClient.fetchQuery({
+          queryKey: ['consultation', consultation],
+          queryFn: () => api.getConsultation(consultation),
+        }),
+      ).catch(() => ({ flagged: null, cited: null }) as Subjects)
 
-    /*
-     * Both paths are resolved, concurrently, even when the live one succeeds.
-     *
-     * The seeded subjects are needed in live mode too, because the Citations
-     * step falls back to a stored consultation when the analysis produces no
-     * suggestions (see `routeFor`). Running them in sequence would add the
-     * scoring reads to a wait that is already dominated by the analysis, and
-     * running them at all is close to free: the reads finish in well under a
-     * second against a call that took roughly fifty against production, and
-     * they warm the cache the review screen is about to use.
-     */
-    const seeded = pickConsultations((consultation) =>
-      queryClient.fetchQuery({
-        queryKey: ['consultation', consultation],
-        queryFn: () => api.getConsultation(consultation),
-      }),
-    ).catch(() => ({ flagged: null, cited: null }) as Subjects)
+      // Live first. The seeded walk is the fallback, not the plan.
+      //
+      // No automatic retry, deliberately. The endpoint allows 5/min per IP, so
+      // a retry on failure turns one flaky call into a 429 and reports a rate
+      // limit where the real fault was something else.
+      const own = await runEphemeral().catch((error: unknown) => {
+        setFallbackReason(
+          error instanceof ApiError && error.status === 429 ? 'rate_limited' : 'failed',
+        )
+        return null
+      })
+      const resolved = await seeded
 
-    // Live first. The seeded walk is the fallback, not the plan.
-    //
-    // No automatic retry, deliberately. The endpoint allows 5/min per IP, so a
-    // retry on failure turns one flaky call into a 429 and reports a rate limit
-    // where the real fault was something else.
-    const own = await runEphemeral().catch((error: unknown) => {
-      setFallbackReason(
-        error instanceof ApiError && error.status === 429 ? 'rate_limited' : 'failed',
-      )
-      return null
-    })
+      setEphemeral(own)
+      setSubjects(resolved)
+      setMode(own ? 'live' : 'seeded')
+      return { own, resolved }
+    })()
 
-    const resolved = await seeded
-
-    setEphemeral(own)
-    setSubjects(resolved)
-    setMode(own ? 'live' : 'seeded')
-    setPreparing(false)
     setActive(true)
     setCurrentStep(0)
 
     const first = TOUR_STEPS[0] as TourStep
-    const path = first.route.includes(':id')
-      ? own
-        ? first.route.replace(':id', DEMO_CONSULTATION_ID)
-        : routeFor(first, resolved, false)
-      : first.route
-    expectedPath.current = path
-    navigate(path)
-  }, [navigate, queryClient, routeFor])
+    expectedPath.current = first.route
+    navigate(first.route)
+  }, [navigate, queryClient])
 
   const goTo = useCallback(
-    (index: number) => {
+    async (index: number) => {
       const step = TOUR_STEPS[index]
       if (!step) return
+
+      let target = ephemeral
+      let subject = subjects
+
+      // Only the steps that need a consultation wait for one. Awaiting an
+      // already-settled promise costs a microtask, so this is free once the
+      // analysis has landed.
+      if (step.route.includes(':id') && data.current) {
+        setPreparing(true)
+        const settled = await data.current
+        setPreparing(false)
+        target = settled.own
+        subject = settled.resolved
+      }
+
       setCurrentStep(index)
-      const path = routeFor(step, subjects, mode === 'live')
+      const path = resolveStepRoute(step, subject, target)
       expectedPath.current = path
       navigate(path)
     },
-    [subjects, navigate, routeFor, mode],
+    [subjects, ephemeral, navigate],
   )
 
   /**
@@ -460,23 +509,41 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
   const stop = useCallback(() => {
     setActive(false)
     setCurrentStep(-1)
+    setPreparing(false)
     setEphemeral(null)
     setSubjects({ flagged: null, cited: null })
     expectedPath.current = null
+    // Dropped so the next tour analyses afresh. Keeping it would hand a second
+    // run the first run's consultation, which is a persisted demo by another
+    // name and undoes the guarantee this whole design exists for.
+    data.current = null
   }, [])
 
   const next = useCallback(() => {
-    // The last step closes the tour rather than dead-ending on a disabled
-    // button, so there is always exactly one obvious way forward.
+    /*
+     * The last step closes the tour rather than dead-ending on a disabled
+     * button, so there is always exactly one obvious way forward, and it hands
+     * the viewer the intake screen on the way out.
+     *
+     * The tour ends on the guideline corpus, which is a reference page and a
+     * dead end. What someone most plausibly wants after being shown how a
+     * consultation is analysed is to run one, so finishing lands there instead
+     * of leaving them where the narration happened to stop.
+     *
+     * Leaving early through End or Escape deliberately does not redirect. That
+     * is someone getting out, not arriving, and sending them somewhere they did
+     * not ask to go would be exactly the interruption the tour avoids elsewhere.
+     */
     if (currentStep >= TOUR_STEPS.length - 1) {
       stop()
+      navigate('/consultations/new')
       return
     }
-    goTo(currentStep + 1)
-  }, [currentStep, goTo, stop])
+    void goTo(currentStep + 1)
+  }, [currentStep, goTo, stop, navigate])
 
   const back = useCallback(() => {
-    if (currentStep > 0) goTo(currentStep - 1)
+    if (currentStep > 0) void goTo(currentStep - 1)
   }, [currentStep, goTo])
 
   /*
@@ -504,7 +571,7 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
       fallbackReason,
       ephemeral,
       updateEphemeral: setEphemeral,
-      start: () => void start(),
+      start,
       next,
       back,
       stop,

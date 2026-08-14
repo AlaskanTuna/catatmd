@@ -276,6 +276,10 @@ async function runAnalysis(
       ...suggestion,
       text: rehydrate(suggestion.text),
     })),
+    // Carried rather than dropped. An empty `suggestions` array cannot tell the
+    // reader whether the corpus had nothing to say or was never consulted, which
+    // is the conflation this flag exists to prevent (docs/trd.md §19 row 7).
+    outOfScope: suggestionResult.outOfScope,
   }
 
   return { analysis, detected, discardedFieldIds: noteResult.discardedFieldIds }
