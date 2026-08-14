@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+/// <reference types="@webgpu/types" />
 import { type AutomaticSpeechRecognitionPipeline, env, pipeline } from '@huggingface/transformers'
 import type { WorkerRequest, WorkerResponse } from './protocol.js'
 
@@ -71,13 +72,20 @@ const post = (message: WorkerResponse) => self.postMessage(message)
 
 let transcriber: AutomaticSpeechRecognitionPipeline | null = null
 
-async function load() {
-  if (transcriber) return transcriber
-  transcriber = await pipeline('automatic-speech-recognition', MODEL, {
-    // WASM is first-class here rather than a fallback (docs/trd.md §20). WebGPU
-    // is faster where it exists, but availability across clinic desktops is not
-    // something this product can assume, and a path that works everywhere beats
-    // a faster one that strands some users.
+function onProgress(event: unknown) {
+  const p = event as { status?: string; file?: string; loaded?: number; total?: number }
+  if (p.status === 'progress' && p.total) {
+    post({ type: 'progress', loaded: p.loaded ?? 0, total: p.total, file: p.file ?? '' })
+  }
+}
+
+/**
+ * The path proven end to end in this product's own testing, and what WebGPU
+ * falls back to below. Kept byte-for-byte unchanged from the single-device
+ * version this replaced, precisely so this remains true.
+ */
+async function loadWasm() {
+  return pipeline('automatic-speech-recognition', MODEL, {
     device: 'wasm',
     /*
      * Split by module, and both halves are forced rather than tuned.
@@ -120,13 +128,61 @@ async function load() {
      * `_quantized` one, so switching dtype was never going to help either.
      */
     session_options: { graphOptimizationLevel: 'disabled' },
-    progress_callback: (event: unknown) => {
-      const p = event as { status?: string; file?: string; loaded?: number; total?: number }
-      if (p.status === 'progress' && p.total) {
-        post({ type: 'progress', loaded: p.loaded ?? 0, total: p.total, file: p.file ?? '' })
-      }
-    },
+    progress_callback: onProgress,
   })
+}
+
+/**
+ * Whether a real WebGPU adapter exists, not just the API surface (issue #129).
+ *
+ * `'gpu' in navigator` is not the check, and that is measured rather than a
+ * style preference: this project's own testing (14/08/26) found an
+ * environment where `navigator.gpu` exists and `requestAdapter()` resolves to
+ * `null`. Testing for the API's presence would select WebGPU on a machine it
+ * cannot run on.
+ */
+async function hasWebGpuAdapter(): Promise<boolean> {
+  if (typeof navigator === 'undefined' || !('gpu' in navigator)) return false
+  try {
+    return (await navigator.gpu.requestAdapter()) !== null
+  } catch {
+    return false
+  }
+}
+
+/**
+ * WebGPU when a real adapter exists, WASM otherwise (issue #129).
+ *
+ * The two are not offered the same options. `dtype: 'q8'` and the disabled
+ * graph-optimisation pass in `loadWasm` are measured fixes for a bug in the
+ * WASM execution provider specifically, never checked against WebGPU's, so
+ * carrying them across backends would be a guess wearing the shape of a fix.
+ * `dtype` is left unset for WebGPU instead: this library's own default for it
+ * is `fp32`, `q8` is a WASM-only default, and the q8 decoder is independently
+ * known not to load at all on this runtime (see `loadWasm`).
+ *
+ * A WebGPU adapter existing is not proof every operator this model needs is
+ * implemented in it, so a failure here still falls back to the WASM path
+ * rather than surfacing an error a plain WASM run would never have had. That
+ * fallback has not been exercised against real WebGPU hardware by this
+ * product's own testing; only the detection-finds-nothing path has.
+ */
+async function load() {
+  if (transcriber) return transcriber
+
+  if (!(await hasWebGpuAdapter())) {
+    transcriber = await loadWasm()
+    return transcriber
+  }
+
+  try {
+    transcriber = await pipeline('automatic-speech-recognition', MODEL, {
+      device: 'webgpu',
+      progress_callback: onProgress,
+    })
+  } catch {
+    transcriber = await loadWasm()
+  }
   return transcriber
 }
 
