@@ -262,6 +262,7 @@ The load-bearing module rule: **no module outside `backend/src/lib/llm/` may imp
 ```bash
 bun install
 cp .env.example .env          # fill DATABASE_URL, DIRECT_URL, BETTER_AUTH_SECRET, QWEN_API_KEY
+docker compose up -d          # local Postgres, see "Use the local database" below
 bun run prisma:generate
 bun run db:migrate
 bun run dev                   # shared watch + API :3001 + web :5173
@@ -274,6 +275,27 @@ bun run lint                  # biome
 bun run typecheck             # all three workspaces
 bun run test                  # vitest
 ```
+
+### Use The Local Database
+
+**There is only one Supabase project, and the deployed API uses it.** Point `.env` at Supabase and every local click on a control that writes is editing live data. That is not hypothetical: it has already written a test row into the guest demo account, and the matching audit rows cannot be removed because the chain is append-only by design.
+
+`docker-compose.yml` runs Postgres 16 locally on port **5434**, matching the image and credentials CI uses, so a suite that passes here is running against the server version CI will use:
+
+```bash
+docker compose up -d
+```
+
+```ini
+DATABASE_URL="postgresql://catatmd:catatmd@127.0.0.1:5434/catatmd"
+DIRECT_URL="postgresql://catatmd:catatmd@127.0.0.1:5434/catatmd"
+```
+
+Then `bun run db:migrate` as usual. No `pgbouncer=true`, because there is no pooler in front of it, and both URLs are the same for the same reason.
+
+Port 5434 rather than 5432 because 5432 and 5433 are commonly already bound. Override with `POSTGRES_PORT` if 5434 is taken too.
+
+**Point `.env` back at Supabase only when you specifically mean to.** Reading deployed data is usually fine; writing to it is what caused the problem above.
 
 - `BETTER_AUTH_SECRET` — generate with `openssl rand -base64 32`.
 - `PORT` defaults to `3001`, which is commonly taken (Grafana, other dev servers). Set `PORT` and `BETTER_AUTH_URL` together if you move it — better-auth's URL must match the origin the API actually serves on.
