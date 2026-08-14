@@ -286,6 +286,22 @@ One adapter class implements `LLMClient` for all three providers — Qwen, Gemin
 3. `temperature` defaults to `0.2` when `request.temperature` is not supplied.
 4. Validates the response with `request.schema.safeParse(parsed)` before returning — a non-conforming response is never returned as partially-trusted data.
 
+### Request Bounds
+
+**Status: `Built`** (issue #94). Both are constructor options on the shared adapter, so every call path inherits them and a new provider cannot be added without them.
+
+| Bound        | Value    | SDK Default | Why                                                                                                                                         |
+| ------------ | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeout`    | `60_000` | `600_000`   | Roughly 3x the §19 row 19 worst case (21.6s), so it cannot fire on a healthy call while converting a 10-minute stall into a 60-second error |
+| `maxRetries` | `1`      | `2`         | The SDK retries timeouts, so an unpinned count is what compounds 10 minutes into 30. One retry still covers a fast transient failure        |
+
+Two clarifications, because the adjacent bound is easy to confuse with these:
+
+- `max_tokens` (8192) bounds the response's **size**; these bound its **time**. The runaway generation measured in §19 row 19 was already contained by the former.
+- Neither is a CAP-1 enforcement mechanism. Nothing fails a request at 30s; these bound the pathological case only.
+
+**Not built:** no `AbortController`, so a client disconnect does not cancel an in-flight call. That reclaims quota on abandoned requests rather than bounding a hang, and it would have to be threaded per call site.
+
 ### Failure Modes
 
 | Failure                   | Trigger                                                                                                                  |
