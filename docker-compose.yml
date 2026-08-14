@@ -1,0 +1,40 @@
+# Local development database (GitHub issue #106).
+#
+# Without this, `.env` points at the same Supabase instance the deployed API
+# uses, because there is no second Supabase project available on the free plan.
+# That made every local click on a mutating control an edit to live data, and it
+# has already written a test row into the guest demo account.
+#
+# The image and credentials deliberately match the throwaway Postgres in
+# `.github/workflows/ci.yml`, so a suite that passes locally is running against
+# the same server version CI will use.
+#
+#   docker compose up -d
+#   bun run db:migrate
+#
+# Port 5434, not 5432. Both 5432 and 5433 were already bound on the machine this
+# was written on, and a compose file that fails to start because a developer
+# happens to run Postgres already is a compose file nobody uses. Override with
+# POSTGRES_PORT if 5434 is taken too.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: catatmd-dev-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: catatmd
+      POSTGRES_PASSWORD: catatmd
+      POSTGRES_DB: catatmd
+    ports:
+      - '${POSTGRES_PORT:-5434}:5432'
+    volumes:
+      - catatmd-dev-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U catatmd -d catatmd']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  catatmd-dev-db:
