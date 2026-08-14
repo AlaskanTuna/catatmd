@@ -59,13 +59,21 @@ jobs:
       DEID_FAIL_CLOSED: 'true'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
       - run: bun install --frozen-lockfile
+
+      - name: Audit dependencies for known vulnerabilities
+        # OWASP A03:2025 Software Supply Chain Failures. Gated at `high` rather
+        # than `low` so a moderate advisory in a transitive dev dependency does
+        # not block clinical work, while the severities that would actually
+        # matter in a PHI-handling service still fail the build. Clean at the
+        # time this was added, so it starts enforcing rather than warning.
+        run: bun audit --audit-level=high
 
       - name: Generate Prisma client and apply migrations to the throwaway database
         run: |
@@ -151,7 +159,7 @@ jobs:
       deployable: ${{ steps.filter.outputs.deployable }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -206,9 +214,9 @@ jobs:
       PRODUCTION_DOMAIN: catatmd.vercel.app
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
