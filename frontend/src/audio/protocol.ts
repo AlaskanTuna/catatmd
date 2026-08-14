@@ -19,8 +19,17 @@ export const TARGET_SAMPLE_RATE = 16_000
 
 export type WorkerRequest = { type: 'load' } | { type: 'transcribe'; audio: Float32Array }
 
+/**
+ * One Whisper segment. `end` is null when Whisper never closed the final one.
+ * Timestamps are contiguous partitions rather than speech extents; silence is
+ * absorbed into the earlier segment (docs/trd.md §20.2), so consumers must not
+ * expect gaps between segments.
+ */
+export type TranscriptSegment = { text: string; start: number; end: number | null }
+
 export type WorkerResponse =
   | { type: 'progress'; loaded: number; total: number; file: string }
   | { type: 'ready' }
-  | { type: 'result'; text: string }
+  /** `segments` empty means no usable timing; callers fall back to plain prose. */
+  | { type: 'result'; text: string; segments: readonly TranscriptSegment[] }
   | { type: 'error'; message: string }

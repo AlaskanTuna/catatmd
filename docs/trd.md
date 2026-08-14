@@ -4,7 +4,7 @@
 
 **Status: Final for the MVP.** Reconciled 13/08/26 against the research phase (`docs/superpowers/research/`) and closed as the implementation gate alongside `docs/prd.md` (issue #1).
 
-Two sections carry **measured findings** rather than design intent, and the controls around them are traceable to the measurement: §20.1 (ASR model selection for Malaysian code-switched speech) and §21.1 (fabricated clinical negatives on sparse transcripts). §19's Open Decisions Register carries 18 rows, 8 of them still open; resolved rows are struck through and kept so cross-references stay stable. A `Specified` tag means designed-not-built, and `Built` means it exists in the repository today.
+Two sections carry **measured findings** rather than design intent, and the controls around them are traceable to the measurement: §20.1 (ASR model selection for Malaysian code-switched speech) and §21.1 (fabricated clinical negatives on sparse transcripts). §19's Open Decisions Register carries 19 rows, 9 of them still open; resolved rows are struck through and kept so cross-references stay stable. A `Specified` tag means designed-not-built, and `Built` means it exists in the repository today.
 
 **Implementation began 13/08/26.** §9, §10, §11 and §14 moved `Specified` → `Built`, and register rows 1, 2, 4 and 9 closed against real code. Where implementation contradicted the specification, the section says so and explains which won — see §5 and §7.
 
@@ -1145,6 +1145,7 @@ Every `Open` item in this document, collected in one place. **Resolved rows are 
 | 17  | Should note-to-transcript evidence spans be surfaced in the review UI as clickable traceability, or stay data-only?                                                                                                                                 | §21.4   | The data already exists as a by-product of §21.4. Abridge Linked Evidence and Dragon's evidence summary are top-of-market trust features; `docs/prd.md` §12 currently scopes this out in one sentence rather than leaving it silent                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Human (scope call)                                       |
 | 18  | What exactly does the hosted-ASR consent gate say and require, such that hosted stays **findable but not funnelled** (§20)?                                                                                                                         | §20     | Deciding the wording, the affordance, and what the doctor must actively do — the governing rule (on-device default, per-consultation explicit act, degrade to paste never to cloud) is settled; the interaction that carries it is not. The tension is that the doctor on weak hardware is exactly who is offered it, at the moment of most frustration                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Human (consent UX), before the hosted adapter is built   |
 | 19  | ~~Should `note_and_gaps` be split into two operations, one for the clinical facts and one for the SOAP note?~~ **Split 13/08/26: yes.**                                                                                                             | §12     | Opened by the row 8 measurement, closed by a controlled one. 8 runs per arm on the same 3,085-word consultation against the live Singapore endpoint: the single call averaged 3,337 completion tokens over a 533-token spread and put **2 of 8 runs outside CAP-1's 30s** (worst 36.1s); the split runs concurrently at a 2,779-token worst case over a 127-token spread, **8 of 8 inside budget** (worst 24.9s). Re-measured through the shipped `analyseNote` with the full production prompts: 8 of 8 inside budget, mean 19.9s, worst 21.6s, latency spread down from 12.4s to 2.6s. The decision turned on variance rather than size. A fixed 34-key checklist asked for on its own is nearly constant-size because every key is known in advance and only the spans vary, so bundling it with generated prose was reintroducing variance the checklist does not have. The cost is a second concurrent call and a changed §12 contract; the fixed key set that makes "never silently omitted" enforceable (`docs/prd.md` §10) is untouched, which was the constraint any answer had to respect. | Human (decided: split)                                   |
+| 20  | Is on-device voice diarization worth building?                                                                                                                                                                                                      | §20.2   | Decided by measured EER on one-desk-microphone clinic-like audio: under about 10% proceeds, 10 to 20% demotes it to a labour-saver with per-line uncertainty, over 20% is worse than nothing. See §20.2's roadmap block for the design sketch and the rejected implementations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Human (scope call)                                       |
 
 ---
 
@@ -1365,6 +1366,107 @@ Measured **13/08/26** on a 49.7 s Manglish sample (casual conversation, Malay an
 **Open** — `language` is settled above and is not negotiable. Whether the low-confidence indicator and VAD silence-trimming are built in this window, or named as unmitigated, is a scope call against the remaining runway. See the Open Decisions Register, §19, row 15.
 
 **Malay-accuracy roadmap, not a build item.** `mesolitica/malaysian-whisper-*` is fine-tuned on Malaysian audio (IMDA STT, the Malay Conversational Speech Corpus, pseudolabelled Malaysian YouTube) with v3 described as handling Malay, Manglish, Mandarin and Tamil. **No ONNX build is published and no public WER exists.** Cite it as the improvement path; do not attempt the conversion now.
+
+### 20.2 Draft Speaker Labels: Measured, Gated, Not Diarisation
+
+**Built, issue #118.**
+
+#### What This Is, And Is Not
+
+This is **turn segmentation from timing and punctuation**, not diarisation. Whisper cannot tell the two voices apart, and nothing in this feature listens to the audio for who is speaking: it reads segment boundaries and question marks. A per-line Doctor/Patient toggle in a review list (`frontend/src/audio/SpeakerAssign.tsx`) is prefilled with a guess and stays a guess, editable, until the doctor explicitly applies it. Start Consultation stays disabled until that apply happens, so nothing guessed reaches the transcript unreviewed.
+
+#### The Pipeline Flag And Its Cost
+
+`transcribe.worker.ts` passes `return_timestamps: true` to Whisper (`chunk_length_s: 30`, `stride_length_s: 5`), which is what turns one flat transcript into per-segment boundaries `draft-turns.ts` can split on.
+
+| Cost               | Detail                                                                                                                             |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Wall clock         | +49% transcription time measured on the same audio, same session, 16-core machine: 98.5 s plain vs 147.2 s with timestamps         |
+| On clinic hardware | Compounds on the §20.1 RTF 1.5-3.0 estimate for browser WASM on a 4-core clinic PC, since this is on top of that time, not instead |
+| What is bought     | Passive machine time traded against the doctor's active per-line labelling time, which is the tradeoff being accepted, not avoided |
+
+#### Measured, 14/08/26
+
+83.4 s synthetic two-voice consultation (Windows SAPI, David as doctor, Zira as patient), fixture 1's turns plus four scripted closing turns, run through the exact production pipeline (`onnx-community/whisper-small`, WASM, `q8`, `graphOptimizationLevel: 'disabled'`, `language: 'en'`) and through the production worker file end to end.
+
+**Stated honestly, as §20.1 does for its own sample:** synthetic TTS audio is a timing and boundary test, not a speech-register test (clean voices, anglicised Malay pronunciation). n=1, not a benchmark.
+
+| Finding                         | Result                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Timestamp integrity             | 17 segments, zero NaN, monotonic, final end 83.6 s vs 83.4 s true duration; concatenated segment text reproduces the transcript after whitespace normalisation. Neither known transformers.js failure shape (#1590 segment collapse, #1077 NaN) appeared                                                                                                            |
+| Pause-gap premise               | **False.** Segment timestamps are contiguous partitions: `end[i] == start[i+1]` at all 16 boundaries, every scripted 1.0-1.6 s silence absorbed into the earlier segment. There is no gap to threshold on; the boundaries themselves are the split signal                                                                                                           |
+| Boundary recall                 | 10 of 11 true speaker handoffs recovered by a line boundary within 1.0 s. The miss merged the doctor's advice and the patient's reply into one line                                                                                                                                                                                                                 |
+| Label prefill accuracy          | 9 of 17 lines correct (53%). Failure modes: alternation flipping on an over-split same-speaker continuation; a spurious question mark from rising TTS intonation triggering rule 3; the merged line cascading three wrong labels until the next question re-anchored. This is why labels are toggles behind an explicit apply, never text already in the transcript |
+| Timestamp decoding cost         | +49% wall clock (above). The production worker run including model init from cache took 180 s                                                                                                                                                                                                                                                                       |
+| Text quality with timestamps on | Equal or better on this sample: the plain run dropped a word ("bit") and ran three sentences together; the stamped run kept them                                                                                                                                                                                                                                    |
+
+#### The Four Rules, In Order
+
+1. The consultation opens with the doctor.
+2. The line after a question is the patient answering it.
+3. A line that itself asks a question is the doctor, which re-anchors the alternation at every question so a wrong guess propagates only to the next question, not to the end of the consultation.
+4. Otherwise, alternate from the previous line's speaker.
+
+Rule 2 is checked before rule 3 so a reply that itself ends questioning ("Yes, since this morning?") stays the patient's. **Known-wrong case:** a patient asking their own question is handed to the doctor by rule 3.
+
+#### The Apply Gate Is The Safety Control
+
+`backend/src/redflags/mislabel-suppression.test.ts` (test only, zero backend production changes) is the executable rationale. It pins that "Is it bad that I am coughing up blood?" fires the `haemoptysis` trigger when labelled patient, and goes silent when a mislabelling dresses it up as a doctor question followed by a patient denial, which is exactly the shape rule 3 (question to the doctor) plus rule 2 (next line to the patient) produces when a patient asks about their own symptom. Issue #70's suppression is correct given correct labels; it trusts the labels it is given. That is why nothing guessed here reaches `evaluateRedFlags` unreviewed: Start Consultation is disabled until the doctor applies the draft, one line at a time.
+
+#### The Offsets Contract
+
+- Applying serialises lines into the shared textarea as `Doctor [0:04]: text`, floored to whole seconds.
+- The single parser (`frontend/src/lib/transcript.ts`, moved from `ConsultationNew` for #118) reads the same optional inline `[m:ss]` back into `offsetSeconds` as an integer, for every input path: fixture, paste, upload, and record.
+- A second recording appended to existing content keeps the drafted labels but drops timestamps, because its timebase restarts at zero and would otherwise collide with the first recording's.
+- The fixture tab now serialises through this same function, so fixture-authored offsets survive to submission for the first time. Previously the textarea round-trip discarded them on every path, and the evidence trace's `PATIENT · 0:04` marker had never rendered for a user-created consultation.
+
+#### The Fallback Contract
+
+Segments are advisory, text is authoritative. `usable()` in `draft-turns.ts` checks that segment timestamps are non-decreasing and finite, and that the concatenated segment text reproduces the full transcript after whitespace normalisation. Malformed, non-monotonic, or text-mismatching segments make the draft come back empty and the raw prose lands unlabelled, exactly as it did before #118.
+
+#### Limits
+
+- No voice information is used anywhere in this feature; it is timing and punctuation only.
+- The merged-line case (two speakers folded into one segment) is fixed only by editing the applied text, not by the labelling UI.
+- A third speaker is not representable: `SpeakerSchema` has two values, and the review list offers only Doctor/Patient.
+- The known-wrong case above (a patient's own question handed to the doctor) is a property of rule 3, not a bug; a doctor reviewing the draft is the mitigation.
+
+#### Voice Diarisation Roadmap (Specified, Not Built)
+
+Recorded so the option is scoped, not attempted, in this window.
+
+**What is available for free.** transformers.js v4 natively ships both models a diarisation pass would need, with zero new dependencies and mirrorable through the existing `VITE_ASR_MODEL_HOST` layout with no code change:
+
+| Model                                           | Size         | Role                                                             |
+| ----------------------------------------------- | ------------ | ---------------------------------------------------------------- |
+| `onnx-community/pyannote-segmentation-3.0`      | 6.0 MB fp32  | `AutoModelForAudioFrameClassification`, speech/overlap detection |
+| `onnx-community/wespeaker-voxceleb-resnet34-LM` | 26.5 MB fp32 | 256-d speaker embeddings                                         |
+
+**Two verified library traps, so they are not re-discovered the hard way:**
+
+- `PyAnnoteFeatureExtractor` does not window: it tensors the whole recording, but the model is trained on 10 s chunks, so a sliding window has to be hand-built.
+- `post_process_speaker_diarization` is not a diarizer. It returns per-window powerset class ids (0 is silence) whose identities do not persist across windows.
+
+**Design sketch.** 10 s windows at a 5 s hop; permutation-invariant `P(speech)` and `P(overlap)` stitching across windows; embeddings taken on clean (non-overlapping) segments under a CPU budget; deterministic average-linkage agglomerative clustering read at k=1/2/3; **refusal as a first-class output**, where a one-speaker or third-voice verdict falls back to unlabelled prose rather than forcing a guess. That refusal path is why `SpeakerSchema` needs no third value even if this ships.
+
+**A possible second payoff.** The segmentation pass doubles as a VAD. Its silence-trimming may pay for more of its own cost than the diarisation half costs, and would close the VAD half of §19 row 15 (currently open) if it does.
+
+**Estimated cost.** 2 to 4 minutes added to a 10-minute consultation.
+
+**Ship thresholds**, against measured EER on one-desk-microphone clinic-like audio:
+
+| EER             | Verdict                                                                           |
+| --------------- | --------------------------------------------------------------------------------- |
+| Under about 10% | Proceed                                                                           |
+| 10 to 20%       | Demoted to a labour-saver with per-line uncertainty shown, not a default          |
+| Over 20%        | Worse than nothing: converts the doctor's authoring task into a proofreading task |
+
+**Rejected implementations, recorded so they are not retried:**
+
+- **sherpa-onnx WASM.** Statically links a second ONNX Runtime, bypassing the `VITE_ASR_MODEL_HOST` mirror.
+- **A direct `onnxruntime-web` dependency.** The lockfile resolves a transformers.js-pinned nightly dev build; a caret range on top would install a second ORT beside it.
+
+**Role-mapping floor.** A one-tap swap control, same as today's Swap All. Stored clinician voiceprints are rejected outright: biometric data, on shared clinic PCs, and this section's own upload claims already forbid it.
 
 ---
 

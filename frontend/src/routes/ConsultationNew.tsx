@@ -4,39 +4,14 @@ import { FileUp, FolderOpen, Mic, Type } from 'lucide-react'
 import { type ChangeEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AudioCapture } from '../audio/AudioCapture.js'
+import { type DraftLine, draftToTurns, segmentsToDraft } from '../audio/draft-turns.js'
+import { SpeakerAssign } from '../audio/SpeakerAssign.js'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
+import { parseTranscript, serialiseTurns } from '../lib/transcript.js'
 import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
-
-/**
- * One parser for every input path (#2).
- *
- * Fixture, paste and upload all land in the same textarea and go through the
- * same `Doctor:` / `Patient:` line parser. Keeping one parser is what stops the
- * paths drifting: a bug fixed for upload is fixed for all three, and the
- * doctor can always see and correct exactly what will be submitted.
- */
-export function parseTranscript(raw: string): TranscriptTurn[] {
-  const turns: TranscriptTurn[] = []
-  for (const line of raw.split('\n')) {
-    const match = /^\s*(doctor|patient)\s*:\s*(.+)$/i.exec(line)
-    if (match?.[1] && match[2]?.trim()) {
-      turns.push({
-        speaker: match[1].toLowerCase() === 'doctor' ? 'doctor' : 'patient',
-        text: match[2].trim(),
-      })
-      continue
-    }
-    // A continuation line belongs to the turn above it rather than being
-    // dropped: pasted transcripts wrap, and silently losing a wrapped clause
-    // would lose clinical content.
-    const previous = turns.at(-1)
-    if (previous && line.trim()) previous.text = `${previous.text} ${line.trim()}`
-  }
-  return turns
-}
 
 const TABS = [
   { id: 'fixture', label: 'Bundled Case', Icon: FolderOpen },
@@ -50,6 +25,14 @@ export function ConsultationNew() {
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>('fixture')
   const [text, setText] = useState('')
   const [source, setSource] = useState<TranscriptSource>('fixture')
+  /*
+   * Drafted speaker labels live here, outside the textarea, until the doctor
+   * explicitly applies them. While a draft is pending the recording is not in
+   * the transcript at all and submission stays disabled, so unreviewed
+   * guessed labels can never reach the API (issue #70's suppression shape is
+   * why that gate is a safety control rather than UX polish).
+   */
+  const [draft, setDraft] = useState<DraftLine[] | null>(null)
 
   const fixtures = useQuery({ queryKey: ['fixtures'], queryFn: api.fixtures })
 
@@ -61,6 +44,14 @@ export function ConsultationNew() {
       return api.createConsultation(transcript)
     },
     onSuccess: (consultation) => navigate(`/consultations/${consultation.id}`),
+  })
+
+  const appendText = (addition: string) =>
+    setText((current) => (current ? `${current.trimEnd()}\n${addition}` : addition))
+
+  const flip = (line: DraftLine): DraftLine => ({
+    ...line,
+    speaker: line.speaker === 'doctor' ? 'patient' : 'doctor',
   })
 
   const onUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -75,12 +66,19 @@ export function ConsultationNew() {
         const list = Array.isArray(parsed) ? parsed : (parsed as { turns?: unknown }).turns
         if (Array.isArray(list)) {
           setText(
-            list
-              .map((turn) => {
-                const t = turn as { speaker?: string; text?: string }
-                return `${t.speaker === 'doctor' ? 'Doctor' : 'Patient'}: ${t.text ?? ''}`
-              })
-              .join('\n'),
+            serialiseTurns(
+              list.map((turn) => {
+                const t = turn as { speaker?: string; text?: string; offsetSeconds?: number }
+                const mapped: TranscriptTurn = {
+                  speaker: t.speaker === 'doctor' ? 'doctor' : 'patient',
+                  text: t.text ?? '',
+                }
+                if (typeof t.offsetSeconds === 'number' && t.offsetSeconds >= 0) {
+                  mapped.offsetSeconds = t.offsetSeconds
+                }
+                return mapped
+              }),
+            ),
           )
           setSource('upload')
           return
@@ -135,14 +133,7 @@ export function ConsultationNew() {
                 key={fixture.id}
                 type="button"
                 onClick={() => {
-                  setText(
-                    fixture.transcript.turns
-                      .map(
-                        (turn) =>
-                          `${turn.speaker === 'doctor' ? 'Doctor' : 'Patient'}: ${turn.text}`,
-                      )
-                      .join('\n'),
-                  )
+                  setText(serialiseTurns(fixture.transcript.turns))
                   setSource('fixture')
                   setTab('paste')
                 }}
@@ -178,23 +169,62 @@ export function ConsultationNew() {
         {tab === 'record' && (
           <Card className="p-6">
             <AudioCapture
-              onTranscript={(transcribed) => {
+              onTranscript={({ text: transcribed, segments }) => {
                 /*
                  * Appended, never replacing what is already there. A doctor may
                  * record in passes, or have started typing, and silently
                  * discarding either would lose clinical content the same way the
                  * parser's dropped-continuation bug would have.
                  *
+                 * Offsets only when this recording is the whole transcript so
+                 * far: a later recording's timebase restarts at zero, and a
+                 * mixed timebase would assert wrong times in the evidence
+                 * trace. Labels still draft; timestamps are dropped.
+                 *
                  * `asr_local` is the honest provenance: transcribed on device.
                  * It is client-asserted and the API cannot verify it, which is
                  * why nothing in the safety architecture rests on it.
                  */
-                setText((current) =>
-                  current ? `${current.trimEnd()}\n${transcribed}` : transcribed,
-                )
+                const withOffsets = text === '' && draft === null
+                const lines = segmentsToDraft(segments, transcribed, { withOffsets })
+                if (lines.length > 0) {
+                  setDraft((current) =>
+                    current
+                      ? [
+                          ...current,
+                          ...lines.map((line, i) => ({ ...line, id: `seg-${current.length + i}` })),
+                        ]
+                      : lines,
+                  )
+                } else {
+                  // No usable timing: fall back to the unlabelled prose the
+                  // record path produced before #118.
+                  appendText(transcribed)
+                }
                 setSource('asr_local')
               }}
             />
+            {draft && (
+              <SpeakerAssign
+                draft={draft}
+                onToggle={(id) =>
+                  setDraft((current) =>
+                    current ? current.map((line) => (line.id === id ? flip(line) : line)) : current,
+                  )
+                }
+                onSwapAll={() => setDraft((current) => (current ? current.map(flip) : current))}
+                onApply={() => {
+                  if (!draft) return
+                  appendText(serialiseTurns(draftToTurns(draft)))
+                  setDraft(null)
+                }}
+                onInsertPlain={() => {
+                  if (!draft) return
+                  appendText(draft.map((line) => line.text).join(' '))
+                  setDraft(null)
+                }}
+              />
+            )}
           </Card>
         )}
 
@@ -215,15 +245,21 @@ export function ConsultationNew() {
         )}
       </div>
 
-      {text && (
+      {(text || draft) && (
         <Card className="mt-4 p-4">
           <p className="text-sm font-medium">
             {turns.length} turn{turns.length === 1 ? '' : 's'} parsed
           </p>
-          {turns.length === 0 && (
+          {turns.length === 0 && !draft && (
             <p className="mt-1 text-sm text-ink-muted">
               No speaker labels found. Prefix each line with <code>Doctor:</code> or{' '}
               <code>Patient:</code>.
+            </p>
+          )}
+          {draft && (
+            <p className="mt-1 text-sm text-ink-muted">
+              A recording is waiting in the Record tab: check its draft labels and apply them before
+              starting.
             </p>
           )}
         </Card>
@@ -241,7 +277,7 @@ export function ConsultationNew() {
         variant="primary"
         size="lg"
         className="mt-6"
-        disabled={turns.length === 0}
+        disabled={turns.length === 0 || draft !== null}
         loading={create.isPending}
         onClick={() => create.mutate()}
       >

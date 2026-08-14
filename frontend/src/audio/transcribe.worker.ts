@@ -156,12 +156,52 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       // chunked, with overlap so a word spoken across a boundary is not lost.
       chunk_length_s: 30,
       stride_length_s: 5,
+      /*
+       * Segment timestamps feed the draft speaker labels (docs/trd.md §20.2).
+       * Measured on this exact config before being relied on: 17 clean,
+       * monotonic segments over an 83 s recording, at a real cost of roughly
+       * +50% transcription wall clock. The known failure shapes elsewhere
+       * (segment collapse, NaN) did not appear here, but the narrowing below
+       * still refuses anything malformed rather than trusting the type.
+       */
+      return_timestamps: true,
     })
 
-    const text = Array.isArray(output)
-      ? output.map((part) => ('text' in part ? part.text : '')).join(' ')
-      : output.text
-    post({ type: 'result', text: text.trim() })
+    /*
+     * Every part is joined, as before #118: a multi-part result must never
+     * drop its tail, because a dropped span is a red flag that never fires.
+     * Segments are read from a single-part result only; joined text cannot
+     * line up with one part's timestamps, so a multi-part result degrades to
+     * unlabelled prose rather than to confidently mislabelled lines.
+     */
+    const parts = Array.isArray(output) ? output : [output]
+    const text = parts
+      .map((part) => ('text' in part ? part.text : ''))
+      .join(' ')
+      .trim()
+    /*
+     * Hand-rolled narrowing instead of Zod, deliberately: this repo has been
+     * burned by this runtime's declared types not matching reality, and the
+     * check is three fields. Malformed segments become an empty list, which
+     * downstream treats as "no usable timing", never as an error.
+     */
+    const segments: { text: string; start: number; end: number | null }[] = []
+    const single = parts.length === 1 ? parts[0] : undefined
+    const chunks: unknown = single && 'chunks' in single ? single.chunks : undefined
+    if (Array.isArray(chunks)) {
+      for (const chunk of chunks as unknown[]) {
+        const c = chunk as { text?: unknown; timestamp?: unknown }
+        const stamp = Array.isArray(c.timestamp) ? (c.timestamp as unknown[]) : null
+        const start = stamp?.[0]
+        const end = stamp?.[1] ?? null
+        if (typeof c.text !== 'string' || typeof start !== 'number') {
+          segments.length = 0
+          break
+        }
+        segments.push({ text: c.text, start, end: typeof end === 'number' ? end : null })
+      }
+    }
+    post({ type: 'result', text, segments })
   } catch (error) {
     post({
       type: 'error',
