@@ -14,10 +14,16 @@ import { requireSession } from './middleware/require-session.js'
 import { authRouter } from './routes/auth.js'
 import { consultationsRouter } from './routes/consultations.js'
 import { healthRouter } from './routes/health.js'
+import { notificationsRouter } from './routes/notifications.js'
 import { referenceRouter } from './routes/reference.js'
 
 /** Routes that carry clinical data. Everything here requires a session. */
-const PROTECTED_PREFIXES = ['/api/consultations', '/api/fixtures', '/api/guidelines']
+const PROTECTED_PREFIXES = [
+  '/api/consultations',
+  '/api/fixtures',
+  '/api/guidelines',
+  '/api/notifications',
+]
 
 export function createApp() {
   const app = express()
@@ -63,6 +69,7 @@ export function createApp() {
   // stay above `errorHandler` — an error handler registered before a router
   // never sees that router's errors.
   app.use('/api', referenceRouter)
+  app.use('/api', notificationsRouter)
   app.use('/api/consultations', consultationsRouter)
 
   app.use(errorHandler)

@@ -8,6 +8,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Printer, Sparkles } from 'lucide-react'
 import { useState } from 'react'
+import toast from 'react-hot-toast'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { DEMO_CONSULTATION_ID, useDemoTour } from '../demo/DemoTour.js'
 import { ApiError, api } from '../lib/api.js'
@@ -69,6 +70,19 @@ export function ConsultationReview() {
   const invalidate = (next: ConsultationDetail) => {
     queryClient.setQueryData(['consultation', id], next)
     void queryClient.invalidateQueries({ queryKey: ['consultations'] })
+    // Approval and a completed analysis both write notifiable audit rows, so
+    // the bell has to be told the feed it is holding is stale (#116).
+    void queryClient.invalidateQueries({ queryKey: ['notifications'] })
+  }
+
+  /**
+   * Only on the stored path. Demo Mode approves in memory and persists nothing
+   * (#80), so a toast reading "approved" there would claim a record exists that
+   * does not.
+   */
+  const onApproved = (next: ConsultationDetail) => {
+    invalidate(next)
+    toast.success('Note approved. This record is now final.')
   }
 
   const analyze = useMutation({ mutationFn: () => api.analyze(id), onSuccess: invalidate })
@@ -381,7 +395,7 @@ export function ConsultationReview() {
           approvedAt={detail.approvedAt}
           approvedBy={detail.approvedBy}
           unacknowledgedCount={unacknowledged.length}
-          onApproved={isEphemeral ? tour.updateEphemeral : invalidate}
+          onApproved={isEphemeral ? tour.updateEphemeral : onApproved}
         />
       )}
     </div>

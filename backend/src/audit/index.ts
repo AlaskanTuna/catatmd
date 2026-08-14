@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { DispositionState } from '@shared/types'
+import { type DispositionState, NotificationActionSchema } from '@shared/types'
 import type { ProfileId } from '../clinical-profiles/index.js'
 import type { ActiveClinicalVersions } from '../clinical-versions/index.js'
 import { prisma } from '../lib/prisma.js'
@@ -248,5 +248,26 @@ export async function getAuditHistory(consultationId: string) {
     where: { consultationId },
     orderBy: { createdAt: 'asc' },
     select: { id: true, action: true, metadata: true, actorId: true, createdAt: true },
+  })
+}
+
+/**
+ * The recent notifiable events for one actor, newest first (issue #116).
+ *
+ * Scoped on `actorId` in the query rather than filtered afterwards, so there is
+ * no shape of this function that reads another doctor's events into memory
+ * first. `@@index([actorId, createdAt])` already covers the access path.
+ *
+ * `metadata` is deliberately not selected. It is the one audit column that
+ * could ever carry something richer than a label, and a feed rendered in the
+ * chrome of every screen is the last place that should be the first consumer of
+ * it.
+ */
+export async function getActorNotifications(actorId: string, limit: number) {
+  return prisma.auditEvent.findMany({
+    where: { actorId, action: { in: NotificationActionSchema.options } },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    select: { id: true, action: true, consultationId: true, createdAt: true },
   })
 }

@@ -6,6 +6,7 @@ import { HelpButton } from '../demo/HelpButton.js'
 import { Spotlight } from '../demo/Spotlight.js'
 import { cn } from '../lib/cn.js'
 import { CursorGlow } from '../ui/CursorGlow.js'
+import { ChromeCluster } from './ChromeCluster.js'
 import { LiveDataWarning } from './LiveDataWarning.js'
 import { MobileDock } from './MobileDock.js'
 import { SidebarIsland } from './SidebarIsland.js'
@@ -69,6 +70,7 @@ export function AppShell() {
             the sidebar and the scrim, and a coachmark clipped by the surface it
             is pointing at would defeat itself. */}
         <LiveDataWarning />
+        <ChromeCluster />
         <HelpButton />
         <DemoStepBar />
         <Spotlight />

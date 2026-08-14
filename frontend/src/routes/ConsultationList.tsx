@@ -2,6 +2,7 @@ import type { ConsultationListItem, ConsultationStatus } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { useRef, useState } from 'react'
+import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
@@ -55,7 +56,6 @@ export function ConsultationList() {
     queryFn: api.listConsultations,
   })
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
-  const [notice, setNotice] = useState<string | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
 
   const consultations = data ?? []
@@ -72,14 +72,17 @@ export function ConsultationList() {
     onSuccess: ({ erased, failed }) => {
       dialog.current?.close()
       setPicked(new Set())
-      // Silent on a clean run: the rows disappearing is the confirmation, and a
-      // message saying so would be noise. A partial failure is the opposite and
-      // must never be swallowed by the rows that did go.
-      setNotice(
-        failed.length === 0
-          ? null
-          : `${count(erased.length, 'consultation')} erased. ${count(failed.length, 'other')} could not be, and may already have been erased elsewhere.`,
-      )
+      // A partial failure is an error even though the request succeeded, and it
+      // gets the longer error duration, because "some of what you asked for did
+      // not happen" is the one outcome here a doctor may need to act on.
+      if (failed.length > 0) {
+        toast.error(
+          `${count(erased.length, 'consultation')} erased. ${count(failed.length, 'other')} could not be, and may already have been erased elsewhere.`,
+        )
+      } else {
+        toast.success(`${count(erased.length, 'consultation')} erased.`)
+      }
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] })
       return queryClient.invalidateQueries({ queryKey: ['consultations'] })
     },
   })
@@ -107,15 +110,6 @@ export function ConsultationList() {
           </Link>
         }
       />
-
-      {notice && (
-        <p
-          role="status"
-          className="mt-6 rounded-card border border-urgent/40 bg-urgent/8 px-4 py-3 text-sm text-ink"
-        >
-          {notice}
-        </p>
-      )}
 
       {consultations.length > 0 && (
         <div

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
+import { useEffect } from 'react'
 import { api } from '../lib/api.js'
 
 /**
@@ -35,6 +36,9 @@ export function LiveDataWarning() {
   return <LiveDataBanner />
 }
 
+/** `py-1.5` around a `text-xs` line, plus a small gap for what sits beneath. */
+const BANNER_HEIGHT = '2rem'
+
 function LiveDataBanner() {
   const health = useQuery({
     queryKey: ['health'],
@@ -43,9 +47,24 @@ function LiveDataBanner() {
     retry: false,
   })
 
+  const showing = health.data?.database === 'remote'
+
+  // Published as a custom property so fixed chrome can sit below this banner
+  // without importing anything from it, and without production paying for a
+  // dev-only concern: nothing sets this variable in a production build, so the
+  // fallback of zero is what ships (#116).
+  useEffect(() => {
+    if (!showing) return
+    const root = document.documentElement
+    root.style.setProperty('--live-banner-inset', BANNER_HEIGHT)
+    return () => {
+      root.style.removeProperty('--live-banner-inset')
+    }
+  }, [showing])
+
   // Anything other than an explicit `remote` is silence, including an error, a
   // pending fetch, and the absent field a production API returns.
-  if (health.data?.database !== 'remote') return null
+  if (!showing) return null
 
   return (
     <div

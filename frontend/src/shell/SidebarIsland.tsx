@@ -1,8 +1,7 @@
-import { BookMarked, FileText, Moon, PanelLeft, Plus, Sun } from 'lucide-react'
+import { BookMarked, FileText, PanelLeft, Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
-import { useTheme } from '../lib/theme.js'
 import { Mark } from '../ui/Mark.js'
 import { Wordmark } from '../ui/Wordmark.js'
 
@@ -46,7 +45,6 @@ export function SidebarIsland({
   const [focused, setFocused] = useState(false)
   const [pinned, setPinned] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const { resolved, setPreference } = useTheme()
 
   const expanded = pinned || hovered || focused
 
@@ -143,26 +141,6 @@ export function SidebarIsland({
       </ul>
 
       <div className="flex flex-col gap-1 border-t border-line/60 pt-2">
-        <button
-          type="button"
-          onClick={() => setPreference(resolved === 'dark' ? 'light' : 'dark')}
-          className="flex h-11 items-center gap-3 rounded-control px-3 text-sm font-medium text-ink-muted transition-colors duration-150 hover:bg-sunken/60 hover:text-ink"
-        >
-          {resolved === 'dark' ? (
-            <Sun aria-hidden className="size-5 shrink-0" />
-          ) : (
-            <Moon aria-hidden className="size-5 shrink-0" />
-          )}
-          <span
-            className={cn(
-              'whitespace-nowrap transition-opacity duration-150',
-              expanded ? 'opacity-100' : 'pointer-events-none opacity-0',
-            )}
-          >
-            {resolved === 'dark' ? 'Light Theme' : 'Dark Theme'}
-          </span>
-        </button>
-
         {/* Touch has no hover and a keyboard user should not have to hold
             focus to read a label. Pinning is the accessible equivalent. */}
         <button

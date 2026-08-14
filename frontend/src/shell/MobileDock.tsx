@@ -1,7 +1,6 @@
 import { BookMarked, FileText, Plus } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
-import { ThemeToggle } from '../ui/ThemeToggle.js'
 
 /**
  * The small-screen replacement for the sidebar island, not a squeezed version
@@ -44,7 +43,6 @@ export function MobileDock() {
           {label}
         </NavLink>
       ))}
-      <ThemeToggle className="flex-1" />
     </nav>
   )
 }
