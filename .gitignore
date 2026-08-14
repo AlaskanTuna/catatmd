@@ -72,3 +72,13 @@ graphify-out/*
 # Regenerate with:
 #   drawio --export --format svg --output <out>.svg <src>.drawio
 docs/assets/*.drawio.svg
+
+# ─── Agent worktrees ──────────────────────────────────────────────────────────
+# Isolated worktrees for parallel sessions that would otherwise collide in one
+# working tree. `claude --worktree <name>` creates them here; never committed.
+# This is Claude Code's native location, so no WorktreeCreate hook is needed.
+#
+# No trailing slash, deliberately. A "dir/" pattern only matches a path git
+# already knows is a directory, so `git check-ignore .claude/worktrees` fails
+# before the directory exists, which is precisely when a skill tests it.
+.claude/worktrees
