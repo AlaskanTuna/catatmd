@@ -1,4 +1,13 @@
-import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '../lib/cn.js'
 
 /**
@@ -32,12 +41,59 @@ export function Dropover({
   const [open, setOpen] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
   const panelId = useId()
+
+  /**
+   * Where the portalled panel sits, in viewport coordinates.
+   *
+   * Needed only because the panel is portalled out of this component's DOM
+   * position (see the render), so it can no longer be placed by `absolute`
+   * against the wrapper. Measured from the trigger rather than tracked as
+   * state the caller supplies, so alignment stays a property of where the
+   * button actually is.
+   */
+  const [position, setPosition] = useState<{ top: number; left?: number; right?: number }>()
+
+  const place = useCallback(() => {
+    const rect = trigger.current?.getBoundingClientRect()
+    if (!rect) return
+    setPosition({
+      // 8px below the trigger, which is what `top-11` against a `size-9`
+      // button used to produce.
+      top: rect.bottom + 8,
+      ...(align === 'right'
+        ? { right: Math.max(16, window.innerWidth - rect.right) }
+        : { left: Math.max(16, rect.left) }),
+    })
+  }, [align])
+
+  // Layout effect so the panel never paints at a stale position for a frame.
+  useLayoutEffect(() => {
+    if (open) place()
+  }, [open, place])
+
+  useEffect(() => {
+    if (!open) return
+    // `true` so this fires for scrolls in any nested scroller, not just the
+    // document, and `resize` covers the viewport changing under a pinned panel.
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [open, place])
 
   useEffect(() => {
     if (!open) return
     const onPointerDown = (event: PointerEvent) => {
-      if (!wrap.current?.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      // The panel is portalled, so it is no longer inside `wrap` and has to be
+      // tested separately. Without this every click inside the panel dismisses
+      // it, including the ones on its own buttons.
+      if (wrap.current?.contains(target) || panel.current?.contains(target)) return
+      setOpen(false)
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
@@ -83,28 +139,47 @@ export function Dropover({
         )}
       </button>
 
-      {open && (
-        <div
-          id={panelId}
-          // No role and no name, deliberately. This is a disclosure: the named
-          // button sits immediately before the content it reveals and carries
-          // `aria-expanded`, so the panel is just content. Giving it `role=
-          // "menu"` would promise arrow-key semantics that are not implemented,
-          // and `role="group"` would be a name repeated from the trigger.
-          style={{ zIndex: 'var(--z-modal)' }}
-          className={cn(
-            // Glass, matching every other floating surface in the app. These
-            // panels carry chrome (a status feed, an account menu) rather than
-            // clinical content, so docs/DESIGN.md's solid-panels-for-content
-            // rule does not bind here. The blur is what stops the page behind
-            // showing through as noise under the text.
-            'glass-panel absolute top-11 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-float',
-            align === 'right' ? 'right-0' : 'left-0',
-          )}
-        >
-          {children(() => setOpen(false))}
-        </div>
-      )}
+      {/*
+       * Portalled to `body`, and that is a rendering-correctness requirement
+       * rather than a layering preference.
+       *
+       * `ChromeCluster`, this component's parent, is itself `.glass`. An
+       * element with `backdrop-filter` establishes a **backdrop root**, and a
+       * descendant's own `backdrop-filter` may only sample inside it. Rendered
+       * in place, this panel therefore blurred the cluster's flat fill instead
+       * of the page, and shipped as plain translucency with no frost: exactly
+       * the "nothing behind it to operate on" failure docs/DESIGN.md warns
+       * about, arriving structurally rather than through a missing dot grid.
+       *
+       * Portalling puts it back on the page's own backdrop root, where the dot
+       * grid and the content behind it are what the blur samples.
+       */}
+      {open &&
+        position &&
+        createPortal(
+          <div
+            ref={panel}
+            id={panelId}
+            // No role and no name, deliberately. This is a disclosure: the named
+            // button sits immediately before the content it reveals and carries
+            // `aria-expanded`, so the panel is just content. Giving it `role=
+            // "menu"` would promise arrow-key semantics that are not implemented,
+            // and `role="group"` would be a name repeated from the trigger.
+            data-print="hide"
+            style={{ zIndex: 'var(--z-modal)', ...position }}
+            className={cn(
+              // Glass, matching every other floating surface in the app. These
+              // panels carry chrome (a status feed, an account menu) rather than
+              // clinical content, so docs/DESIGN.md's solid-panels-for-content
+              // rule does not bind here. The blur is what stops the page behind
+              // showing through as noise under the text.
+              'glass-panel fixed w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-float',
+            )}
+          >
+            {children(() => setOpen(false))}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
