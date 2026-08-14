@@ -25,6 +25,15 @@ Closes #
 
 <!-- Name the specific tests added or the manual steps taken: -->
 
+## Migrations
+
+<!-- Delete this section if the diff adds nothing under prisma/migrations/. -->
+
+Production does not apply migrations on deploy, by design (`docs/trd.md` §17). CI flags this on the PR, and applying it is still a person's job.
+
+- [ ] After merging, run `bun run db:migrate:deploy` against the production `DIRECT_URL`
+- [ ] `bun run db:status` reports the database up to date
+
 ## Clinical-Safety Checklist
 
 <!-- Delete this whole section only if the diff touches none of these paths. -->

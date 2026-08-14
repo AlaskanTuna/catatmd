@@ -151,6 +151,78 @@ jobs:
   # is byte-identical either way, which is the whole reason the deploy was
   # skipped. Only the commit stamp differs. The backend is unaffected: Render
   # deploys the API from its own trigger on every push, independently of this.
+  # ── Migration notice ────────────────────────────────────────────────────────
+  # Nothing applies migrations to production, deliberately: Render's
+  # `preDeployCommand` is a paid-tier feature and Postgres is Supabase rather
+  # than Render, so migrations are applied by hand against `DIRECT_URL`
+  # (docs/trd.md §17). That decision is sound and the gap was that **nothing
+  # enforced the manual step**.
+  #
+  # PR #124 merged and deployed with `notificationsClearedAt` absent from
+  # production. `GET /api/notifications` would have thrown on every screen,
+  # because the chrome polls it sitewide. It was caught by running
+  # `prisma migrate status` by hand before the deploy landed, which is luck
+  # rather than a process.
+  #
+  # This job reads the migrations directory against the base branch and says so
+  # loudly. It needs **no production credential**, which is the whole point: the
+  # alternative that actually blocks a merge would need `DIRECT_URL` in CI, and
+  # putting a production database credential in Actions is a decision for a
+  # human rather than a convenience for a workflow (issue #132).
+  #
+  # It does not fail the build. A migration has to merge before it can be
+  # applied, so blocking the merge would be blocking the fix.
+  migrations:
+    name: Flag migrations needing a manual apply
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare migrations against the base branch
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          added="$(git diff --name-only --diff-filter=A "$BASE" "$GITHUB_SHA" \
+            -- 'prisma/migrations/**/migration.sql' || true)"
+
+          if [ -z "$added" ]; then
+            echo "No new migrations."
+            echo "No new migrations in this PR." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          names="$(echo "$added" | sed 's|prisma/migrations/||; s|/migration.sql||')"
+
+          {
+            echo "## Migrations needing a manual apply"
+            echo
+            echo "This PR adds migrations. **Production does not apply them on deploy.**"
+            echo "After merging, run this against the production \`DIRECT_URL\`:"
+            echo
+            echo '```bash'
+            echo 'bun run db:status         # confirm what is pending'
+            echo 'bun run db:migrate:deploy # apply it'
+            echo '```'
+            echo
+            echo "Added here:"
+            echo
+            echo "$names" | sed 's/^/- `/; s/$/`/'
+            echo
+            echo "Deploying the code without this leaves every request that touches"
+            echo "the new column failing against a schema that does not have it yet."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "$names" | while read -r m; do
+            [ -n "$m" ] && echo "::warning title=Migration needs a manual apply after merge::$m is not applied to production by the deploy. Run 'bun run db:migrate:deploy' against DIRECT_URL after merging."
+          done
+
   changes:
     name: Detect deployable changes
     needs: verify

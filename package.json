@@ -18,6 +18,7 @@
     "dev:frontend": "bun run --cwd shared build && bun run --cwd frontend dev",
     "db:migrate": "bunx prisma migrate dev --schema prisma/schema.prisma",
     "db:migrate:deploy": "bunx prisma migrate deploy --schema prisma/schema.prisma",
+    "db:status": "bunx prisma migrate status --schema prisma/schema.prisma",
     "db:seed": "bun run --cwd shared build && bunx tsx prisma/seed.ts",
     "db:seed:demo": "bun run --cwd shared build && bunx tsx prisma/seed-demo.ts",
     "db:studio": "bunx prisma studio --schema prisma/schema.prisma",
