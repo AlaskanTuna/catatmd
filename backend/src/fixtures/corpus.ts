@@ -26,32 +26,41 @@ export const FIXTURES: readonly Fixture[] = [
     transcript: {
       source: 'fixture',
       turns: [
-        { speaker: 'doctor', text: 'Morning, what brings you in today?' },
+        { speaker: 'doctor', text: 'Morning, what brings you in today?', offsetSeconds: 0.0 },
         {
           speaker: 'patient',
           text: "Doctor, I'm Kamal. Batuk sudah 3 hari lah, and my throat also quite sakit.",
+          offsetSeconds: 3.6,
         },
-        { speaker: 'doctor', text: 'Any fever?' },
+        { speaker: 'doctor', text: 'Any fever?', offsetSeconds: 10.2 },
         {
           speaker: 'patient',
           text: 'Yesterday quite hot, I check at home, 38.2 degrees. Today okay already.',
+          offsetSeconds: 12.2,
         },
-        { speaker: 'doctor', text: 'Any phlegm when you cough?' },
-        { speaker: 'patient', text: 'A bit, whitish colour, not much.' },
+        { speaker: 'doctor', text: 'Any phlegm when you cough?', offsetSeconds: 18.0 },
+        { speaker: 'patient', text: 'A bit, whitish colour, not much.', offsetSeconds: 21.1 },
         {
           speaker: 'doctor',
           text: 'Let me check your throat... okay, throat is red, tonsils a bit swollen.',
+          offsetSeconds: 24.3,
         },
         {
           speaker: 'doctor',
           text: "This looks viral currently. I'll dispense some medicine for you.",
+          offsetSeconds: 32.1,
         },
-        { speaker: 'patient', text: 'Can I get MC, doctor? Need to rest lah.' },
+        {
+          speaker: 'patient',
+          text: 'Can I get MC, doctor? Need to rest lah.',
+          offsetSeconds: 37.0,
+        },
         {
           speaker: 'doctor',
           text: "I'll give you 2 days MC. Take the medicine three times a day after food.",
+          offsetSeconds: 41.5,
         },
-        { speaker: 'patient', text: 'Okay doctor, thank you.' },
+        { speaker: 'patient', text: 'Okay doctor, thank you.', offsetSeconds: 48.5 },
       ],
     },
   },
@@ -69,30 +78,46 @@ export const FIXTURES: readonly Fixture[] = [
     transcript: {
       source: 'fixture',
       turns: [
-        { speaker: 'doctor', text: "Hi, what's your name, and what's wrong today?" },
+        {
+          speaker: 'doctor',
+          text: "Hi, what's your name, and what's wrong today?",
+          offsetSeconds: 0.0,
+        },
         {
           speaker: 'patient',
           text:
             "I'm Puan Salmah binti Yusof, doctor. My throat pain very bad since last night, " +
             'I cannot swallow anything now, even my own saliva I am drooling out.',
+          offsetSeconds: 4.7,
         },
-        { speaker: 'doctor', text: 'I see you are drooling. Any trouble breathing?' },
+        {
+          speaker: 'doctor',
+          text: 'I see you are drooling. Any trouble breathing?',
+          offsetSeconds: 17.0,
+        },
         {
           speaker: 'patient',
           text:
             "Yes, breathing feels very tight, and there's a noisy high-pitched sound when I " +
             'breathe in, especially when I lie down.',
+          offsetSeconds: 21.6,
         },
         {
           speaker: 'doctor',
           text: 'I can hear that stridor now when you breathe in. How long has this been going on?',
+          offsetSeconds: 31.1,
         },
-        { speaker: 'patient', text: 'Maybe 12 hours, getting worse and worse.' },
+        {
+          speaker: 'patient',
+          text: 'Maybe 12 hours, getting worse and worse.',
+          offsetSeconds: 39.5,
+        },
         {
           speaker: 'doctor',
           text:
             'Puan Salmah, this is serious — I need to refer you to the hospital emergency ' +
             'department right away, cannot manage this here.',
+          offsetSeconds: 43.3,
         },
       ],
     },
@@ -110,27 +135,35 @@ export const FIXTURES: readonly Fixture[] = [
     transcript: {
       source: 'fixture',
       turns: [
-        { speaker: 'doctor', text: "What's the problem today?" },
+        { speaker: 'doctor', text: "What's the problem today?", offsetSeconds: 0.0 },
         {
           speaker: 'patient',
           text: 'Batuk sudah 4 hari, throat also a bit sakit lah, but fever already gone since yesterday.',
+          offsetSeconds: 2.9,
         },
         {
           speaker: 'doctor',
           text: 'Let me check your throat and chest... throat looks a bit red, chest sounds clear.',
+          offsetSeconds: 10.4,
         },
         {
           speaker: 'doctor',
           text:
             "Okay, I'll dispense Paracetamol for the throat discomfort, and a cough syrup, " +
             'take three times a day.',
+          offsetSeconds: 19.4,
         },
-        { speaker: 'patient', text: 'Can I get MC, doctor? I still feel weak.' },
+        {
+          speaker: 'patient',
+          text: 'Can I get MC, doctor? I still feel weak.',
+          offsetSeconds: 27.3,
+        },
         {
           speaker: 'doctor',
           text: "Sure, I'll give you 2 days MC. Come back if it doesn't improve or gets worse.",
+          offsetSeconds: 32.0,
         },
-        { speaker: 'patient', text: 'Okay doctor, thank you very much.' },
+        { speaker: 'patient', text: 'Okay doctor, thank you very much.', offsetSeconds: 39.5 },
       ],
     },
   },
@@ -148,37 +181,42 @@ export const FIXTURES: readonly Fixture[] = [
     transcript: {
       source: 'fixture',
       turns: [
-        { speaker: 'doctor', text: "What's bringing you in today?" },
+        { speaker: 'doctor', text: "What's bringing you in today?", offsetSeconds: 0.0 },
         {
           speaker: 'patient',
           text:
             "Erm, my cough... actually I'm not sure how long already. Maybe two weeks? Or " +
             'was it before Raya... I lost count already lah.',
+          offsetSeconds: 3.4,
         },
-        { speaker: 'doctor', text: 'Is the cough productive, any phlegm?' },
+        { speaker: 'doctor', text: 'Is the cough productive, any phlegm?', offsetSeconds: 15.5 },
         {
           speaker: 'patient',
           text: 'Sometimes yes sometimes no, depends on the day I think. This morning got a bit, now nothing.',
+          offsetSeconds: 19.3,
         },
-        { speaker: 'doctor', text: 'Any fever?' },
+        { speaker: 'doctor', text: 'Any fever?', offsetSeconds: 27.3 },
         {
           speaker: 'patient',
           text:
             'I feel warm sometimes at night but I never check with thermometer. My wife also ' +
             'not sure, she said maybe I was just flushed only.',
+          offsetSeconds: 29.6,
         },
-        { speaker: 'doctor', text: 'Any chest pain or breathlessness?' },
+        { speaker: 'doctor', text: 'Any chest pain or breathlessness?', offsetSeconds: 41.0 },
         {
           speaker: 'patient',
           text:
             "Hard to say doctor. When I climb stairs I get a bit puffed, but I'm also not " +
             "exercising much nowadays, so maybe that's just unfit already.",
+          offsetSeconds: 44.4,
         },
         {
           speaker: 'doctor',
           text:
             'Let me examine you... chest sounds are hard to interpret clearly, some ' +
             'transmitted upper airway noise.',
+          offsetSeconds: 56.5,
         },
         {
           speaker: 'doctor',
@@ -186,6 +224,7 @@ export const FIXTURES: readonly Fixture[] = [
             "I'm not entirely sure what's going on here, the story is not very clear. Let's " +
             'start with something symptomatic first, and I want to see you again in a few ' +
             "days if it doesn't settle.",
+          offsetSeconds: 65.8,
         },
       ],
     },
@@ -209,57 +248,84 @@ export const FIXTURES: readonly Fixture[] = [
         {
           speaker: 'doctor',
           text: 'Morning Encik Ahmad bin Ismail, please have a seat. Can I confirm your IC number for the file?',
+          offsetSeconds: 0.0,
         },
-        { speaker: 'patient', text: 'Yes doctor, my NRIC is 850523-14-5677.' },
+        { speaker: 'patient', text: 'Yes doctor, my NRIC is 850523-14-5677.', offsetSeconds: 8.8 },
         {
           speaker: 'doctor',
           text: 'And your date of birth, just to double check — 23 May 1985?',
+          offsetSeconds: 11.9,
         },
-        { speaker: 'patient', text: 'Yes correct doctor.' },
-        { speaker: 'doctor', text: 'And your contact number is still 012-3456789?' },
+        { speaker: 'patient', text: 'Yes correct doctor.', offsetSeconds: 18.5 },
+        {
+          speaker: 'doctor',
+          text: 'And your contact number is still 012-3456789?',
+          offsetSeconds: 20.4,
+        },
         {
           speaker: 'patient',
           text:
             'Yes, same number. My address also same — No. 12, Jalan Meranti 5, Taman Desa ' +
             'Aman, 43000 Kajang, Selangor.',
+          offsetSeconds: 24.6,
         },
         {
           speaker: 'doctor',
           text: 'And email for your invoice, is it ahmad.ismail85@example.com?',
+          offsetSeconds: 33.4,
         },
-        { speaker: 'patient', text: "Yes doctor, that's correct." },
-        { speaker: 'doctor', text: 'Alright Encik Ahmad, what brings you in today?' },
+        { speaker: 'patient', text: "Yes doctor, that's correct.", offsetSeconds: 37.9 },
+        {
+          speaker: 'doctor',
+          text: 'Alright Encik Ahmad, what brings you in today?',
+          offsetSeconds: 40.2,
+        },
         {
           speaker: 'patient',
           text:
             'Doctor, batuk and sore throat since 2 days ago. Fever also, quite high last ' +
             'night, 38.9 degrees. No phlegm, just dry cough.',
+          offsetSeconds: 44.8,
         },
         {
           speaker: 'doctor',
           text: 'Any chest pain, difficulty breathing, or coughing up blood?',
+          offsetSeconds: 55.0,
         },
         {
           speaker: 'patient',
           text: 'No, none of that. Breathing is fine, no pain in the chest.',
+          offsetSeconds: 59.8,
         },
-        { speaker: 'doctor', text: 'Any nausea, vomiting, or difficulty swallowing?' },
+        {
+          speaker: 'doctor',
+          text: 'Any nausea, vomiting, or difficulty swallowing?',
+          offsetSeconds: 65.6,
+        },
         {
           speaker: 'patient',
           text: 'No doctor, can eat and drink as normal, just a bit painful to swallow when very dry.',
+          offsetSeconds: 69.4,
         },
         {
           speaker: 'doctor',
           text: 'Any history of asthma, heart disease, or are you on any regular medication?',
+          offsetSeconds: 77.3,
         },
         {
           speaker: 'patient',
           text: "No asthma or heart problem. I'm not on any medication, no known drug allergy also.",
+          offsetSeconds: 83.9,
         },
-        { speaker: 'doctor', text: 'Do you smoke? And anyone at home or work been sick lately?' },
+        {
+          speaker: 'doctor',
+          text: 'Do you smoke? And anyone at home or work been sick lately?',
+          offsetSeconds: 91.0,
+        },
         {
           speaker: 'patient',
           text: "No doctor, I don't smoke. My colleague at office also had a cough last week though.",
+          offsetSeconds: 97.4,
         },
         {
           speaker: 'doctor',
@@ -268,6 +334,7 @@ export const FIXTURES: readonly Fixture[] = [
             '82, respiratory rate 16, oxygen saturation 98% on room air. Let me check your ' +
             'throat now... throat is red, tonsils mildly swollen with no exudate, neck nodes ' +
             'mildly tender on the left side. Chest is clear on auscultation.',
+          offsetSeconds: 105.2,
         },
         {
           speaker: 'doctor',
@@ -275,23 +342,27 @@ export const FIXTURES: readonly Fixture[] = [
             'This looks like a viral upper respiratory tract infection, Encik Ahmad. ' +
             "I'll dispense Paracetamol 500mg, one tablet four times a day for the fever, " +
             'and a lozenge for the throat. No antibiotics needed for now.',
+          offsetSeconds: 129.8,
         },
-        { speaker: 'patient', text: 'Okay doctor, can I get an MC?' },
+        { speaker: 'patient', text: 'Okay doctor, can I get an MC?', offsetSeconds: 145.5 },
         {
           speaker: 'doctor',
           text:
             "Yes, I'll give you 2 days MC, and please come back for review in 3 days if " +
             "you're not improving, or sooner if you develop breathing difficulty.",
+          offsetSeconds: 149.8,
         },
         {
           speaker: 'patient',
           text: 'Thank you doctor. This is for my TPA panel claim, is that okay?',
+          offsetSeconds: 162.1,
         },
         {
           speaker: 'doctor',
           text:
             "Yes, I'll note it on the invoice for PMCare. Registration number for our clinic " +
             'file is RC-2026-00842.',
+          offsetSeconds: 168.9,
         },
       ],
     },

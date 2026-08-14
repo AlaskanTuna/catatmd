@@ -12,7 +12,7 @@ import {
 } from '@shared/types'
 import { Router } from 'express'
 import { z } from 'zod'
-import { analyseNote } from '../analysis/index.js'
+import { analyseNote, buildEvidenceLinks } from '../analysis/index.js'
 import { type AnalysisFailureReason, getAuditHistory, recordAuditEvent } from '../audit/index.js'
 import {
   type ClinicalProfile,
@@ -245,6 +245,29 @@ async function runAnalysis(
 
   const rehydrate = (value: string) => vault.rehydrate(value)
 
+  /**
+   * Attributes a span to the turn it came from, for the evidence trace (#10).
+   *
+   * Resolved by locating the rehydrated span rather than asked of the model,
+   * so a link is only ever attributed to a turn that demonstrably contains it.
+   * A span matching zero turns, or more than one, resolves to nothing: a
+   * confidently wrong attribution on a clinical record is worse than an absent
+   * one, and "which of these two turns" is not a question this can answer.
+   */
+  const attribute = (span: string) => {
+    const needle = span.replace(/\s+/g, ' ').trim().toLowerCase()
+    if (needle.length === 0) return {}
+    const hits = transcript.turns.filter((turn) =>
+      turn.text.replace(/\s+/g, ' ').toLowerCase().includes(needle),
+    )
+    const turn = hits.length === 1 ? hits[0] : undefined
+    if (turn === undefined) return {}
+    return {
+      speaker: turn.speaker,
+      ...(turn.offsetSeconds === undefined ? {} : { offsetSeconds: turn.offsetSeconds }),
+    }
+  }
+
   const analysis = {
     note: {
       subjective: rehydrate(noteResult.note.subjective),
@@ -280,6 +303,15 @@ async function runAnalysis(
     // reader whether the corpus had nothing to say or was never consulted, which
     // is the conflation this flag exists to prevent (docs/trd.md §19 row 7).
     outOfScope: suggestionResult.outOfScope,
+    // Built from the post-evidence-check facts, so every link is a span that
+    // survived §21.4 rather than one the model asserted. Checklist fields only:
+    // the note is independent prose and has no traceable provenance (#10).
+    evidenceLinks: buildEvidenceLinks(noteResult.clinicalFacts, noteResult.operational).map(
+      (link) => {
+        const evidence = rehydrate(link.evidence)
+        return { ...link, evidence, ...attribute(evidence) }
+      },
+    ),
   }
 
   return { analysis, detected, discardedFieldIds: noteResult.discardedFieldIds }
