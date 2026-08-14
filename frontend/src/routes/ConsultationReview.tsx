@@ -288,6 +288,7 @@ export function ConsultationReview() {
           consultationId={id}
           approved={approved}
           approvedAt={detail.approvedAt}
+          approvedBy={detail.approvedBy}
           unacknowledgedCount={unacknowledged.length}
           onApproved={invalidate}
         />

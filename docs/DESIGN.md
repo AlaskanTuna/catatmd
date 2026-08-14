@@ -65,16 +65,26 @@ card, not the page ground.
 | Severity  | Light                             | Dark      | Text ratio on surface (light / dark) |
 | --------- | --------------------------------- | --------- | ------------------------------------ |
 | Emergency | `#B30D16` text, `#D0211F` rule    | `#FB7764` | 7.1:1 / 6.6:1                        |
-| Urgent    | `#A35700` text, `#E58400` rule    | `#F5A843` | 5.4:1 / 8.8:1                        |
+| Urgent    | `#A35700` text, `#D67600` rule    | `#F5A843` | 5.4:1 / 8.8:1                        |
 | Advisory  | `#0752B0` text, `#6FB8F5` rule    | `#6FB8F5` | 7.4:1 / 8.2:1                        |
 | Resolved  | `--color-ink-muted`, neutral rule | same      | de-emphasised, never green           |
 
-**One known weak spot.** The light Urgent _rule_ (`#E58400`) measures 2.8:1 on
-surface, under the 3:1 WCAG 1.4.11 asks of a graphical object that carries
-meaning. It is not the only channel, since every severity card also carries an
-icon and the word "Urgent", so 1.4.1 is satisfied and a colour-blind reader loses
-nothing. But the rule is doing real work at a glance and should be darkened when
-someone next touches the severity ramp. Recorded rather than quietly left.
+**Rule contrast is a separate check from text contrast**, and the one that gets
+missed. A severity rule is a graphical object carrying meaning, so WCAG 1.4.11
+asks 3:1 of it rather than the 4.5:1 its text needs. The light Urgent rule was
+`#E58400` at 2.8:1 against the card and failed that; it is now `#D67600` at
+3.2:1 (issue #77).
+
+`0.66` lightness is the _lightest_ value that clears 3:1, and that is the
+constraint rather than an accident. Darkening further buys contrast but walks
+Urgent toward `--color-emergency-rule` at `0.552` until the two read as one
+orange-red at a glance, and severity being distinguishable is the entire purpose
+of the rule. Contrast and separation pull against each other here; take the
+minimum that passes.
+
+The Urgent _text_ colour is untouched at 5.4:1. Nothing was ever unreadable, and
+1.4.1 always held, because every severity card carries the icon and the word
+alongside the colour.
 
 Green is reserved for Approve. A resolved red flag never turns green, because a doctor scanning for green would then be scanning for two different meanings.
 
@@ -245,4 +255,12 @@ A document, not a screenshot. Chrome, navigation, and controls are hidden; the n
 
 Two things paper needs that the screen does not. A capped, scrolling region is a screen affordance; on paper it silently cuts whatever sits below the fold, and the one region it applies to is the safety rail, so `[data-print="expand"]` makes it static and full-height. And gaps hidden behind the "show all" disclosure are restored by `print:block` rather than sliced out of the array, so paper never carries a truncated list with nothing to say it was truncated.
 
-> **Not yet true:** the approving clinician does not appear, on screen or on paper. `ApproveBar` renders the date and nothing else, so the exported document currently has no attribution. Tracked in issue #26, and it is the substantive gap in the export rather than a detail: the point of the approval gate is that the note becomes the doctor's.
+The approving clinician appears on screen and on paper, stated by the server
+rather than inferred by the client from the session. Today a consultation is
+only visible to the account that owns it, so the viewer and the approver are
+provably the same person, but that is an access-control property rather than a
+fact about the document: the moment a clinic or admin boundary exists, a note
+would start being attributed to whoever opened it.
+
+A name is not an identifier. A production deployment needs an MMC registration
+number, which the schema does not carry.

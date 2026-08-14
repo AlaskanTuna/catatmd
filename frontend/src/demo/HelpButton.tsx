@@ -1,4 +1,4 @@
-import { Loader2, Play, Sparkles, X } from 'lucide-react'
+import { Loader2, Play, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { TOUR_STEP_COUNT, useDemoTour } from './DemoTour.js'
 
@@ -29,15 +29,26 @@ export function HelpButton() {
 
   return (
     <>
+      {/* Round, and the one deliberate exception to the rounded-rectangle CTA
+          rule in docs/DESIGN.md. A floating action button is a persistent
+          affordance parked over the content rather than an action inside a
+          layout, and the circle is what separates it from the interface it
+          floats above. A bare glyph rather than lucide's `HelpCircle`, whose
+          own ring would sit inside this one and read as a double border. */}
       <button
         type="button"
         onClick={() => dialog.current?.showModal()}
         data-print="hide"
+        aria-label="Take the guided tour"
+        title="Guided Tour"
         style={{ zIndex: 'var(--z-sticky)' }}
-        className="glass fixed right-4 bottom-20 flex h-12 items-center gap-2 rounded-control px-4 text-sm font-medium text-ink transition-[transform,background-color] duration-150 ease-out-quart hover:text-accent active:scale-[0.97] md:right-6 md:bottom-6"
+        // 7rem clears both pieces of bottom-docked chrome it would otherwise
+        // land on: the mobile dock below md, and the sticky approve bar on the
+        // review screen, which sits at the same right offset and is the primary
+        // action on the one screen where a help button must not compete.
+        className="glass fixed right-4 bottom-28 flex size-12 items-center justify-center rounded-full text-lg font-semibold text-accent transition-[transform,color] duration-150 ease-out-quart hover:text-accent-hover active:scale-[0.94] md:right-6"
       >
-        <Sparkles aria-hidden className="size-4 text-accent" />
-        Guided Tour
+        <span aria-hidden>?</span>
       </button>
 
       <dialog

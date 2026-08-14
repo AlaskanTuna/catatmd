@@ -46,7 +46,14 @@
   --color-emergency: oklch(0.486 0.192 27);
   --color-emergency-rule: oklch(0.552 0.208 28);
   --color-urgent: oklch(0.535 0.132 60);
-  --color-urgent-rule: oklch(0.703 0.163 62);
+  /* Darkened from 0.703, which measured 2.76:1 against the card and missed the
+   * 3:1 WCAG 1.4.11 asks of a graphical object carrying meaning (issue #77).
+   * 0.66 measures 3.24:1 and is the lightest value that clears it, which keeps
+   * the widest separation from `--color-emergency-rule` at 0.552: darkening
+   * further to buy contrast converges the two into one orange-red at a glance,
+   * and severity being distinguishable is the point of the rule. The Urgent
+   * *text* colour is untouched; it was already 5.38:1. */
+  --color-urgent-rule: oklch(0.66 0.163 62);
   --color-advisory: oklch(0.457 0.164 258);
   --color-advisory-rule: oklch(0.457 0.164 258);
 
