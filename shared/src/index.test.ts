@@ -250,6 +250,41 @@ describe('LLM-facing schemas convert to JSON Schema for constrained decoding', (
     expect(json).toHaveProperty('properties.clinicalFacts')
   })
 
+  /**
+   * GitHub issue #96. Gemini expands a bounded array into `maxItems` copies of
+   * the item schema before measuring the result against its own schema budget,
+   * so this one number decides whether `clinical_facts` is accepted at all.
+   * Measured 14/08/26 against the live endpoint: bodiless HTTP 400 at twenty,
+   * HTTP 200 at ten and below, with nothing else in the request changed.
+   *
+   * `note_and_gaps` is deliberately not covered here. It carries `maxItems: 30`
+   * and passes, because the budget is per-schema rather than per-keyword and it
+   * is 686 bytes against 14,240. Asserting one number across both would force a
+   * bound neither schema needs.
+   */
+  it('keeps every clinical_facts array bound inside the Gemini expansion budget', () => {
+    const collectMaxItems = (node: unknown): number[] =>
+      typeof node !== 'object' || node === null
+        ? []
+        : Object.entries(node).flatMap(([key, value]) =>
+            key === 'maxItems' && typeof value === 'number' ? [value] : collectMaxItems(value),
+          )
+
+    const bounds = collectMaxItems(
+      z.toJSONSchema(ClinicalFactsResponseSchema, { target: 'draft-7' }),
+    )
+
+    expect(bounds, 'A bound that vanished would pass the loop below vacuously.').not.toHaveLength(0)
+    for (const bound of bounds) {
+      expect(
+        bound,
+        'Raising this past ten stops Gemini running the pipeline at all (issue ' +
+          '#96), and the failure is a bodiless 400 that names no cause. Only the ' +
+          'live endpoint can prove a larger value, so re-measure before changing it.',
+      ).toBeLessThanOrEqual(10)
+    }
+  })
+
   it('converts note_and_gaps without throwing (TRD §6 step 2)', () => {
     const json = z.toJSONSchema(NoteAndGapsResponseSchema, { target: 'draft-7' })
     expect(json).toHaveProperty('properties.note')

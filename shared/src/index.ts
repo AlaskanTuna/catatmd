@@ -228,9 +228,18 @@ const buildOperationalBlock = <T extends z.ZodType>(field: T) =>
      * structural (Tier 1) rather than a token budget to tune — raising
      * `max_tokens` only buys a longer loop.
      *
-     * Twenty dispensed items is far beyond any single GP consultation.
+     * Ten dispensed items is far beyond any single GP consultation.
+     *
+     * Lowered from twenty on 14/08/26 (GitHub issue #96, docs/trd.md §6).
+     * Gemini expands a bounded array into `maxItems` copies of the item schema
+     * before measuring it against its own schema budget, so twenty assertion
+     * objects pushed `clinical_facts` past that budget and every request
+     * failed with a bodiless 400. Measured: the same schema passes at ten and
+     * below. The bound is now load-bearing for two unrelated reasons, and
+     * raising it back stops Gemini running at all rather than merely widening
+     * a ceiling.
      */
-    medicationsDispensed: z.array(field).max(20).default([]),
+    medicationsDispensed: z.array(field).max(10).default([]),
     mcDays: field,
     referral: field,
     followUp: field,

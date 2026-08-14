@@ -290,6 +290,8 @@ One adapter class implements `LLMClient` for all three providers — Qwen, Gemin
 
 The sentence above says provider selection is a constructor parameter. That is true of the mechanism and currently **not** true of the outcome for one provider, so the limit is recorded here rather than discovered by whoever next sets `LLM_PROVIDER=gemini`.
 
+> **Superseded 14/08/26.** The cause is now established and fixed. This subsection is kept as filed, because its ruled-out list is what the next reader will reach for and two of its three bullets need qualifying. Read "Resolved 14/08/26" below before acting on anything here.
+
 Measured 14/08/26 against `gemini-3.5-flash-lite` on the live OpenAI-compatible endpoint, sending each schema the pipeline actually uses, all with `strict: true`:
 
 | Call                        | JSON Schema size | Depth | Result                   |
@@ -311,6 +313,35 @@ The remaining difference is scale: `clinical_facts` is roughly 20x larger, three
 **Consequence:** Gemini is a configured provider that cannot currently run an analysis, and `AGENTS.md`'s constraint on it (local dev, synthetic data only) should be read as a rule about what it may be pointed at rather than a statement that it works. Production is unaffected: it runs Qwen, and a boot guard throws on `LLM_PROVIDER=gemini` regardless (§7).
 
 Tracked as GitHub issue #96. The fix worth doing is shrinking or splitting `clinical_facts`, which would reduce the largest prompt in the system for every provider rather than special-casing one, and is deliberately **not** bundled with this disclosure.
+
+#### Resolved 14/08/26: `maxItems` Is Expanded Into The Schema Budget
+
+Closes GitHub issue #96. No adapter change and no provider-specific code were required.
+
+**The bisect.** Only `medicationsDispensed.maxItems` was varied, in the real `clinical_facts` schema, with nothing else in the request changed:
+
+| `maxItems` | absent | 1   | 2   | 3   | 5   | 10  | 20      |
+| ---------- | ------ | --- | --- | --- | --- | --- | ------- |
+| Result     | 200    | 200 | 200 | 200 | 200 | 200 | **400** |
+
+From the other side, varying only `gaps.maxItems` in `note_and_gaps`, the 686 B schema that already passes:
+
+| `maxItems` | 30  | 100     | 300     | 1000    |
+| ---------- | --- | ------- | ------- | ------- |
+| Result     | 200 | **400** | **400** | **400** |
+
+**Gemini expands a bounded array into `maxItems` copies of the item schema before measuring the result against its own budget.** A 686 B schema fails at `maxItems: 100` while a 14,240 B schema passes at `maxItems: 10`, which no explanation in bytes, depth, or authored property count survives. Going from 10 to 20 alters the schema by two bytes, adds no authored property, and flips the result.
+
+**Two corrections to the ruled-out list above.**
+
+- **"Not a JSON Schema keyword" is true as written and misleading in effect.** No keyword is rejected. One keyword's _value_ is the multiplier that decides the outcome, so a reader who rules out keywords rules out the cause.
+- **"The remaining difference is scale" is right about the budget and wrong about its units.** What is capped is post-expansion property count. Bytes and depth co-vary with it, which is why they looked causal.
+
+**Fix:** `medicationsDispensed` is bounded at 10 rather than 20 (`shared/src/index.ts`). That bound already existed as a runaway-decoding guard, and its own comment already argued twenty was far beyond any single GP consultation, so this tightens a Tier 1 control (§21.3) rather than weakening one, and it applies to every provider rather than special-casing Gemini. Pinned by a test in `shared/src/index.test.ts`.
+
+**Verified through the real pipeline**, which is the standard §21.2 sets rather than a toy probe: `analyseNote` and `generateSuggestions` both complete on `gemini-3.5-flash-lite` against a synthetic fixture, returning all 34 checklist fields, a four-section SOAP note, gaps, and corpus-constrained citations. Qwen re-verified unchanged on `qwen3.7-flash`.
+
+**Not closed by this.** Shrinking or splitting `clinical_facts` remains worth doing on its own merits, because it cuts the largest prompt in the system for every provider including the one production runs. The headroom here is thin: the budget is shared across the whole schema, so adding checklist fields can push it back over with no array involved.
 
 ### Request Bounds
 
