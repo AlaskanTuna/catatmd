@@ -23,12 +23,14 @@ export function ApproveBar({
   consultationId,
   approved,
   approvedAt,
+  approvedBy,
   unacknowledgedCount,
   onApproved,
 }: {
   consultationId: string
   approved: boolean
   approvedAt: Date | null
+  approvedBy: string | null
   unacknowledgedCount: number
   onApproved: (next: ConsultationDetail) => void
 }) {
@@ -46,8 +48,12 @@ export function ApproveBar({
     return (
       <div className="mt-6 flex items-center gap-2 rounded-card border border-accent/30 bg-accent/8 px-4 py-3">
         <CheckCircle2 aria-hidden className="size-5 shrink-0 text-accent" />
+        {/* The attribution is the point of the approval, not decoration on it,
+            so it prints. Issue #26: an exported clinical document that cannot
+            say whose it is undercuts the record it exists to produce. */}
         <p className="text-sm">
           <span className="font-medium text-accent">Approved</span>
+          {approvedBy && <span className="text-ink"> by {approvedBy}</span>}
           {approvedAt && (
             <span className="text-ink-muted">
               {' '}

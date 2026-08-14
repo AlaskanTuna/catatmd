@@ -287,10 +287,33 @@ describe('API envelope schemas', () => {
       analysis: null,
       editedNote: null,
       approvedAt: null,
+      approvedBy: null,
       acknowledgedRedFlagIds: [],
       reviewedGapIds: [],
     })
     expect(result.success).toBe(true)
+  })
+
+  // The pair moves together or the contract is lying: a consultation cannot be
+  // approved by nobody, and cannot be attributed without having been approved.
+  it('carries the approving clinician alongside the approval timestamp', () => {
+    const approved = ConsultationDetailSchema.safeParse({
+      id: 'c1',
+      status: 'approved',
+      createdAt: '2026-08-13T00:00:00.000Z',
+      updatedAt: '2026-08-13T00:00:00.000Z',
+      transcript: null,
+      analysis: null,
+      editedNote: null,
+      approvedAt: '2026-08-13T01:00:00.000Z',
+      approvedBy: 'Dr Siti Rahman',
+      acknowledgedRedFlagIds: [],
+      reviewedGapIds: [],
+    })
+    expect(approved.success).toBe(true)
+    if (approved.success) {
+      expect(approved.data.approvedBy).toBe('Dr Siti Rahman')
+    }
   })
 
   it('shapes every error the same way', () => {
