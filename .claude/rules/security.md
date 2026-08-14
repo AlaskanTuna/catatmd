@@ -108,7 +108,8 @@ OWASP A09:2025 Security Logging and Alerting Failures cuts both ways here: too l
 - Auth is cookie-based. `frontend/src/lib/api.ts` sets `credentials: 'include'` and reads no token. Never introduce an `Authorization` header, and never store a session value in JS-reachable storage.
 - Every API response is `safeParse`d before render, failing to `ApiError(status, 'invalid_response')`. Do not render an unvalidated payload optimistically.
 - Only `VITE_*` env vars reach the bundle. Anything named `VITE_*` is public: no secret ever gets that prefix.
-- **Not built today:** `vercel.json` has no `headers` block, so the SPA origin sends no CSP, HSTS, X-Frame-Options, or Referrer-Policy. The API is covered by `helmet()` defaults. Adding SPA headers is a known outstanding item, not a solved one.
+- **The SPA origin sends its own headers** from the `headers` block in `vercel.json`: CSP, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy, X-Content-Type-Options and COOP. The API is separately covered by `helmet()`. Two entries in that policy are load-bearing and must not be trimmed as unused: `'wasm-unsafe-eval'` in `script-src`, without which the in-browser speech model cannot instantiate, and `microphone=(self)` in `Permissions-Policy`, without which recording is refused before any code runs. `connect-src` must keep `https://*.hf.co`, because HuggingFace redirects model downloads to hosts like `us.aws.cdn.hf.co` that are not under `huggingface.co`.
+- **Do not add `Cross-Origin-Embedder-Policy`.** It would require every cross-origin response the speech model fetches to carry CORP, which the HuggingFace CDN does not send, and would break transcription for a header the app gains nothing from today.
 
 ## Supply Chain And CI
 
