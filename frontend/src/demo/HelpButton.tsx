@@ -91,7 +91,7 @@ export function HelpButton() {
           <p className="mt-2 text-sm leading-relaxed text-ink-muted">
             {TOUR_STEP_COUNT} steps through a consultation the tour analyses for you: the
             transcript, the red flags and where they came from, what the consultation never
-            established, and the approval gate.
+            established, the review copilot, and the approval gate.
           </p>
 
           {/* The three facts a clinician or an evaluator would otherwise have to

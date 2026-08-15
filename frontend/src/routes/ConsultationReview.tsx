@@ -474,8 +474,16 @@ export function ConsultationReview() {
       )}
 
       {/*
-       * Not offered on the tour's consultation, which is not stored, so the
-       * copilot route would 404 on every message (#80).
+       * Rendered inactive on the tour's consultation, which is not stored, so
+       * the copilot route would 404 on every message (#80). It renders at all
+       * because the tour needs the `data-tour="catatai"` anchor to exist, and
+       * a coachmark pointing at an element that is not there is the failure
+       * `DemoTour`'s subject scoring exists to prevent (#179).
+       *
+       * **Keyed on the tour step, which is what closes the panel.** Advancing
+       * or ending the tour remounts this and resets `open` to false, so the
+       * step bar's End control never competes with an open panel. The key is
+       * constant off the tour, so a real review never remounts.
        *
        * Offered on an approved record, where it answers but cannot propose:
        * the backend withholds the tools once `status` is `approved` rather
@@ -483,7 +491,12 @@ export function ConsultationReview() {
        * note they have signed are the same questions, and a copilot that
        * disappears at sign-off looks like a bug from the outside.
        */}
-      {!isEphemeral && <CatatAI consultation={detail} onApply={applyProposal} />}
+      <CatatAI
+        key={isEphemeral ? `tour-${tour.currentStep}` : 'record'}
+        consultation={detail}
+        onApply={applyProposal}
+        demo={isEphemeral}
+      />
     </div>
   )
 }
