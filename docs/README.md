@@ -24,7 +24,7 @@ All three are on free tiers by design. Render free instances spin down when idle
 
 ## Status
 
-**The backend is built; the review UI is not.** As of 13/08/26 the de-identification gate, the deterministic red-flag engine, the Malaysian guideline corpus, the structured-extraction pipeline with its evidence-bound assertion check, the gaps engine, authentication and the synthetic fixtures are all implemented and tested. The React review UI remains a Vite scaffold, and the hosted-ASR adapter is specified rather than built.
+**The backend is built; the review UI is not.** As of 13/08/26 the de-identification gate, the deterministic red-flag engine, the Malaysian guideline corpus, the structured-extraction pipeline with its evidence-bound assertion check, the gaps engine, authentication and the synthetic fixtures are all implemented and tested. The React review UI remains a Vite scaffold. The hosted-ASR path has since been built (#154, #155) behind a per-consultation consent gate, and stays inert until the provider key is set.
 
 `docs/trd.md` tags every section `Built`, `Specified`, or `Open`, and never describes unwritten code as if it exists. Where implementation contradicted the specification, the TRD records which won and why rather than quietly conforming — see §3 (the assertion schema had to split in two), §5 and §7.
 
@@ -126,7 +126,7 @@ The claim stops there rather than going one word further, because on modest clin
 
 > **On-device is the default and the floor. Hosted is only ever entered by an explicit, recorded, per-consultation act. Failure degrades to paste, never to the cloud.**
 
-That last clause is the load-bearing one. Silently switching to hosted transcription because a device is slow would be a privacy control that fails **open** under load — degrading exactly when the doctor is least able to notice — so it is written down as rejected rather than left to an implementer's judgement. The hosted adapter is specified and audited but **not built**. See `docs/trd.md` §20.
+That last clause is the load-bearing one. Silently switching to hosted transcription because a device is slow would be a privacy control that fails **open** under load — degrading exactly when the doctor is least able to notice — so it is written down as rejected rather than left to an implementer's judgement. The hosted adapter is now **built**, behind a per-consultation consent gate the doctor must tick for each recording: always on screen, never highlighted, never remembered, and never mentioned by the on-device failure copy. It stays inert in production until the provider key is set. See `docs/trd.md` §20 and §20.4.
 
 **A recording now comes back as timestamped, speaker-labelled draft lines the doctor reviews and applies.** Each line's Doctor/Patient label is a guess from segment timing and what the sentence says, never from the voices, and the doctor can flip any line before applying, one review list, no auto-populated transcript (`docs/trd.md` §20.2).
 
@@ -240,7 +240,7 @@ Hosting: frontend → Vercel · backend → Render (Singapore) · database → S
 
 ![CatatMD technical stack. Inside the trust boundary: React, TypeScript, Vite and Tailwind on Vercel; Node, Express and Bun on Render Singapore, carrying the deid PHI gate, the lib/llm client, and the routes, redflags, guidelines and audit modules; PostgreSQL, Prisma and Supabase in Singapore. Outside it: the Qwen language model, reachable only through lib/llm, and the specified-but-unbuilt hosted ASR adapter.](assets/tech-stack.drawio.png)
 
-Two claims the diagram is drawn to make checkable. `lib/llm/` is the **only** text egress, and everything crossing that line has already passed `deid/`. Speech-to-text runs on the device, so the hosted ASR adapter is the one other path out of the boundary, which is why it is drawn dashed and labelled specified, not built.
+Two claims the diagram is drawn to make checkable. `lib/llm/` is the **only** text egress, and everything crossing that line has already passed `deid/`. Speech-to-text runs on the device by default, so the hosted ASR adapter is the one other path out of the boundary, and it opens only when a doctor ticks the per-consultation consent box. The diagram still draws it dashed and labelled specified, not built; that is now stale, and regenerating it is a named follow-up (`docs/trd.md` §20.4).
 
 ```
 shared/          @shared/types — Zod schemas, built first, imported by both sides

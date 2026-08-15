@@ -1,7 +1,14 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AudioCapture, STALL_TIMEOUT_MS } from './AudioCapture.js'
+import { AudioCapture, STALL_TIMEOUT_MS, UPLOAD_TIMEOUT_MS } from './AudioCapture.js'
 import type { WorkerResponse } from './protocol.js'
+
+/**
+ * The relay client, mocked so the hosted path can be driven without a network.
+ * Hoisted because `vi.mock` is lifted above the imports.
+ */
+const { transcribeHostedAsr } = vi.hoisted(() => ({ transcribeHostedAsr: vi.fn() }))
+vi.mock('../lib/api.js', () => ({ api: { transcribeHostedAsr } }))
 
 /**
  * The component's side of the wedge contract (issues #138 and #139): every
@@ -108,6 +115,17 @@ beforeEach(() => {
   vi.useFakeTimers()
   workers.length = 0
   recorders.length = 0
+  // Models `fetch`: hangs until the caller's signal aborts, then rejects the
+  // way an aborted request does. Tests that want a settled upload override it.
+  transcribeHostedAsr.mockReset()
+  transcribeHostedAsr.mockImplementation(
+    (_blob: Blob, signal: AbortSignal) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () =>
+          reject(new DOMException('The operation was aborted.', 'AbortError')),
+        )
+      }),
+  )
   decodeAudioData = async () => ({ duration: 1 })
   tracks = [{ stop: vi.fn() }]
   getUserMedia = async () => ({ getTracks: () => tracks })
@@ -159,6 +177,29 @@ function pickFile() {
     target: { files: [new File(['audio'], 'clip.wav', { type: 'audio/wav' })] },
   })
 }
+
+const consentBox = () =>
+  screen.getByLabelText(/send this consultation.s recording to ilmu/i) as HTMLInputElement
+
+/** Gives per-consultation hosted consent, the only way to reach the relay. */
+function tickHosted() {
+  fireEvent.click(consentBox())
+}
+
+/** The signal handed to the relay on the most recent upload. */
+function uploadSignal(): AbortSignal {
+  const call = transcribeHostedAsr.mock.calls.at(-1)
+  if (!call) throw new Error('expected an upload to have been attempted')
+  return call[1] as AbortSignal
+}
+
+/** Whether any worker was ever asked to transcribe, as opposed to prewarm. */
+const transcribeRequests = () =>
+  workers.flatMap((instance) =>
+    instance.postMessage.mock.calls.filter(
+      (call) => (call[0] as { type?: string } | undefined)?.type === 'transcribe',
+    ),
+  )
 
 const startButton = () =>
   screen.getByRole('button', { name: /start recording/i }) as HTMLButtonElement
@@ -242,7 +283,7 @@ describe('the silence budget', () => {
       vi.advanceTimersByTime(STALL_TIMEOUT_MS * 2)
     })
 
-    expect(onTranscript).toHaveBeenCalledWith({ text: 'hello', segments: [] })
+    expect(onTranscript).toHaveBeenCalledWith({ text: 'hello', segments: [], source: 'asr_local' })
     expect(screen.queryByRole('alert')).toBeNull()
     expect(worker.terminate).not.toHaveBeenCalled()
   })
@@ -480,7 +521,7 @@ describe('prewarming the speech model', () => {
     spawned().reply({ type: 'ready' })
     screen.getAllByText(/transcribing on this device/i)
     spawned().reply({ type: 'result', text: 'hello', segments: [] })
-    expect(onTranscript).toHaveBeenCalledWith({ text: 'hello', segments: [] })
+    expect(onTranscript).toHaveBeenCalledWith({ text: 'hello', segments: [], source: 'asr_local' })
   })
 
   it('stays silent when the prewarm fails, and still transcribes on stop', async () => {
@@ -497,7 +538,11 @@ describe('prewarming the speech model', () => {
     spawned().reply({ type: 'progress', loaded: 1, total: 10 })
     spawned().reply({ type: 'ready' })
     spawned().reply({ type: 'result', text: 'recovered', segments: [] })
-    expect(onTranscript).toHaveBeenCalledWith({ text: 'recovered', segments: [] })
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: 'recovered',
+      segments: [],
+      source: 'asr_local',
+    })
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -517,7 +562,11 @@ describe('prewarming the speech model', () => {
     expect(spawned(1).postMessage.mock.calls[0]?.[0]).toMatchObject({ type: 'transcribe' })
     spawned(1).reply({ type: 'ready' })
     spawned(1).reply({ type: 'result', text: 'second worker', segments: [] })
-    expect(onTranscript).toHaveBeenCalledWith({ text: 'second worker', segments: [] })
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: 'second worker',
+      segments: [],
+      source: 'asr_local',
+    })
   })
 
   it('swallows a prewarm error that lands during the decode after stop', async () => {
@@ -539,7 +588,11 @@ describe('prewarming the speech model', () => {
     expect(spawned().postMessage.mock.calls[1]?.[0]).toMatchObject({ type: 'transcribe' })
     spawned().reply({ type: 'ready' })
     spawned().reply({ type: 'result', text: 'late recovery', segments: [] })
-    expect(onTranscript).toHaveBeenCalledWith({ text: 'late recovery', segments: [] })
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: 'late recovery',
+      segments: [],
+      source: 'asr_local',
+    })
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
@@ -596,5 +649,242 @@ describe('prewarming the speech model', () => {
     expect(workers).toHaveLength(0)
     expect(screen.getByRole('alert').textContent).toMatch(/microphone/i)
     expect(screen.queryByRole('button', { name: /try again/i })).toBeNull()
+  })
+})
+
+/**
+ * The per-consultation hosted transcription consent (issue #155).
+ *
+ * The governing rule is that hosted is findable but never funnelled: on-device
+ * is the default and the floor, the tick is explicit and per consultation, and
+ * failure in either direction degrades toward privacy rather than toward the
+ * other path. These pin the parts of that a reader cannot verify by eye.
+ */
+describe('hosted transcription consent', () => {
+  it('is off by default and does not survive a remount', async () => {
+    const first = renderCapture()
+    expect(consentBox().checked).toBe(false)
+
+    tickHosted()
+    expect(consentBox().checked).toBe(true)
+
+    // A new consultation is a new mount. Consent given for the last patient
+    // must not be sitting ticked for the next one.
+    first.unmount()
+    await settle()
+    renderCapture()
+
+    expect(consentBox().checked).toBe(false)
+  })
+
+  it('writes nothing to storage when ticked', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    renderCapture()
+
+    tickHosted()
+
+    expect(setItem).not.toHaveBeenCalled()
+  })
+
+  it('is always rendered, so it is never introduced by a failure', async () => {
+    renderCapture()
+    // Present before anything happens...
+    expect(consentBox()).toBeTruthy()
+
+    pickFile()
+    await settle()
+    act(() => {
+      vi.advanceTimersByTime(STALL_TIMEOUT_MS)
+    })
+
+    // ...and identically present after one, rather than appearing as a new
+    // suggestion at the moment the doctor is most likely to accept it.
+    expect(consentBox()).toBeTruthy()
+    expect(consentBox().checked).toBe(false)
+  })
+
+  it('is disabled while a run is in flight', async () => {
+    renderCapture()
+    pickFile()
+    await settle()
+
+    expect(consentBox().disabled).toBe(true)
+  })
+})
+
+describe('the recording fork', () => {
+  it('goes to the worker and never to the relay while consent is unticked', async () => {
+    renderCapture()
+    await startRecording()
+    await stopRecording()
+
+    expect(transcribeHostedAsr).not.toHaveBeenCalled()
+    expect(transcribeRequests()).toHaveLength(1)
+  })
+
+  it('goes to the relay with the recording, and runs no worker, once ticked', async () => {
+    renderCapture()
+    tickHosted()
+    await startRecording()
+    await stopRecording()
+
+    expect(transcribeHostedAsr).toHaveBeenCalledTimes(1)
+    expect(transcribeHostedAsr.mock.calls[0]?.[0]).toBeInstanceOf(Blob)
+    // No prewarm and no transcribe: a hosted recording loads no local model.
+    expect(workers).toHaveLength(0)
+    expect(transcribeRequests()).toHaveLength(0)
+  })
+
+  it('terminates a worker left warm by an earlier on-device run', async () => {
+    renderCapture()
+    // A local run first, which builds and warms a worker.
+    pickFile()
+    await settle()
+    expect(workers).toHaveLength(1)
+    spawned().reply({ type: 'result', text: 'local', segments: [] })
+
+    tickHosted()
+    await startRecording()
+
+    // Roughly 250 MB of weights held for a path that will not use them.
+    expect(spawned().terminate).toHaveBeenCalled()
+  })
+
+  it('sends the picked audio file to the relay too', async () => {
+    renderCapture()
+    tickHosted()
+    pickFile()
+    await settle()
+
+    expect(transcribeHostedAsr).toHaveBeenCalledTimes(1)
+    expect(workers).toHaveLength(0)
+  })
+
+  it('reports hosted provenance on success', async () => {
+    const { onTranscript } = renderCapture()
+    tickHosted()
+    transcribeHostedAsr.mockResolvedValue({ text: 'hosted text', durationSeconds: 4, segments: [] })
+
+    await startRecording()
+    await stopRecording()
+
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: 'hosted text',
+      segments: [],
+      source: 'asr_hosted',
+    })
+  })
+})
+
+describe('a hosted upload', () => {
+  it('is abandoned by Cancel, with no error and the controls restored', async () => {
+    renderCapture()
+    tickHosted()
+    await startRecording()
+    await stopRecording()
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+    await settle()
+
+    expect(uploadSignal().aborted).toBe(true)
+    // A cancel is not a failure: the doctor asked for it.
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(startButton().disabled).toBe(false)
+  })
+
+  it('is abandoned on unmount, so no audio keeps flowing from a closed tab', async () => {
+    const { unmount } = renderCapture()
+    tickHosted()
+    await startRecording()
+    await stopRecording()
+
+    unmount()
+    await settle()
+
+    expect(uploadSignal().aborted).toBe(true)
+  })
+
+  it('is bounded, and the expiry is reported rather than swallowed', async () => {
+    renderCapture()
+    tickHosted()
+    await startRecording()
+    await stopRecording()
+
+    act(() => {
+      vi.advanceTimersByTime(UPLOAD_TIMEOUT_MS)
+    })
+    await settle()
+
+    expect(uploadSignal().aborted).toBe(true)
+    expect(screen.getByRole('alert').textContent).toMatch(/still on this device/i)
+  })
+
+  it('degrades toward privacy on failure and never runs the local worker', async () => {
+    renderCapture()
+    tickHosted()
+    transcribeHostedAsr.mockRejectedValue(new Error('relay exploded'))
+
+    await startRecording()
+    await stopRecording()
+
+    const alert = screen.getByRole('alert').textContent ?? ''
+    expect(alert).toMatch(/still on this device/i)
+    expect(alert).toMatch(/type or paste/i)
+    // The whole point: a hosted failure must not silently push the doctor into
+    // the on-device path, exactly as a local failure never uploads.
+    expect(workers).toHaveLength(0)
+    expect(transcribeRequests()).toHaveLength(0)
+  })
+
+  it('reruns whichever mode the checkbox currently shows', async () => {
+    renderCapture()
+    tickHosted()
+    transcribeHostedAsr.mockRejectedValue(new Error('relay exploded'))
+    await startRecording()
+    await stopRecording()
+    expect(screen.getByRole('alert')).toBeTruthy()
+
+    // The doctor unticks and retries: the retry is on-device, not a second
+    // upload of audio they have just withdrawn consent for.
+    fireEvent.click(consentBox())
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }))
+    await settle()
+
+    expect(transcribeHostedAsr).toHaveBeenCalledTimes(1)
+    expect(transcribeRequests()).toHaveLength(1)
+  })
+})
+
+describe('on-device failure copy', () => {
+  /*
+   * The local failure paths must never mention the hosted option. Offering the
+   * cloud at the moment on-device transcription just failed is precisely the
+   * funnel docs/trd.md section 20 forbids, and it is an easy regression to
+   * introduce while editing nearby copy.
+   */
+  const NEVER = /hosted|ilmu|upload/i
+
+  it('never points a stalled run at the hosted path', async () => {
+    renderCapture()
+    pickFile()
+    await settle()
+    act(() => {
+      vi.advanceTimersByTime(STALL_TIMEOUT_MS)
+    })
+
+    const alert = screen.getByRole('alert').textContent ?? ''
+    expect(alert).toMatch(/type or paste/i)
+    expect(alert).not.toMatch(NEVER)
+  })
+
+  it('never points a dead worker at the hosted path', async () => {
+    renderCapture()
+    pickFile()
+    await settle()
+    spawned().die()
+
+    const alert = screen.getByRole('alert').textContent ?? ''
+    expect(alert).toMatch(/type or paste/i)
+    expect(alert).not.toMatch(NEVER)
   })
 })

@@ -13,6 +13,8 @@ import {
   FixtureSchema,
   type GuidelineChunk,
   GuidelineChunkSchema,
+  type HostedAsrResult,
+  HostedAsrResultSchema,
   type NotificationItem,
   NotificationItemSchema,
   type SoapNote,
@@ -200,6 +202,29 @@ export const api = {
 
   fixtures: (): Promise<Fixture[]> =>
     request('/fixtures', FixturesEnvelope).then((r) => r.fixtures),
+
+  /**
+   * Relays one consultation recording to the hosted ASR path (issue #155).
+   *
+   * **The only call site is an explicit per-consultation consent tick** on the
+   * Record tab. The default path transcribes on the device and sends no audio
+   * anywhere, so this function existing is not the same as it being reachable:
+   * nothing calls it unless a doctor ticked the box for that consultation.
+   *
+   * `Content-Type` carries the recorder's own container type rather than a
+   * guess, because that is what the relay's `express.raw({ type: 'audio/*' })`
+   * matches on; a blob with no type is refused upstream with a 415 rather than
+   * relabelled here into something it might not be.
+   *
+   * The signal is both the doctor's Cancel and the client-side upload bound.
+   */
+  transcribeHostedAsr: (blob: Blob, signal: AbortSignal): Promise<HostedAsrResult> =>
+    request('/asr/transcriptions', HostedAsrResultSchema, {
+      method: 'POST',
+      body: blob,
+      headers: { 'Content-Type': blob.type },
+      signal,
+    }),
 
   /**
    * The doctor's own recent completed work, derived from `AuditEvent` (#116).

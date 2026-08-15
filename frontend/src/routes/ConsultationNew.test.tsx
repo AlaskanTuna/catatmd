@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { api } from '../lib/api.js'
 import { ConsultationNew } from './ConsultationNew.js'
 
 /*
@@ -34,6 +35,7 @@ function MockAudioCapture({
   onTranscript: (result: {
     text: string
     segments: { text: string; start: number; end: number | null }[]
+    source: 'asr_local' | 'asr_hosted'
   }) => void
 }) {
   return (
@@ -47,10 +49,28 @@ function MockAudioCapture({
               { text: ' Any fever?', start: 0, end: 2 },
               { text: ' Yesterday quite hot.', start: 2, end: 5 },
             ],
+            source: 'asr_local',
           })
         }
       >
         mock transcribe
+      </button>
+      {/* The same recording, but taken via the hosted relay, so the route's
+          provenance stickiness can be driven in either order. */}
+      <button
+        type="button"
+        onClick={() =>
+          onTranscript({
+            text: ' Any fever? Yesterday quite hot.',
+            segments: [
+              { text: ' Any fever?', start: 0, end: 2 },
+              { text: ' Yesterday quite hot.', start: 2, end: 5 },
+            ],
+            source: 'asr_hosted',
+          })
+        }
+      >
+        mock transcribe hosted
       </button>
       {/* An empty middle segment is skipped by segmentsToDraft, leaving a
           draft whose seg-N ids run past its line count. That is the shape
@@ -65,6 +85,7 @@ function MockAudioCapture({
               { text: '   ', start: 2, end: 3 },
               { text: ' Yesterday quite hot.', start: 3, end: 5 },
             ],
+            source: 'asr_local',
           })
         }
       >
@@ -166,5 +187,81 @@ describe('ConsultationNew record flow', () => {
       'Doctor [0:00]: Any fever?\nPatient [0:02]: Yesterday quite hot.\n' +
         'Doctor: Any fever?\nPatient: Yesterday quite hot.',
     )
+  })
+})
+
+/**
+ * What the submitted transcript claims about where its audio has been
+ * (issue #155).
+ *
+ * Client-asserted and unverifiable by the API, which is why no safety control
+ * rests on it. It is still what an auditor reads to answer "did this
+ * consultation's audio leave the device", so understating it is the one
+ * direction that must be impossible.
+ */
+describe('recording provenance', () => {
+  /**
+   * The transcript the route actually submits. Awaited, because `mutate()`
+   * runs the mutation in a microtask rather than on the click.
+   */
+  async function submit() {
+    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
+    fireEvent.click(screen.getByRole('button', { name: /start consultation/i }))
+    await waitFor(() => expect(api.createConsultation).toHaveBeenCalled())
+    const call = vi.mocked(api.createConsultation).mock.calls.at(-1)
+    if (!call) throw new Error('expected a consultation to have been created')
+    return call[0]
+  }
+
+  function open() {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <ConsultationNew />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(screen.getByRole('tab', { name: /record/i }))
+  }
+
+  beforeEach(() => {
+    // Cleared, not just re-stubbed: these read the most recent call, and a
+    // previous test's submission would otherwise answer for this one.
+    vi.mocked(api.createConsultation).mockClear()
+    vi.mocked(api.createConsultation).mockResolvedValue({
+      id: 'c1',
+    } as Awaited<ReturnType<typeof api.createConsultation>>)
+  })
+
+  it('reports asr_local for an on-device recording', async () => {
+    open()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
+
+    expect((await submit()).source).toBe('asr_local')
+  })
+
+  it('reports asr_hosted for a relayed recording', async () => {
+    open()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted' }))
+
+    expect((await submit()).source).toBe('asr_hosted')
+  })
+
+  it('stays asr_hosted when a later pass is on-device', async () => {
+    open()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
+
+    // Downgrading here would let a transcript whose audio reached ILMU submit
+    // as though it never left the device.
+    expect((await submit()).source).toBe('asr_hosted')
+  })
+
+  it('becomes asr_hosted when a later pass is relayed', async () => {
+    open()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted' }))
+
+    expect((await submit()).source).toBe('asr_hosted')
   })
 })

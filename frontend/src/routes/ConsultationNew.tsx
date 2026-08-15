@@ -169,7 +169,7 @@ export function ConsultationNew() {
         {tab === 'record' && (
           <Card className="p-6">
             <AudioCapture
-              onTranscript={({ text: transcribed, segments }) => {
+              onTranscript={({ text: transcribed, segments, source: from }) => {
                 /*
                  * Appended, never replacing what is already there. A doctor may
                  * record in passes, or have started typing, and silently
@@ -181,9 +181,9 @@ export function ConsultationNew() {
                  * mixed timebase would assert wrong times in the evidence
                  * trace. Labels still draft; timestamps are dropped.
                  *
-                 * `asr_local` is the honest provenance: transcribed on device.
-                 * It is client-asserted and the API cannot verify it, which is
-                 * why nothing in the safety architecture rests on it.
+                 * The provenance comes from the path the recording actually
+                 * took. It is client-asserted and the API cannot verify it,
+                 * which is why nothing in the safety architecture rests on it.
                  */
                 const withOffsets = text === '' && draft === null
                 const lines = segmentsToDraft(segments, transcribed, { withOffsets })
@@ -208,7 +208,18 @@ export function ConsultationNew() {
                   // record path produced before #118.
                   appendText(transcribed)
                 }
-                setSource('asr_local')
+                /*
+                 * Hosted is sticky for the rest of the consultation: once any
+                 * recording in this transcript went to ILMU, the submitted
+                 * provenance says so, even if later passes were on-device.
+                 * Downgrading to `asr_local` on a subsequent local recording
+                 * would understate where this consultation's audio has been,
+                 * and the provenance stamp exists to be read by whoever audits
+                 * that later.
+                 */
+                setSource((current) =>
+                  current === 'asr_hosted' || from === 'asr_hosted' ? 'asr_hosted' : 'asr_local',
+                )
               }}
             />
             {draft && (
