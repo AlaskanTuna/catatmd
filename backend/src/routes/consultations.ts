@@ -40,7 +40,8 @@ import { generateSuggestions } from '../suggestions/index.js'
 export const consultationsRouter = Router()
 
 /** `req.doctorId` is set by `requireSession`, which guards every route here. */
-function doctorId(req: { doctorId?: string }): string {
+/** Exported for the copilot route, which is scoped to a consultation too. */
+export function doctorId(req: { doctorId?: string }): string {
   if (!req.doctorId) throw new HttpError(401, 'unauthenticated', 'Authentication required.')
   return req.doctorId
 }
@@ -109,7 +110,8 @@ function toDetail(row: Consultation, approvedBy: string | null = null) {
  * Costs a query only on approved consultations; there is nothing to name until
  * the transition has happened.
  */
-async function toDetailWithApprover(row: Consultation) {
+/** Exported so the copilot route projects a consultation exactly as GET does. */
+export async function toDetailWithApprover(row: Consultation) {
   if (row.approvedAt === null) return toDetail(row)
   const doctor = await prisma.user.findUnique({
     where: { id: row.doctorId },

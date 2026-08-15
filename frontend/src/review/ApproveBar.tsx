@@ -1,7 +1,7 @@
 import type { ConsultationDetail } from '@shared/types'
 import { useMutation } from '@tanstack/react-query'
 import { CheckCircle2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '../lib/api.js'
 import { Button } from '../ui/Button.js'
 
@@ -54,12 +54,34 @@ export function ApproveBar({
    * clear of nothing. Tying the offset to the bar's own lifetime makes it
    * correct in both states without either component importing the other.
    */
+  const bar = useRef<HTMLDivElement | null>(null)
+
   useEffect(() => {
     if (approved) return
     const root = document.documentElement
+    // Below `md` the button still sits above this bar, because the bar spans
+    // the full width there and there is no corner to share.
     root.style.setProperty('--approve-bar-inset', '4rem')
+
+    /*
+     * From `md` up the button sits level with this bar instead, centred against
+     * its height. Measured rather than assumed: the copy wraps to two lines at
+     * narrow widths and while confirming, and a constant tuned against one line
+     * leaves the two visibly out of line at two.
+     */
+    const element = bar.current
+    const observer = element
+      ? new ResizeObserver(([entry]) => {
+          const height = entry?.borderBoxSize?.[0]?.blockSize ?? entry?.contentRect.height
+          if (height) root.style.setProperty('--approve-bar-height', `${height}px`)
+        })
+      : null
+    if (element && observer) observer.observe(element)
+
     return () => {
+      observer?.disconnect()
       root.style.removeProperty('--approve-bar-inset')
+      root.style.removeProperty('--approve-bar-height')
     }
   }, [approved])
 
@@ -100,7 +122,18 @@ export function ApproveBar({
 
   return (
     <div
-      className="glass sticky bottom-4 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-float p-3"
+      ref={bar}
+      /*
+       * `md:mr-16` reserves the bottom-right corner for the floating button,
+       * which is `right-6` and 3rem wide, so 4rem clears it with a gap. Without
+       * it the two overlap on any viewport under roughly 86rem, where the
+       * content column reaches `<main>`'s own `md:pr-6`.
+       *
+       * The island yields rather than the button moving, because the button is
+       * chrome that belongs in the corner on every screen and this bar is the
+       * only thing that ever contests it.
+       */
+      className="glass sticky bottom-4 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-float p-3 md:mr-16"
       style={{ zIndex: 'var(--z-sticky)' }}
       data-print="hide"
       data-tour="approve"

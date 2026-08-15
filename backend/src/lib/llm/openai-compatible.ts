@@ -7,6 +7,8 @@ import {
   type LLMClient,
   type LLMProvider,
   LLMResponseError,
+  type StreamChunk,
+  type StreamRequest,
 } from './types.js'
 
 /**
@@ -91,6 +93,84 @@ export class OpenAICompatibleClient implements LLMClient {
 
     const referenced = z.toJSONSchema(schema, { target: 'draft-7', reused: 'ref' })
     return JSON.stringify(referenced).length < JSON.stringify(inlined).length ? referenced : inlined
+  }
+
+  /**
+   * Streamed conversational generation with tools (GitHub issue #169). See
+   * `LLMClient.stream` for why this path validates differently, and what
+   * replaces the closed response schema.
+   *
+   * The egress guard runs over **every** turn, not just the newest. History is
+   * supplied by the client, so a caller that replayed an un-gated turn from an
+   * earlier session would otherwise smuggle it out under a request whose latest
+   * message was clean. Guarding the assembled payload rather than the increment
+   * is the same reasoning as guarding inside the adapter rather than at the
+   * call site.
+   */
+  async *stream(request: StreamRequest): AsyncGenerator<StreamChunk> {
+    if (env.DEID_FAIL_CLOSED) {
+      assertNoIdentifiers(request.system, request.operation)
+      for (const turn of request.turns) assertNoIdentifiers(turn.content, request.operation)
+    }
+
+    const completion = await this.client.chat.completions.create(
+      {
+        model: this.model,
+        temperature: request.temperature ?? 0.3,
+        max_tokens: request.maxTokens ?? 1_024,
+        stream: true,
+        messages: [
+          { role: 'system', content: request.system },
+          ...request.turns.map((turn) => ({ role: turn.role, content: turn.content })),
+        ],
+        tools: request.tools.map((tool) => ({
+          type: 'function' as const,
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+          },
+        })),
+      },
+      { signal: request.signal },
+    )
+
+    /*
+     * Tool calls arrive as deltas keyed by index, with the name on the first
+     * fragment and the JSON arguments split across the rest. They are
+     * accumulated here and emitted once complete, because a caller cannot
+     * validate half an argument object, and validation is the only thing
+     * standing between a model-authored tool call and a write.
+     */
+    const pending = new Map<number, { name: string; args: string }>()
+
+    for await (const part of completion) {
+      const delta = part.choices[0]?.delta
+      if (!delta) continue
+
+      if (delta.content) yield { type: 'text', text: delta.content }
+
+      for (const call of delta.tool_calls ?? []) {
+        const entry = pending.get(call.index) ?? { name: '', args: '' }
+        if (call.function?.name) entry.name = call.function.name
+        if (call.function?.arguments) entry.args += call.function.arguments
+        pending.set(call.index, entry)
+      }
+    }
+
+    for (const [, entry] of [...pending].sort(([a], [b]) => a - b)) {
+      if (!entry.name) continue
+      let args: unknown
+      try {
+        args = JSON.parse(entry.args || '{}')
+      } catch {
+        // Dropped rather than thrown. A malformed argument string is one
+        // unusable proposal, and failing the whole turn would discard the
+        // prose the doctor is already reading.
+        continue
+      }
+      yield { type: 'tool', name: entry.name, args }
+    }
   }
 
   async generate<T>(request: GenerateRequest<T>): Promise<T> {

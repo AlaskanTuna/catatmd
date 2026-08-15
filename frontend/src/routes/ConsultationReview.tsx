@@ -1,6 +1,7 @@
 import type {
   ClinicalAssertion,
   ConsultationDetail,
+  CopilotProposal,
   Disposition,
   DispositionInput,
   SoapNote,
@@ -10,6 +11,7 @@ import { Printer, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, Navigate, useParams } from 'react-router-dom'
+import { CatatAI } from '../copilot/CatatAI.js'
 import { DEMO_CONSULTATION_ID, useDemoTour } from '../demo/DemoTour.js'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
@@ -113,6 +115,48 @@ export function ConsultationReview() {
   }
 
   const analyze = useMutation({ mutationFn: () => api.analyze(id), onSuccess: invalidate })
+
+  /**
+   * Applies a CatatAI proposal the doctor approved (#169).
+   *
+   * It goes down `api.patch`, the same call their own keyboard
+   * makes, rather than a copilot-specific write route. That is what makes "the
+   * proposal grants no capability the doctor did not already have" a fact
+   * rather than a claim: it is byte-for-byte the request the note editor and
+   * the disposition controls already send, with the same validation and the
+   * same audit events behind it.
+   *
+   * Note edits merge onto the note currently on screen, never onto `{}`: a
+   * partial `editedNote` replacing the whole note would silently blank the
+   * three sections the proposal did not mention.
+   */
+  const applyProposal = async (proposal: CopilotProposal, reason?: string) => {
+    // Read from the query cache rather than a render-time binding: the doctor
+    // may have edited the note between the proposal arriving and approving it,
+    // and merging onto stale text would quietly revert that edit.
+    const current = queryClient.getQueryData<ConsultationDetail>(['consultation', id])
+    if (!current) throw new Error('No consultation loaded.')
+
+    if (proposal.tool === 'edit_note_section') {
+      const base = current.editedNote ?? current.analysis?.note
+      const next = await api.patch(id, {
+        editedNote: { ...base, [proposal.section]: proposal.text },
+      })
+      invalidate(next)
+      toast.success(`Applied to ${proposal.section}.`)
+      return
+    }
+
+    const decision = { id: '', state: proposal.state, ...(reason ? { reason } : {}) }
+    const next = await api.patch(
+      id,
+      proposal.tool === 'set_red_flag_disposition'
+        ? { redFlagDispositions: [{ ...decision, id: proposal.redFlagId }] }
+        : { gapDispositions: [{ ...decision, id: proposal.gapId }] },
+    )
+    invalidate(next)
+    toast.success('Decision recorded.')
+  }
 
   /*
    * The ephemeral consultation has no row to PATCH, so review actions are
@@ -428,6 +472,14 @@ export function ConsultationReview() {
           onApproved={isEphemeral ? tour.updateEphemeral : onApproved}
         />
       )}
+
+      {/*
+       * Not offered on the tour's consultation, which is not stored, so the
+       * copilot route would 404 on every message (#80). Not offered after
+       * approval either: the record is final, and a panel that could still
+       * propose edits would be inviting a change that cannot be made.
+       */}
+      {!isEphemeral && !approved && <CatatAI consultation={detail} onApply={applyProposal} />}
     </div>
   )
 }

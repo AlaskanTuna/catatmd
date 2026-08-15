@@ -15,6 +15,7 @@ import { requestContext } from './middleware/request-context.js'
 import { requireSession } from './middleware/require-session.js'
 import { authRouter } from './routes/auth.js'
 import { consultationsRouter } from './routes/consultations.js'
+import { copilotRouter } from './routes/copilot.js'
 import { healthRouter } from './routes/health.js'
 import { notificationsRouter } from './routes/notifications.js'
 import { referenceRouter } from './routes/reference.js'
@@ -84,6 +85,10 @@ export function createApp() {
   // never sees that router's errors.
   app.use('/api', referenceRouter)
   app.use('/api', notificationsRouter)
+  // Above the consultations router, because that one owns `/:id` and would
+  // otherwise answer this path first. It inherits the session guard from the
+  // `/api/consultations` prefix above and carries its own limiter (#169).
+  app.use('/api/consultations/:id/copilot', copilotRouter)
   app.use('/api/consultations', consultationsRouter)
 
   app.use(errorHandler)
