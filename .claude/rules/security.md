@@ -1,17 +1,17 @@
 ---
 paths:
-  - "backend/src/deid/**"
-  - "backend/src/lib/llm/**"
-  - "backend/src/redflags/**"
-  - "backend/src/guidelines/**"
-  - "backend/src/routes/**"
-  - "backend/src/middleware/**"
-  - "backend/src/audit/**"
-  - "backend/src/config/**"
-  - "backend/src/app.ts"
-  - "prisma/**"
-  - "frontend/src/lib/**"
-  - ".github/workflows/**"
+  - 'backend/src/deid/**'
+  - 'backend/src/lib/llm/**'
+  - 'backend/src/redflags/**'
+  - 'backend/src/guidelines/**'
+  - 'backend/src/routes/**'
+  - 'backend/src/middleware/**'
+  - 'backend/src/audit/**'
+  - 'backend/src/config/**'
+  - 'backend/src/app.ts'
+  - 'prisma/**'
+  - 'frontend/src/lib/**'
+  - '.github/workflows/**'
 ---
 
 # Security Rules
@@ -36,7 +36,7 @@ The trust boundary is a **type**, backed by a runtime check. Both halves matter.
 
 Maps to OWASP LLM01 Prompt Injection, LLM02 Sensitive Information Disclosure, LLM05 Improper Output Handling, LLM10 Unbounded Consumption.
 
-- `LLMClient` is the **only** egress point. Exactly one provider SDK import exists repo-wide: `import OpenAI from 'openai'` in `backend/src/lib/llm/openai-compatible.ts`. A second one anywhere is a critical defect.
+- `LLMClient` is the **only text egress point**, and the ASR relay (next section) is the only audio one. Exactly one provider SDK import exists repo-wide: `import OpenAI from 'openai'` in `backend/src/lib/llm/openai-compatible.ts`. A second one anywhere is a critical defect.
 - All three providers share one adapter class, `OpenAICompatibleClient`. They differ only by `baseURL` and model, selected in `build()` (`backend/src/lib/llm/index.ts`). Do not fork per-provider client code; add configuration.
 - API keys are read only through `env` (`backend/src/config/env.ts`). No `process.env` access for a key anywhere else.
 - Production boot guards exist for a reason and must not be relaxed: `LLM_PROVIDER=gemini` throws (free-tier terms permit Google to use submitted content for product improvement and human review), and `LLM_PROVIDER=deepseek` throws (PRC hosting, PDPA 2010 s.129 cross-border transfer).
@@ -45,6 +45,17 @@ Maps to OWASP LLM01 Prompt Injection, LLM02 Sensitive Information Disclosure, LL
 - Schema failure messages can embed model output. They are currently contained because the route collapses them into a generic `HttpError(500, 'analysis_failed')` and the logger never writes `err.message`. Keep both ends of that.
 - **Request bounds are on the constructor, and belong there** (issue #94). `timeout: 60_000` and `maxRetries: 1` replace SDK defaults of 10 minutes and 2 retries, which compounded to roughly 30 minutes per operation because the SDK retries timeouts. Constructor-level, not per-request, so every call path inherits them. Do not move them to a call site, and do not add a provider that bypasses `OpenAICompatibleClient`. Pinned by `backend/src/lib/llm/openai-compatible.test.ts` (OWASP LLM10 Unbounded Consumption).
 - **Not built today:** no `AbortController`, so a client disconnect does not cancel an in-flight provider call. That is a quota control, not a bound on hang time; the timeout above is what bounds the hang.
+
+## ASR Egress
+
+The hosted-ASR relay is the one audio egress (issue #154; `docs/trd.md` §20). Audio cannot be de-identified, so this path is governed by bounds, audit, and per-consultation consent, where consent is **required but not yet built**: the interaction ships with #155, the API enforces no consent signal today, and until then no client UI invokes the route.
+
+- `backend/src/routes/asr.ts` calling `transcribeWithIlmu` (`backend/src/lib/asr/ilmu.ts`) is the only path audio may take out of the API. No other module may call an ASR provider, and a provider SDK import here is a critical defect. The relay is native fetch by design; note that `no-stray-provider-sdk.test.ts`'s inventory names LLM vendors, so an ASR vendor SDK would currently pass it. The ban is this rule, not yet a guard.
+- `ILMU_API_KEY` is read only through `env`. Key unset means the route fails closed and visibly: 503 `asr_unavailable`, before any body is buffered and with no upstream call.
+- Nothing is persisted and no content is logged on this path. The audio exists in request-scoped memory only, the log line carries allowlisted fields only, and the audit pair (`asr.hosted_relayed` / `asr.hosted_relay_failed`) records billed seconds, a model id, and a closed failure reason, never content. The upstream response body is never read on a failure path, and a redirect is refused rather than followed, because on this route a request body is patient audio and a response body is a transcript.
+- Bounds, all of them deliberate: a route-level `express.raw` cap of 25 MB with `inflate: false` (ILMU's own request cap, unforgeable via `Content-Encoding`), the dedicated `hostedAsrRateLimit` (5/min per `clientKey`), a process-wide in-flight gate (`MAX_CONCURRENT_RELAYS`, 503 when full, because the per-key limiter cannot bound memory), a 120 s `AbortSignal.timeout`, and no retries.
+- The success audit write happens before the response and unguarded, so a relay the trail did not record is never observable by a client. Pre-flight rejections (401, 415, 400, our own 413 and 429, busy or key-unset 503) write no audit row because the upstream call was never attempted; every post-attempt failure writes `asr.hosted_relay_failed`.
+- **Not built today:** no per-actor or global spend cap. The route is a paid egress reachable by any self-service or guest session, bounded per caller by the limiter and per process by the in-flight gate only, which matches the `analyzeRateLimit` posture. State it as a gap rather than implying coverage.
 
 ## Clinical Safety Invariants
 
@@ -149,4 +160,4 @@ These are the deeper references. Read them rather than duplicating them here.
 - `.claude/skills/cso/` for a full OWASP and STRIDE audit pass, invoked on demand.
 - `docs/trd.md` for implementation detail. Sections 4 and 16 are stale on the audit cascade and on helmet, rate limiting, and CI; trust the code.
 - `docs/dpia.md` for the privacy position, the processor and residency table, and the open residual-risk register.
-- `.github/PULL_REQUEST_TEMPLATE.md` Clinical-Safety Checklist is mandatory when the diff touches `deid/`, `lib/llm/`, `redflags/`, `guidelines/`, or logging.
+- `.github/PULL_REQUEST_TEMPLATE.md` Clinical-Safety Checklist is mandatory when the diff touches `deid/`, `lib/llm/`, `lib/asr/`, `redflags/`, `guidelines/`, or logging.

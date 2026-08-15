@@ -36,6 +36,11 @@ services:
         value: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
       - key: QWEN_MODEL
         value: qwen3.7-flash
+      # Hosted-ASR relay (#154). Key only: base URL and model ride the defaults
+      # in backend/src/config/env.ts. Remember this file is not authoritative
+      # for a live service; set the key in the dashboard (docs/trd.md §17).
+      - key: ILMU_API_KEY
+        sync: false
       - key: DEID_FAIL_CLOSED
         value: 'true'
       # Verbosity only. No level widens what may be written: redaction in
