@@ -72,7 +72,7 @@ export interface TourStep {
   hint: string
 }
 
-const TOUR_STEPS: TourStep[] = [
+export const TOUR_STEPS: TourStep[] = [
   {
     label: 'Consultations',
     route: '/consultations',
@@ -112,6 +112,16 @@ const TOUR_STEPS: TourStep[] = [
     subject: 'flagged',
     target: '[data-tour="checklist"]',
     hint: 'A fixed 29-field checklist. A field nobody asked about reads "Not Assessed" rather than vanishing, so a fabricated denial is visible.',
+  },
+  {
+    // Deliberately before Approval: the claim that lands hardest here is the
+    // one about what the copilot cannot do, and the next stop is the control
+    // it cannot press.
+    label: 'CatatAI',
+    route: '/consultations/:id',
+    subject: 'flagged',
+    target: '[data-tour="catatai"]',
+    hint: 'The review copilot. It reads the consultation as it stands, including your own edits, and proposes changes you choose to apply. It can never approve a note or retract a red flag. It is inactive here, because the consultation this tour analyses is never saved, and nothing on this screen is a scripted conversation.',
   },
   {
     label: 'Approval',
