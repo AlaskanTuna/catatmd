@@ -109,4 +109,26 @@ export const FIXTURE_RUBRICS: readonly FixtureRubric[] = [
     // The negative control. The patient explicitly denies every symptom screened for.
     expectedRedFlagIds: [],
   },
+  {
+    fixtureId: 'urti-malay-red-flag',
+    gradedAgainst: ['CAP-3', 'PRD §12 (input-language limitation)', 'TRD §9 detector inventory'],
+    expectedBehaviour:
+      'Every expected rule flag fires from a Malay phrase: haemoptysis from "batuk sampai ' +
+      'keluar darah", dyspnoea from the "sesak nafas" screening exchange (the affirmed question ' +
+      'carries the span), chest pain from "dada sakit" despite the leading idiom "Tak apa" ' +
+      '(never mind, not a denial), and the vital-sign concern from "Demam pun tak kebah". The ' +
+      'Malay stridor screening question is genuinely denied ("Takde, tidur okay je") and stays ' +
+      'silent. The patient name and the unhyphenated MyKad number are both tokenised.',
+    failsQaIf:
+      'Any of the four expected rule flags is missing (a Malay symptom phrase silently missed ' +
+      'the deterministic engine), or stridor-airway-compromise fires from the denied screening ' +
+      'question, or either seeded identifier reaches the LLM egress un-tokenised.',
+    identifierClasses: ['PATIENT', 'NRIC'],
+    expectedRedFlagIds: [
+      'chest-pain',
+      'haemoptysis',
+      'significant-dyspnoea',
+      'vital-signs-concern',
+    ],
+  },
 ]

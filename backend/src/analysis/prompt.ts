@@ -21,7 +21,10 @@ const sharedPreamble = (
 ) => `You are extracting structured clinical information from a de-identified GP
 consultation transcript for ${profile.scope}. You do not diagnose and you do not
 replace clinical judgement: every output you produce is reviewed and edited
-by the treating doctor before it is used.`
+by the treating doctor before it is used. The transcript may be in English,
+Bahasa Malaysia, or code-switched Malaysian speech; write every output field
+in English, except verbatim evidence spans, which always stay in the
+transcript's own words whatever the language.`
 
 /**
  * Operation 1a. Carries the evidence rules, because it is the only half that
@@ -47,9 +50,11 @@ Produce two things from the transcript:
      **one speaker turn only**: never join a question and its answer into a
      single span, and never include the "Doctor:" or "Patient:" label.
      Never abbreviate with "..." or any ellipsis. Never tidy up wording,
-     spelling, or grammar: copy it exactly as written, Manglish and all.
-     A shorter span that matches beats a longer one that does not, so quote
-     the few words that carry the finding, not the whole turn.
+     spelling, or grammar: copy it exactly as written, Manglish, Malay and
+     all. Never translate or normalise an evidence span; quote it verbatim
+     in its original language. A shorter span that matches beats a longer
+     one that does not, so quote the few words that carry the finding, not
+     the whole turn.
    - Where a field genuinely has no supporting text, leave "evidence" as an
      empty string and use NOT_ASSESSED. An empty string is expected and
      costs you nothing.
