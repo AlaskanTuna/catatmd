@@ -270,6 +270,16 @@ function detectEmail(text: string): Match[] {
  * `3.` into `She`. Separators are spaces and tabs only, never `\s`, so the run
  * cannot cross a line break into the next dictated turn.
  *
+ * **The first element is exempt from the case rule** (`ADDRESS_FIRST_ELEMENT`),
+ * and the exemption is a recall fix rather than an oversight. Requiring a
+ * capital throughout meant `she lives at jalan ampang 5` matched nothing at
+ * all, where the truncating version at least raised ADDRESS. That is a whole
+ * address leaving the boundary rather than a partial one, so an all-lower-case
+ * dictation would have been strictly worse off than before this fix. The street
+ * type immediately precedes it, which is the anchor that makes the exemption
+ * safe: the run still cannot start anywhere else, and every element after the
+ * first is strict, so the prose bound is unchanged.
+ *
  * **The `i` flag had to go for any of that to hold.** Under it `[A-Z]` matches
  * lower-case, which is the defect this file already carries a note about at
  * `caseInsensitiveLiteral`: the same flag is how the word "claim" was once
@@ -277,7 +287,8 @@ function detectEmail(text: string): Match[] {
  * through that helper instead, so the postcode branch is unchanged in meaning.
  */
 const ADDRESS_ELEMENT = `[A-Z0-9][A-Za-z0-9'/-]*`
-const ADDRESS_RUN = `${ADDRESS_ELEMENT}(?:[ \\t]+${ADDRESS_ELEMENT}){0,5}(?:,[ \\t]*${ADDRESS_ELEMENT}(?:[ \\t]+${ADDRESS_ELEMENT}){0,3})?`
+const ADDRESS_FIRST_ELEMENT = `[A-Za-z0-9][A-Za-z0-9'/-]*`
+const ADDRESS_RUN = `${ADDRESS_FIRST_ELEMENT}(?:[ \\t]+${ADDRESS_ELEMENT}){0,5}(?:,[ \\t]*${ADDRESS_ELEMENT}(?:[ \\t]+${ADDRESS_ELEMENT}){0,3})?`
 const STREET_TYPES = [
   'Jalan',
   'Jln',

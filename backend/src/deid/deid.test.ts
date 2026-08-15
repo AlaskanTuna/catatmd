@@ -796,6 +796,35 @@ describe('addresses tokenise whole, postcode or not (#181)', () => {
     expect(labelsIn('Jalan Ampang 5 was noted.')).not.toContain('ADDRESS')
   })
 
+  /*
+   * The case bound cuts both ways, so the lower-case half is measured rather
+   * than assumed. Requiring a capital on every element meant
+   * `she lives at jalan ampang 5` matched nothing at all, which is a whole
+   * address leaving the boundary where the old truncating version at least
+   * raised ADDRESS. The first element is therefore exempt.
+   *
+   * The remainder of a lower-case address is still partial: `ismail` and
+   * `kuala lumpur` below survive, because every element after the first is
+   * strict and that strictness is what stops the run eating clinical prose.
+   * Pinned so the limit is a measured number rather than a description, and so
+   * a later widening has something to compare against.
+   */
+  it('still reaches a lower-case address, and is honest that it reaches only part', () => {
+    expect(labelsIn('she lives at jalan ampang 5, kuala lumpur.')).toContain('ADDRESS')
+
+    const { text } = deidentify('she lives at jalan ampang 5 and takes paracetamol 500 mg.')
+    expect(text).toBe('she lives at [ADDRESS_1] and takes paracetamol 500 mg.')
+
+    // KNOWN PARTIAL. A postcode still anchors the whole span regardless of case.
+    expect(deidentify('her address is jalan bukit bintang 5, 50450 kuala lumpur.').text).toBe(
+      'her address is [ADDRESS_1].',
+    )
+    // ...but with no postcode the run stops at the first lower-case element.
+    expect(deidentify('he lives at no. 12, jalan sultan ismail, kuala lumpur.').text).toContain(
+      'ismail, kuala lumpur',
+    )
+  })
+
   it('does not let a street name run across a line break', () => {
     // Separators are spaces and tabs, never `\s`. A dictated turn ending in an
     // address must not annex the first Title-Cased word of the next line.
