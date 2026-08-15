@@ -359,9 +359,11 @@ export const FIXTURES: readonly Fixture[] = [
         },
         {
           speaker: 'doctor',
+          // Cue directly before the value: the detector admits no words between
+          // them, which the previous wording broke for as long as it existed (#148).
           text:
-            "Yes, I'll note it on the invoice for PMCare. Registration number for our clinic " +
-            'file is RC-2026-00842.',
+            "Yes, I'll note it on the invoice for PMCare. Registration no. KLC-004821 for " +
+            'our clinic file.',
           offsetSeconds: 168.9,
         },
       ],

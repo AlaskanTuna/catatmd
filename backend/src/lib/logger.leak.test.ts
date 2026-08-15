@@ -198,6 +198,7 @@ describe('no clinical content reaches the log drain', () => {
       'Selangor',
       'ahmad.ismail85@example.com',
       '23 May 1985',
+      'KLC-004821',
     ]) {
       expect(logs, `identifier leaked: ${identifier}`).not.toContain(identifier)
     }
