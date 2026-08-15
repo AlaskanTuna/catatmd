@@ -574,24 +574,52 @@ describe('regressions introduced by this PR, now pinned', () => {
     expect(text).toContain('[NRIC_1]')
   })
 
-  it('still leaks a leading element when the name is longer than the patronymic pattern admits', () => {
-    // KNOWN BAD, pinned deliberately. Issue #183.
+  it('keeps the leading element when the name is longer than the patronymic pattern admits', () => {
+    // Was `Nur [PATIENT_1] came in.` (#183). The gazetteer run
+    // `Nur Aina Sofea Batrisyia` [0,24) and the patronymic span
+    // `Aina Sofea Batrisyia binti Zulkifli` [4,39) partly overlap; the longer
+    // one won and `resolveOverlaps` discarded the loser whole, including the
+    // four characters no accepted span covered.
     //
-    // This is #149's failure mode surviving #149's fix, and it is pinned rather
-    // than fixed because the obvious fix makes things worse. Widening
-    // `PATRONYMIC_PATTERN` from two leading elements to four was tried on this
-    // branch and a boundary audit showed it relocates the leak to six elements
-    // rather than closing it, while making the span greedy enough to swallow
-    // clinical content: "Acute Cough Sore Throat Fever Ahmad bin Ismail" ate the
-    // symptom list, and one person in two sentences became two tokens.
-    //
-    // Deleting a symptom list from what the model reads is a false-negative risk
-    // on the clinical pass, which is a worse trade than the leak. The real cause
-    // is `resolveOverlaps` discarding the uncovered prefix of a partly
-    // overlapping match, filed as #183.
+    // `PATRONYMIC_PATTERN` is still `{0,2}`, which is the point: widening it
+    // relocates the leak rather than closing it, and makes the span greedy
+    // enough to eat a symptom list.
     const { text } = deidentify('Nur Aina Sofea Batrisyia binti Zulkifli came in.')
-    expect(text).toContain('Nur ')
-    expect(text).toMatch(/\[PATIENT_\d+\] came in\./)
+    expect(text).not.toContain('Nur')
+    expect(text).toMatch(/^\[PATIENT_\d+\] \[PATIENT_\d+\] came in\.$/)
+  })
+
+  it('still drops a shorter match that sits wholly inside the winner', () => {
+    // The other half of the rule, and the reason the original docstring gave
+    // for dropping at all: a contained span has no uncovered prefix, so
+    // replacing it would corrupt the winner's offsets and leave a fragment of
+    // the identifier behind. `Tan Wei Ming` is inside `Tan Wei Ming binti
+    // Ahmad`, and exactly one token must come out.
+    const { text } = deidentify('Tan Wei Ming binti Ahmad came in.')
+    expect(text).toBe('[PATIENT_1] came in.')
+  })
+
+  it('still leaks when the name is longer than any competing match reaches', () => {
+    // KNOWN BAD, pinned deliberately. Issue #183, and NOT closed by its own
+    // fix. Reported back on the issue rather than left silent.
+    //
+    // The prefix fix can only recover text some other detector actually
+    // matched. Here nothing does: `CAPITALISED_RUN` caps at four words and the
+    // gazetteer pass needs its *first* word to be a known given name, and
+    // `zarul`, `qaseh` and `damia` are all outside the roughly 130 names in
+    // `GIVEN_NAMES`. So no match covers `Zarul Aina Sofea`, and there is no
+    // uncovered prefix to preserve.
+    //
+    // Closing it needs the patronymic span itself to reach further left, which
+    // is the widening #178 measured and reverted: it cannot tell
+    // `Zarul Aina Sofea Batrisyia Qaseh Damia` from
+    // `Acute Cough Sore Throat Fever`, and swallowing the second deletes the
+    // symptom list from what the model reads. Separating them needs a
+    // vocabulary list that `no-stray-clinical-constants.test.ts` refuses, or a
+    // model. Neither is in this fix's scope.
+    const { text } = deidentify('Patient: Zarul Aina Sofea Batrisyia Qaseh Damia binti Zulkifli')
+    expect(text).toContain('Zarul Aina Sofea')
+    expect(text).toMatch(/\[PATIENT_\d+\]$/)
   })
 
   it('still swallows Title-Cased clinical words directly in front of a name', () => {
@@ -701,7 +729,7 @@ describe('an honorific that is also a name', () => {
   })
 })
 
-describe('addresses carrying a postcode tokenise whole (#181 covers the rest)', () => {
+describe('addresses tokenise whole, postcode or not (#181)', () => {
   it('reaches the postcode instead of stopping two characters in', () => {
     // A lazy run followed by an optional group never expands, so this matched
     // `Jalan Bu` and left street, number, postcode and city in the clear.
@@ -711,12 +739,67 @@ describe('addresses carrying a postcode tokenise whole (#181 covers the rest)', 
     expect(text).toBe('Her address is [ADDRESS_1].')
   })
 
-  it('is honest about the no-postcode case still truncating', () => {
-    // Pinned as known-bad rather than quietly left. An address with no postcode
-    // has no comparable anchor, and a greedy run there would swallow the
-    // clinical prose after the street name. Issue #181.
+  it('reaches the end of an address carrying no postcode', () => {
+    // Was `[ADDRESS_1]pang 5, Kuala Lumpur`: street name, house number and city
+    // all survived the boundary. The no-postcode branch matched its
+    // two-character minimum for the same reason the postcode branch did.
     const { text } = deidentify('She lives at Jalan Ampang 5, Kuala Lumpur.')
-    expect(text).toContain('[ADDRESS_1]')
-    expect(text).toContain('Kuala Lumpur')
+    expect(text).not.toContain('Ampang')
+    expect(text).not.toContain('Kuala Lumpur')
+    expect(text).toBe('She lives at [ADDRESS_1].')
+  })
+
+  it('tokenises a house number in front of the street type', () => {
+    const { text } = deidentify('He lives at No. 12, Jalan Sultan Ismail, Kuala Lumpur.')
+    expect(text).not.toContain('12')
+    expect(text).not.toContain('Sultan')
+    expect(text).toBe('He lives at [ADDRESS_1].')
+  })
+
+  /*
+   * The precision half, and the reason a greedy `{2,40}` was refused. A
+   * tokenised span is removed from what the model reads, so an address run that
+   * eats the medication after it deletes that medication from the note the
+   * red-flag pass reasons over. `healthcare-cdss-patterns` holds that direction
+   * to zero tolerance, which makes over-tokenising here worse than the leak it
+   * would close.
+   */
+  it('stops at ordinary prose instead of swallowing medication, dose or duration', () => {
+    const cases = [
+      'She lives at Jalan Ampang 5 and takes paracetamol 500 mg.',
+      'She stays at Taman Melati 3. She takes metformin 500 mg daily.',
+      'He lives at Lorong Kurau 2 and has had a cough for 3 days.',
+    ]
+    for (const sentence of cases) {
+      const { text } = deidentify(sentence)
+      expect(text, sentence).toContain('[ADDRESS_1]')
+    }
+
+    expect(deidentify(cases[0] ?? '').text).toBe(
+      'She lives at [ADDRESS_1] and takes paracetamol 500 mg.',
+    )
+    expect(deidentify(cases[1] ?? '').text).toBe(
+      'She stays at [ADDRESS_1]. She takes metformin 500 mg daily.',
+    )
+    expect(deidentify(cases[2] ?? '').text).toBe(
+      'He lives at [ADDRESS_1] and has had a cough for 3 days.',
+    )
+  })
+
+  it('keeps the postcode score branch reachable, and cue-free', () => {
+    // `hasPostcode` scores 0.8 and clears `ACCEPT_THRESHOLD` on its own, so an
+    // address carrying a postcode survives a sentence with no context cue in
+    // it. Without a postcode the base is 0.45 and a cue is mandatory. Both
+    // halves are asserted, because the postcode branch being unreachable is
+    // what made every address depend on a cue before #178.
+    expect(labelsIn('Jalan Bukit Bintang 5, 50450 Kuala Lumpur was noted.')).toContain('ADDRESS')
+    expect(labelsIn('Jalan Ampang 5 was noted.')).not.toContain('ADDRESS')
+  })
+
+  it('does not let a street name run across a line break', () => {
+    // Separators are spaces and tabs, never `\s`. A dictated turn ending in an
+    // address must not annex the first Title-Cased word of the next line.
+    const { text } = deidentify('She lives at Taman Melati 3\nPanadol was given.')
+    expect(text).toContain('Panadol was given.')
   })
 })

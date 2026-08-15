@@ -252,14 +252,48 @@ function detectEmail(text: string): Match[] {
  * between them deleted.
  *
  * Splitting it means the first alternative has to reach a postcode to match at
- * all, so the lazy run expands to find one. The second is the previous
- * behaviour, unchanged and still truncating: an address with no postcode has no
- * comparable anchor, and a greedy run there would swallow the clinical prose
- * after the street name. That half is issue #181 rather than a silent partial
- * fix here.
+ * all, so the lazy run expands to find one.
+ *
+ * **The second alternative is bounded by case, not by a character count**
+ * (#181). It too used to match its two-character minimum, so `Jalan Ampang 5,
+ * Kuala Lumpur` tokenised as `Jalan Am` and left street, number and city in the
+ * clear. A greedy `{2,40}` would have closed that and swallowed the clinical
+ * prose after the street name, which is the worse trade: a tokenised span is
+ * removed from what the model reads, so eating `and takes paracetamol 500 mg`
+ * deletes the medication from the note the red-flag pass reasons over.
+ *
+ * What ends a street name structurally is the return to ordinary prose, and
+ * ordinary prose is lower-case. `ADDRESS_ELEMENT` therefore admits only
+ * elements opening with a capital or a digit, so the run stops dead at `and`,
+ * `she`, `takes`. A full stop ends it for the same reason: `.` is deliberately
+ * outside the element body, or `Taman Melati 3. She takes metformin` would run
+ * `3.` into `She`. Separators are spaces and tabs only, never `\s`, so the run
+ * cannot cross a line break into the next dictated turn.
+ *
+ * **The `i` flag had to go for any of that to hold.** Under it `[A-Z]` matches
+ * lower-case, which is the defect this file already carries a note about at
+ * `caseInsensitiveLiteral`: the same flag is how the word "claim" was once
+ * tokenised as a patient name. The street types keep their case-flexibility
+ * through that helper instead, so the postcode branch is unchanged in meaning.
  */
-const ADDRESS_PATTERN =
-  /\b(?:No\.?\s*\d+[A-Za-z]?,?\s*)?(?:Jalan|Jln|Lorong|Lrg|Taman|Tmn|Kampung|Kg|Persiaran|Lebuh)\s+(?:[A-Za-z0-9\s./'-]{2,40}?,\s*\d{5}\s*[A-Za-z]+(?:\s+[A-Za-z]+){0,2}|[A-Za-z0-9\s./'-]{2,40}?)/gi
+const ADDRESS_ELEMENT = `[A-Z0-9][A-Za-z0-9'/-]*`
+const ADDRESS_RUN = `${ADDRESS_ELEMENT}(?:[ \\t]+${ADDRESS_ELEMENT}){0,5}(?:,[ \\t]*${ADDRESS_ELEMENT}(?:[ \\t]+${ADDRESS_ELEMENT}){0,3})?`
+const STREET_TYPES = [
+  'Jalan',
+  'Jln',
+  'Lorong',
+  'Lrg',
+  'Taman',
+  'Tmn',
+  'Kampung',
+  'Kg',
+  'Persiaran',
+  'Lebuh',
+]
+const ADDRESS_PATTERN = new RegExp(
+  `\\b(?:${caseInsensitiveLiteral('No')}\\.?\\s*\\d+[A-Za-z]?,?\\s*)?(?:${STREET_TYPES.map(caseInsensitiveLiteral).join('|')})\\s+(?:[A-Za-z0-9\\s./'-]{2,40}?,\\s*\\d{5}\\s*[A-Za-z]+(?:\\s+[A-Za-z]+){0,2}|${ADDRESS_RUN})`,
+  'g',
+)
 /*
  * Inflected forms are enumerated, not inferred. ADDRESS has no cue-free route
  * over `ACCEPT_THRESHOLD` at base 0.45, so a cue that stops matching is a whole
@@ -562,16 +596,24 @@ function detectNames(text: string): Match[] {
   // 4. Gazetteer recall pass — capitalised runs whose first token is a known
   //    Malaysian given name and which carry no cue. This is the only measure
   //    available without a model that raises recall on unmarked names.
+  //    The run is trimmed the same way the patronymic span is. It always
+  //    should have been, and #183 is what made the omission observable: an
+  //    untrimmed run starts on the honorific, so `Tan Sri Ahmad bin Ismail`
+  //    left `Tan Sri` uncovered by the winning span and the preserved prefix
+  //    tokenised the title as a patient. Trimming first puts the run fully
+  //    inside the winner, where it is dropped as before.
   for (const m of text.matchAll(CAPITALISED_RUN)) {
     const run = m[0]
     if (isStopword(run)) continue
     const first = run.split(/\s+/)[0]?.toLowerCase()
     if (!first || !GIVEN_NAMES.has(first)) continue
+    const trimmed = trimNameSpan(run, m.index)
+    if (!trimmed) continue
     out.push({
       label: 'PATIENT',
-      start: m.index,
-      end: m.index + run.length,
-      value: run,
+      start: trimmed.start,
+      end: trimmed.start + trimmed.value.length,
+      value: trimmed.value,
       score: 0.6,
     })
   }
@@ -616,6 +658,31 @@ const DETECTORS = [
  * Overlapping matches are resolved longest-first, then by score. A shorter span
  * inside an accepted one is dropped, because replacing it would corrupt the
  * outer span's offsets and leave a fragment of the original identifier behind.
+ *
+ * **A shorter span that starts before the one it loses to keeps its uncovered
+ * prefix** (#183). Dropping the loser whole discarded text that no accepted
+ * span covered, and on the name path that text is a name element:
+ *
+ * ```
+ * "Nur Aina Sofea Batrisyia binti Zulkifli came in."
+ *   gazetteer run    [0,24)   "Nur Aina Sofea Batrisyia"
+ *   patronymic span  [4,39)   "Aina Sofea Batrisyia binti Zulkifli"   longer, wins
+ *   was              "Nur [PATIENT_1] came in."                       leaks
+ * ```
+ *
+ * `assertNoIdentifiers` could not catch it, because the egress guard re-runs
+ * these same detectors and shared the gap exactly.
+ *
+ * The prefix is kept as its own match rather than merged into the winner.
+ * Merging would mean one token instead of two, which reads better, but it
+ * extends an accepted span using a lower-scored loser's boundary and would join
+ * spans of different labels, so an ADDRESS could annex a PATIENT. The cost is
+ * that one person can mint two tokens where the prefix is a name element. That
+ * is the trade this module states in `trimNameSpan`: a recall loss on the PHI
+ * boundary outranks a precision gain.
+ *
+ * Full containment is unchanged: no uncovered prefix means the loser is
+ * dropped, which is what keeps the docstring reason above true.
  */
 function resolveOverlaps(matches: Match[]): Match[] {
   const sorted = [...matches].sort(
@@ -623,8 +690,18 @@ function resolveOverlaps(matches: Match[]): Match[] {
   )
   const kept: Match[] = []
   for (const m of sorted) {
-    if (kept.some((k) => m.start < k.end && k.start < m.end)) continue
-    kept.push(m)
+    const overlapping = kept.filter((k) => m.start < k.end && k.start < m.end)
+    if (overlapping.length === 0) {
+      kept.push(m)
+      continue
+    }
+
+    const firstStart = Math.min(...overlapping.map((k) => k.start))
+    if (firstStart <= m.start) continue
+
+    const prefix = m.value.slice(0, firstStart - m.start).replace(/[\s,]+$/, '')
+    if (prefix.length === 0) continue
+    kept.push({ ...m, value: prefix, end: m.start + prefix.length })
   }
   return kept.sort((a, b) => a.start - b.start)
 }
