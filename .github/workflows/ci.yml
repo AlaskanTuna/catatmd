@@ -312,36 +312,33 @@ jobs:
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
-      # This exact failure has shipped twice. `VITE_API_URL` is read at build
-      # time and inlined, so if it is missing the bundle falls back to a
-      # relative base, every call lands on the static origin, and the SPA
-      # rewrite answers `POST /api/...` with 405 text/html. The client cannot
-      # parse that as an error envelope, so the only symptom a user sees is
-      # "Something went wrong" on a site that is otherwise up. Nothing else in
-      # the pipeline notices: the build succeeds and the deploy is healthy.
+      # Inverted by #156, and still guarding the same class of failure: an API
+      # base that is silently wrong in a way no other step notices.
       #
-      # The cause both times was the variable being marked Sensitive in the
-      # dashboard. Sensitive values are write-only, so `vercel pull` returns
-      # the literal string `[SENSITIVE]` and the prebuilt build never sees the
-      # URL. It is a public value that ships inside client JavaScript, so
-      # Sensitive buys nothing and costs the deploy.
-      - name: Assert the bundle points at the API, not the static origin
+      # It used to require `VITE_API_URL` to be present, because an empty base
+      # sent every call to the static origin and the SPA rewrite answered
+      # `POST /api/...` with 405 text/html. #156 added a rewrite that proxies
+      # `/api/*` to Render, so a relative base is now the correct wiring, and it
+      # is what makes the session cookie first-party and therefore what makes
+      # sign-in work on iOS Safari.
+      #
+      # An absolute `VITE_API_URL` left in the project env would be inlined into
+      # the bundle, restore the cross-origin request, and silently reintroduce
+      # the third-party cookie that #156 fixed. The build would stay green, the
+      # deploy would be healthy, and only mobile users would be locked out.
+      - name: Assert the bundle calls the API on its own origin
         run: |
           api="$(sed -n 's/^VITE_API_URL="\?\([^"]*\)"\?$/\1/p' .vercel/.env.production.local)"
-          case "$api" in
-            '' | '[SENSITIVE]')
-              echo "::error::VITE_API_URL did not reach the build (got '${api:-<unset>}')."
-              echo "If it reads [SENSITIVE], clear the flag:"
-              echo "  vercel env rm VITE_API_URL production --yes"
-              echo "  vercel env add VITE_API_URL production --no-sensitive --value <url>"
-              exit 1
-              ;;
-          esac
-          if ! grep -rqF "$api" .vercel/output/static/assets; then
-            echo "::error::Built bundle does not contain $api, so the API base is empty."
+          if [ -n "$api" ]; then
+            echo "::error::VITE_API_URL is set to '$api'. Since #156 the SPA must call /api on its own origin so the session cookie stays first-party. Remove it:"
+            echo "  vercel env rm VITE_API_URL production --yes"
             exit 1
           fi
-          echo "Bundle is wired to $api"
+          if grep -rqF "catatmd-api.onrender.com" .vercel/output/static/assets; then
+            echo "::error::Built bundle contains an absolute API origin, so calls would bypass the rewrite and the cookie would be third-party again."
+            exit 1
+          fi
+          echo "Bundle calls /api on its own origin."
 
       # `--meta commitSha` is set explicitly rather than relying on the CLI's git
       # auto-detection, because the identity check below reads it back and must
@@ -527,4 +524,32 @@ jobs:
           done
 
           echo "::error::$PRODUCTION_DOMAIN resolves to the right deployment but is not serving $expected."
+          exit 1
+
+      # The proxy from #156, end to end, on the domain a reviewer actually
+      # visits. Every other check here can pass with the rewrite broken: the
+      # bundle is byte-identical whether or not `/api/*` reaches Render, so a
+      # rewrite lost to a bad edit or a rule ordered after the SPA catch-all
+      # would deploy green and lock every user out of sign-in.
+      #
+      # Content type is the assertion that matters. A swallowed `/api` request
+      # returns the SPA shell with 200 text/html, so a status check alone would
+      # not notice. Retried because Render's free instance can be cold.
+      - name: Assert /api reaches the API through the rewrite
+        run: |
+          set -euo pipefail
+
+          for _ in 1 2 3 4 5 6; do
+            body="$(curl -fsS --max-time 60 -H 'Accept: application/json' \
+              "https://$PRODUCTION_DOMAIN/api/health" || true)"
+            case "$body" in
+              *'"status":"ok"'*)
+                echo "$PRODUCTION_DOMAIN/api/health is served by the API."
+                exit 0
+                ;;
+            esac
+            sleep 10
+          done
+
+          echo "::error::https://$PRODUCTION_DOMAIN/api/health did not return the API health payload. The /api rewrite in vercel.json is not reaching Render, so every API call lands on the SPA and sign-in is broken."
           exit 1

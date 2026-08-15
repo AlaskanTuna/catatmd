@@ -1,22 +1,18 @@
 import type { Request } from 'express'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
+import { CLIENT_IP_HEADER } from './client-ip.js'
 
 /**
- * Resolves the client address behind Render's Cloudflare edge.
- *
- * Identical reasoning to the `ipAddress` block in `lib/auth.ts`, and it has to
- * be repeated here because the two limiters resolve the caller independently:
- * `x-forwarded-for` arrives as a chain, so `trust proxy` has to guess a hop
- * count, and a wrong guess buckets every caller under a Cloudflare edge address
- * rather than their own. `cf-connecting-ip` is single-valued, set by Cloudflare,
- * and overwritten if a client supplies it.
+ * Buckets by the caller `middleware/client-ip.ts` resolved, which is the same
+ * address better-auth's own limiter keys on. That module owns the reasoning
+ * about which headers can be believed; this one only consumes the result.
  *
  * `ipKeyGenerator` is still used on the fallback path so IPv6 callers are
  * bucketed by subnet rather than by a single address they can trivially vary.
  */
 export function clientKey(req: Request): string {
-  const forwarded = req.headers['cf-connecting-ip']
-  if (typeof forwarded === 'string' && forwarded.length > 0) return forwarded
+  const resolved = req.headers[CLIENT_IP_HEADER]
+  if (typeof resolved === 'string' && resolved.length > 0) return resolved
   return ipKeyGenerator(req.ip ?? '')
 }
 

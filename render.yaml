@@ -20,6 +20,14 @@ services:
         sync: false
       - key: CORS_ORIGIN
         sync: false
+      # Vercel's egress addresses (#156). The SPA reaches this API through a
+      # Vercel rewrite, so Cloudflare reports Vercel as the peer and the real
+      # caller is the leftmost x-forwarded-for entry. Set in the dashboard
+      # rather than here because Vercel can rotate them. Left unset, the rate
+      # limiters degrade to one shared bucket for proxied traffic, never to a
+      # spoofable one.
+      - key: TRUSTED_PROXY_IPS
+        sync: false
       - key: LLM_PROVIDER
         value: qwen
       - key: QWEN_API_KEY
