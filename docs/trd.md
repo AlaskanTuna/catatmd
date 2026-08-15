@@ -1407,6 +1407,47 @@ The failure is inside an ONNX Runtime **optimisation pass** that rewrites quanti
 
 That distinction matters for anyone reviewing it later: this disables a graph rewrite, not a correctness check, and it does not alter the model or its output. It is a workaround for a runtime bug, not a quality trade.
 
+#### Per-Module Dtype On WebGPU (Issue #144)
+
+The WebGPU branch originally set no `dtype`, so the library default applied and everything came down at fp32. It now pins a full-precision encoder with a `q4` decoder, the pairing the official transformers.js WebGPU Whisper demos ship for models of this size. Two nearby options were rejected on evidence, not preference:
+
+- **Scalar `q8`** is pathologically slow on WebGPU (transformers.js issue #894 measures 27 s against 5.2 s WASM on the same file), and the q8 decoder independently fails to open on this runtime (the qdq diagnosis above).
+- **An fp16 encoder** would save a further 176 MB, but the demos reserve fp16 encoders for `large-v3-turbo`, and the pinning row above records an open v4 + WebGPU + fp16 timestamp issue. Timestamps carry §20.2, so full precision won.
+
+##### Download Size, Measured 15/08/26
+
+In-browser `progress_total` on the production worker, Intel gen-9 adapter; per-artifact sizes are CDN `content-length`:
+
+| Path                          | Total Measured | Weight Artifacts                                              |
+| ----------------------------- | -------------- | ------------------------------------------------------------- |
+| WASM `q8` (unchanged)         | ~250 MB        | encoder_quantized 92.3 MB + decoder_merged_quantized 156.8 MB |
+| WebGPU, fp32 default (before) | 970.9 MB       | encoder 352.8 MB + decoder_merged 615.3 MB                    |
+| WebGPU, fp32 + q4 (after)     | 588.7 MB       | encoder 352.8 MB + decoder_merged_q4 233.1 MB                 |
+
+A 39% cut, not the issue's hoped-for half: the q4 decoder is 233 MB, not the ~170 MB the estimate assumed. Weights cache per artifact, so an existing WebGPU user re-downloads the decoder once; the fp32 encoder stays cached.
+
+##### Session And Speed, Same Machine And Recording
+
+The session opens with the q4 decoder, no qdq failure, no WASM fallback. On the §20.2 83.4 s reference recording, stamped: session open 26.2 s and transcription 74.6 s (RTF 0.89) under fp32 + q4, against 41.5 s and 153.8 s (RTF 1.84) under an fp32 decoder, and 178.5 s (RTF 2.14) for the 14/08/26 WASM q8 baseline. The q4 decoder halves decode time on top of halving its download.
+
+##### Token A/B, Stated With The Honesty §20.1 Demands
+
+The §20.1 sample was no longer present on the measurement machine, so the A/B ran on the §20.2 synthetic consultation instead: ground truth known, but TTS voices with anglicised Malay pronunciation, which §20.2 already records as a register caveat. n=1, not a benchmark. Two q4 runs were byte-identical, so the differences below are deterministic, not noise.
+
+| Token (Ground Truth)         | WASM q8 (14/08 Baseline) | WebGPU fp32 + q4      | WebGPU fp32 Decoder          |
+| ---------------------------- | ------------------------ | --------------------- | ---------------------------- |
+| "Any phlegm when you cough?" | phlegm                   | **flam**              | phlegm                       |
+| "Batuk sudah 3 hari lah"     | Batuxidha 3 Harry Law    | Batuxedot 3 harry law | Batuxidothri harila (no "3") |
+| "MC", both mentions          | MC                       | MC                    | mc                           |
+| "sakit"                      | socket                   | socket                | socket                       |
+| Everything else              | Identical                | Identical             | Identical                    |
+
+No dtype dominated. Against the fp32 default it replaces, q4 keeps the numeral in "3 hari" and the MC capitalisation and loses "phlegm" to a phonetic "flam"; the TTS voice's rendering of exactly that word is the kind of token one synthetic sample cannot settle. A real-speech A/B is the open follow-up, not a blocker recorded as solved.
+
+##### Timestamp Integrity On The Reference Recording
+
+18 segments, monotonic and contiguous (`end[i] == start[i+1]` throughout), final end 83.5 s against 83.38 s true duration, and the concatenated segment text reconstructs the transcript after whitespace normalisation. Neither known failure shape from §20.2 appeared.
+
 ### Threat: ASR Is A Second Fabrication Surface
 
 This is a genuine architectural gap, stated as one. Every control in this system — the de-identification gate (§9), the rules engine (§10), ID-constrained citations (§11), and evidence-bound assertion (§21.4) — sits **downstream of the transcript** and cannot detect a transcript that is already wrong.

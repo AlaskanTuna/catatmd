@@ -29,7 +29,7 @@ import {
  * during a consultation is worse than a slow one.
  *
  * **The model is fetched from the HuggingFace CDN on first use and cached by
- * the browser thereafter, never bundled into the build.** Roughly 250 MB of
+ * the browser thereafter, never bundled into the build.** Hundreds of MB of
  * weights in a Vercel deployment would be absurd, and the CDN fetch is the one
  * runtime call to a third party in this product; `docs/` discloses it, because
  * a reviewer who finds it unannounced in a network trace has every reason to
@@ -107,24 +107,11 @@ async function loadWasm() {
   return pipeline('automatic-speech-recognition', MODEL, {
     device: 'wasm',
     /*
-     * Split by module, and both halves are forced rather than tuned.
-     *
-     * **The `q8` decoder does not load at all**, on either published repo, and
-     * that was measured rather than assumed: the same failure appears with
-     * `Xenova/whisper-small` and `onnx-community/whisper-small`, so it is a
-     * property of how the quantised decoder is converted against the ONNX
-     * Runtime bundled here, not of one mirror.
-     *
-     *   Can't create a session. qdq_actions.cc:137 TransposeDQWeightsForMatMulNBits
-     *   Missing required scale: model.decoder.embed_tokens.weight_merged_0_scale
-     *
-     * It surfaces only after the full weight download and is reported as a
-     * generic session failure, which is why it is written down here.
-     *
-     * So the decoder stays unquantised and the encoder carries the saving. That
-     * is also the better half to quantise on the merits: the encoder runs once
-     * over the audio, while the decoder runs per token and is where a
-     * quantisation artefact turns into a wrong word.
+     * A scalar, so every module is quantised: encoder and decoder both run
+     * q8, which is the library's own WASM default made explicit and pinned.
+     * The quantised decoder refuses to open under default session options,
+     * and the fix for that is the disabled optimisation pass below, not a
+     * different dtype (docs/trd.md section 20 records the diagnosis).
      */
     dtype: 'q8',
     /*
@@ -187,9 +174,13 @@ async function hasWebGpuAdapter(): Promise<boolean> {
  * graph-optimisation pass in `loadWasm` are measured fixes for a bug in the
  * WASM execution provider specifically, never checked against WebGPU's, so
  * carrying them across backends would be a guess wearing the shape of a fix.
- * `dtype` is left unset for WebGPU instead: this library's own default for it
- * is `fp32`, `q8` is a WASM-only default, and the q8 decoder is independently
- * known not to load at all on this runtime (see `loadWasm`).
+ * WebGPU instead pins the pairing the library's own Whisper demos ship for
+ * models this size: a full-precision encoder with a `q4` decoder (issue
+ * #144). Left at the device default everything comes down at `fp32`, roughly
+ * 968 MB against this pairing's roughly 586 MB, and scalar `q8` is not the
+ * answer either: transformers.js issue #894 measures it pathologically slow
+ * on WebGPU, and the q8 decoder is independently known not to open on this
+ * runtime (see `loadWasm`).
  *
  * A WebGPU adapter existing is not proof every operator this model needs is
  * implemented in it, so a failure here still falls back to the WASM path
@@ -219,6 +210,7 @@ async function doLoad() {
   try {
     return await pipeline('automatic-speech-recognition', MODEL, {
       device: 'webgpu',
+      dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
       progress_callback: onProgress,
     })
   } catch {
