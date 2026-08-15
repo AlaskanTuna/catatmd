@@ -1,6 +1,8 @@
-import { AlertTriangle, FileAudio, Loader2, Mic, Square } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { AlertTriangle, CircleHelp, FileAudio, Loader2, Mic, Square } from 'lucide-react'
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { api } from '../lib/api.js'
 import { Button } from '../ui/Button.js'
+import { Checkbox } from '../ui/Checkbox.js'
 import {
   TARGET_SAMPLE_RATE,
   type TranscriptSegment,
@@ -20,9 +22,19 @@ import {
  * labels are guesses the doctor confirms line by line before anything enters
  * the transcript.
  *
- * **No audio byte reaches the API.** Capture, decode and inference all happen
- * here and in the worker. The only thing that crosses the network is the model
- * download from the HuggingFace CDN, and the text the doctor chooses to submit.
+ * **By default no audio byte reaches the API.** Capture, decode and inference
+ * all happen here and in the worker. The only thing that crosses the network is
+ * the model download from the HuggingFace CDN, and the text the doctor chooses
+ * to submit.
+ *
+ * **The one exception is opt-in, per consultation, and never remembered**
+ * (issue #155). Ticking the hosted-transcription box below sends that single
+ * recording to the relay in `POST /api/asr/transcriptions`, which forwards it
+ * to ILMU. The tick lives in plain `useState`, so it dies with the component
+ * and cannot carry from one patient to the next. On-device stays the default
+ * and the floor: nothing switches the doctor to hosted, and an on-device
+ * failure degrades to typing or pasting, never to the cloud
+ * (docs/trd.md section 20).
  */
 
 /**
@@ -78,7 +90,19 @@ async function toMono16k(blob: Blob): Promise<Float32Array> {
  */
 export const STALL_TIMEOUT_MS = 180_000
 
-type Phase = 'idle' | 'recording' | 'loading-model' | 'transcribing' | 'finishing'
+/**
+ * How long a hosted upload may run before it is abandoned (issue #155).
+ *
+ * A total deadline, unlike the on-device silence budget above, because the
+ * relay is one request with no progress to listen to: there is no midpoint at
+ * which it can report that it is still working. 180 s covers a
+ * consultation-length recording over a clinic connection plus the provider's
+ * own 120 s upstream timeout, and expiring is a failure the doctor is told
+ * about rather than a silent fall back to the on-device path.
+ */
+export const UPLOAD_TIMEOUT_MS = 180_000
+
+type Phase = 'idle' | 'recording' | 'loading-model' | 'transcribing' | 'finishing' | 'uploading'
 
 /**
  * What the doctor is told when the budget expires or the worker dies. Both
@@ -91,6 +115,25 @@ const STALL_ERROR = `Transcription was stopped after ${Math.round(
 
 const WORKER_DIED_ERROR =
   'Speech recognition stopped unexpectedly. Try again, or type or paste the transcript instead.'
+
+/**
+ * What the doctor is told when the hosted relay fails or the upload bound
+ * expires.
+ *
+ * **It degrades toward privacy, and it leads with where the audio still is.**
+ * The recording has not been lost, and the two ways forward it offers are the
+ * on-device path and the paste path. Nothing here switches the doctor
+ * automatically in either direction: a hosted failure never silently runs the
+ * local worker, exactly as a local failure never silently uploads
+ * (docs/trd.md section 20).
+ *
+ * Deliberately one message for every upstream reason. The relay's own codes
+ * separate rejected audio from a billing state from a timeout, but none of
+ * those change what the doctor can do next, and naming them would leak the
+ * provider's operational state onto a consulting-room screen.
+ */
+const HOSTED_FAILED_ERROR =
+  'The recording is still on this device. Try again, transcribe on this device instead, or type or paste the transcript.'
 
 /**
  * Roughly how much longer, from how long the finished chunks actually took.
@@ -114,10 +157,82 @@ function estimateRemaining(done: number, total: number, elapsedMs: number): stri
   return `about ${Math.ceil(remainingMs / 60_000)} min left`
 }
 
+/**
+ * The supplementary disclaimer beside the model name (issue #155).
+ *
+ * **A disclosure, not a hover tooltip.** It toggles on click and stays open, so
+ * it works on touch, where hover does not exist and a doctor on a tablet would
+ * otherwise never reach it. Focus and Escape behave the way `ui/Select.tsx`
+ * establishes for this codebase.
+ *
+ * Hand-rolled for the reason `ui/Select.tsx` gives at length: nothing here uses
+ * a headless UI library, and one disclosure is a poor reason to add a
+ * dependency. It stays local to this file rather than moving to `ui/` because
+ * there is exactly one of them; it earns a promotion when there is a second.
+ *
+ * **Nothing load-bearing lives in here.** The consent facts the doctor is
+ * agreeing to are in the paragraph itself, because the tradeoff has to be
+ * stated in the same breath as the choice rather than hidden behind an
+ * interaction (docs/trd.md section 20).
+ */
+function InfoTip({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const panelId = useId()
+  const wrap = useRef<HTMLSpanElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    // `pointerdown` rather than `click`, so a press that begins outside closes
+    // the panel before it can also activate whatever it landed on.
+    const onPointer = (event: PointerEvent) => {
+      if (!wrap.current?.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onPointer)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onPointer)
+    }
+  }, [open])
+
+  return (
+    <span ref={wrap} className="relative inline-flex align-middle">
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        onClick={() => setOpen((current) => !current)}
+        className="inline-flex size-5 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-sunken hover:text-ink"
+      >
+        <CircleHelp aria-hidden className="size-3.5" />
+      </button>
+      {open && (
+        <span
+          id={panelId}
+          role="tooltip"
+          // Anchored above and left-aligned so a panel this wide cannot push the
+          // Record tab into a horizontal scroll on a narrow screen.
+          className="absolute bottom-full left-0 z-10 mb-1.5 w-72 max-w-[80vw] rounded-card border border-line bg-surface p-3 text-xs leading-relaxed font-normal text-ink-muted shadow-lg"
+        >
+          {children}
+        </span>
+      )}
+    </span>
+  )
+}
+
 export function AudioCapture({
   onTranscript,
 }: {
-  onTranscript: (result: { text: string; segments: readonly TranscriptSegment[] }) => void
+  onTranscript: (result: {
+    text: string
+    segments: readonly TranscriptSegment[]
+    source: 'asr_local' | 'asr_hosted'
+  }) => void
 }) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState<number | null>(null)
@@ -127,6 +242,16 @@ export function AudioCapture({
   const [chunkProgress, setChunkProgress] = useState<{ done: number; total: number } | null>(null)
   /** The audio behind the current or failed run, so Try Again can rerun it. */
   const [retryBlob, setRetryBlob] = useState<Blob | null>(null)
+  /**
+   * The per-consultation hosted-transcription consent (issue #155).
+   *
+   * **Plain `useState` on purpose.** No `localStorage`, no context, no query
+   * cache: consent is given for one consultation and is not transferable to the
+   * next patient, so it has to die when this component unmounts. Persisting it
+   * would turn a per-consultation decision into a standing one, which is the
+   * failure mode the whole control exists to prevent.
+   */
+  const [hosted, setHosted] = useState(false)
 
   /** When the current transcription started, for the remaining-time estimate. */
   const startedAt = useRef<number | null>(null)
@@ -144,6 +269,22 @@ export function AudioCapture({
   const worker = useRef<Worker | null>(null)
   const recorder = useRef<MediaRecorder | null>(null)
   const chunks = useRef<Blob[]>([])
+  /** The in-flight hosted upload, so Cancel and unmount can both abandon it. */
+  const upload = useRef<AbortController | null>(null)
+
+  /*
+   * The consent tick as a ref, because `media.onstop` is assigned once per
+   * recording and would otherwise fork on whatever the checkbox read when the
+   * recording started. The checkbox is disabled while recording, so the two
+   * agree on that path today, but the file-picker and Try Again paths both run
+   * against the current tick, and one source of truth is cheaper than
+   * reasoning about which closure each caller captured.
+   */
+  const hostedRef = useRef(hosted)
+  hostedRef.current = hosted
+
+  /** Ties the consent label to its checkbox without wrapping the disclosure. */
+  const consentId = useId()
 
   /**
    * True from the prewarm `load` posted at record start until the real
@@ -165,7 +306,15 @@ export function AudioCapture({
   const onTranscriptRef = useRef(onTranscript)
   onTranscriptRef.current = onTranscript
 
-  const thin = belowHardwareFloor() && !overridden
+  /*
+   * The floor guards one thing: a 250-590 MB model held in memory by this tab.
+   * A hosted recording opens no session and loads no weights, so it carries
+   * none of that risk and the gate does not apply to it. Ticking hosted
+   * therefore reveals the record controls on a floor-gated device without
+   * touching `overridden`, which means unticking restores the gate rather than
+   * leaving the doctor permanently past a warning they never accepted.
+   */
+  const thin = belowHardwareFloor() && !overridden && !hosted
 
   const clearStall = useCallback(() => {
     if (stall.current !== null) {
@@ -187,6 +336,12 @@ export function AudioCapture({
       prewarming.current = false
       worker.current?.terminate()
       worker.current = null
+      // The hosted equivalent of the terminate above. The bumped attempt makes
+      // the upload's own catch fall through silently, so a cancel shows no
+      // error, while the 180 s bound aborts without bumping and is therefore
+      // still reported as the failure it is.
+      upload.current?.abort()
+      upload.current = null
       setPhase('idle')
       setProgress(null)
       setChunkProgress(null)
@@ -251,7 +406,11 @@ export function AudioCapture({
           setChunkProgress(null)
           startedAt.current = null
           setRetryBlob(null)
-          onTranscriptRef.current({ text: message.text, segments: message.segments })
+          onTranscriptRef.current({
+            text: message.text,
+            segments: message.segments,
+            source: 'asr_local',
+          })
           break
         case 'error':
           // The worker survives an inference error with the model warm, so a
@@ -307,6 +466,11 @@ export function AudioCapture({
       if (stall.current !== null) window.clearTimeout(stall.current)
       worker.current?.terminate()
       worker.current = null
+      // A hosted upload is a live request carrying consultation audio. Leaving
+      // it in flight past the tab the doctor closed would keep sending audio
+      // for a consent gesture that is no longer on screen.
+      upload.current?.abort()
+      upload.current = null
       // A recording still running owns the microphone, and nothing above
       // releases it: `onstop` does that, and only the Stop button reaches
       // `onstop`. Leaving it live keeps the browser's recording indicator on
@@ -334,7 +498,7 @@ export function AudioCapture({
     return () => window.clearInterval(id)
   }, [phase])
 
-  const transcribe = useCallback(
+  const transcribeLocal = useCallback(
     async (blob: Blob) => {
       setError(null)
       setPhase('loading-model')
@@ -366,6 +530,64 @@ export function AudioCapture({
     [clearStall, ensureWorker, watchForStall],
   )
 
+  /**
+   * The hosted path: upload the recording to the relay and wait (issue #155).
+   *
+   * No decode and no worker. The blob goes up in the container the recorder
+   * produced it in, because the relay forwards bytes rather than interpreting
+   * them, and resampling here would cost a minute of CPU to hand the provider
+   * something it did not ask for.
+   *
+   * Every failure lands on one message. The `attempt` guard is what separates a
+   * cancel from a failure: `abort` bumps it before aborting the controller, so
+   * a cancelled upload returns before it can raise a banner, while the 180 s
+   * bound aborts without bumping and is reported.
+   */
+  const transcribeHosted = useCallback(async (blob: Blob) => {
+    setError(null)
+    setPhase('uploading')
+    setProgress(null)
+    setChunkProgress(null)
+    startedAt.current = null
+    setRetryBlob(blob)
+
+    const id = attempt.current
+    const controller = new AbortController()
+    upload.current = controller
+    const bound = window.setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
+
+    try {
+      const result = await api.transcribeHostedAsr(blob, controller.signal)
+      if (attempt.current !== id) return
+      setPhase('idle')
+      setRetryBlob(null)
+      onTranscriptRef.current({
+        text: result.text,
+        segments: result.segments,
+        source: 'asr_hosted',
+      })
+    } catch {
+      if (attempt.current !== id) return
+      setPhase('idle')
+      setError(HOSTED_FAILED_ERROR)
+    } finally {
+      window.clearTimeout(bound)
+      // Only if it is still ours: a later run may already have installed its
+      // own controller, and clearing that one would strand its Cancel.
+      if (upload.current === controller) upload.current = null
+    }
+  }, [])
+
+  /**
+   * The single fork every audio source goes through: the Stop button, the file
+   * picker and Try Again all land here, so all three honour the tick the
+   * checkbox currently shows and none of them can drift apart.
+   */
+  const transcribe = useCallback(
+    (blob: Blob) => (hostedRef.current ? transcribeHosted(blob) : transcribeLocal(blob)),
+    [transcribeHosted, transcribeLocal],
+  )
+
   const start = useCallback(async () => {
     setError(null)
     // A stale blob must not survive into a fresh microphone run: a refused
@@ -387,6 +609,15 @@ export function AudioCapture({
       recorder.current = media
       setSeconds(0)
       setPhase('recording')
+      if (hostedRef.current) {
+        // Nothing local will run for this recording, so there is nothing to
+        // warm. Any worker still warm from an earlier on-device run is
+        // terminated rather than left holding roughly 250 MB of weights for a
+        // path that will not use them (issue #155).
+        worker.current?.terminate()
+        worker.current = null
+        return
+      }
       // Prewarm: the model downloads and opens while the doctor is still
       // speaking, so the stop is answered by a warm session instead of a cold
       // load (issue #145). Last in the block, so a throwing recorder setup
@@ -404,7 +635,11 @@ export function AudioCapture({
     recorder.current = null
   }, [])
 
-  const busy = phase === 'loading-model' || phase === 'transcribing' || phase === 'finishing'
+  const busy =
+    phase === 'loading-model' ||
+    phase === 'transcribing' ||
+    phase === 'finishing' ||
+    phase === 'uploading'
 
   /*
    * One line that always says what is actually happening, and a bar only when
@@ -429,41 +664,50 @@ export function AudioCapture({
    * its own honest sentence, as does the merge tail after the last chunk.
    */
   const status =
-    phase === 'loading-model'
-      ? progress === null
-        ? 'Preparing the speech model. The first run downloads it once and the browser caches it.'
-        : progress >= 100
-          ? 'Opening the speech model. On a first run this can take a couple of minutes.'
-          : `Downloading the speech model, ${progress}%. This happens once.`
-      : phase === 'finishing'
-        ? 'Finishing up. Joining the transcribed chunks into one transcript.'
-        : percent === null
-          ? 'Transcribing on this device. Longer recordings take a few minutes.'
-          : `Transcribing on this device, ${percent}%${remaining === null ? '' : `, ${remaining}`}.`
+    phase === 'uploading'
+      ? // Says where the audio is going while it is going there, and does not
+        // pretend to a percentage: the relay is one request with no progress
+        // to report, and an invented bar here would be the exact dishonesty
+        // the measured one below exists to avoid.
+        'Sending this recording to ILMU for transcription. It is leaving this device.'
+      : phase === 'loading-model'
+        ? progress === null
+          ? 'Preparing the speech model. The first run downloads it once and the browser caches it.'
+          : progress >= 100
+            ? 'Opening the speech model. On a first run this can take a couple of minutes.'
+            : `Downloading the speech model, ${progress}%. This happens once.`
+        : phase === 'finishing'
+          ? 'Finishing up. Joining the transcribed chunks into one transcript.'
+          : percent === null
+            ? 'Transcribing on this device. Longer recordings take a few minutes.'
+            : `Transcribing on this device, ${percent}%${remaining === null ? '' : `, ${remaining}`}.`
 
   const bar = phase === 'loading-model' ? progress : phase === 'finishing' ? 100 : percent
 
   /** The short phase headline the live region announces; sentences stay visual. */
   const headline =
-    phase === 'loading-model'
-      ? progress === null
-        ? 'Preparing the speech model'
-        : progress >= 100
-          ? 'Opening the speech model'
-          : 'Downloading the speech model'
-      : phase === 'transcribing'
-        ? 'Transcribing on this device'
-        : phase === 'finishing'
-          ? 'Finishing up'
-          : ''
+    phase === 'uploading'
+      ? 'Sending the recording to ILMU'
+      : phase === 'loading-model'
+        ? progress === null
+          ? 'Preparing the speech model'
+          : progress >= 100
+            ? 'Opening the speech model'
+            : 'Downloading the speech model'
+        : phase === 'transcribing'
+          ? 'Transcribing on this device'
+          : phase === 'finishing'
+            ? 'Finishing up'
+            : ''
 
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-ink-muted">
-        Recording is transcribed on this device and never uploaded. The result appears below as
-        lines with guessed <code className="text-ink">Doctor</code> /{' '}
-        <code className="text-ink">Patient</code> labels, drawn from what each sentence says, not
-        from the voices. Check every line, then apply them to the transcript.
+        Recording is transcribed on this device and not uploaded unless you choose hosted
+        transcription below for this consultation. The result appears below as lines with guessed{' '}
+        <code className="text-ink">Doctor</code> / <code className="text-ink">Patient</code> labels,
+        drawn from what each sentence says, not from the voices. Check every line, then apply them
+        to the transcript.
       </p>
 
       {thin && (
@@ -579,6 +823,63 @@ export function AudioCapture({
           )}
         </div>
       )}
+
+      {/*
+        Findable, but never funnelled (docs/trd.md section 20).
+
+        Always rendered, in the same muted styling, in the same place, whether
+        the doctor arrived here fresh or after an on-device failure. It is not a
+        button and carries no accent: a doctor who has just watched
+        transcription fail must not find the cloud option newly highlighted in
+        front of them, because a choice offered at the moment of frustration is
+        not a freely given one. This is why the local failure copy above never
+        mentions it.
+      */}
+      <div className="mt-1 flex flex-col gap-2 border-t border-line pt-4">
+        <p className="text-sm text-ink-muted">
+          <span className="font-medium text-ink">Transcription options.</span> By default this
+          recording is transcribed on this device and the audio never leaves it. For this
+          consultation only, you can instead send the recording to ILMU, a Malaysian transcription
+          service built for Malaysian speech. The audio passes through our server in Singapore to
+          ILMU and is processed in Malaysia. We have not agreed separate retention or training terms
+          with ILMU, so their standard early-access terms apply. This choice is optional, applies to
+          this one consultation, and is recorded in the audit trail.
+        </p>
+
+        {/*
+          Associated by id rather than by wrapping, because the disclosure below
+          is a button: nested inside a `<label>`, every press of it would also
+          toggle the consent it is trying to explain.
+        */}
+        <div className="flex items-start gap-2.5">
+          <Checkbox
+            id={consentId}
+            className="mt-0.5"
+            checked={hosted}
+            // Idle only. Flipping it mid-run would leave the fork the recording
+            // already took disagreeing with what the box shows.
+            disabled={phase !== 'idle'}
+            onChange={(event) => setHosted(event.target.checked)}
+          />
+          <div className="min-w-0 flex-1">
+            <label htmlFor={consentId} className="text-sm text-ink-muted">
+              Send this consultation&apos;s recording to ILMU for transcription
+            </label>
+            <span className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
+              <code className="text-ink">ilmu-asr-v4.2</code>
+              <InfoTip label="About hosted transcription with ILMU">
+                An early-access service. Its accuracy figures are the provider&apos;s claim until
+                our own measurement is recorded in the technical reference (TRD 20.3). The recording
+                travels from this browser, to our server in Singapore, to ILMU in Malaysia.
+                Retention and training follow ILMU&apos;s standard early-access terms, which we have
+                not varied by agreement. Handled under the PDPA as amended in 2024, under which
+                voice is biometric data and therefore sensitive personal data requiring explicit
+                consent.
+              </InfoTip>
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
