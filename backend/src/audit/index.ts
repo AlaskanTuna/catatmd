@@ -121,7 +121,39 @@ export type EphemeralAuditEvent =
       metadata: { reason: AnalysisFailureReason }
     }
 
-export type AuditEventInput = ConsultationAuditEvent | AuthAuditEvent | EphemeralAuditEvent
+/**
+ * Short failure categories for `asr.hosted_relay_failed`. A closed set, never
+ * the raw error text: on this path an upstream response body is a transcript.
+ */
+export type AsrRelayFailureReason =
+  | 'rejected_audio'
+  | 'too_large'
+  | 'no_allocation'
+  | 'rate_limited'
+  | 'unavailable'
+
+/**
+ * The hosted-ASR relay (#154). It forwards consultation audio to the ASR
+ * provider and persists nothing, so it belongs to an actor and to no
+ * consultation for the same structural reason ephemeral analysis does: no
+ * `Consultation` exists at relay time. These rows are the server-observed half
+ * of a pair; `consultation.asr_hosted_used`, written at creation, remains the
+ * client-asserted linkage (docs/trd.md §15).
+ *
+ * Audited despite persisting nothing, and for the same reason as above: an
+ * unaudited audio egress would be a hole in the property the PHI boundary
+ * rests on. The rows record **that** audio egressed and for how many billed
+ * seconds, never what it contained.
+ */
+export type AsrAuditEvent =
+  | { action: 'asr.hosted_relayed'; metadata: { durationSeconds: number; model: string } }
+  | { action: 'asr.hosted_relay_failed'; metadata: { reason: AsrRelayFailureReason } }
+
+export type AuditEventInput =
+  | ConsultationAuditEvent
+  | AuthAuditEvent
+  | EphemeralAuditEvent
+  | AsrAuditEvent
 
 /**
  * How many times an append may lose the race for the chain head before giving
@@ -165,7 +197,8 @@ export async function recordAuditEvent(
   event:
     | (ConsultationAuditEvent & { actorId: string; consultationId: string })
     | (AuthAuditEvent & { actorId: string })
-    | (EphemeralAuditEvent & { actorId: string }),
+    | (EphemeralAuditEvent & { actorId: string })
+    | (AsrAuditEvent & { actorId: string }),
 ): Promise<void> {
   const { action, actorId } = event
   const consultationId = 'consultationId' in event ? event.consultationId : undefined

@@ -106,3 +106,28 @@ export const eraseRateLimit = rateLimit({
     error: { code: 'rate_limited', message: 'Too many erase requests. Please retry shortly.' },
   },
 })
+
+/**
+ * Per-IP limiter for `POST /api/asr/transcriptions` (#154).
+ *
+ * A per-caller cost control: each request spends provider credit per second
+ * of audio, so five a minute bounds one caller's spend while staying several
+ * times what one doctor finishing recordings can produce. It bounds requests
+ * per key per window, not memory; the process-wide cap on concurrent audio
+ * buffers is the route's own in-flight gate (`MAX_CONCURRENT_RELAYS` in
+ * `routes/asr.ts`). Its own bucket, so relay traffic can neither be funded by
+ * an unspent analysis budget nor exhaust one.
+ */
+export const hostedAsrRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: {
+      code: 'rate_limited',
+      message: 'Too many transcription requests. Please retry shortly.',
+    },
+  },
+})

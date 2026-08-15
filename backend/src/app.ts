@@ -10,9 +10,11 @@ import {
   ephemeralAnalyzeRateLimit,
   eraseRateLimit,
   guestSignInRateLimit,
+  hostedAsrRateLimit,
 } from './middleware/rate-limit.js'
 import { requestContext } from './middleware/request-context.js'
 import { requireSession } from './middleware/require-session.js'
+import { asrRouter } from './routes/asr.js'
 import { authRouter } from './routes/auth.js'
 import { consultationsRouter } from './routes/consultations.js'
 import { healthRouter } from './routes/health.js'
@@ -21,6 +23,7 @@ import { referenceRouter } from './routes/reference.js'
 
 /** Routes that carry clinical data. Everything here requires a session. */
 const PROTECTED_PREFIXES = [
+  '/api/asr',
   '/api/consultations',
   '/api/fixtures',
   '/api/guidelines',
@@ -77,6 +80,10 @@ export function createApp() {
   // Destructive and irreversible rather than expensive, so its own bucket: an
   // erase sweep must not be funded by an unspent analysis budget (#114).
   app.post('/api/consultations/erase', eraseRateLimit)
+  // Buffers up to 25 MB per request and spends provider credit, so its own
+  // bucket too; runs after the session guard above and before the route-level
+  // body parser, so a limited request is refused before any audio is read (#154).
+  app.post('/api/asr/transcriptions', hostedAsrRateLimit)
 
   // ── Clinical routers ─────────────────────────────────────────────────────
   // These inherit the session guard and the analyze limiter above, and must
@@ -84,6 +91,7 @@ export function createApp() {
   // never sees that router's errors.
   app.use('/api', referenceRouter)
   app.use('/api', notificationsRouter)
+  app.use('/api/asr', asrRouter)
   app.use('/api/consultations', consultationsRouter)
 
   app.use(errorHandler)

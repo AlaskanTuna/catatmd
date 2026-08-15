@@ -40,11 +40,15 @@ export const TranscriptTurnSchema = z.object({
 
 /**
  * How the transcript was produced. Client-asserted and unverifiable by the API
- * (both ASR paths run in the browser), so it is an honest provenance record for
- * a cooperating client, never a security control — nothing in the safety
- * architecture rests on it. See docs/trd.md §3.
+ * even now that hosted transcription passes through it, because nothing ties a
+ * relayed recording to the consultation later submitted with this field. It is
+ * an honest provenance record for a cooperating client, never a security
+ * control. See docs/trd.md §3.
  *
- * `asr_hosted` is the only path on which audio leaves the doctor's device.
+ * `asr_hosted` is the only path on which audio leaves the doctor's device: the
+ * browser posts the recording to `POST /api/asr/transcriptions`, which relays
+ * it to the ASR provider (#154). That egress is server-observed and audited;
+ * this field remains the client-asserted linkage recorded at creation.
  */
 export const TranscriptSourceSchema = z.enum([
   'fixture',
@@ -57,6 +61,33 @@ export const TranscriptSourceSchema = z.enum([
 export const TranscriptSchema = z.object({
   source: TranscriptSourceSchema,
   turns: z.array(TranscriptTurnSchema).min(1).max(MAX_TRANSCRIPT_TURNS),
+})
+
+// ─── Hosted ASR ──────────────────────────────────────────────────────────────
+
+/**
+ * One hosted-ASR segment, field-for-field with the local worker's
+ * `TranscriptSegment` (frontend/src/audio/protocol.ts) so segments from either
+ * path feed `segmentsToDraft` unchanged.
+ */
+export const HostedAsrSegmentSchema = z.object({
+  text: z.string(),
+  start: z.number(),
+  end: z.number().nullable(),
+})
+
+/**
+ * What `POST /api/asr/transcriptions` returns. `segments` is empty on today's
+ * path: the provider does not honour `verbose_json` (docs/trd.md §20.3,
+ * finding 5), and the frontend's `usable()` gate already falls back to plain
+ * prose on an empty array. The field stays so provider-side segments can start
+ * flowing without a contract change.
+ */
+export const HostedAsrResultSchema = z.object({
+  text: z.string(),
+  /** Billed seconds from the provider's `usage` object, stamped into the audit trail. */
+  durationSeconds: z.number(),
+  segments: z.array(HostedAsrSegmentSchema),
 })
 
 // ─── Structured clinical note (SOAP) ─────────────────────────────────────────
@@ -715,6 +746,8 @@ export type Speaker = z.infer<typeof SpeakerSchema>
 export type TranscriptTurn = z.infer<typeof TranscriptTurnSchema>
 export type TranscriptSource = z.infer<typeof TranscriptSourceSchema>
 export type Transcript = z.infer<typeof TranscriptSchema>
+export type HostedAsrSegment = z.infer<typeof HostedAsrSegmentSchema>
+export type HostedAsrResult = z.infer<typeof HostedAsrResultSchema>
 export type SoapNote = z.infer<typeof SoapNoteSchema>
 export type AssertionState = z.infer<typeof AssertionStateSchema>
 export type ClinicalAssertion = z.infer<typeof ClinicalAssertionSchema>

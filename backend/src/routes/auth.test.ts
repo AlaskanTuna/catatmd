@@ -63,6 +63,7 @@ describe('route protection (issue #14)', () => {
     ['POST', '/api/consultations/some-id/approve'],
     ['GET', '/api/fixtures'],
     ['GET', '/api/guidelines'],
+    ['POST', '/api/asr/transcriptions'],
   ] as const
 
   it.each(protectedRoutes)(
@@ -88,6 +89,21 @@ describe('route protection (issue #14)', () => {
 
     expect(res.status).not.toBe(401)
   })
+
+  it('rejects unauthenticated relay posts before the limiter spends budget', async () => {
+    // Eight from one address is over the relay limiter's five a minute: if the
+    // session guard ran after the limiter, the tail of this loop would see 429
+    // rather than 401.
+    const CALLER = '203.0.113.88'
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const res = await fetch(`${origin}/api/asr/transcriptions`, {
+        method: 'POST',
+        headers: { 'x-forwarded-for': CALLER },
+      })
+      expect(res.status).toBe(401)
+    }
+  }, 20_000)
 
   it('leaks no stack trace, path, or internal identifier in the 401 body', async () => {
     const body = await (await fetch(`${origin}/api/consultations`)).text()
