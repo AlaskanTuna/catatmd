@@ -114,7 +114,7 @@ export function ConsultationNew() {
             onClick={() => setTab(id)}
             className={cn(
               'inline-flex min-h-10 items-center gap-2 rounded-control px-3 text-sm font-medium transition-colors',
-              tab === id ? 'bg-accent/12 text-accent' : 'text-ink-muted hover:bg-sunken',
+              tab === id ? 'bg-accent-soft text-accent' : 'text-ink-muted hover:bg-sunken',
             )}
           >
             <Icon aria-hidden className="size-4" />

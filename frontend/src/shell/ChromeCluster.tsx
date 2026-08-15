@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, LogOut, Moon, Settings as SettingsIcon, Sun, UserRound } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import { useTheme } from '../lib/theme.js'
@@ -29,6 +29,9 @@ import { NotificationPanel } from './NotificationPanel.js'
 export function ChromeCluster() {
   const { resolved, setPreference } = useTheme()
   const [seenAt, setSeenAt] = useState<number | null>(null)
+  // Both panels hang off the cluster rather than off the button that opened
+  // them, so they share one right edge and one gap below the bar.
+  const cluster = useRef<HTMLDivElement>(null)
 
   const notifications = useQuery({
     queryKey: ['notifications'],
@@ -46,6 +49,7 @@ export function ChromeCluster() {
 
   return (
     <div
+      ref={cluster}
       data-print="hide"
       style={{ zIndex: 'var(--z-sidebar)', top: 'calc(0.75rem + var(--live-banner-inset, 0px))' }}
       className="glass fixed right-4 flex items-center gap-1 rounded-float p-1.5 md:right-6"
@@ -55,7 +59,7 @@ export function ChromeCluster() {
         onClick={() => setPreference(resolved === 'dark' ? 'light' : 'dark')}
         aria-label={resolved === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
         title={resolved === 'dark' ? 'Light Theme' : 'Dark Theme'}
-        className="flex size-9 items-center justify-center rounded-control text-ink-muted transition-colors duration-150 hover:bg-sunken/60 hover:text-ink"
+        className="flex size-9 items-center justify-center rounded-control text-ink-muted transition-colors duration-150 hover:bg-sunken-soft hover:text-ink"
       >
         {resolved === 'dark' ? (
           <Sun aria-hidden className="size-4.5" />
@@ -68,11 +72,16 @@ export function ChromeCluster() {
         label={unread > 0 ? `Notifications, ${unread} new` : 'Notifications'}
         icon={<Bell aria-hidden className="size-4.5" />}
         badge={unread}
+        anchor={cluster}
       >
         {(close) => <NotificationPanel onSeen={markSeen} close={close} />}
       </Dropover>
 
-      <Dropover label="Account" icon={<UserRound aria-hidden className="size-4.5" />}>
+      <Dropover
+        label="Account"
+        icon={<UserRound aria-hidden className="size-4.5" />}
+        anchor={cluster}
+      >
         {(close) => <AccountPanel close={close} />}
       </Dropover>
     </div>

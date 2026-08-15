@@ -35,7 +35,7 @@ export function MobileDock() {
             cn(
               'flex min-h-12 flex-1 flex-col items-center justify-center gap-0.5 rounded-control px-2 py-1.5',
               'text-2xs font-medium transition-colors duration-150',
-              isActive ? 'bg-accent/12 text-accent' : 'text-ink-muted',
+              isActive ? 'bg-accent-soft text-accent' : 'text-ink-muted',
             )
           }
         >

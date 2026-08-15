@@ -72,7 +72,7 @@ export function DemoStepBar() {
                   aria-current={isCurrent ? 'step' : undefined}
                   className={cn(
                     'flex items-center gap-1.5 rounded-control px-2 py-1 text-xs whitespace-nowrap transition-colors duration-150',
-                    isCurrent && 'bg-accent/16 font-medium text-accent',
+                    isCurrent && 'bg-accent-soft font-medium text-accent',
                     isDone && 'text-ink-muted',
                     !isCurrent && !isDone && 'text-ink-muted/60',
                   )}

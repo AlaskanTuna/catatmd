@@ -1,5 +1,6 @@
 import {
   type ReactNode,
+  type RefObject,
   useCallback,
   useEffect,
   useId,
@@ -29,6 +30,7 @@ export function Dropover({
   icon,
   badge,
   align = 'right',
+  anchor,
   children,
 }: {
   label: string
@@ -36,6 +38,11 @@ export function Dropover({
   /** Rendered as a count on the trigger. Omitted entirely when zero. */
   badge?: number
   align?: 'left' | 'right'
+  /**
+   * The surface to align and offset against, when the trigger sits inside one.
+   * Defaults to the trigger itself, which is right for a button standing alone.
+   */
+  anchor?: RefObject<HTMLElement | null>
   children: (close: () => void) => ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -56,17 +63,29 @@ export function Dropover({
   const [position, setPosition] = useState<{ top: number; left?: number; right?: number }>()
 
   const place = useCallback(() => {
-    const rect = trigger.current?.getBoundingClientRect()
+    /*
+     * Measured from the surface the trigger sits in, not from the trigger.
+     *
+     * The button is one of three inside a padded floating cluster, so its own
+     * box is the wrong thing to hang a panel off. Measured on the deployed
+     * build at 1280px: the panel's right edge landed 47px inside the cluster's,
+     * because the bell is the middle button, and its top landed 1px below the
+     * cluster's bottom, because the 8px offset was taken from a trigger sitting
+     * 7px above that edge. Two panels opening at two different x positions read
+     * as drift, and 1px reads as the panel welded to the bar.
+     *
+     * Against the cluster both fall out for free: edges line up whichever
+     * button was pressed, and the gap is a real gap.
+     */
+    const rect = (anchor?.current ?? trigger.current)?.getBoundingClientRect()
     if (!rect) return
     setPosition({
-      // 8px below the trigger, which is what `top-11` against a `size-9`
-      // button used to produce.
       top: rect.bottom + 8,
       ...(align === 'right'
         ? { right: Math.max(16, window.innerWidth - rect.right) }
         : { left: Math.max(16, rect.left) }),
     })
-  }, [align])
+  }, [align, anchor])
 
   // Layout effect so the panel never paints at a stale position for a frame.
   useLayoutEffect(() => {
@@ -123,7 +142,9 @@ export function Dropover({
         onClick={() => setOpen((value) => !value)}
         className={cn(
           'relative flex size-9 items-center justify-center rounded-control transition-colors duration-150',
-          open ? 'bg-accent/12 text-accent' : 'text-ink-muted hover:bg-sunken/60 hover:text-ink',
+          open
+            ? 'bg-accent-soft text-accent'
+            : 'text-ink-muted hover:bg-sunken-soft hover:text-ink',
         )}
       >
         {icon}

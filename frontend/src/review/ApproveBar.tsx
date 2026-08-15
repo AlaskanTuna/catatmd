@@ -73,7 +73,7 @@ export function ApproveBar({
 
   if (approved) {
     return (
-      <div className="mt-6 flex items-center gap-2 rounded-card border border-accent/30 bg-accent/8 px-4 py-3">
+      <div className="mt-6 flex items-center gap-2 rounded-card border border-accent/30 bg-accent-soft px-4 py-3">
         <CheckCircle2 aria-hidden className="size-5 shrink-0 text-accent" />
         {/* The attribution is the point of the approval, not decoration on it,
             so it prints. Issue #26: an exported clinical document that cannot

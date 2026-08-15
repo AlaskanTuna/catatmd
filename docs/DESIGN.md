@@ -130,6 +130,13 @@ The reasoning is not aesthetic. A translucent surface has a contrast ratio that 
 
 **A selected row is still content.** Selection is expressed as a tint layered _over_ the opaque surface, never by replacing it. Setting an `--color-accent` alpha as the row's `background-color` removes the surface instead of tinting it, and the row goes translucent over the page's dot grid. That shipped once and read as muddy rather than selected.
 
+**Tints are opaque tokens, not alpha utilities** (settled 15/08/26). Every selected, active and open state uses `--color-accent-soft`, with `--color-accent-soft-hover` for its hover step and `--color-sunken-soft` for hovering an unselected control. None of them carry an alpha channel.
+
+- **Why.** `bg-accent/8`, `/12` and `/16` are translucent fills rather than colours. On a card that reads correctly, because the card beneath is opaque. On the sidebar, the dock, the chrome cluster, the approve bar and the step bar it does not: those are glass, so the tint composited against whatever happened to be scrolling behind and read as a wash. That is the same objection this section already makes to translucent content, arriving one layer down.
+- **Why not teal glass.** `backdrop-filter` establishes a backdrop root and a descendant may only sample inside it, so glass nested in glass is flat by construction. Every host listed above is itself glass, which leaves opaque as the only option that is actually a colour.
+- **Measured.** 12% of accent over the surface is `#E3EDEA` light and `#1E2E28` dark, within 8/255 of what the translucent version happened to render over glass. Accent text on it measures 5.45:1 light and 6.05:1 dark.
+- **One value replaced three.** The `/16` step existed only to survive the glass beneath it. Opaque removes that reason.
+
 | Layer                            | Treatment                                                                                                |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Content                          | Opaque `--color-surface`, radius 16px, shadow rather than a border at rest                               |
@@ -209,10 +216,12 @@ motion; animating the blur is. The earlier rule removed the blur entirely, which
 suppressed an effect the preference was never asking about. The sidebar still
 expands, still dims, still frosts, still works.
 
-**The active nav item is tinted at `bg-accent/16`** where every other active state
-in the app is `/12`. It is the only one painted on glass with the scrim behind it,
-and at the current glass alpha the `/12` tint measured 4.05:1 with the island
-expanded, which is under AA.
+**The active nav item is tinted with `--color-accent-soft`**, the same token as
+every other active state. It used to be the exception at `bg-accent/16` where the
+rest of the app was `/12`, because it was painted on glass with the scrim behind
+it and at that glass alpha the `/12` tint measured 4.05:1 with the island
+expanded, under AA. An opaque token composites against nothing, so the exception
+and the measurement it rested on both retire (settled 15/08/26).
 
 ## Layout
 

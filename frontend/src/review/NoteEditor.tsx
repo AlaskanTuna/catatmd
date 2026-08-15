@@ -58,7 +58,7 @@ export function NoteEditor({
                   data-provenance={edited ? 'edited' : 'ai'}
                   className={cn(
                     'rounded-full px-2 py-0.5 text-2xs font-medium',
-                    edited ? 'bg-accent/12 text-accent' : 'bg-sunken text-ink-muted',
+                    edited ? 'bg-accent-soft text-accent' : 'bg-sunken text-ink-muted',
                   )}
                 >
                   {edited ? 'You Edited This' : 'AI Generated'}
