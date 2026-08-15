@@ -408,8 +408,33 @@ describe('context cues match words, not substrings (#159)', () => {
 })
 
 describe('MRN detection tolerates conversational phrasing (#174)', () => {
-  it('detects a record number introduced with filler words between cue and value', () => {
-    expect(labelsIn('Registration number for our clinic file is KLC-004821.')).toContain('MRN')
+  it('still misses a record number introduced with filler words between cue and value', () => {
+    // KNOWN BAD, pinned deliberately. #174 stays open.
+    //
+    // The filler run this asks for was written on this branch and taken back
+    // out after two audit rounds. It matched the phrasing below, which is the
+    // ordinary dictated form and worth having. It also masked clinical values
+    // inside a single sentence: "MRN unknown so I gave 500 mg" tokenised the
+    // dose, and narrowing the run twice never closed that, because a bounded
+    // run of ordinary words is exactly what sits between a cue and an unrelated
+    // number in ordinary prose.
+    //
+    // Masking a dose is a regression against a detector that was previously
+    // only incomplete, and dose is what the model red-flag pass reasons over.
+    // Recall here is not worth a false negative there.
+    expect(labelsIn('Registration number for our clinic file is KLC-004821.')).not.toContain('MRN')
+  })
+
+  it('does not mask a dose behind a record cue in the same sentence', () => {
+    // The reason the filler run is not here. Pinned so a future #174 attempt
+    // has to solve this rather than rediscover it.
+    for (const sentence of [
+      'MRN unknown so I gave 500 mg.',
+      'Patient number not yet issued give her 500 mg.',
+      'I checked the MRN then wrote 1000 mg.',
+    ]) {
+      expect(labelsIn(sentence), sentence).not.toContain('MRN')
+    }
   })
 
   it('detects a record number carrying more than one hyphen group, whole', () => {
@@ -505,14 +530,51 @@ describe('regressions introduced by this PR, now pinned', () => {
     expect(text).toContain('[NRIC_1]')
   })
 
-  it('tokenises a name carrying four elements before the particle', () => {
-    // The #149 fix lengthened the patronymic span, which made it overlap the
-    // gazetteer run. `resolveOverlaps` drops the shorter match whole rather
-    // than keeping its uncovered prefix, so the leading element leaked again.
-    // This is #149's own failure mode arriving through the fix for #149.
+  it('still leaks a leading element when the name is longer than the patronymic pattern admits', () => {
+    // KNOWN BAD, pinned deliberately. Issue #183.
+    //
+    // This is #149's failure mode surviving #149's fix, and it is pinned rather
+    // than fixed because the obvious fix makes things worse. Widening
+    // `PATRONYMIC_PATTERN` from two leading elements to four was tried on this
+    // branch and a boundary audit showed it relocates the leak to six elements
+    // rather than closing it, while making the span greedy enough to swallow
+    // clinical content: "Acute Cough Sore Throat Fever Ahmad bin Ismail" ate the
+    // symptom list, and one person in two sentences became two tokens.
+    //
+    // Deleting a symptom list from what the model reads is a false-negative risk
+    // on the clinical pass, which is a worse trade than the leak. The real cause
+    // is `resolveOverlaps` discarding the uncovered prefix of a partly
+    // overlapping match, filed as #183.
     const { text } = deidentify('Nur Aina Sofea Batrisyia binti Zulkifli came in.')
-    expect(text).not.toContain('Nur ')
+    expect(text).toContain('Nur ')
     expect(text).toMatch(/\[PATIENT_\d+\] came in\./)
+  })
+
+  it('still swallows Title-Cased clinical words directly in front of a name', () => {
+    // KNOWN BAD, pinned deliberately. Issue #183.
+    //
+    // The cost of closing #149. The gazetteer anchor used to skip past words it
+    // did not recognise to reach a known given name, which both leaked
+    // unrecognised name elements (#149) and protected against this. Removing it
+    // fixed the leak and gave up the protection.
+    //
+    // A vocabulary list in `gazetteer.ts` would close it, and must not be used:
+    // `no-stray-clinical-constants.test.ts` refuses clinical terms outside the
+    // versioned data, and it is right to. #183's fix removes the need for one.
+    //
+    // Bounded in practice: `CAPITALISED_RUN` only reaches Title-Cased words, so
+    // ordinary prose ("acute cough, sore throat") is unaffected. It takes a
+    // header-style line to trigger.
+    const { text } = deidentify('Acute Cough Sore Throat Fever Ahmad bin Ismail attended.')
+    expect(text).not.toContain('Ahmad')
+    expect(text).toContain('Acute Cough Sore')
+  })
+
+  it('keeps one token for one person across two sentences', () => {
+    const { text } = deidentify('Saw Ahmad bin Ismail today. Ahmad bin Ismail has a cough.')
+    const tokens = [...text.matchAll(/\[PATIENT_\d+\]/g)].map((m) => m[0])
+    expect(tokens.length).toBe(2)
+    expect(new Set(tokens).size).toBe(1)
   })
 
   it('does not let a sentence-final MRN cue reach into the next sentence', () => {

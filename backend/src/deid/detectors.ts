@@ -95,15 +95,26 @@ function scoreWith(
 
 // ─── NRIC ────────────────────────────────────────────────────────────────────
 
-// `pesakitnya` is the ordinary Malay possessive clitic form and was covered by
-// substring matching before word matching arrived.
+/*
+ * The `-nya` forms are enumerated, not inferred.
+ *
+ * Malay attaches the possessive clitic directly to the noun, so `pesakitnya`,
+ * `kad pengenalannya` and `icnya` are ordinary rather than unusual. Substring
+ * matching covered all of them for free and word matching covers none, and the
+ * failure is worse than a miss: PHONE claims ten of the twelve digits and
+ * leaves two in the clear, which is a partly tokenised identifier. `IC-nya`
+ * needs no entry, because the hyphen already satisfies the lookahead.
+ */
 const NRIC_CONTEXT = [
   'ic',
+  'icnya',
   'i/c',
   'k/p',
   'nric',
   'mykad',
+  'mykadnya',
   'kad pengenalan',
+  'kad pengenalannya',
   'identity',
   'pesakit',
   'pesakitnya',
@@ -211,6 +222,11 @@ function detectEmail(text: string): Match[] {
  * `hasPostcode` was consequently always false and the 0.8 branch below
  * unreachable, which is why every address depended entirely on a context cue.
  *
+ * The city after the postcode is bounded to three words. `[A-Za-z\s]{2,25}`
+ * ran through the sentence after it and, given the same address twice, joined
+ * the first one to the second: one address became two tokens with the prose
+ * between them deleted.
+ *
  * Splitting it means the first alternative has to reach a postcode to match at
  * all, so the lazy run expands to find one. The second is the previous
  * behaviour, unchanged and still truncating: an address with no postcode has no
@@ -219,7 +235,7 @@ function detectEmail(text: string): Match[] {
  * fix here.
  */
 const ADDRESS_PATTERN =
-  /\b(?:No\.?\s*\d+[A-Za-z]?,?\s*)?(?:Jalan|Jln|Lorong|Lrg|Taman|Tmn|Kampung|Kg|Persiaran|Lebuh)\s+(?:[A-Za-z0-9\s./'-]{2,40}?,\s*\d{5}\s*[A-Za-z\s]{2,25}|[A-Za-z0-9\s./'-]{2,40}?)/gi
+  /\b(?:No\.?\s*\d+[A-Za-z]?,?\s*)?(?:Jalan|Jln|Lorong|Lrg|Taman|Tmn|Kampung|Kg|Persiaran|Lebuh)\s+(?:[A-Za-z0-9\s./'-]{2,40}?,\s*\d{5}\s*[A-Za-z]+(?:\s+[A-Za-z]+){0,2}|[A-Za-z0-9\s./'-]{2,40}?)/gi
 /*
  * Inflected forms are enumerated, not inferred. ADDRESS has no cue-free route
  * over `ACCEPT_THRESHOLD` at base 0.45, so a cue that stops matching is a whole
@@ -312,46 +328,31 @@ function detectDob(text: string): Match[] {
 // ─── Medical / clinic record number ──────────────────────────────────────────
 
 /*
- * Cue, then up to four filler words, then the value (#174).
+ * Cue directly before the value, and the separator is unchanged from before
+ * this PR.
  *
- * The cue and value used to have to be adjacent, so "Registration number for
- * our clinic file is KLC-004821" went to the model untouched while
- * "Registration number KLC-004821" was caught. Dictated and transcribed speech
- * produces the conversational form far more often than the clipped one, and
- * hosted ASR makes that more likely rather than less.
+ * **The filler run that #174 asked for was written, audited twice, and taken
+ * back out.** It let "Registration number for our clinic file is KLC-004821"
+ * match, which is the ordinary dictated phrasing and worth having. It also
+ * masked clinical values inside a single sentence: "MRN unknown so I gave 500
+ * mg" tokenised the dose. Two rounds of narrowing closed the sentence-crossing
+ * cases and never closed that one, because a bounded run of ordinary words is
+ * exactly what sits between a cue and an unrelated number in ordinary prose.
  *
- * The filler run is bounded, admits letters only, and carries no punctuation.
- * Unbounded, the cue at the start of a paragraph would reach the first number
- * anywhere after it; allowing digits inside the run would let it step over the
- * real record number and tokenise a later dose or duration instead.
+ * Dose, age and symptom duration are what the model red-flag pass and gap
+ * detection reason over. Masking them degrades that pass in the false-negative
+ * direction, which `healthcare-cdss-patterns` holds to zero tolerance, and it
+ * is a regression against a detector that was merely incomplete before. #174
+ * stays open with the audit's reproducers on it rather than being closed by a
+ * fix that trades a recall gap for a clinical-content gap.
  *
- * **A full stop may sit between cue and value only when they are adjacent**,
- * which is the two-branch alternation. `[:\s.#-]*` admitted a full stop and a
- * newline in front of the filler run, so a sentence-final cue reached straight
- * into the next sentence: "Check her MRN. Give 500 mg of paracetamol"
- * tokenised the dose as a record number.
- *
- * Simply banning the full stop breaks "Registration no. KLC-004821", where it
- * abbreviates rather than ends a sentence. The distinguishing feature is not
- * the character, it is what follows: an abbreviation is followed by the value,
- * a sentence end by another sentence. So the adjacent branch allows the stop
- * and admits no filler, and the filler branch admits no stop.
- *
- * That failure was not vault noise. Dose, age and symptom duration are exactly
- * what the model red-flag pass and gap detection reason over, and masking them
- * degrades the pass in the false-negative direction.
- *
- * The value admits up to three digit groups so `RC-2026-00842` is one match.
- * One group was enough for the seeded fixtures and not for real clinic formats,
- * which commonly carry a year segment.
- *
- * The first group keeps its three-digit minimum, and that is what separates a
- * record number from the rest of a sentence. Relaxed to two, "MRN pending she
- * is 65 years old" masked the age. Ages, tablet counts and day counts are one
- * or two digits; clinic record numbers are not.
+ * The value keeps the widened shape, which was clean across both audits: up to
+ * three digit groups so `RC-2026-00842` is one match rather than `RC-2026` plus
+ * orphaned digits, and a three-digit minimum on the first group so an age or a
+ * tablet count cannot be one.
  */
 const MRN_CUE =
-  /\b(?:MRN|RN|record\s+(?:no|number)|registration\s+(?:no|number)|clinic\s+(?:no|number)|patient\s+(?:id|no|number)|file\s+(?:no|number)|(?:no\.?|nombor)\s+(?:pendaftaran|fail|klinik|pesakit))\b(?:[ \t]*[.:#]?[ \t]*|[ \t]*[:#]?[ \t]*(?:[A-Za-z]{1,12}[ \t]+){1,6})([A-Z]{0,4}[-/]?\d{3,10}(?:[-/]?\d{2,10}){0,2}[A-Z]?)\b/gi
+  /\b(?:MRN|RN|record\s+(?:no|number)|registration\s+(?:no|number)|clinic\s+(?:no|number)|patient\s+(?:id|no|number)|file\s+(?:no|number)|(?:no\.?|nombor)\s+(?:pendaftaran|fail|klinik|pesakit))\b[:\s.#-]*([A-Z]{0,4}[-/]?\d{3,10}(?:[-/]?\d{2,10}){0,2}[A-Z]?)\b/gi
 
 function detectMrn(text: string): Match[] {
   const out: Match[] = []
@@ -391,7 +392,7 @@ function caseInsensitiveLiteral(literal: string): string {
 const PARTICLE_ALTERNATION = PATRONYMICS.map(caseInsensitiveLiteral).join('|')
 
 const PATRONYMIC_PATTERN = new RegExp(
-  `\\b([A-Z][A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+){0,4})\\s+(?:${PARTICLE_ALTERNATION})\\.?\\s+([A-Z][A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+){0,2})`,
+  `\\b([A-Z][A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+){0,2})\\s+(?:${PARTICLE_ALTERNATION})\\.?\\s+([A-Z][A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+){0,2})`,
   'g',
 )
 

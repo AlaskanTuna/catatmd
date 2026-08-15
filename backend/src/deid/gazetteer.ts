@@ -299,6 +299,18 @@ export const NAME_STOPWORDS = new Set(
     'admit',
     'advise',
     'inform',
+    'saw',
+    'seen',
+    'seeing',
+    'attended',
+    'presented',
+    // English symptom vocabulary is deliberately NOT here, although it would
+    // help. `no-stray-clinical-constants.test.ts` refuses it, because several
+    // of those words are versioned red-flag terms and a clinical rule written
+    // down outside the versioned data is exactly what that guard exists to
+    // stop. The gap it leaves is a Title-Cased symptom in front of a name
+    // staying inside the span; that is pinned as known-bad and belongs to #183,
+    // whose fix removes the need for a vocabulary list here at all.
     'is',
     'was',
     'are',
