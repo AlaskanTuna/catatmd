@@ -47,6 +47,8 @@ describe('GUARANTEE — no direct identifier crosses the privacy gateway', () =>
     'ahmad.ismail85@example.com',
     'Jalan Meranti',
     'KLC-004821',
+    'Faizal bin Osman',
+    '900412086543',
   ]
 
   it('leaks zero identifiers across every fixture (PRD §16 target: 0)', () => {

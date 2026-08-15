@@ -367,6 +367,62 @@ export const FIXTURES: readonly Fixture[] = [
       ],
     },
   },
+
+  // ─── urti-malay-red-flag ──────────────────────────────────────────────────
+  // Identifiers: patient name (patronymic + introducer) and an unhyphenated
+  // MyKad number, the spoken form the hosted ASR path produces.
+  // Exercises: the redflag-list-v4 Malay alternates end to end. Every expected
+  // flag fires from a Malay phrase, the idiom "Tak apa" must not read as a
+  // denial (it precedes the chest-pain disclosure), and the stridor screening
+  // question is genuinely denied in Malay, so it must stay silent. The denied
+  // question deliberately carries a negator-free span (nafas berbunyi):
+  // negator-carrying spans like "tak boleh telan" fire even when denied, the
+  // documented fail-open trade in triggers.ts.
+  {
+    id: 'urti-malay-red-flag',
+    label: 'Malay-language URTI with red flags (rojak register)',
+    transcript: {
+      source: 'fixture',
+      turns: [
+        { speaker: 'doctor', text: 'Selamat pagi, apa masalah hari ini?', offsetSeconds: 0.0 },
+        {
+          speaker: 'patient',
+          text: 'Nama saya Faizal bin Osman. Nombor kad pengenalan saya 900412086543.',
+          offsetSeconds: 3.2,
+        },
+        {
+          speaker: 'patient',
+          text: 'Doktor, batuk teruk dah seminggu. Semalam batuk sampai keluar darah sikit.',
+          offsetSeconds: 10.8,
+        },
+        { speaker: 'doctor', text: 'Ada sesak nafas?', offsetSeconds: 18.9 },
+        {
+          speaker: 'patient',
+          text: 'Ada, bila baring rasa semput, susah nak bernafas.',
+          offsetSeconds: 21.0,
+        },
+        { speaker: 'doctor', text: 'Sakit dada tak?', offsetSeconds: 27.6 },
+        {
+          speaker: 'patient',
+          text: 'Tak apa doktor, dada sakit sikit je bila batuk kuat.',
+          offsetSeconds: 29.4,
+        },
+        { speaker: 'doctor', text: 'Bila tidur, nafas berbunyi tak?', offsetSeconds: 36.2 },
+        {
+          speaker: 'patient',
+          text: 'Takde, tidur okay je.',
+          offsetSeconds: 39.0,
+        },
+        { speaker: 'doctor', text: 'Demam macam mana?', offsetSeconds: 43.5 },
+        { speaker: 'patient', text: 'Demam pun tak kebah, doktor.', offsetSeconds: 45.6 },
+        {
+          speaker: 'doctor',
+          text: 'Baik, saya nak periksa dulu. Lepas tu kita bincang.',
+          offsetSeconds: 49.8,
+        },
+      ],
+    },
+  },
 ]
 
 for (const fixture of FIXTURES) {
