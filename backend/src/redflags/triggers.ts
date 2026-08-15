@@ -14,7 +14,7 @@ import type { RedFlagTrigger } from './types.js'
  * changes. Recorded with every analysis (docs/trd.md §15).
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v4',
+  id: 'redflag-list-v5',
   effectiveDate: '2026-08-15',
 }
 
@@ -89,9 +89,17 @@ const asserts = (transcript: Transcript, index: number): boolean => {
 
 /**
  * Words that end the scope of a preceding negation: "no fever but chest pain",
- * "tiada demam, cuma sesak nafas".
+ * "no fever, just chest pain", "tiada demam, cuma sesak nafas".
+ *
+ * "just" and "only" (issue #150) are the English counterparts of "cuma": in
+ * "No fever, just chest pain" the denial scopes over fever alone and "just"
+ * introduces an affirmed symptom. Both are more polysemous than "cuma", but
+ * the minimiser reading ("just a bit of chest pain") describes a symptom that
+ * is present, so ending the denial there fires on it, which is the direction
+ * this engine must fail in; widening this list can only convert suppressions
+ * into fires, never the reverse.
  */
-const NEGATION_SCOPE_END = /\b(?:but|tapi|however|although|except|cuma|cuman)\b/i
+const NEGATION_SCOPE_END = /\b(?:but|just|only|however|although|except|tapi|cuma|cuman)\b/i
 
 /** An unambiguous negator sitting immediately before the matched span. */
 const TRAILING_NEGATOR = new RegExp(
@@ -140,6 +148,74 @@ const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string |
       if (match === null) continue
       if (SPAN_CARRIES_NEGATOR.test(match[0])) return match[0]
       if (asserts(transcript, index) && !isNegated(turn.text, match.index)) return match[0]
+    }
+  }
+  return null
+}
+
+/**
+ * A reply that denies the ability just asked about (issue #163). English
+ * "No." / "Cannot." / "Not really."; Malay through MALAY_NEGATOR, so the
+ * idiom, uncertainty, and hedge exclusions apply ("Tak pasti." and "Tak apa."
+ * never count, mirroring "Not sure."), with a negated modal or verb consumed
+ * as part of the denial ("Tak boleh", "Tak keluar langsung") so the
+ * re-affirmation check reads only what follows it.
+ */
+const ABILITY_DENIAL = new RegExp(
+  `^\\s*(?:no+|nope|none|nothing|negative|cannot|can'?t|not(?!\\s+(?:sure|certain))|(?:${MALAY_NEGATOR.source}|takda|belum)(?:\\s+(?:boleh|dapat|lalu|larat|lepas|keluar|nak))*)\\b`,
+  'i',
+)
+
+/**
+ * A reply that opens with a denial and then re-affirms the ability answers a
+ * different framing, not an inability: "Takde, boleh makan minum macam
+ * biasa." denies the vomiting it was asked about and affirms intake, and must
+ * stay silent. A modal preceded by its own negator is not a re-affirmation
+ * ("Tak, tak boleh langsung." repeats the denial), and neither is the English
+ * negative contraction ("No, I can't."), so both stay denials. The cost is
+ * accepted and pinned: a mixed reply like "Tak boleh, ada sikit je" reads as
+ * re-affirmation and does not fire through this path; partial intake sits
+ * with the doctor, not this composition.
+ */
+const REPLY_REAFFIRMS =
+  /(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat|ada|ya)\b|\b(?:yes|yeah|ok(?:ay)?)\b|\bcan(?!'?t\b|\s+not\b)\b/i
+
+/**
+ * Fires when an ability is asked about positively and denied in the reply
+ * (issue #163): "Boleh telan tak?" / "Tak boleh doktor." asserts the
+ * inability the trigger exists to catch, but no turn carries a span the
+ * matchers can anchor on, so v4 raised nothing on the commonest
+ * question-answer shape in either language. The span returned is the ability
+ * phrase from the doctor's question, the same precedent as an affirmed
+ * screening question: the question is the only place the symptom is named.
+ *
+ * Deliberately narrow, because this composition has its own over-fire budget:
+ * only a doctor turn that is a question, only the immediately following
+ * patient reply, only an unhedged leading denial, and only when nothing after
+ * the denial re-affirms. Each question pattern excludes the negatively framed
+ * form ("tak boleh telan?"), which already fires through the
+ * SPAN_CARRIES_NEGATOR route above. Two silences are accepted and pinned: an
+ * unanswered ability question fires nothing (unlike a symptom question, the
+ * question alone asserts nothing abnormal), and an interleaved reply is not
+ * composed, because pairing a denial with the wrong question would assert an
+ * inability nobody stated.
+ */
+const findDeniedAbility = (
+  transcript: Transcript,
+  questionPatterns: readonly RegExp[],
+): string | null => {
+  for (const [index, turn] of transcript.turns.entries()) {
+    if (turn.speaker !== 'doctor' || !isQuestion(turn.text)) continue
+
+    const reply = transcript.turns[index + 1]
+    if (reply === undefined || reply.speaker !== 'patient') continue
+
+    const denial = ABILITY_DENIAL.exec(reply.text)
+    if (denial === null || REPLY_REAFFIRMS.test(reply.text.slice(denial[0].length))) continue
+
+    for (const pattern of questionPatterns) {
+      const match = pattern.exec(turn.text)
+      if (match !== null) return match[0]
     }
   }
   return null
@@ -206,6 +282,10 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /na[fp]as\s+pendek/i,
         /\btercungap/i,
         /\btermengah/i,
+      ]) ??
+      findDeniedAbility(transcript, [
+        /(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat|larat)\s+(?:nak\s+)?(?:tarik\s+)?(?:ber)?na[fp]as/i,
+        /can\s+you\s+breathe/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
     listVersion: RED_FLAG_LIST_VERSION.id,
@@ -271,6 +351,11 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /(?:tak|tidak)\s+(?:boleh|dapat|lalu)\s+(?:nak\s+)?telan/i,
         /(?:tak|tidak)\s+(?:boleh|dapat|lalu)\s+(?:nak\s+)?(?:makan|minum)/i,
         /(?:telan|makan|minum)\s+(?:pun\s+)?tak\s+(?:boleh|lalu)/i,
+      ]) ??
+      findDeniedAbility(transcript, [
+        /(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat|lalu)\s+(?:nak\s+)?(?:telan|makan|minum)/i,
+        /can\s+you\s+(?:swallow|eat|drink)/i,
+        /(?<!\bnot\s)\bable\s+to\s+(?:swallow|eat|drink)/i,
       ]),
     clinicalSource: DELPHI_AIRWAY_NOTE,
     listVersion: RED_FLAG_LIST_VERSION.id,
@@ -417,6 +502,11 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /(?:tak|tidak)\s+(?:boleh|dapat)\s+(?:nak\s+)?(?:kencing|buang\s+air\s+kecil)/i,
         /(?:air\s+)?kencing\s+tak\s+keluar/i,
         /kencing\s+(?:pun\s+)?tak\s+(?:boleh|lepas)/i,
+      ]) ??
+      findDeniedAbility(transcript, [
+        /(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat)\s+(?:nak\s+)?(?:kencing|buang\s+air\s+kecil)/i,
+        /\bkencing\b[^.!?]{0,16}?(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat)\s+keluar/i,
+        /can\s+you\s+(?:pass\s+urine|pee|urinate)/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
     listVersion: RED_FLAG_LIST_VERSION.id,

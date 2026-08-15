@@ -3,7 +3,7 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { GAP_CHECKLIST } from '../gaps/index.js'
-import { REDFLAG_TRIGGERS } from '../redflags/index.js'
+import { ALL_REDFLAG_TRIGGERS } from '../redflags/index.js'
 
 /**
  * Issue #16, acceptance criteria 3 and 4. Clinical content is versioned data;
@@ -44,8 +44,10 @@ const SCANNED_TREES = [
 
 const SCORING_SYSTEMS = /\b(centor|mcisaac)\b/i
 
+// ALL_REDFLAG_TRIGGERS, not REDFLAG_TRIGGERS: the UTI ids were unguarded for
+// as long as the scan read only the URTI list (issue #150, folded nit).
 const CLINICAL_IDS = [
-  ...REDFLAG_TRIGGERS.map((trigger) => trigger.id),
+  ...ALL_REDFLAG_TRIGGERS.map((trigger) => trigger.id),
   ...GAP_CHECKLIST.map((entry) => entry.id),
 ]
 
@@ -112,7 +114,7 @@ describe('clinical constants live only in the versioned data files (issue #16)',
     expect(
       violations((line) => literals.some((literal) => line.includes(literal))),
       'A clinical rule is written down outside the versioned data. Branch on data read ' +
-        'from REDFLAG_TRIGGERS or GAP_CHECKLIST, or move the behaviour into the entry itself.',
+        'from ALL_REDFLAG_TRIGGERS or GAP_CHECKLIST, or move the behaviour into the entry itself.',
     ).toEqual([])
   })
 

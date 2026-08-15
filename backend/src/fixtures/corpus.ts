@@ -371,7 +371,7 @@ export const FIXTURES: readonly Fixture[] = [
   // ─── urti-malay-red-flag ──────────────────────────────────────────────────
   // Identifiers: patient name (patronymic + introducer) and an unhyphenated
   // MyKad number, the spoken form the hosted ASR path produces.
-  // Exercises: the redflag-list-v4 Malay alternates end to end. Every expected
+  // Exercises: the Malay matcher alternates (#153) end to end. Every expected
   // flag fires from a Malay phrase, the idiom "Tak apa" must not read as a
   // denial (it precedes the chest-pain disclosure), and the stridor screening
   // question is genuinely denied in Malay, so it must stay silent. The denied

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { GAP_CHECKLIST } from '../gaps/index.js'
 import { GUIDELINE_CORPUS } from '../guidelines/index.js'
-import { RED_FLAG_LIST_VERSION, REDFLAG_TRIGGERS } from '../redflags/index.js'
+import { ALL_REDFLAG_TRIGGERS, RED_FLAG_LIST_VERSION, REDFLAG_TRIGGERS } from '../redflags/index.js'
 import { ACTIVE_CLINICAL_VERSIONS, ACTIVE_PROFILE_VERSIONS } from './index.js'
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -36,7 +36,8 @@ describe('clinical content versions (issue #16)', () => {
    * that can drift once the two are edited separately.
    */
   it('stamps the same rule-list version that every trigger carries', () => {
-    for (const trigger of REDFLAG_TRIGGERS) {
+    // ALL_REDFLAG_TRIGGERS, so the UTI triggers' stamps are pinned too (#150).
+    for (const trigger of ALL_REDFLAG_TRIGGERS) {
       expect(trigger.listVersion).toBe(RED_FLAG_LIST_VERSION.id)
     }
 
