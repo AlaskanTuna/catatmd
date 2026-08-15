@@ -111,12 +111,16 @@ describe('precision — clinical content must survive', () => {
 
   it('does not tokenise an arbitrary twelve-digit reference number', () => {
     // Pins the 0.3 base for a structurally invalid bare run: no birth date, no
-    // context, no token. The sentence avoids words like "invoice" and
-    // "clinic", whose substrings satisfy the 'ic' context cue: hasContext
-    // matches substrings, a pre-existing behaviour this test must not rely on
-    // either way.
+    // context, no token.
+    //
+    // The sentence used to have to avoid "invoice" and "clinic", because the
+    // 'ic' cue matched as a substring inside them. Since #159 it does not, and
+    // the pair of assertions below is the same sentence with each ending.
     const { text } = deidentify('Reference 123456789012 is printed on the receipt.')
     expect(text).toContain('123456789012')
+
+    const near = deidentify('Reference 123456789012 is printed on the invoice.')
+    expect(near.text).toContain('123456789012')
   })
 
   it('does not tokenise a Malay-month follow-up date that carries no birth cue', () => {
@@ -323,5 +327,148 @@ describe('fixture integration — PRD §16 target: zero identifiers pass through
     const { text } = deidentifyTranscript(fixture.transcript)
     expect(text).toContain('sore throat')
     expect(text).toContain('38.9')
+  })
+})
+
+/**
+ * The four detector defects closed together in one pass (#149, #159, #167, #174).
+ *
+ * One pass rather than four, because they live in one file and two of them are
+ * in the same function's span logic. Fixing them separately would have meant
+ * four rounds of regression risk in the module the whole PHI boundary rests on,
+ * each blind to the others' edits to shared cue and span code.
+ */
+describe('name spans must not drop what the gazetteer does not recognise (#149)', () => {
+  it('tokenises a patronymic name whole when the given name is outside the gazetteer', () => {
+    // The leak. `trimNameSpan` anchored on the first token it recognised, so the
+    // anchor landed on `Ismail` and `Zarul` went to the model in cleartext.
+    // `assertNoIdentifiers` could not catch it: the egress guard re-runs these
+    // same detectors and shared the blind spot.
+    //
+    // NOTE ON THE SENTENCE. It carries no introducer phrase, and that is the
+    // whole point. The first draft of this test used "Nama saya Zarul bin
+    // Ismail", which passes with the bug still in place: the introducer path
+    // matches `Zarul` on its own, so the name never reaches the model even
+    // though the patronymic span dropped it. A test for a span bug has to use a
+    // sentence where the span is the only thing that can catch the name.
+    const { text } = deidentify('Zarul bin Ismail datang hari ini.')
+    expect(text).not.toContain('Zarul')
+    expect(text).toMatch(/\[PATIENT_\d+\]/)
+  })
+
+  it('tokenises the same name whole mid-sentence, with no cue in front of it', () => {
+    const { text } = deidentify('The patient Zarul bin Ismail has a cough.')
+    expect(text).not.toContain('Zarul')
+  })
+
+  it('gives one token to a name an introducer also matches', () => {
+    // The masking path from the note above, asserted rather than relied on.
+    // Before the fix this sentence produced `[PATIENT_2] bin [PATIENT_1]`: the
+    // introducer caught the given name, the patronymic span caught the family
+    // name, and one person arrived at the model as two people.
+    const { text } = deidentify('Nama saya Zarul bin Ismail.')
+    expect(text).not.toContain('Zarul')
+    const tokens = [...text.matchAll(/\[PATIENT_\d+\]/g)].map((m) => m[0])
+    expect(new Set(tokens).size).toBe(1)
+  })
+
+  it('still drops an honorific rather than tokenising it', () => {
+    // The behaviour the anchor existed to produce, which must survive the fix.
+    const { text } = deidentify('Encik Ahmad bin Ismail datang hari ini.')
+    expect(text).toContain('Encik')
+    expect(text).not.toContain('Ahmad')
+  })
+
+  it('keeps one token across honorific, bare and verb-led mentions of one person', () => {
+    // Token stability is what the anchor was really protecting. Keeping an
+    // unrecognised leading word inside the span costs it, so the words that
+    // introduce a name in dictated prose are stopwords instead (gazetteer.ts).
+    const { text } = deidentify(
+      'Encik Ahmad bin Ismail came in. Ahmad bin Ismail has a cough. Tell Ahmad bin Ismail to rest.',
+    )
+    const tokens = [...text.matchAll(/\[PATIENT_\d+\]/g)].map((m) => m[0])
+    expect(tokens.length).toBeGreaterThanOrEqual(3)
+    expect(new Set(tokens).size).toBe(1)
+  })
+})
+
+describe('context cues match words, not substrings (#159)', () => {
+  it.each(['invoice', 'clinic', 'notice', 'medical record'])(
+    'does not boost an invalid twelve-digit number near %s',
+    (word) => {
+      expect(labelsIn(`Reference 123456789012 appears on the ${word}.`)).not.toContain('NRIC')
+    },
+  )
+
+  it('still boosts on a real cue standing as its own word', () => {
+    // The precision fix must not cost the recall it was protecting.
+    expect(labelsIn('His ic is 850523-14-5677.')).toContain('NRIC')
+    expect(labelsIn('Nombor kad pengenalan saya 900412086543.')).toContain('NRIC')
+  })
+})
+
+describe('MRN detection tolerates conversational phrasing (#174)', () => {
+  it('detects a record number introduced with filler words between cue and value', () => {
+    expect(labelsIn('Registration number for our clinic file is KLC-004821.')).toContain('MRN')
+  })
+
+  it('detects a record number carrying more than one hyphen group, whole', () => {
+    // Asserted on the output text rather than the label, because the label
+    // alone passes with the single-group pattern too: that one matched
+    // `RC-2026` and left `-00842` sitting in the prose, which is a partly
+    // tokenised identifier and worse than an untouched one.
+    const { text } = deidentify('Patient number RC-2026-00842 on file.')
+    expect(text).not.toContain('00842')
+    expect(text).toMatch(/\[MRN_\d+\]/)
+  })
+
+  it('still detects the adjacent form', () => {
+    expect(labelsIn('MRN KLC-004821 please.')).toContain('MRN')
+  })
+
+  // The precision half. `.claude/rules/security.md`: lowering an effective
+  // threshold needs a precision test, not just a recall one.
+  it('does not let a cue reach a number in the next clause', () => {
+    expect(labelsIn('Registration number is not on file, the dose is 500 mg daily.')).not.toContain(
+      'MRN',
+    )
+  })
+
+  it('does not let a cue reach a number in the next sentence', () => {
+    expect(labelsIn('MRN unknown. Paracetamol 1000 mg was given.')).not.toContain('MRN')
+  })
+
+  it('does not reach past the bounded filler run', () => {
+    expect(
+      labelsIn('Registration number for our clinic paper file is really KLC-004821.'),
+    ).not.toContain('MRN')
+  })
+
+  it('leaves an ordinary dose alone', () => {
+    expect(labelsIn('Paracetamol 500 mg three times a day.')).not.toContain('MRN')
+  })
+})
+
+describe('a possessive is the same person (#167)', () => {
+  it('gives one token to a name and its possessive form', () => {
+    const { text } = deidentify("Siti Nurhaliza came in. Siti Nurhaliza's fever has settled.")
+    const tokens = [...text.matchAll(/\[PATIENT_\d+\]/g)].map((m) => m[0])
+    expect(tokens.length).toBeGreaterThanOrEqual(2)
+    expect(new Set(tokens).size).toBe(1)
+  })
+
+  it('leaves the possessive marker in the prose rather than swallowing it', () => {
+    // The token replaces the name only. Eating the `'s` would leave the note
+    // reading "[PATIENT_1] fever has settled" after rehydration.
+    const { text } = deidentify("Siti Nurhaliza's fever has settled.")
+    expect(text).toMatch(/\[PATIENT_\d+\]'s fever/)
+  })
+
+  it('does not strip an apostrophe from inside a name', () => {
+    // `O'Brien` and `Nur'ain` carry an apostrophe that is part of the name, not
+    // a possessive. Only a trailing one is a possessive.
+    const { text } = deidentify("Nama saya Nur'ain binti Rahman.")
+    expect(text).not.toContain("Nur'ain")
+    expect(text).toMatch(/\[PATIENT_\d+\]/)
   })
 })
