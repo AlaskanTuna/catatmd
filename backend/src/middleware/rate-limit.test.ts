@@ -48,3 +48,22 @@ describe('client address resolution', () => {
     expect(auth.options.advanced?.ipAddress?.ipAddressHeaders).toEqual([CLIENT_IP_HEADER])
   })
 })
+
+/**
+ * `sameSite` was `none` while the SPA called this API cross-origin. Since #156
+ * the browser reaches it on the SPA's own origin, so requests are same-site and
+ * `lax` is both correct and stricter.
+ *
+ * Pinned because the failure is silent in the direction that matters: widening
+ * it back to `none` costs the CSRF protection without breaking anything a test
+ * would otherwise notice.
+ */
+describe('session cookie attributes', () => {
+  it('scopes the session cookie to same-site requests', () => {
+    expect(auth.options.advanced?.defaultCookieAttributes?.sameSite).toBe('lax')
+  })
+
+  it('keeps the cookie httpOnly', () => {
+    expect(auth.options.advanced?.defaultCookieAttributes?.httpOnly).toBe(true)
+  })
+})

@@ -46,6 +46,22 @@ const alphaAt = (index: number) => HEAD_ALPHA * (1 - index / (TRAIL - 1)) ** 1.9
    the map index at the call site, the same way the transcript turns do. */
 const DISCS = Array.from({ length: TRAIL }, (_, index) => ({ key: `disc-${index}`, index }))
 
+/*
+ * Two conditions, and they rule out different machines.
+ *
+ * `any-pointer: fine` drops touch, where a trail would sit wherever the last
+ * tap landed. `any-pointer` rather than `pointer`, because a touchscreen laptop
+ * reports its *primary* pointer as coarse even with a mouse plugged in and that
+ * machine should still get the trail; pure-touch devices report no fine pointer
+ * at all.
+ *
+ * The width test drops the mobile layout, which the pointer test alone cannot
+ * see: a narrow window on a desktop is a fine pointer on a phone-shaped page,
+ * and the trail is sized for a screen it is not on there. 48rem is Tailwind's
+ * `md`, the same line index.css already switches the reveal off at.
+ */
+const TRAIL_QUERY = '(any-pointer: fine) and (min-width: 48rem)'
+
 export function CursorGlow() {
   const wrap = useRef<HTMLDivElement>(null)
   const dots = useRef<(HTMLDivElement | null)[]>([])
@@ -53,65 +69,91 @@ export function CursorGlow() {
   useEffect(() => {
     const node = wrap.current
     if (!node) return
-    // Touch has no hover, so a trail would sit wherever the last tap landed.
-    // `any-pointer`, not `pointer`: a touchscreen laptop reports its *primary*
-    // pointer as coarse even with a mouse plugged in, and that machine should
-    // get the trail. Pure-touch devices report no fine pointer at all.
-    if (!window.matchMedia('(any-pointer: fine)').matches) return
 
-    const target = { x: window.innerWidth / 2, y: window.innerHeight / 2 }
-    // Radius rides on the point rather than in a parallel array: the two are
-    // read together on every frame and can never be out of step this way.
-    const points = Array.from({ length: TRAIL }, (_, index) => ({
-      ...target,
-      radius: sizeAt(index) / 2,
-      dot: dots.current[index],
-    }))
-    let started = false
-    let frame = 0
+    const media = window.matchMedia(TRAIL_QUERY)
+    let teardown: (() => void) | null = null
 
-    for (const [index, point] of points.entries()) {
-      if (!point.dot) continue
-      point.dot.style.width = `${point.radius * 2}px`
-      point.dot.style.height = `${point.radius * 2}px`
-      point.dot.style.setProperty('--dot-alpha', alphaAt(index).toFixed(4))
-    }
+    const run = () => {
+      const target = { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+      // Radius rides on the point rather than in a parallel array: the two are
+      // read together on every frame and can never be out of step this way.
+      const points = Array.from({ length: TRAIL }, (_, index) => ({
+        ...target,
+        radius: sizeAt(index) / 2,
+        dot: dots.current[index],
+      }))
+      let started = false
+      let frame = 0
 
-    const onMove = (event: PointerEvent) => {
-      target.x = event.clientX
-      target.y = event.clientY
-      if (started) return
-      // Collapse the chain onto the first known position, so it fades in where
-      // the pointer is rather than sweeping in from the centre of the screen.
-      started = true
-      for (const point of points) {
-        point.x = target.x
-        point.y = target.y
+      for (const [index, point] of points.entries()) {
+        if (!point.dot) continue
+        point.dot.style.width = `${point.radius * 2}px`
+        point.dot.style.height = `${point.radius * 2}px`
+        point.dot.style.setProperty('--dot-alpha', alphaAt(index).toFixed(4))
       }
-      node.style.opacity = '1'
-    }
 
-    // One pass, because the head chasing the pointer and disc N chasing disc
-    // N-1 are the same rule: chase whatever is ahead of you. The head's
-    // "ahead" is simply the pointer itself.
-    const loop = () => {
-      let ahead = target
-      for (const point of points) {
-        point.x += (ahead.x - point.x) * CHASE
-        point.y += (ahead.y - point.y) * CHASE
-        if (point.dot) {
-          point.dot.style.transform = `translate3d(${point.x - point.radius}px, ${point.y - point.radius}px, 0)`
+      const onMove = (event: PointerEvent) => {
+        target.x = event.clientX
+        target.y = event.clientY
+        if (started) return
+        // Collapse the chain onto the first known position, so it fades in where
+        // the pointer is rather than sweeping in from the centre of the screen.
+        started = true
+        for (const point of points) {
+          point.x = target.x
+          point.y = target.y
         }
-        ahead = point
+        node.style.opacity = '1'
       }
+
+      // One pass, because the head chasing the pointer and disc N chasing disc
+      // N-1 are the same rule: chase whatever is ahead of you. The head's
+      // "ahead" is simply the pointer itself.
+      const loop = () => {
+        let ahead = target
+        for (const point of points) {
+          point.x += (ahead.x - point.x) * CHASE
+          point.y += (ahead.y - point.y) * CHASE
+          if (point.dot) {
+            point.dot.style.transform = `translate3d(${point.x - point.radius}px, ${point.y - point.radius}px, 0)`
+          }
+          ahead = point
+        }
+        frame = requestAnimationFrame(loop)
+      }
+
+      window.addEventListener('pointermove', onMove, { passive: true })
       frame = requestAnimationFrame(loop)
+      return () => {
+        window.removeEventListener('pointermove', onMove)
+        cancelAnimationFrame(frame)
+      }
     }
 
-    window.addEventListener('pointermove', onMove, { passive: true })
-    frame = requestAnimationFrame(loop)
+    /*
+     * Subscribed rather than evaluated once, because the answer changes without
+     * a remount: rotating a tablet, dragging a window narrow, or opening the
+     * responsive inspector all cross the width line while this component stays
+     * mounted. Evaluating at mount alone left the trail running over a mobile
+     * layout for as long as the tab stayed open.
+     */
+    const sync = () => {
+      if (media.matches) {
+        teardown ??= run()
+        return
+      }
+      teardown?.()
+      teardown = null
+      // Reset, so the chain is not left frozen mid-screen at whatever position
+      // it held when the viewport crossed the line.
+      node.style.opacity = '0'
+    }
+
+    sync()
+    media.addEventListener('change', sync)
     return () => {
-      window.removeEventListener('pointermove', onMove)
-      cancelAnimationFrame(frame)
+      media.removeEventListener('change', sync)
+      teardown?.()
     }
   }, [])
 

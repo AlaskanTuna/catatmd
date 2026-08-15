@@ -71,11 +71,7 @@ export function Settings() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader
-        title="Settings"
-        subtitle="Appearance and your data."
-        art="/art/consultations.webp"
-      />
+      <PageHeader title="Settings" subtitle="Appearance and your data." art="/art/settings.webp" />
 
       <section className="mt-8 rounded-card border border-line bg-surface p-5">
         <h2 className="text-base font-semibold">Appearance</h2>
@@ -103,9 +99,13 @@ export function Settings() {
       <section className="mt-5 rounded-card border border-emergency/30 bg-surface p-5">
         <h2 className="text-base font-semibold">Delete My Data</h2>
         <p className="mt-1 max-w-prose text-sm leading-relaxed text-ink-muted">
-          Erases every consultation on this account: {owned.length} right now. The transcript,
-          analysis and edited note are permanently erased. A tamper-evident audit record that each
-          consultation existed and was erased is retained, and cannot be removed.
+          Permanently erases the clinical content of every consultation on this account, currently{' '}
+          {owned.length}. That is the transcript, the analysis, and any edits made to the note. It
+          cannot be undone.
+        </p>
+        <p className="mt-2 max-w-prose text-sm leading-relaxed text-ink-muted">
+          A record that each consultation existed and was erased is kept, and cannot be removed.
+          That record is what makes the erasure provable; it holds no clinical content.
         </p>
         {isGuest && (
           <p className="mt-3 max-w-prose rounded-control border border-urgent/40 bg-urgent/8 px-3 py-2 text-sm">
