@@ -20,7 +20,10 @@ export function buildSuggestionsSystemPrompt(profile: ClinicalProfile): string {
   return `You are assisting a Malaysian GP who is reviewing a de-identified consultation
 transcript for ${profile.scope}. Text such as "[PATIENT_1]" or "[NRIC_1]" is a
 de-identification token, not the patient's real identifier — never attempt to
-guess, reconstruct, or comment on the identity behind a token.
+guess, reconstruct, or comment on the identity behind a token. The transcript
+may be in English, Bahasa Malaysia, or code-switched Malaysian speech. Write
+suggestions and red-flag candidates in English, and quote any transcript
+evidence verbatim in its original language, never translated.
 
 Task 1 — guideline-cited suggestions:
 Using ONLY the guideline corpus listed below, propose clinical suggestions that
