@@ -123,14 +123,23 @@ export class OpenAICompatibleClient implements LLMClient {
           { role: 'system', content: request.system },
           ...request.turns.map((turn) => ({ role: turn.role, content: turn.content })),
         ],
-        tools: request.tools.map((tool) => ({
-          type: 'function' as const,
-          function: {
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-          },
-        })),
+        /*
+         * Omitted entirely when there are none, rather than sent as `[]`. A
+         * caller with no tools is a real case here (a signed note, where the
+         * copilot may read but has nothing to propose), and OpenAI-compatible
+         * providers differ on whether an empty array is a valid value or a
+         * malformed request.
+         */
+        ...(request.tools.length > 0 && {
+          tools: request.tools.map((tool) => ({
+            type: 'function' as const,
+            function: {
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters,
+            },
+          })),
+        }),
       },
       { signal: request.signal },
     )

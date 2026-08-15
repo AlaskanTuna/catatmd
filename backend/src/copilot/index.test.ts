@@ -62,10 +62,10 @@ function consultation(): ConsultationDetail {
   } as unknown as ConsultationDetail
 }
 
-async function drain(message = 'Summarise this consultation.') {
+async function drain(message = 'Summarise this consultation.', detail = consultation()) {
   const out = []
   for await (const chunk of runCopilotTurn({
-    consultation: consultation(),
+    consultation: detail,
     message,
     history: [],
   })) {
@@ -217,5 +217,68 @@ describe('what reaches the doctor', () => {
 
     expect(out.filter((chunk) => chunk.type === 'proposal')).toEqual([])
     expect(out.filter((chunk) => chunk.type === 'token')).toHaveLength(1)
+  })
+})
+
+/**
+ * The copilot on a signed note.
+ *
+ * Approval is terminal: `PATCH /api/consultations/:id` refuses an approved
+ * record, so a proposal card produced here is one the doctor could click and
+ * watch fail. The panel stays, because the questions a doctor asks about a note
+ * do not stop being worth asking once they have signed it. The tools are what
+ * goes away.
+ *
+ * These assert on the **request**, not on the answer, for the same reason as
+ * the boundary tests above: a copilot told not to propose but handed the tools
+ * anyway reads as correct right up until the day it uses one.
+ */
+describe('a signed note', () => {
+  function signed(): ConsultationDetail {
+    return {
+      ...consultation(),
+      status: 'approved',
+      approvedAt: new Date('2026-08-15T02:00:00Z'),
+      approvedBy: 'Dr Tan',
+    } as unknown as ConsultationDetail
+  }
+
+  it('offers the model no tools at all', async () => {
+    chunks = [{ type: 'text', text: 'ok' }]
+
+    await drain('Add a safety net to the plan.', signed())
+
+    expect(captured?.tools).toEqual([])
+  })
+
+  it('still offers all three on a note that is not signed', async () => {
+    // The guard above only means something if the ordinary path is unchanged.
+    // A condition inverted by a later edit would otherwise satisfy both.
+    chunks = [{ type: 'text', text: 'ok' }]
+
+    await drain('Add a safety net to the plan.')
+
+    expect(captured?.tools).toHaveLength(3)
+  })
+
+  it('tells the model the record is final rather than letting it discover it', async () => {
+    // A model that believes it can propose and finds no tool narrates the
+    // proposal in prose instead, which is the false-completion failure the
+    // hard rules were rewritten to stop.
+    chunks = [{ type: 'text', text: 'ok' }]
+
+    await drain('Change the plan.', signed())
+
+    expect(captured?.system).toMatch(/signed off, and nothing about it can change/i)
+    expect(captured?.system).not.toMatch(/proposal card/i)
+  })
+
+  it('still sends the consultation, because reading is what is left', async () => {
+    chunks = [{ type: 'text', text: 'ok' }]
+
+    await drain('Why was this flagged?', signed())
+
+    expect(captured?.system).toContain('[PATIENT_1]')
+    expect(captured?.system).not.toContain(PATIENT)
   })
 })
