@@ -37,10 +37,23 @@ import { type CopilotMessage, useCopilot } from './use-copilot.js'
 export function CatatAI({
   consultation,
   onApply,
+  demo = false,
 }: {
   consultation: ConsultationDetail
   /** Applies an approved proposal through the ordinary consultation PATCH. */
   onApply: (proposal: CopilotProposal, reason?: string) => Promise<void>
+  /**
+   * Renders the real panel, inactive, for the guided tour (issue #179).
+   *
+   * **Nothing is scripted in this mode, and that is the point.** The tour's
+   * consultation is never stored (#80), and the copilot route resolves its
+   * record through `assertOwnedConsultation`, so a message would 404. The
+   * obvious fix, a canned exchange, would make `HelpButton`'s "Nothing is
+   * mocked or replayed" false on the very screen that promises it. So the
+   * panel shows its own genuine empty state, says why it is inactive, and
+   * offers no way to send: no composer, no chips, and `submit` refuses.
+   */
+  demo?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -85,7 +98,9 @@ export function CatatAI({
   }, [messages])
 
   const submit = (text: string) => {
-    if (streaming) return
+    // The demo guard is here as well as in the markup, so the one function that
+    // can reach the route refuses regardless of how it was called.
+    if (streaming || demo) return
     setDraft('')
     void send(text)
   }
@@ -112,19 +127,26 @@ export function CatatAI({
           <p className="font-medium text-ink text-sm leading-tight">CatatAI</p>
           <p className="truncate text-ink-muted text-xs">Reviews with you. Never signs off.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-          aria-label={expanded ? 'Dock the panel' : 'Expand the panel'}
-          title={expanded ? 'Dock' : 'Expand'}
-          className="inline-flex size-8 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-sunken hover:text-ink"
-        >
-          {expanded ? (
-            <Minimize2 aria-hidden className="size-4" />
-          ) : (
-            <Maximize2 aria-hidden className="size-4" />
-          )}
-        </button>
+        {/* No expand during the tour. The expanded state is a modal `<dialog>`,
+            which takes the top layer and makes the tour's own step bar inert
+            behind its backdrop. Escape would get out, but a control that
+            hides the tour is not worth offering for a panel holding four
+            lines of static text (issue #179). */}
+        {!demo && (
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            aria-label={expanded ? 'Dock the panel' : 'Expand the panel'}
+            title={expanded ? 'Dock' : 'Expand'}
+            className="inline-flex size-8 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-sunken hover:text-ink"
+          >
+            {expanded ? (
+              <Minimize2 aria-hidden className="size-4" />
+            ) : (
+              <Maximize2 aria-hidden className="size-4" />
+            )}
+          </button>
+        )}
         <button
           type="button"
           onClick={close}
@@ -136,7 +158,28 @@ export function CatatAI({
       </header>
 
       <div ref={scroller} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
-        {messages.length === 0 && (
+        {demo && (
+          /*
+           * Labelled inside the panel, not only in the coachmark, so the state
+           * is self-explaining to someone who opened this without the tour's
+           * text in view. It describes the copilot rather than performing it.
+           */
+          <div className="space-y-3">
+            <p className="rounded-card border border-line bg-sunken px-3 py-2 text-ink-muted text-xs">
+              Inactive during the tour. The tour&apos;s consultation is never saved, and CatatAI
+              reads a stored record, so there is nothing here for it to open. Nothing on this screen
+              is a scripted conversation.
+            </p>
+            <p className="text-ink-muted text-sm">On a real consultation CatatAI:</p>
+            <ul className="space-y-1.5 text-ink-muted text-sm">
+              <li>reads the consultation as it stands, including your own edits</li>
+              <li>proposes changes that you choose to apply</li>
+              <li className="text-ink">cannot approve a note, and cannot retract a red flag</li>
+            </ul>
+          </div>
+        )}
+
+        {!demo && messages.length === 0 && (
           <div className="space-y-3">
             <p className="text-ink-muted text-sm">
               I can see this consultation as it stands now, including your edits. Ask me about the
@@ -159,8 +202,15 @@ export function CatatAI({
         )}
       </div>
 
+      {/* No composer and no chips in demo mode: the surest way to guarantee the
+          tour cannot reach the copilot route is to render nothing that calls
+          it (issue #179). */}
       <div className="space-y-2 border-line/60 border-t px-4 py-3">
-        {(messages.length === 0 || showFollowUps) && (
+        {demo && (
+          <p className="text-center text-ink-muted text-xs">Available on a saved consultation.</p>
+        )}
+
+        {!demo && (messages.length === 0 || showFollowUps) && (
           <div className="flex flex-wrap gap-1.5">
             {(messages.length === 0 ? opening : followUps).map((question) => (
               <button
@@ -178,41 +228,43 @@ export function CatatAI({
           </div>
         )}
 
-        <form
-          onSubmit={(event) => {
-            event.preventDefault()
-            submit(draft)
-          }}
-          className="flex items-end gap-2"
-        >
-          <label className="sr-only" htmlFor="catatai-input">
-            Ask CatatAI about this consultation
-          </label>
-          <textarea
-            id="catatai-input"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault()
-                submit(draft)
-              }
+        {!demo && (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              submit(draft)
             }}
-            rows={1}
-            placeholder="Ask about this consultation"
-            className="max-h-28 min-h-10 flex-1 resize-none rounded-control border border-line bg-surface px-3 py-2.5 text-ink text-sm placeholder:text-ink-muted focus:border-accent focus:outline-none"
-          />
-          <Button
-            type="submit"
-            size="md"
-            variant="primary"
-            disabled={streaming || draft.trim().length === 0}
-            aria-label="Send"
-            className="size-10 shrink-0 px-0"
+            className="flex items-end gap-2"
           >
-            <ArrowUp aria-hidden className="size-4" />
-          </Button>
-        </form>
+            <label className="sr-only" htmlFor="catatai-input">
+              Ask CatatAI about this consultation
+            </label>
+            <textarea
+              id="catatai-input"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  submit(draft)
+                }
+              }}
+              rows={1}
+              placeholder="Ask about this consultation"
+              className="max-h-28 min-h-10 flex-1 resize-none rounded-control border border-line bg-surface px-3 py-2.5 text-ink text-sm placeholder:text-ink-muted focus:border-accent focus:outline-none"
+            />
+            <Button
+              type="submit"
+              size="md"
+              variant="primary"
+              disabled={streaming || draft.trim().length === 0}
+              aria-label="Send"
+              className="size-10 shrink-0 px-0"
+            >
+              <ArrowUp aria-hidden className="size-4" />
+            </Button>
+          </form>
+        )}
       </div>
     </>
   )
