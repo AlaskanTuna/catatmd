@@ -106,3 +106,28 @@ export const eraseRateLimit = rateLimit({
     error: { code: 'rate_limited', message: 'Too many erase requests. Please retry shortly.' },
   },
 })
+
+/**
+ * Per-IP limiter for the CatatAI copilot stream (#169).
+ *
+ * Looser than `analyzeRateLimit` because a conversation is many small turns
+ * rather than one large job, and a doctor working through a note may send a
+ * dozen messages in a minute without doing anything unusual. Still bounded,
+ * because every turn is a provider call whose prompt carries the whole
+ * consultation digest, so an unbounded panel is the most expensive surface in
+ * the product per keystroke.
+ *
+ * Its own bucket rather than sharing the analysis one: a doctor exploring the
+ * copilot must never exhaust the budget for analysing their next consultation,
+ * which is the operation the product cannot do without.
+ */
+export const copilotRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: { code: 'rate_limited', message: 'Too many copilot messages. Please retry shortly.' },
+  },
+})
