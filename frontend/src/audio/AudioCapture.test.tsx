@@ -57,14 +57,22 @@ class FakeMediaRecorder {
   mimeType = 'audio/webm'
   ondataavailable: ((event: { data: Blob }) => void) | null = null
   onstop: (() => void) | null = null
-  start = vi.fn()
+  /** Modelled because the teardown path reads it before stopping (issue #140). */
+  state: 'inactive' | 'recording' = 'inactive'
+  /** Real recorders expose the stream they were built on; teardown needs it. */
+  readonly stream: { getTracks: () => { stop: () => void }[] }
+  start = vi.fn(() => {
+    this.state = 'recording'
+  })
 
-  constructor(_stream: unknown) {
+  constructor(stream: { getTracks: () => { stop: () => void }[] }) {
+    this.stream = stream
     recorders.push(this)
   }
 
   /** The browser fires these after stop() returns, never inside it. */
   stop() {
+    this.state = 'inactive'
     queueMicrotask(() => {
       this.ondataavailable?.({ data: new Blob(['pcm']) })
       this.onstop?.()
@@ -543,6 +551,38 @@ describe('prewarming the speech model', () => {
 
     expect(spawned().terminate).toHaveBeenCalled()
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('releases every microphone track when unmounted mid-recording', async () => {
+    // Issue #140. Tracks were stopped only inside `onstop`, which only the Stop
+    // button reaches, so switching intake tabs left the browser's recording
+    // indicator on. In a consulting room that reads as "still listening".
+    tracks = [{ stop: vi.fn() }, { stop: vi.fn() }]
+    const { unmount } = renderCapture()
+    await startRecording()
+
+    unmount()
+
+    // Every track, not just the first: a stream carrying two would otherwise
+    // half-release and keep the indicator lit.
+    for (const track of tracks) expect(track.stop).toHaveBeenCalled()
+  })
+
+  it('starts no transcription for a recording it tore down', async () => {
+    // Unlike the test above, this one does NOT fail before the fix, because
+    // nothing stopped the recorder and so `onstop` never fired at all. It
+    // guards the fix instead: stopping the recorder to free the device must
+    // not also queue a decode, which would build a fresh worker moments after
+    // teardown killed the last one, on a component that is already gone.
+    const { unmount, onTranscript } = renderCapture()
+    await startRecording()
+    const built = workers.length
+
+    unmount()
+    await settle()
+
+    expect(workers).toHaveLength(built)
+    expect(onTranscript).not.toHaveBeenCalled()
   })
 
   it('builds no worker when microphone access is refused', async () => {

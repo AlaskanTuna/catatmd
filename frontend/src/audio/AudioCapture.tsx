@@ -307,6 +307,21 @@ export function AudioCapture({
       if (stall.current !== null) window.clearTimeout(stall.current)
       worker.current?.terminate()
       worker.current = null
+      // A recording still running owns the microphone, and nothing above
+      // releases it: `onstop` does that, and only the Stop button reaches
+      // `onstop`. Leaving it live keeps the browser's recording indicator on
+      // after the doctor has moved to another tab (issue #140).
+      //
+      // Detached before stopping, because a stop the doctor did not ask for
+      // must free the device without also queueing a transcription: that
+      // handler would build a fresh worker moments after the terminate above,
+      // for a component that is already gone.
+      const media = recorder.current
+      recorder.current = null
+      if (media === null) return
+      media.onstop = null
+      if (media.state !== 'inactive') media.stop()
+      for (const track of media.stream.getTracks()) track.stop()
     },
     [],
   )
