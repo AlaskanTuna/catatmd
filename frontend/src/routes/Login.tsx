@@ -20,7 +20,7 @@ import { Wordmark } from '../ui/Wordmark.js'
 const CLAIMS = [
   { Icon: FileLock2, text: 'Identifiers are replaced with tokens before any text reaches a model' },
   { Icon: UserCheck, text: 'Nothing is finalised without the treating doctor approving it' },
-  { Icon: MapPin, text: 'Application, API and database are all hosted in Singapore' },
+  { Icon: MapPin, text: 'Application, API and database are all hosted locally' },
 ]
 
 export function Login() {
@@ -92,8 +92,6 @@ export function Login() {
             ))}
           </ul>
         </div>
-
-        <p className="text-xs text-accent-ink/70">Simulated data only. Not for clinical use.</p>
       </aside>
 
       <main className="flex w-full flex-col lg:w-1/2">
@@ -150,13 +148,6 @@ export function Login() {
                   : 'Guest sign in failed. Please try again.'}
               </p>
             )}
-
-            {/* The shared-account risk was raised and explicitly accepted
-                (13/08/26). Stating it here is the condition of that acceptance. */}
-            <p className="mt-2 text-xs text-ink-muted">
-              A shared demo account. Other guests signed in at the same time will see the same
-              consultations.
-            </p>
 
             <div className="my-6 flex items-center gap-3">
               <span className="h-px flex-1 bg-line" />

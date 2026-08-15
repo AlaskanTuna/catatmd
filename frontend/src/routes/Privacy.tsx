@@ -59,10 +59,10 @@ export function Privacy() {
 
         <Section title="Where Data Is Stored">
           <p>
-            The application, the API, and the database are all hosted in Singapore, as is the
-            default model endpoint. Data residency was a design requirement rather than an
-            afterthought, and the model provider is a swappable adapter specifically so the region
-            can change without changing the application.
+            The application, the API, and the database are all hosted locally, as is the default
+            model endpoint. Data residency was a design requirement rather than an afterthought, and
+            the model provider is a swappable adapter specifically so the region can change without
+            changing the application.
           </p>
         </Section>
 

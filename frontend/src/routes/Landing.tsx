@@ -1,4 +1,4 @@
-import { ArrowRight, FileLock2, MapPin, Stethoscope, UserCheck } from 'lucide-react'
+import { ArrowRight, FileLock2, Stethoscope, UserCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 /**
@@ -82,10 +82,6 @@ export function Landing() {
               Try the Demo
               <ArrowRight aria-hidden className="size-4" />
             </Link>
-            <span className="inline-flex items-center gap-1.5 text-sm text-ink-muted">
-              <MapPin aria-hidden className="size-4" />
-              Hosted in Singapore
-            </span>
           </div>
         </div>
 

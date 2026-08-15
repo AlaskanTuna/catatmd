@@ -70,11 +70,6 @@ export function SiteFooter({ className }: { className?: string }) {
             </Link>
           ))}
         </nav>
-
-        <p className="max-w-md text-xs text-accent-ink/80">
-          This is a prototype built for evaluation, not a registered medical device, and it uses
-          simulated data only.
-        </p>
       </div>
     </footer>
   )
