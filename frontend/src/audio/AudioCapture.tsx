@@ -145,6 +145,14 @@ export function AudioCapture({
   const recorder = useRef<MediaRecorder | null>(null)
   const chunks = useRef<Blob[]>([])
 
+  /**
+   * True from the prewarm `load` posted at record start until the real
+   * transcribe request is posted, or the run is torn down. While set, every
+   * worker message is background chatter: nothing it says may change phase,
+   * render progress, surface an error, or arm the silence budget (issue #145).
+   */
+  const prewarming = useRef(false)
+
   /*
    * Always the latest prop, never the closure the worker was created with.
    * The worker is created once and its onmessage assigned once, so a plain
@@ -176,6 +184,7 @@ export function AudioCapture({
     (message: string | null) => {
       attempt.current += 1
       clearStall()
+      prewarming.current = false
       worker.current?.terminate()
       worker.current = null
       setPhase('idle')
@@ -203,6 +212,10 @@ export function AudioCapture({
       // A terminated worker's already-queued message must not resurrect
       // state: a result racing a cancel loses to the cancel.
       if (attempt.current !== id) return
+      // Prewarm chatter: the doctor is still recording, and nothing the load
+      // says may disturb that. The transcribe path clears the flag at its
+      // post, so a load reply landing later reads as that run's own.
+      if (prewarming.current) return
       const message = event.data
       switch (message.type) {
         case 'progress':
@@ -260,12 +273,27 @@ export function AudioCapture({
     // The only channels a dying worker has: a failed module fetch, a CSP
     // block or an out-of-memory kill fires no `message`, only these. Without
     // them a death is indistinguishable from a slow load.
-    instance.onerror = () => {
-      if (attempt.current === id) abort(WORKER_DIED_ERROR)
+    const died = () => {
+      if (attempt.current !== id) return
+      if (prewarming.current && recorder.current !== null) {
+        // The warm-up died while the doctor is still recording. Say nothing:
+        // the recording is what matters, and the stop path rebuilds a fresh
+        // worker and reloads from scratch. The bump drops any message this
+        // worker already queued, which would otherwise land once the flag
+        // clears. Not `abort`, which would reset the phase and drop the
+        // recording UI. The `recorder` gate keeps the post-stop decode window
+        // on the loud path: bumping there would strand the in-flight decode.
+        attempt.current += 1
+        clearStall()
+        instance.terminate()
+        worker.current = null
+        prewarming.current = false
+        return
+      }
+      abort(WORKER_DIED_ERROR)
     }
-    instance.onmessageerror = () => {
-      if (attempt.current === id) abort(WORKER_DIED_ERROR)
-    }
+    instance.onerror = died
+    instance.onmessageerror = died
     worker.current = instance
     return instance
   }, [abort, clearStall, watchForStall])
@@ -307,6 +335,10 @@ export function AudioCapture({
       try {
         const audio = await toMono16k(blob)
         if (attempt.current !== id) return
+        // Cleared here rather than at the top: a prewarm `error` delivered
+        // during the decode must stay swallowed, or its banner would outlive
+        // a successful run, which never calls `setError(null)` itself.
+        prewarming.current = false
         const request: WorkerRequest = { type: 'transcribe', audio }
         ensureWorker().postMessage(request, [audio.buffer as ArrayBuffer])
       } catch (cause) {
@@ -340,10 +372,17 @@ export function AudioCapture({
       recorder.current = media
       setSeconds(0)
       setPhase('recording')
+      // Prewarm: the model downloads and opens while the doctor is still
+      // speaking, so the stop is answered by a warm session instead of a cold
+      // load (issue #145). Last in the block, so a throwing recorder setup
+      // never leaves a prewarm behind on a run that failed to start.
+      prewarming.current = true
+      const request: WorkerRequest = { type: 'load' }
+      ensureWorker().postMessage(request)
     } catch {
       setError('Microphone access was refused, or no microphone is available.')
     }
-  }, [transcribe])
+  }, [ensureWorker, transcribe])
 
   const stop = useCallback(() => {
     recorder.current?.stop()
