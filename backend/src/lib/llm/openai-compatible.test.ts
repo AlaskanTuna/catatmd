@@ -48,6 +48,7 @@ function client() {
   return new OpenAICompatibleClient('qwen', 'qwen3.7-flash', {
     apiKey: 'test-key',
     baseURL: 'https://example.invalid/v1',
+    resolvesSchemaRefs: true,
   })
 }
 
@@ -112,6 +113,7 @@ describe('every provider call is bounded in wall-clock time', () => {
     new OpenAICompatibleClient('deepseek', 'deepseek-v4-flash', {
       apiKey: 'test-key',
       baseURL: 'https://example.invalid/v1',
+      resolvesSchemaRefs: false,
     })
 
     expect(
@@ -119,6 +121,82 @@ describe('every provider call is bounded in wall-clock time', () => {
       'The bounds live on the shared adapter precisely so a provider cannot ' +
         'be added without them.',
     ).toMatchObject({ maxRetries: 1, timeout: 60_000 })
+  })
+})
+
+/**
+ * GitHub issue #109. `clinical_facts` is 34 copies of one assertion object, so
+ * whether a repeated shape is inlined or referenced decides the size of the
+ * largest prompt in the system: 14,240 B against 3,558 B, measured 15/08/26.
+ *
+ * Pinned per provider because it is a capability, not a preference, and the
+ * two failure directions are both silent from inside this repo. Sending refs
+ * to Gemini fails as a bodiless HTTP 400 that names nothing; sending inlined
+ * schemas to Qwen works perfectly and merely costs four times the prompt for
+ * every consultation, which no test would otherwise notice.
+ */
+describe('the emitted JSON Schema matches what the provider can resolve', () => {
+  /**
+   * Two properties holding **one** schema instance, so `reused` has something
+   * to collapse. It deduplicates by instance rather than by structure, so two
+   * separately constructed but identical `z.object`s emit twice and no `$ref`
+   * appears. `buildClinicalFacts` passes one `field` into all 34 keys, which
+   * is why the real schema collapses; a refactor that built a fresh assertion
+   * per key would silently restore the 14,240 B prompt.
+   */
+  const Leaf = z.object({ n: z.number() })
+  const Repeated = z.object({ a: Leaf, b: Leaf })
+
+  async function emittedFor(resolvesSchemaRefs: boolean) {
+    completionsCreate.mockResolvedValue({
+      choices: [{ message: { content: '{"a":{"n":1},"b":{"n":2}}' }, finish_reason: 'stop' }],
+    })
+    const adapter = new OpenAICompatibleClient('qwen', 'test-model', {
+      apiKey: 'test-key',
+      baseURL: 'https://example.invalid/v1',
+      resolvesSchemaRefs,
+    })
+    await adapter.generate({
+      ...request(deidentify('nothing identifying here').text),
+      schema: Repeated,
+    })
+    return JSON.stringify(completionsCreate.mock.calls[0]?.[0]?.response_format)
+  }
+
+  it('references a repeated shape when the provider resolves refs', async () => {
+    expect(await emittedFor(true)).toContain('$ref')
+  })
+
+  it('inlines every copy when the provider does not', async () => {
+    // Gemini's position. It accepts an unused `definitions` block and rejects
+    // any pointer into one, so the only safe form is full inlining.
+    expect(await emittedFor(false)).not.toContain('$ref')
+  })
+
+  it('keeps the inlined form when referencing would make the schema bigger', async () => {
+    // `note_and_gaps` is the real instance of this: 686 B inlined against
+    // 749 B referenced, because one lightly reused shape costs more in
+    // pointers than it saves in duplication. It is also the call that writes
+    // the prose, so leaving its request byte-identical is what keeps this
+    // change off the note-quality surface entirely.
+    const Once = z.object({ only: z.object({ n: z.number() }) })
+    completionsCreate.mockResolvedValue({
+      choices: [{ message: { content: '{"only":{"n":1}}' }, finish_reason: 'stop' }],
+    })
+    const adapter = new OpenAICompatibleClient('qwen', 'test-model', {
+      apiKey: 'test-key',
+      baseURL: 'https://example.invalid/v1',
+      resolvesSchemaRefs: true,
+    })
+
+    await adapter.generate({
+      ...request(deidentify('nothing identifying here').text),
+      schema: Once,
+    })
+
+    const sent = JSON.stringify(completionsCreate.mock.calls[0]?.[0]?.response_format)
+    expect(sent).not.toContain('$ref')
+    expect(sent).toContain(JSON.stringify(z.toJSONSchema(Once, { target: 'draft-7' })))
   })
 })
 

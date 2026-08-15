@@ -345,6 +345,54 @@ From the other side, varying only `gaps.maxItems` in `note_and_gaps`, the 686 B 
 
 **Not closed by this.** Shrinking or splitting `clinical_facts` remains worth doing on its own merits, because it cuts the largest prompt in the system for every provider including the one production runs. The headroom here is thin: the budget is shared across the whole schema, so adding checklist fields can push it back over with no array involved.
 
+#### Resolved 15/08/26: Referencing The Repeated Assertion (Issue #109)
+
+Closes GitHub issue #109. `clinical_facts` is now **3,558 B rather than 14,240 B**, a 75% cut, with the checklist contract unchanged: 34 fields, same keys, same states, nothing dropped and nothing defaulted.
+
+**Where the bytes were.** Not nesting, and not the number of fields. The emitted schema inlined one 357 B assertion object 34 times, because `z.toJSONSchema` defaults to `reused: 'inline'`. Extracting it into `definitions` with `$ref` pointers removes the duplication and nothing else.
+
+**The two shapes issue #109 proposed were both measured and both rejected**, which is why this is worth recording rather than only fixing:
+
+| Shape                          | Size     | Nodes | Depth | Verdict                                                            |
+| ------------------------------ | -------- | ----- | ----- | ------------------------------------------------------------------ |
+| Inlined (before)               | 14,240 B | 144   | 4     | The baseline                                                       |
+| Flatten the four groups        | 13,840 B | 140   | 3     | Rejected: 3%, and it rewrites `gaps/checklist.ts` to get it        |
+| Split into two calls           | 8,363 B  | n/a   | n/a   | Rejected: a fourth concurrent call, and §12 already runs them wide |
+| **Referenced (`definitions`)** | 3,558 B  | 48    | 3     | **Shipped**                                                        |
+
+**Referencing is a provider capability, not a preference.** Measured 15/08/26 against each live endpoint, varying only the schema:
+
+| Provider                | Inlined  | `definitions` + `$ref` | `$defs` + `$ref` | Unused `definitions` block |
+| ----------------------- | -------- | ---------------------- | ---------------- | -------------------------- |
+| `qwen3.7-flash`         | accepted | accepted               | accepted         | accepted                   |
+| `gemini-3.5-flash-lite` | accepted | **HTTP 400**           | **HTTP 400**     | accepted                   |
+| `deepseek-v4-flash`     | 401      | 401                    | 401              | 401                        |
+
+Gemini accepts a `definitions` block nothing points at and rejects any pointer into one, so it is the **`$ref` it will not resolve, not the keyword**, and renaming to `$defs` does not help. DeepSeek is unmeasured: the configured key returns 401 on every request regardless of schema, so it keeps the inlined form it has always been sent rather than inheriting an assumption.
+
+**The rule is "emit both, send the smaller", not "always reference".** Referencing is not universally smaller, and the counter-example is the call that matters most:
+
+| Operation        | Inlined  | Referenced | Sent       |
+| ---------------- | -------- | ---------- | ---------- |
+| `clinical_facts` | 14,240 B | 3,558 B    | referenced |
+| `note_and_gaps`  | 686 B    | 749 B      | inlined    |
+
+`note_and_gaps` has one lightly reused shape whose pointers cost more than the duplication saves. It is also the call that writes the prose, so measuring per schema leaves its request **byte-identical to what it has always been**. That is deliberate rather than incidental: a schema change under a generative call is the shape of regression that degrades a note without failing anything, and this change now cannot reach it by construction. Emitting twice costs microseconds against a call measured in tens of seconds.
+
+**Verified through the real pipeline**, the standard §21.2 sets. `analyseNote` on a synthetic consultation, three runs per arm:
+
+| Arm                     | Assertions | State distribution                                    |
+| ----------------------- | ---------- | ----------------------------------------------------- |
+| Qwen, inlined (control) | 34, 3 of 3 | `PRESENT 6 · NOT_ASSESSED 21 · DENIED 5 · OBSERVED 2` |
+| Qwen, referenced        | 34, 3 of 3 | identical to the control                              |
+| Gemini, inlined         | 34         | `PRESENT 5 · NOT_ASSESSED 22 · DENIED 5 · OBSERVED 2` |
+
+All 34 fields round-trip in **9 of 9 runs**, and the Qwen state distribution is identical across arms, which is the claim this change has to support.
+
+**One thing measured and deliberately not claimed.** The model-authored gap count varied run to run, 2 to 4 across the nine runs, including between two arms whose `note_and_gaps` request was byte-identical. It is therefore pre-existing nondeterminism in a generative call rather than an effect of this change, and it is recorded as unexplained instead of folded into the result.
+
+**Remaining headroom.** 48 nodes against the synthetic sweep's observed Gemini pass/fail band of 252 to 302 nodes, so on Qwen there is comfortable room for future checklist fields. It does **not** help Gemini, which still receives the 14,240 B inlined form and keeps exactly the thin margin recorded above.
+
 ### Request Bounds
 
 **Status: `Built`** (issue #94). Both are constructor options on the shared adapter, so every call path inherits them and a new provider cannot be added without them.

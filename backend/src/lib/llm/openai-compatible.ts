@@ -40,18 +40,57 @@ const MAX_RETRIES = 1
  */
 export class OpenAICompatibleClient implements LLMClient {
   private readonly client: OpenAI
+  private readonly resolvesSchemaRefs: boolean
 
   constructor(
     readonly provider: LLMProvider,
     readonly model: string,
-    options: { apiKey: string; baseURL: string },
+    options: { apiKey: string; baseURL: string; resolvesSchemaRefs: boolean },
   ) {
+    this.resolvesSchemaRefs = options.resolvesSchemaRefs
     this.client = new OpenAI({
       apiKey: options.apiKey,
       baseURL: options.baseURL,
       timeout: REQUEST_TIMEOUT_MS,
       maxRetries: MAX_RETRIES,
     })
+  }
+
+  /**
+   * The JSON Schema sent to the provider, in whichever form is smaller.
+   *
+   * A shape used more than once can be written out at every site, or once
+   * under `definitions` with `$ref` pointers to it. Neither wins everywhere,
+   * so this measures instead of assuming (GitHub issue #109). Both figures
+   * measured 15/08/26:
+   *
+   * | Operation        | Inlined  | Referenced |
+   * | ---------------- | -------- | ---------- |
+   * | `clinical_facts` | 14,240 B | 3,558 B    |
+   * | `note_and_gaps`  | 686 B    | 749 B      |
+   *
+   * `clinical_facts` is 34 copies of one assertion object, so extracting it
+   * cuts 75% from the largest prompt in the system and the first call the
+   * pipeline makes. `note_and_gaps` has one lightly reused shape, where the
+   * pointers cost more than the duplication, and it is also the call that
+   * writes the prose. Picking the smaller form leaves that request
+   * byte-identical to what it has always been, which is the point: a schema
+   * change under a generative call is exactly the kind of regression that
+   * degrades a note without failing anything.
+   *
+   * Emitting twice costs microseconds against a call that measures tens of
+   * seconds, and it keeps the rule honest for a schema nobody has weighed yet.
+   */
+  private emitSchema(schema: GenerateRequest<unknown>['schema']) {
+    const inlined = z.toJSONSchema(schema, { target: 'draft-7' })
+    // Gemini is the one provider here that will not resolve a pointer: the
+    // referencing form returns a bodiless HTTP 400, while an unused
+    // `definitions` block is accepted, so it is the `$ref` and not the
+    // keyword. Measured against the live endpoint, same date.
+    if (!this.resolvesSchemaRefs) return inlined
+
+    const referenced = z.toJSONSchema(schema, { target: 'draft-7', reused: 'ref' })
+    return JSON.stringify(referenced).length < JSON.stringify(inlined).length ? referenced : inlined
   }
 
   async generate<T>(request: GenerateRequest<T>): Promise<T> {
@@ -92,7 +131,7 @@ export class OpenAICompatibleClient implements LLMClient {
         json_schema: {
           name: request.schemaName,
           strict: true,
-          schema: z.toJSONSchema(request.schema, { target: 'draft-7' }),
+          schema: this.emitSchema(request.schema),
         },
       },
     })
