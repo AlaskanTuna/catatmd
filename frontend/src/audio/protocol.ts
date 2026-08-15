@@ -53,8 +53,34 @@ export function countChunks(samples: number, sampleRate = TARGET_SAMPLE_RATE): n
   return Math.ceil((samples - window) / jump) + 1
 }
 
+/**
+ * How many decoded tokens between `alive` heartbeats.
+ *
+ * Chunk ticks alone cannot carry liveness: at a real-time factor of 3, a 30 s
+ * window is roughly 90 s between ticks on a slow machine. Whisper's timestamps
+ * go silent over stride overlaps, quiet audio and repetition loops, so the
+ * heartbeat rides on tokens, which fire per decoding step whatever the audio
+ * contains. Eight keeps the rate to a few messages per second at worst, which
+ * the caller absorbs without a render.
+ */
+export const HEARTBEAT_TOKENS = 8
+
+/**
+ * What the worker says, in order:
+ * `progress* -> ready -> (transcribing | alive)* -> finishing -> (result | error)`,
+ * with `error` possible at any point. The worker speaks continuously from the
+ * moment a request arrives until it answers, and the caller arms a silence
+ * budget against these messages, so a new phase that stays quiet for minutes
+ * is a regression even when it ends well.
+ */
 export type WorkerResponse =
-  | { type: 'progress'; loaded: number; total: number; file: string }
+  /**
+   * Aggregate model-download bytes, from the library's `progress_total`
+   * event. Its denominator covers every expected file from the first event,
+   * so the fraction never walks backwards the way a per-file figure does.
+   * `total` 0 means the host reported no sizes; callers must not divide.
+   */
+  | { type: 'progress'; loaded: number; total: number }
   | { type: 'ready' }
   /**
    * One chunk of audio finished transcribing. `done` counts completed chunks,
@@ -62,6 +88,18 @@ export type WorkerResponse =
    * progress rather than an animation.
    */
   | { type: 'transcribing'; done: number; total: number }
+  /**
+   * Liveness only. Carries nothing and is never rendered; it exists so the
+   * caller's silence budget can tell a slow chunk apart from a wedged worker.
+   */
+  | { type: 'alive' }
+  /**
+   * Every chunk is transcribed and the merge and decode tail is running.
+   * Posted at most once. The tail blocks the worker thread, so no further
+   * heartbeat is possible: callers must stop claiming a percentage and stop
+   * expecting messages until `result` or `error`.
+   */
+  | { type: 'finishing' }
   /** `segments` empty means no usable timing; callers fall back to plain prose. */
   | { type: 'result'; text: string; segments: readonly TranscriptSegment[] }
   | { type: 'error'; message: string }
