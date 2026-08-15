@@ -93,7 +93,7 @@ export function SidebarIsland({
       <Link
         to="/"
         aria-label="CatatMD home"
-        className="flex items-center gap-2 rounded-control px-2 py-3 transition-colors duration-150 hover:bg-sunken/60"
+        className="flex items-center gap-2 rounded-control px-2 py-3 transition-colors duration-150 hover:bg-sunken-soft"
       >
         <Mark className="size-6 text-accent" />
         <Wordmark
@@ -121,8 +121,8 @@ export function SidebarIsland({
                   'flex h-11 items-center gap-3 rounded-control px-3',
                   'text-sm font-medium transition-colors duration-150',
                   isActive
-                    ? 'bg-accent/16 text-accent'
-                    : 'text-ink-muted hover:bg-sunken/60 hover:text-ink',
+                    ? 'bg-accent-soft text-accent'
+                    : 'text-ink-muted hover:bg-sunken-soft hover:text-ink',
                 )
               }
             >
@@ -147,8 +147,8 @@ export function SidebarIsland({
             cn(
               'flex h-11 items-center gap-3 rounded-control px-3 text-sm font-medium transition-colors duration-150',
               isActive
-                ? 'bg-accent/16 text-accent'
-                : 'text-ink-muted hover:bg-sunken/60 hover:text-ink',
+                ? 'bg-accent-soft text-accent'
+                : 'text-ink-muted hover:bg-sunken-soft hover:text-ink',
             )
           }
         >
@@ -170,7 +170,7 @@ export function SidebarIsland({
           onClick={() => setPinned((value) => !value)}
           aria-pressed={pinned}
           aria-label={pinned ? 'Unpin sidebar' : 'Pin sidebar open'}
-          className="flex h-11 items-center gap-3 rounded-control px-3 text-sm font-medium text-ink-muted transition-colors duration-150 hover:bg-sunken/60 hover:text-ink"
+          className="flex h-11 items-center gap-3 rounded-control px-3 text-sm font-medium text-ink-muted transition-colors duration-150 hover:bg-sunken-soft hover:text-ink"
         >
           <PanelLeft aria-hidden className={cn('size-5 shrink-0', pinned && 'text-accent')} />
           <span
