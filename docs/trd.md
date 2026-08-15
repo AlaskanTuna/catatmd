@@ -1275,7 +1275,7 @@ Every `Open` item in this document, collected in one place. **Resolved rows are 
 
 ## 20. ASR Contract — On-Device Default, Hosted By Exception
 
-**Status: `Built`. The local path (issue #2), the hosted relay (#154) and the consent gate that lets a doctor enter the hosted path (#155, §20.4) are all `Built`. The path stays inert in production until `ILMU_API_KEY` is set.**
+**Status: `Built` and live. The local path (issue #2), the hosted relay (#154) and the consent gate that lets a doctor enter the hosted path (#155, §20.4) are all `Built`. `ILMU_API_KEY` is set in the Render production service, verified 16/08/26, so the path is reachable today: an authenticated doctor who ticks the per-consultation box sends that recording to ILMU. The route still fails closed with `503 asr_unavailable` on any deployment where the key is absent.**
 
 Audio input creates a second egress point that sits **before** the de-identification gate (§9): raw audio cannot be de-identified, only transcribed first. Un-redacted patient audio — and voice itself, a biometric identifier — would leave the trust boundary before the gate ever saw it, contradicting the central invariant in `AGENTS.md` that no text containing patient identifiers may leave the API.
 
