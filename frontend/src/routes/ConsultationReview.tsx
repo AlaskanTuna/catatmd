@@ -7,7 +7,7 @@ import type {
 } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Printer, Sparkles } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { DEMO_CONSULTATION_ID, useDemoTour } from '../demo/DemoTour.js'
@@ -49,6 +49,33 @@ export function ConsultationReview() {
   const { id = '' } = useParams()
   const queryClient = useQueryClient()
   const [showTranscript, setShowTranscript] = useState(false)
+  const transcriptRef = useRef<HTMLElement>(null)
+
+  /**
+   * Revealing the transcript is not the same as showing it.
+   *
+   * The panel is `order-3`, so in the single-column layout below `lg` it sits
+   * after the safety rail and the note. Measured on the deployed build at
+   * 390x844: toggling it on put its top edge 3318px down a 3729px page, which
+   * is 2474px below the fold. The button label changed and nothing the doctor
+   * could see did, so the control read as dead.
+   *
+   * Scrolled to rather than reordered. The rail is first below `lg` on purpose:
+   * `docs/DESIGN.md` requires severity to be visible without scrolling, so
+   * moving the transcript above it to shorten this trip would trade a control
+   * that looks broken for a red flag that is genuinely out of sight.
+   *
+   * Placed with the other hooks rather than beside the markup it drives,
+   * because this component returns early when the consultation fails to load
+   * and a hook below that return is not always reached.
+   */
+  useEffect(() => {
+    if (!showTranscript) return
+    transcriptRef.current?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    })
+  }, [showTranscript])
   const [showAllGaps, setShowAllGaps] = useState(false)
 
   /*
@@ -234,8 +261,11 @@ export function ConsultationReview() {
            tabs hide safety content. */
         <div className="mt-6 grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)_360px]">
           <section
+            ref={transcriptRef}
             className={cn(
-              'order-3 lg:sticky lg:top-6 lg:order-1 lg:self-start',
+              // `scroll-mt-20` clears the fixed chrome cluster, which is out of
+              // flow and would otherwise cover the heading this scrolls to.
+              'order-3 scroll-mt-20 lg:sticky lg:top-6 lg:order-1 lg:self-start',
               showTranscript ? 'block' : 'hidden lg:block',
             )}
             aria-labelledby="transcript-heading"

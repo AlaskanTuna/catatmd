@@ -7,17 +7,24 @@ import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 
 /**
- * The SPA and the API sit on different registrable domains in every deployed
- * environment (`catatmd.vercel.app` → `catatmd-api.onrender.com`), so every API
- * call is cross-site and a `SameSite=Lax` cookie is simply never sent. The
- * failure is deceptive: sign-in returns 200 and every subsequent request
- * returns 401 (docs/trd.md §14).
+ * `Secure` still tracks the API's own scheme, because browsers reject a
+ * `Secure` cookie over plain http and local dev runs on it.
  *
- * `SameSite=None` is only honoured alongside `Secure`, and browsers reject a
- * `Secure` cookie over plain http. Deriving both from the API's own scheme
- * keeps them in lockstep: an https deployment gets the cross-site pair, local
- * http dev gets `Lax` (correct there anyway — both ends are `localhost`, which
- * is same-site). There is no environment where one is set without the other.
+ * `SameSite` no longer has to. It was `none` for as long as the SPA called this
+ * API on a different registrable domain, which made every request cross-site
+ * and a `Lax` cookie simply never sent. #156 moved the browser onto the SPA's
+ * own origin via a Vercel rewrite, so those requests are same-site everywhere:
+ * same origin in production, and `localhost` to `localhost` in dev.
+ *
+ * `Lax` is therefore both correct and stricter. It is worth the change rather
+ * than left alone, because `none` gave up the CSRF protection `SameSite`
+ * exists to provide, which left origin trust resting entirely on the
+ * single-origin CORS policy plus `trustedOrigins` (docs/trd.md §16).
+ *
+ * This is what makes the rewrite load-bearing rather than a deployment detail:
+ * pointing the SPA back at the API's own origin would now break sign-in on
+ * every browser, not just the ones that discard third-party cookies. `ci.yml`
+ * guards both halves.
  */
 const isHttps = new URL(env.BETTER_AUTH_URL).protocol === 'https:'
 
@@ -71,7 +78,7 @@ export const auth = betterAuth({
     useSecureCookies: isHttps,
     defaultCookieAttributes: {
       httpOnly: true,
-      sameSite: isHttps ? 'none' : 'lax',
+      sameSite: 'lax',
       secure: isHttps,
     },
     /**
