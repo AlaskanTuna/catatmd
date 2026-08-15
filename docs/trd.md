@@ -1628,6 +1628,51 @@ Recorded so the option is scoped, not attempted, in this window.
 - PriMock57 (57 acted mock GP consultations, audio plus utterance-level speaker ground truth, downloaded locally and never committed) is the candidate corpus for the EER gate above.
 - A resident warm worker between recordings was considered for load time and rejected: a warm session holds the full weights in memory while the doctor works elsewhere, which is the OOM kill this section's memory failure mode warns about. Prewarm-per-recording through the existing but unsent `load` request is the open alternative, with one hazard: the worker answers it with `ready`, which the component currently reads as the start of transcription.
 
+### 20.3 Measured Finding: Hosted `ilmu-asr-v4.2` Against The Shipped Local Path
+
+Measured **15/08/26**, gating issue #151 (the hosted-ASR build, issues #154 and #155, does not start unless this section records a ship decision). Harness: `evals/asr-ab.ts`, three default runs per sample plus one `language='ms'` probe, response-shape probes, and a report per run under the gitignored `evals/reports/`.
+
+**Samples, provenance stated per the 20.1 convention.** Two samples, neither committed:
+
+1. The 20.2 reference recording: 83.4 s synthetic two-voice consultation, Windows SAPI voices, anglicised Malay pronunciation.
+2. A new 99.2 s scripted rojak consultation: single human reader voicing both roles, phone recording (AAC 48 kHz stereo, decoded to 16 kHz mono), Malay-dominant with mid-sentence English switches, scripted ground truth. Synthetic content; no patient data of any kind was sent to any provider.
+
+**Local arm:** `@huggingface/transformers` 4.2.0, the exact production dependency, Node CPU, `dtype: 'q8'`, `graphOptimizationLevel: 'disabled'`, production generation options, run per the 20.1 method with the same caveat (browser WASM is slower than these Node figures).
+
+#### Token Table, Rojak Sample
+
+| Token (Ground Truth)                    | `ilmu-asr-v4.2`                         | `whisper-small` `language:'en'` (shipped)                         | `whisper-small` `language:'ms'`                  |
+| --------------------------------------- | --------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------ |
+| "batuk sudah empat hari lah"            | "patut sudah empat hari lah"            | **"it's been four days"** (translated)                            | "patuk sudah empah hari lah"                     |
+| "Ada demam tak?"                        | "ada teman tak"                         | **"Do you have a fever?"** (translated)                           | "Ada teman tak?"                                 |
+| "tiga puluh lapan point dua"            | correct ("poin"/"point" varies by run)  | "38.2" (translated to digits)                                     | "38.2"                                           |
+| "Any phlegm when you cough? Kahak ada?" | "any 你 fling when you cough kahak ada" | "Any flanks when you cough, or cough, or white"                   | "Any fling when your cough kakak ada"            |
+| "dada rasa sakit sikit"                 | **correct**                             | **"your feet are strong, you will feel a little pain"**           | "dah dah rasa sakit sikit"                       |
+| "Tekak merah sikit, tonsil tak bengkak" | "kekak merah sikit tongso tak pengkat"  | "Tekak Merah sikit Tongsil, Dap penkak" (after an English detour) | "Tekak. Merah sikit. Tongsel. Tak penkak."       |
+| "denggi", both mentions                 | "tenggi"                                | "tanggi"                                                          | "tanggi"                                         |
+| "Boleh dapat MC tak"                    | "boleh tapak MC tak" (MC survives)      | **"Can I get a doctor's leave?"** (translated, MC gone)           | "boleh tapak emci tak"                           |
+| "semput"                                | "sempuk"                                | "if you feel sick" (gone)                                         | "sempuk"                                         |
+| Duplicated or invented content          | one stutter ("air air")                 | repeated blocks plus invented clauses                             | repeated blocks plus one fabricated Malay clause |
+| Punctuation and casing                  | **none**: flat lowercase stream         | yes                                                               | partial                                          |
+| Wall clock (99.2 s audio)               | 2.3 to 2.5 s (**RTF 0.024**)            | 66.2 s (RTF 0.67, Node CPU floor)                                 | 157.5 s (**RTF 1.59**, slower than real time)    |
+
+#### Findings, In Order Of Consequence
+
+1. **The shipped local configuration fails dangerously, not gracefully, on Malay-dominant audio.** `language: 'en'` on this recording produced fluent English translation-fabrication: "bila batuk kuat, dada rasa sakit sikit" became "when your feet are strong, you will feel a little pain", erasing the exact phrase the chest-pain red flag matches on. This is 20.1 finding 2 and the section 21 threat table reproduced on the production settings, and it is the measured justification for the consent-gated hosted path: the on-device default has no safe answer for a Malay consultation today.
+2. **`auto` is not detection.** With `language` unset, transformers.js logs "No language specified - defaulting to English" per chunk; output was byte-identical to `'en'`. 20.1 finding 3 withdrew the silent-translation claim from secondary research; this run supplies the mechanism: there is no detection to mistrust, only a default.
+3. **A doctor-declared `'ms'` toggle would not be a fix.** It transcribes rather than translates, but with stride-duplication blocks, one fabricated clause, "emci" for MC, and RTF 1.59 on a 16-core machine, which clinic hardware multiplies. The on-device toggle idea stays rejected; the section 20 language row stands unchanged.
+4. **`ilmu-asr-v4.2` wins the rojak arm decisively on structure and speed.** Correct matrix language, mid-sentence code-switching preserved, clinical content largely intact (including "dada rasa sakit sikit" and "kahak"), roughly 40x faster than the local WASM path, at about RM 0.012 per consultation-minute. Its error family on this recording is consonant devoicing ("patut" for "batuk", "teman" for "demam", "tenggi" for "denggi", "pengkat" for "bengkak"), shared with `whisper-small` `'ms'` at the same spots, which points at the phone-mic audio profile as a contributor; plus one Chinese-character intrusion on "phlegm" and no punctuation.
+5. **The early-access API diverges from its documentation, in ways the relay must absorb.** `verbose_json` is not honoured (the response is `{text, usage: {type: "duration", seconds}}` with `timestamp_granularities[]` a no-op), `srt` returns a single cue spanning the whole file, the `prompt` biasing field is a no-op (identical output with punctuation-style and jargon prompts), and `temperature=0` is not byte-deterministic on the rojak sample (three runs differed in minor tokens; the TTS sample was deterministic). Consequences: no per-turn offsets exist, draft speaker labels cannot engage (the flat unpunctuated prose also defeats sentence splitting), and the relay's audited `durationSeconds` comes from `usage.seconds`, the one duration the API actually returns.
+6. **Reference-recording arm, for continuity with 20.2:** rough parity with the local WASM baseline on anglicised TTS (both garble the TTS-Malay tokens; ILMU uniquely recovered "Okay can", uniquely stuttered once, and spells numerals out), deterministic there, 2.0 to 2.4 s. The TTS register cannot carry the Malay verdict, which is why the human-read sample exists.
+
+#### Decision, Applying The Rule Written In #151 Before Measurement
+
+Tokens: ILMU beats local. Segments: fail (none delivered). **Ship the hosted path, with the prose-fallback caveat recorded:** hosted transcripts enter the app as paste-grade prose (unpunctuated, unsegmented, no draft speaker labels, no per-turn offsets), and the consent UI must not promise labelling on the hosted path. The devoicing family and the "phlegm" intrusion belong in the consent tooltip's accuracy framing (#155) rather than in a marketing sentence.
+
+**Limits, stated plainly.** n=1 reader, one phone microphone, a non-clinical room; one sample per register; token comparison rather than WER, per the 20.1 convention; the local arm ran in Node CPU rather than browser WASM. The devoicing overlap between both models suggests re-measurement with a clinic-grade microphone before treating it as a provider property. If the provider ships working `verbose_json` segments or punctuation later, the draft-labels verdict in finding 5 is the one to re-measure.
+
+**Cost of the whole gate:** about RM 0.20 of the RM 20 early-access credit.
+
 ---
 
 ## 21. LLM Guardrail Architecture
