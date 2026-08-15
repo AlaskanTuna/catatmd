@@ -31,8 +31,22 @@ export function Login() {
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
 
+  const [sessionBlocked, setSessionBlocked] = useState(false)
+
+  /**
+   * Fetched rather than invalidated, because a sign-in can return 200 and still
+   * leave no readable session: if the browser discards the cookie, navigating
+   * lands on `RequireSession`, which bounces straight back here with nothing on
+   * screen to explain it. Reading the session first turns that silent loop into
+   * a stated reason (#156).
+   */
   const onSuccess = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['session'] })
+    setSessionBlocked(false)
+    const session = await queryClient.fetchQuery({ queryKey: ['session'], queryFn: api.session })
+    if (!session) {
+      setSessionBlocked(true)
+      return
+    }
     navigate('/consultations')
   }
 
@@ -43,7 +57,6 @@ export function Login() {
     onSuccess,
   })
 
-  const error = guest.error ?? credentials.error
   const pending = guest.isPending || credentials.isPending
 
   const submit = (event: FormEvent) => {
@@ -104,6 +117,19 @@ export function Login() {
               All consultations in this prototype are simulated. No real patient data.
             </p>
 
+            {/* Not attached to either sign-in path, because it is neither's
+                fault: the credential was accepted and the browser dropped the
+                cookie afterwards. */}
+            {sessionBlocked && (
+              <p
+                role="alert"
+                className="mt-6 rounded-control bg-emergency/10 p-3 text-sm text-emergency"
+              >
+                Signed in, but your browser did not keep the session. This usually means cookies are
+                blocked for this site. Enable them and try again.
+              </p>
+            )}
+
             <Button
               variant="primary"
               size="lg"
@@ -114,6 +140,17 @@ export function Login() {
             >
               Sign In as Guest
             </Button>
+            {/* Beside the button that raised it. It used to render inside the
+                credentials form below, far enough from the guest button that a
+                failed guest sign-in read as nothing happening at all. */}
+            {guest.error && (
+              <p role="alert" className="mt-2 text-sm text-emergency">
+                {guest.error instanceof ApiError
+                  ? guest.error.message
+                  : 'Guest sign in failed. Please try again.'}
+              </p>
+            )}
+
             {/* The shared-account risk was raised and explicitly accepted
                 (13/08/26). Stating it here is the condition of that acceptance. */}
             <p className="mt-2 text-xs text-ink-muted">
@@ -148,9 +185,11 @@ export function Login() {
                 required
               />
 
-              {error && (
+              {credentials.error && (
                 <p role="alert" className="text-sm text-emergency">
-                  {error instanceof ApiError ? error.message : 'Sign in failed. Please try again.'}
+                  {credentials.error instanceof ApiError
+                    ? credentials.error.message
+                    : 'Sign in failed. Please try again.'}
                 </p>
               )}
 

@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import { recordAuditEvent } from '../audit/index.js'
 import { env } from '../config/env.js'
+import { CLIENT_IP_HEADER } from '../middleware/client-ip.js'
 import { logger } from './logger.js'
 import { prisma } from './prisma.js'
 
@@ -74,31 +75,29 @@ export const auth = betterAuth({
       secure: isHttps,
     },
     /**
-     * `cf-connecting-ip` first, and that ordering is the whole fix.
+     * A single header, written by `middleware/client-ip.ts` on every request
+     * before this router ever sees one.
      *
-     * Render fronts every service with Cloudflare (`cf-ray` is present on all
-     * responses), so `x-forwarded-for` arrives holding a **chain** — client,
-     * then one or more proxies. better-auth 1.6.27 refuses a multi-entry
-     * `x-forwarded-for` unless `trustedProxies` is configured
-     * (`getIPFromHeader`: `if (forwardedIps.length !== 1) return null`), which
-     * is correct — an unbounded chain is trivially spoofable, so guessing which
-     * entry is the client would be worse than declining.
+     * better-auth 1.6.27 refuses a multi-entry `x-forwarded-for` unless
+     * `trustedProxies` is configured (`getIPFromHeader`: `if
+     * (forwardedIps.length !== 1) return null`), which is correct: an unbounded
+     * chain is trivially spoofable, so guessing which entry is the client would
+     * be worse than declining. Declining, though, means `getIp()` returns null
+     * and every caller shares one bucket per path, which turns a brute-force
+     * control into a denial-of-service vector.
      *
-     * Declining, however, means `getIp()` returns null and every caller shares
-     * one bucket per path. Observed in production as:
-     * "Rate limiting could not determine a client IP and is falling back to a
-     * single shared per-path bucket."
+     * Render's Cloudflare edge used to make `cf-connecting-ip` the answer here.
+     * Since #156 the SPA reaches this API through a Vercel rewrite, so that
+     * header holds Vercel's address rather than the caller's, and resolving the
+     * caller now takes an allow-list check that a header name list cannot
+     * express. `middleware/client-ip.ts` does that work once and publishes the
+     * result here, which also keeps this limiter and the clinical ones keyed on
+     * the same caller instead of resolving it independently.
      *
-     * That is worse than no limiter: one client can exhaust the bucket for
-     * everyone, turning a brute-force control into a denial-of-service vector.
-     *
-     * `cf-connecting-ip` resolves it without a proxy allow-list to maintain.
-     * Cloudflare sets it to the true client address and overwrites any
-     * client-supplied value, so it is single-valued and not spoofable — which
-     * is exactly the shape `getIPFromHeader` accepts. `x-forwarded-for` stays
-     * as the fallback for any environment without Cloudflare in front.
+     * Single-valued and overwritten per request, so it is exactly the shape
+     * `getIPFromHeader` accepts and a caller cannot supply their own.
      */
-    ipAddress: { ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'] },
+    ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
   },
 
   /**

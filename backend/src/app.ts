@@ -3,6 +3,7 @@ import cors from 'cors'
 import express from 'express'
 import helmet from 'helmet'
 import { env } from './config/env.js'
+import { clientIp } from './middleware/client-ip.js'
 import { errorHandler } from './middleware/error-handler.js'
 import {
   analyzeRateLimit,
@@ -36,6 +37,12 @@ export function createApp() {
   // First, so every response carries `x-request-id` and no later middleware can
   // log without a request id in scope (GitHub issue #15).
   app.use(requestContext)
+
+  // Ahead of every limiter, this codebase's and better-auth's, because both
+  // read the header it writes. Also ahead of the auth router, which converts
+  // the request to a Fetch Request and would otherwise copy the headers before
+  // this one is set (#156).
+  app.use(clientIp)
 
   // CSP is left at helmet's default: the SPA is served by Vercel, not by this
   // API, so this process only ever emits JSON (docs/trd.md §16).

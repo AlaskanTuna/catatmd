@@ -159,5 +159,10 @@ describe('guest sign-in rate limit', () => {
     await expect(limited?.json()).resolves.toMatchObject({
       error: { code: 'rate_limited' },
     })
-  })
+    // Twenty-one sequential requests, each reaching better-auth and therefore
+    // the database, run to roughly 2.7s on their own. That leaves too little
+    // room under the 5s default once the rest of the suite is competing for
+    // the same connection, and the test failed intermittently on suite runs
+    // while passing in isolation.
+  }, 20_000)
 })
