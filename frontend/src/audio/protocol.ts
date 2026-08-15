@@ -72,6 +72,12 @@ export const HEARTBEAT_TOKENS = 8
  * moment a request arrives until it answers, and the caller arms a silence
  * budget against these messages, so a new phase that stays quiet for minutes
  * is a regression even when it ends well.
+ *
+ * A caller may also post a bare `load` to prewarm; its reply stream is
+ * `progress* -> ready | error`, and a `transcribe` posted while that load is
+ * in flight answers with a second `ready` once its own wait on the shared
+ * load resolves, so a repeated `ready` must read as the same state, never a
+ * restart.
  */
 export type WorkerResponse =
   /**

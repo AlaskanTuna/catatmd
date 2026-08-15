@@ -50,6 +50,32 @@ function spawned(index = 0): FakeWorker {
   return instance
 }
 
+/** Every recorder the component builds, so tests can drive its stop. */
+const recorders: FakeMediaRecorder[] = []
+
+class FakeMediaRecorder {
+  mimeType = 'audio/webm'
+  ondataavailable: ((event: { data: Blob }) => void) | null = null
+  onstop: (() => void) | null = null
+  start = vi.fn()
+
+  constructor(_stream: unknown) {
+    recorders.push(this)
+  }
+
+  /** The browser fires these after stop() returns, never inside it. */
+  stop() {
+    queueMicrotask(() => {
+      this.ondataavailable?.({ data: new Blob(['pcm']) })
+      this.onstop?.()
+    })
+  }
+}
+
+/** Swappable per test, so microphone access can be made to fail. */
+let getUserMedia: () => Promise<{ getTracks: () => { stop: () => void }[] }>
+let tracks: { stop: ReturnType<typeof vi.fn> }[]
+
 /** Swappable per test, so a decode can be made to hang or settle late. */
 let decodeAudioData: () => Promise<unknown>
 
@@ -73,10 +99,19 @@ class FakeOfflineAudioContext {
 beforeEach(() => {
   vi.useFakeTimers()
   workers.length = 0
+  recorders.length = 0
   decodeAudioData = async () => ({ duration: 1 })
+  tracks = [{ stop: vi.fn() }]
+  getUserMedia = async () => ({ getTracks: () => tracks })
   vi.stubGlobal('Worker', FakeWorker)
   vi.stubGlobal('AudioContext', FakeAudioContext)
   vi.stubGlobal('OfflineAudioContext', FakeOfflineAudioContext)
+  vi.stubGlobal('MediaRecorder', FakeMediaRecorder)
+  // jsdom has no mediaDevices at all, so this defines rather than spies.
+  Object.defineProperty(navigator, 'mediaDevices', {
+    value: { getUserMedia: () => getUserMedia() },
+    configurable: true,
+  })
   // jsdom reports few cores and no memory, and the hardware floor would hide
   // the whole control cluster, so pin the machine capable.
   Object.defineProperty(navigator, 'hardwareConcurrency', { value: 8, configurable: true })
@@ -119,6 +154,18 @@ function pickFile() {
 
 const startButton = () =>
   screen.getByRole('button', { name: /start recording/i }) as HTMLButtonElement
+
+const stopButton = () => screen.getByRole('button', { name: /stop and transcribe/i })
+
+async function startRecording() {
+  fireEvent.click(startButton())
+  await settle()
+}
+
+async function stopRecording() {
+  fireEvent.click(stopButton())
+  await settle()
+}
 
 describe('the silence budget', () => {
   it('terminates a worker that stays silent and points at typing or pasting', async () => {
@@ -363,5 +410,151 @@ describe('try again', () => {
 
     expect(workers).toHaveLength(2)
     expect(spawned(1).postMessage).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('prewarming the speech model', () => {
+  it('posts a load request to a fresh worker when recording starts', async () => {
+    renderCapture()
+    await startRecording()
+
+    expect(workers).toHaveLength(1)
+    expect(spawned().postMessage).toHaveBeenCalledTimes(1)
+    expect(spawned().postMessage).toHaveBeenCalledWith({ type: 'load' })
+    stopButton()
+  })
+
+  it('keeps the recording UI untouched by prewarm progress and ready', async () => {
+    renderCapture()
+    await startRecording()
+
+    spawned().reply({ type: 'progress', loaded: 100, total: 500 })
+    spawned().reply({ type: 'ready' })
+
+    expect(screen.queryByRole('progressbar')).toBeNull()
+    expect(screen.queryByText(/downloading|preparing|opening/i)).toBeNull()
+    expect(document.querySelector('.busy-spinner')).toBeNull()
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+    screen.getByRole('button', { name: /0:01/ })
+  })
+
+  it('never arms the silence budget from prewarm alone', async () => {
+    renderCapture()
+    await startRecording()
+    spawned().reply({ type: 'progress', loaded: 1, total: 10 })
+
+    act(() => {
+      vi.advanceTimersByTime(STALL_TIMEOUT_MS + 1000)
+    })
+
+    expect(spawned().terminate).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).toBeNull()
+    stopButton()
+  })
+
+  it('reuses the prewarmed worker and load when the recording stops', async () => {
+    const { onTranscript } = renderCapture()
+    await startRecording()
+    spawned().reply({ type: 'ready' })
+    await stopRecording()
+
+    expect(workers).toHaveLength(1)
+    expect(spawned().postMessage).toHaveBeenCalledTimes(2)
+    expect(spawned().postMessage.mock.calls[0]?.[0]).toEqual({ type: 'load' })
+    expect(spawned().postMessage.mock.calls[1]?.[0]).toMatchObject({ type: 'transcribe' })
+    expect(tracks[0]?.stop).toHaveBeenCalled()
+
+    // The load's own answer can land beside the transcribe's; a repeated
+    // ready must read as the same state, not a restart.
+    spawned().reply({ type: 'ready' })
+    spawned().reply({ type: 'ready' })
+    screen.getAllByText(/transcribing on this device/i)
+    spawned().reply({ type: 'result', text: 'hello', segments: [] })
+    expect(onTranscript).toHaveBeenCalledWith({ text: 'hello', segments: [] })
+  })
+
+  it('stays silent when the prewarm fails, and still transcribes on stop', async () => {
+    const { onTranscript } = renderCapture()
+    await startRecording()
+    spawned().reply({ type: 'error', message: 'network gave out' })
+
+    expect(screen.queryByRole('alert')).toBeNull()
+    stopButton()
+
+    await stopRecording()
+    expect(workers).toHaveLength(1)
+    expect(spawned().postMessage.mock.calls[1]?.[0]).toMatchObject({ type: 'transcribe' })
+    spawned().reply({ type: 'progress', loaded: 1, total: 10 })
+    spawned().reply({ type: 'ready' })
+    spawned().reply({ type: 'result', text: 'recovered', segments: [] })
+    expect(onTranscript).toHaveBeenCalledWith({ text: 'recovered', segments: [] })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('quietly replaces a worker that dies during the prewarm', async () => {
+    const { onTranscript } = renderCapture()
+    await startRecording()
+
+    spawned().die()
+
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(spawned().terminate).toHaveBeenCalled()
+    stopButton()
+
+    await stopRecording()
+    expect(workers).toHaveLength(2)
+    expect(spawned(1).postMessage).toHaveBeenCalledTimes(1)
+    expect(spawned(1).postMessage.mock.calls[0]?.[0]).toMatchObject({ type: 'transcribe' })
+    spawned(1).reply({ type: 'ready' })
+    spawned(1).reply({ type: 'result', text: 'second worker', segments: [] })
+    expect(onTranscript).toHaveBeenCalledWith({ text: 'second worker', segments: [] })
+  })
+
+  it('swallows a prewarm error that lands during the decode after stop', async () => {
+    let releaseDecode: () => void = () => {}
+    const { onTranscript } = renderCapture()
+    await startRecording()
+
+    decodeAudioData = () =>
+      new Promise((resolve) => {
+        releaseDecode = () => resolve({ duration: 1 })
+      })
+    fireEvent.click(stopButton())
+    await settle()
+    spawned().reply({ type: 'error', message: 'load failed late' })
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    releaseDecode()
+    await settle()
+    expect(spawned().postMessage.mock.calls[1]?.[0]).toMatchObject({ type: 'transcribe' })
+    spawned().reply({ type: 'ready' })
+    spawned().reply({ type: 'result', text: 'late recovery', segments: [] })
+    expect(onTranscript).toHaveBeenCalledWith({ text: 'late recovery', segments: [] })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('unmounting mid-recording terminates the prewarmed worker and leaves no timer', async () => {
+    const { unmount } = renderCapture()
+    await startRecording()
+
+    unmount()
+
+    expect(spawned().terminate).toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('builds no worker when microphone access is refused', async () => {
+    renderCapture()
+    getUserMedia = async () => {
+      throw new Error('denied')
+    }
+    fireEvent.click(startButton())
+    await settle()
+
+    expect(workers).toHaveLength(0)
+    expect(screen.getByRole('alert').textContent).toMatch(/microphone/i)
+    expect(screen.queryByRole('button', { name: /try again/i })).toBeNull()
   })
 })
