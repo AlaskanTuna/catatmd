@@ -49,6 +49,13 @@ const EnvSchema = z.object({
   DEEPSEEK_BASE_URL: z.string().url().default('https://api.deepseek.com'),
   DEEPSEEK_MODEL: z.string().default('deepseek-v4-flash'),
 
+  // Hosted-ASR relay (#154). Optional: an absent key disables the relay at
+  // request time (503 asr_unavailable) rather than failing boot, so a
+  // deployment without hosted transcription simply omits it.
+  ILMU_API_KEY: z.string().optional(),
+  ILMU_BASE_URL: z.string().url().default('https://api.ilmu.ai/v1'),
+  ILMU_ASR_MODEL: z.string().default('ilmu-asr-v4.2'),
+
   // Verbosity only. No level widens what may be written: redaction in
   // lib/logger.ts is unconditional, so there is no debug flag that unlocks raw
   // content (GitHub issue #15, non-goals).
