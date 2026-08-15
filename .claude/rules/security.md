@@ -50,7 +50,7 @@ Maps to OWASP LLM01 Prompt Injection, LLM02 Sensitive Information Disclosure, LL
 
 The hosted-ASR relay is the one audio egress (issue #154; `docs/trd.md` §20). Audio cannot be de-identified, so this path is governed by bounds, audit, and per-consultation consent, where consent is **required but not yet built**: the interaction ships with #155, the API enforces no consent signal today, and until then no client UI invokes the route.
 
-- `backend/src/routes/asr.ts` calling `transcribeWithIlmu` (`backend/src/lib/asr/ilmu.ts`) is the only path audio may take out of the API. No other module may call an ASR provider, and a provider SDK import here is a critical defect. The relay is native fetch by design; note that `no-stray-provider-sdk.test.ts`'s inventory names LLM vendors, so an ASR vendor SDK would currently pass it. The ban is this rule, not yet a guard.
+- `backend/src/routes/asr.ts` calling `transcribeWithIlmu` (`backend/src/lib/asr/ilmu.ts`) is the only path audio may take out of the API. No other module may call an ASR provider, and a provider SDK import here is a critical defect. **Two guards enforce this rather than review alone** (issue #172): `backend/src/lib/asr/no-stray-fetch.test.ts` pins the per-file inventory of outbound `fetch` calls in `backend/src`, today exactly one, in `ilmu.ts`; and `no-stray-provider-sdk.test.ts`'s package inventory now names transcription vendors alongside LLM ones, so an ASR SDK trips the same guard. The relay is native fetch by design, because ILMU publishes no SDK, which is why the call site needed a guard of its own: an SDK inventory structurally cannot see an egress that imports nothing.
 - `ILMU_API_KEY` is read only through `env`. Key unset means the route fails closed and visibly: 503 `asr_unavailable`, before any body is buffered and with no upstream call.
 - Nothing is persisted and no content is logged on this path. The audio exists in request-scoped memory only, the log line carries allowlisted fields only, and the audit pair (`asr.hosted_relayed` / `asr.hosted_relay_failed`) records billed seconds, a model id, and a closed failure reason, never content. The upstream response body is never read on a failure path, and a redirect is refused rather than followed, because on this route a request body is patient audio and a response body is a transcript.
 - Bounds, all of them deliberate: a route-level `express.raw` cap of 25 MB with `inflate: false` (ILMU's own request cap, unforgeable via `Content-Encoding`), the dedicated `hostedAsrRateLimit` (5/min per `clientKey`), a process-wide in-flight gate (`MAX_CONCURRENT_RELAYS`, 503 when full, because the per-key limiter cannot bound memory), a 120 s `AbortSignal.timeout`, and no retries.
@@ -133,7 +133,15 @@ OWASP promoted Software Supply Chain Failures to A03:2025, and it is this repo's
 - Before adding a dependency: prefer well-known, actively maintained packages, check open advisories, and avoid versions published in the last few days. Most malicious releases are pulled within hours, so a short cooldown catches them.
 - Keep the CI secret surface at one entry (`secrets.VERCEL_TOKEN`). Project and org IDs are identifiers, not credentials, and stay inline.
 - **Not built today:** no `bun audit`, no Dependabot or Renovate, no secret scanning, no SAST. The "Confidentiality check" greps engagement terms, not credentials. State this as an open gap rather than implying coverage.
-- **Architectural invariants are enforced by source-scanning guard tests.** Three exist: `backend/src/audit/no-stray-audit-writes.test.ts`, `backend/src/clinical-versions/no-stray-clinical-constants.test.ts`, and `backend/src/lib/llm/no-stray-provider-sdk.test.ts`, which pins the single-provider-SDK rule under "LLM Egress" above. Follow that shape for any invariant the type system cannot express, and check the open issues rather than this line for which one is worth writing next.
+- **Architectural invariants are enforced by source-scanning guard tests.** Six exist, all named `no-stray-*`, so `find backend/src -name 'no-stray-*.test.ts'` is the authority rather than this list:
+  - `audit/no-stray-audit-writes.test.ts`: every audit write goes through `recordAuditEvent`
+  - `clinical-versions/no-stray-clinical-constants.test.ts`: version constants have one home
+  - `deid/no-stray-brand-casts.test.ts`: only `deid/` mints the `Deidentified` brand
+  - `routes/no-stray-approval.test.ts`: `approved` is unreachable without an explicit clinician action
+  - `lib/llm/no-stray-provider-sdk.test.ts`: one provider SDK repo-wide, LLM and transcription vendors alike
+  - `lib/asr/no-stray-fetch.test.ts`: the outbound `fetch` inventory under "ASR Egress"
+
+  Follow that shape for any invariant the type system cannot express, and check the open issues rather than this line for which one is worth writing next.
 
 ## Changes That Need Explicit Human Sign-Off
 
