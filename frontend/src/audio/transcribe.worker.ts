@@ -9,6 +9,7 @@ import {
 import {
   CHUNK_LENGTH_S,
   countChunks,
+  HEARTBEAT_TOKENS,
   STRIDE_LENGTH_S,
   type WorkerRequest,
   type WorkerResponse,
@@ -81,12 +82,19 @@ if (MODEL_HOST) env.remoteHost = MODEL_HOST
 
 const post = (message: WorkerResponse) => self.postMessage(message)
 
-let transcriber: AutomaticSpeechRecognitionPipeline | null = null
-
 function onProgress(event: unknown) {
-  const p = event as { status?: string; file?: string; loaded?: number; total?: number }
-  if (p.status === 'progress' && p.total) {
-    post({ type: 'progress', loaded: p.loaded ?? 0, total: p.total, file: p.file ?? '' })
+  const p = event as { status?: string; loaded?: number; total?: number }
+  /*
+   * Only the aggregate figure. The library also emits per-file `progress`
+   * events, and forwarding those is how the bar used to sawtooth: each
+   * artefact drove it to 100 and the next reset it, and summing them by hand
+   * walks backwards as files register their sizes. `progress_total`'s
+   * denominator covers every expected file from its first event. A zero total
+   * (a mirror without content-length) is still posted: it cannot render as a
+   * percentage, but it rearms the caller's silence budget.
+   */
+  if (p.status === 'progress_total') {
+    post({ type: 'progress', loaded: p.loaded ?? 0, total: p.total ?? 0 })
   }
 }
 
@@ -152,10 +160,21 @@ async function loadWasm() {
  * `null`. Testing for the API's presence would select WebGPU on a machine it
  * cannot run on.
  */
+/**
+ * How long the adapter probe may take before WASM is chosen anyway. A hung
+ * GPU process never rejects, it just never answers, and WASM is first-class
+ * here rather than a degradation, so a slow probe simply means WASM.
+ */
+const ADAPTER_PROBE_MS = 3_000
+
 async function hasWebGpuAdapter(): Promise<boolean> {
   if (typeof navigator === 'undefined' || !('gpu' in navigator)) return false
   try {
-    return (await navigator.gpu.requestAdapter()) !== null
+    const adapter = await Promise.race([
+      navigator.gpu.requestAdapter(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), ADAPTER_PROBE_MS)),
+    ])
+    return adapter !== null
   } catch {
     return false
   }
@@ -178,33 +197,59 @@ async function hasWebGpuAdapter(): Promise<boolean> {
  * fallback has not been exercised against real WebGPU hardware by this
  * product's own testing; only the detection-finds-nothing path has.
  */
-async function load() {
-  if (transcriber) return transcriber
+/*
+ * Single-flight: the in-flight promise is memoised, not just the result, so
+ * two near-simultaneous requests can never start two parallel multi-hundred
+ * megabyte downloads. A failed load clears the memo, so the next request
+ * starts clean rather than replaying the rejection forever.
+ */
+let loading: Promise<AutomaticSpeechRecognitionPipeline> | null = null
 
-  if (!(await hasWebGpuAdapter())) {
-    transcriber = await loadWasm()
-    return transcriber
-  }
+function load(): Promise<AutomaticSpeechRecognitionPipeline> {
+  loading ??= doLoad().catch((error: unknown) => {
+    loading = null
+    throw error
+  })
+  return loading
+}
+
+async function doLoad() {
+  if (!(await hasWebGpuAdapter())) return loadWasm()
 
   try {
-    transcriber = await pipeline('automatic-speech-recognition', MODEL, {
+    return await pipeline('automatic-speech-recognition', MODEL, {
       device: 'webgpu',
       progress_callback: onProgress,
     })
   } catch {
-    transcriber = await loadWasm()
+    return loadWasm()
   }
-  return transcriber
 }
 
+/*
+ * One run at a time. The shipped component disables its controls while busy,
+ * so this guards a future caller: two interleaved runs would weave two
+ * message streams into one state machine on the other side.
+ */
+let running = false
+
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
-  try {
-    if (event.data.type === 'load') {
+  if (event.data.type === 'load') {
+    try {
       await load()
       post({ type: 'ready' })
-      return
+    } catch (error) {
+      post({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Transcription failed',
+      })
     }
+    return
+  }
 
+  if (running) return
+  running = true
+  try {
     const asr = await load()
     /*
      * The model is loaded; everything after this is inference. Without this
@@ -225,22 +270,46 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
      * parameter and every kwarg here is spread into the generation config by
      * `_call_whisper`, so this rides a public API rather than a private hook.
      *
-     * `put` is required by the interface and deliberately does nothing: it
-     * fires per token, and posting at that rate would flood the main thread
-     * with messages to render a number that changes too fast to read.
+     * `put` fires per decoded token. Posting every one would flood the main
+     * thread, so it posts a throttled `alive` heartbeat instead: liveness for
+     * the caller's silence budget, never a number to render.
      */
     const total = countChunks(event.data.audio.length)
     let done = 0
+    let tokens = 0
+    let finished = false
 
     class ChunkCounter extends BaseStreamer {
-      /** Required by the interface, and deliberately empty. See above. */
-      override put() {}
+      /*
+       * Must never decode or log what it is given. `WhisperTextStreamer`
+       * without a `callback_function` prints decoded text via `console.log`,
+       * and logging transcript bodies is banned (AGENTS.md), so any streamer
+       * swap here has to keep this a `BaseStreamer` that touches nothing but
+       * a counter. The worker test asserts the console stays silent.
+       */
+      override put() {
+        tokens += 1
+        if (tokens % HEARTBEAT_TOKENS === 0) post({ type: 'alive' })
+      }
       override end() {
         done += 1
         // Clamped because the count is a prediction of the pipeline's own
         // windowing. If it is ever wrong, a progress bar that stops at 100 is a
         // much smaller lie than one that reports 14 of 13.
         post({ type: 'transcribing', done: Math.min(done, total), total })
+        /*
+         * After the last chunk the merge and decode tail blocks this thread,
+         * so no further message is possible until the result. `finishing`
+         * hands the caller that fact, so it can stop the percentage claim and
+         * stand down the silence budget. `generate()` calls `end()` exactly
+         * once per chunk in the pinned library and `countChunks` is pinned to
+         * the same loop by protocol.test.ts, so this fires on the true last
+         * chunk; the guard is insurance against a future windowing change.
+         */
+        if (done >= total && !finished) {
+          finished = true
+          post({ type: 'finishing' })
+        }
       }
     }
 
@@ -336,5 +405,7 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
       type: 'error',
       message: error instanceof Error ? error.message : 'Transcription failed',
     })
+  } finally {
+    running = false
   }
 }

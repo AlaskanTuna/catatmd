@@ -51,8 +51,9 @@ function belowHardwareFloor() {
 async function toMono16k(blob: Blob): Promise<Float32Array> {
   const bytes = await blob.arrayBuffer()
   const decoder = new AudioContext()
-  const decoded = await decoder.decodeAudioData(bytes)
-  await decoder.close()
+  // Closed in a finally: browsers cap live AudioContexts, so one leaked by a
+  // throwing decode would cost a later recording its decoder.
+  const decoded = await decoder.decodeAudioData(bytes).finally(() => void decoder.close())
 
   const frames = Math.ceil(decoded.duration * TARGET_SAMPLE_RATE)
   const offline = new OfflineAudioContext(1, frames, TARGET_SAMPLE_RATE)
@@ -64,7 +65,32 @@ async function toMono16k(blob: Blob): Promise<Float32Array> {
   return rendered.getChannelData(0)
 }
 
-type Phase = 'idle' | 'recording' | 'loading-model' | 'transcribing'
+/**
+ * The silence budget: how long the record path may go without a worker
+ * message before the run is declared wedged and terminated (issue #139).
+ *
+ * A budget on silence rather than on the whole job, because a
+ * consultation-length recording legitimately transcribes for many minutes
+ * (docs/trd.md section 20.1 measures a real-time factor of 1.5 to 3.0) and a
+ * total deadline would abort exactly the recordings most expensive to lose.
+ * The floor is set by ONNX session creation, which blocks the worker thread
+ * on a roughly 240 MB decoder and is legitimately silent throughout.
+ */
+export const STALL_TIMEOUT_MS = 180_000
+
+type Phase = 'idle' | 'recording' | 'loading-model' | 'transcribing' | 'finishing'
+
+/**
+ * What the doctor is told when the budget expires or the worker dies. Both
+ * point back at typing or pasting: on-device failure degrades to the paste
+ * path, never to a hosted fallback (docs/trd.md section 20).
+ */
+const STALL_ERROR = `Transcription was stopped after ${Math.round(
+  STALL_TIMEOUT_MS / 60_000,
+)} minutes with no sign of progress. The speech model may be unreachable from this network. Try again, or type or paste the transcript instead.`
+
+const WORKER_DIED_ERROR =
+  'Speech recognition stopped unexpectedly. Try again, or type or paste the transcript instead.'
 
 /**
  * Roughly how much longer, from how long the finished chunks actually took.
@@ -99,9 +125,21 @@ export function AudioCapture({
   const [overridden, setOverridden] = useState(false)
   const [seconds, setSeconds] = useState(0)
   const [chunkProgress, setChunkProgress] = useState<{ done: number; total: number } | null>(null)
+  /** The audio behind the current or failed run, so Try Again can rerun it. */
+  const [retryBlob, setRetryBlob] = useState<Blob | null>(null)
 
   /** When the current transcription started, for the remaining-time estimate. */
   const startedAt = useRef<number | null>(null)
+
+  /** The armed silence-budget timer, if any. */
+  const stall = useRef<number | null>(null)
+  /**
+   * Which run is current. Bumped by every abort and by unmount, and
+   * snapshotted by everything asynchronous, so a cancelled run's late decode
+   * or queued worker message can never resurrect state or build an orphan
+   * worker.
+   */
+  const attempt = useRef(0)
 
   const worker = useRef<Worker | null>(null)
   const recorder = useRef<MediaRecorder | null>(null)
@@ -121,45 +159,129 @@ export function AudioCapture({
 
   const thin = belowHardwareFloor() && !overridden
 
+  const clearStall = useCallback(() => {
+    if (stall.current !== null) {
+      window.clearTimeout(stall.current)
+      stall.current = null
+    }
+  }, [])
+
+  /**
+   * The only way out of a run other than the worker answering. Terminate, not
+   * a cancel message: a worker wedged inside a fetch that never settles will
+   * not read one. A null message is the doctor cancelling; a string is a
+   * failure they need to hear about.
+   */
+  const abort = useCallback(
+    (message: string | null) => {
+      attempt.current += 1
+      clearStall()
+      worker.current?.terminate()
+      worker.current = null
+      setPhase('idle')
+      setProgress(null)
+      setChunkProgress(null)
+      startedAt.current = null
+      setError(message)
+    },
+    [clearStall],
+  )
+
+  /** Rearms the silence budget. Every worker message buys another window. */
+  const watchForStall = useCallback(() => {
+    clearStall()
+    stall.current = window.setTimeout(() => abort(STALL_ERROR), STALL_TIMEOUT_MS)
+  }, [abort, clearStall])
+
   const ensureWorker = useCallback(() => {
     if (worker.current) return worker.current
+    const id = attempt.current
     const instance = new Worker(new URL('./transcribe.worker.js', import.meta.url), {
       type: 'module',
     })
     instance.onmessage = (event: MessageEvent<WorkerResponse>) => {
+      // A terminated worker's already-queued message must not resurrect
+      // state: a result racing a cancel loses to the cancel.
+      if (attempt.current !== id) return
       const message = event.data
-      if (message.type === 'progress') {
-        setProgress(Math.round((message.loaded / message.total) * 100))
-        setPhase('loading-model')
+      switch (message.type) {
+        case 'progress':
+          watchForStall()
+          setProgress(message.total > 0 ? Math.round((message.loaded / message.total) * 100) : null)
+          setPhase('loading-model')
+          break
+        case 'ready':
+          watchForStall()
+          setProgress(null)
+          setPhase('transcribing')
+          startedAt.current = Date.now()
+          break
+        case 'transcribing':
+          watchForStall()
+          setChunkProgress({ done: message.done, total: message.total })
+          break
+        case 'alive':
+          watchForStall()
+          break
+        case 'finishing':
+          // The merge tail blocks the worker thread, so nothing can rearm the
+          // budget until the result. Cleared rather than capped: any safe cap
+          // would sit minutes past what Cancel already offers, and a wrong
+          // one destroys a finished transcription.
+          clearStall()
+          setPhase('finishing')
+          break
+        case 'result':
+          clearStall()
+          setPhase('idle')
+          setProgress(null)
+          setChunkProgress(null)
+          startedAt.current = null
+          setRetryBlob(null)
+          onTranscriptRef.current({ text: message.text, segments: message.segments })
+          break
+        case 'error':
+          // The worker survives an inference error with the model warm, so a
+          // retry is cheap. A stalled or dead worker is terminated in `abort`
+          // instead, and its retry rebuilds one.
+          clearStall()
+          setPhase('idle')
+          setProgress(null)
+          setChunkProgress(null)
+          startedAt.current = null
+          setError(message.message)
+          break
+        default: {
+          const unhandled: never = message
+          void unhandled
+        }
       }
-      if (message.type === 'ready') {
-        setProgress(null)
-        setPhase('transcribing')
-        startedAt.current = Date.now()
-      }
-      if (message.type === 'transcribing') {
-        setChunkProgress({ done: message.done, total: message.total })
-      }
-      if (message.type === 'result') {
-        setPhase('idle')
-        setProgress(null)
-        setChunkProgress(null)
-        startedAt.current = null
-        onTranscriptRef.current({ text: message.text, segments: message.segments })
-      }
-      if (message.type === 'error') {
-        setPhase('idle')
-        setProgress(null)
-        setChunkProgress(null)
-        startedAt.current = null
-        setError(message.message)
-      }
+    }
+    // The only channels a dying worker has: a failed module fetch, a CSP
+    // block or an out-of-memory kill fires no `message`, only these. Without
+    // them a death is indistinguishable from a slow load.
+    instance.onerror = () => {
+      if (attempt.current === id) abort(WORKER_DIED_ERROR)
+    }
+    instance.onmessageerror = () => {
+      if (attempt.current === id) abort(WORKER_DIED_ERROR)
     }
     worker.current = instance
     return instance
-  }, [])
+  }, [abort, clearStall, watchForStall])
 
-  useEffect(() => () => worker.current?.terminate(), [])
+  useEffect(
+    () => () => {
+      // Closing the record tab mid-run must strand nothing: no timer left
+      // armed, no worker left running, and a decode still in flight sees the
+      // bumped attempt and builds nothing.
+      attempt.current += 1
+      if (stall.current !== null) window.clearTimeout(stall.current)
+      worker.current?.terminate()
+      worker.current = null
+    },
+    [],
+  )
 
   // A visible elapsed counter, because a recording with no indication it is
   // running is how a consultation gets captured that nobody meant to capture.
@@ -173,21 +295,35 @@ export function AudioCapture({
     async (blob: Blob) => {
       setError(null)
       setPhase('loading-model')
+      setProgress(null)
       setChunkProgress(null)
+      startedAt.current = null
+      setRetryBlob(blob)
+      const id = attempt.current
+      // Armed before the decode: a malformed container can hang
+      // `decodeAudioData` before any worker exists, and that wait is bounded
+      // like every other one on this path.
+      watchForStall()
       try {
         const audio = await toMono16k(blob)
+        if (attempt.current !== id) return
         const request: WorkerRequest = { type: 'transcribe', audio }
         ensureWorker().postMessage(request, [audio.buffer as ArrayBuffer])
       } catch (cause) {
+        if (attempt.current !== id) return
+        clearStall()
         setPhase('idle')
         setError(cause instanceof Error ? cause.message : 'Could not read that audio.')
       }
     },
-    [ensureWorker],
+    [clearStall, ensureWorker, watchForStall],
   )
 
   const start = useCallback(async () => {
     setError(null)
+    // A stale blob must not survive into a fresh microphone run: a refused
+    // microphone would otherwise offer Try Again on the previous recording.
+    setRetryBlob(null)
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const media = new MediaRecorder(stream)
@@ -214,7 +350,7 @@ export function AudioCapture({
     recorder.current = null
   }, [])
 
-  const busy = phase === 'loading-model' || phase === 'transcribing'
+  const busy = phase === 'loading-model' || phase === 'transcribing' || phase === 'finishing'
 
   /*
    * One line that always says what is actually happening, and a bar only when
@@ -228,20 +364,44 @@ export function AudioCapture({
     chunkProgress === null ? null : Math.round((chunkProgress.done / chunkProgress.total) * 100)
 
   const remaining =
-    chunkProgress === null || startedAt.current === null
+    phase !== 'transcribing' || chunkProgress === null || startedAt.current === null
       ? null
       : estimateRemaining(chunkProgress.done, chunkProgress.total, Date.now() - startedAt.current)
 
+  /*
+   * Download-complete is not ready: the backend import and the ONNX session
+   * open both happen after the last byte, and a bar claiming a finished
+   * download through them is how a healthy load reads as a hang. So 100 gets
+   * its own honest sentence, as does the merge tail after the last chunk.
+   */
   const status =
     phase === 'loading-model'
       ? progress === null
         ? 'Preparing the speech model. The first run downloads it once and the browser caches it.'
-        : `Downloading the speech model, ${progress}%. This happens once.`
-      : percent === null
-        ? 'Transcribing on this device. Longer recordings take a few minutes.'
-        : `Transcribing on this device, ${percent}%${remaining === null ? '' : `, ${remaining}`}.`
+        : progress >= 100
+          ? 'Opening the speech model. On a first run this can take a couple of minutes.'
+          : `Downloading the speech model, ${progress}%. This happens once.`
+      : phase === 'finishing'
+        ? 'Finishing up. Joining the transcribed chunks into one transcript.'
+        : percent === null
+          ? 'Transcribing on this device. Longer recordings take a few minutes.'
+          : `Transcribing on this device, ${percent}%${remaining === null ? '' : `, ${remaining}`}.`
 
-  const bar = phase === 'loading-model' ? progress : percent
+  const bar = phase === 'loading-model' ? progress : phase === 'finishing' ? 100 : percent
+
+  /** The short phase headline the live region announces; sentences stay visual. */
+  const headline =
+    phase === 'loading-model'
+      ? progress === null
+        ? 'Preparing the speech model'
+        : progress >= 100
+          ? 'Opening the speech model'
+          : 'Downloading the speech model'
+      : phase === 'transcribing'
+        ? 'Transcribing on this device'
+        : phase === 'finishing'
+          ? 'Finishing up'
+          : ''
 
   return (
     <div className="flex flex-col gap-3">
@@ -304,15 +464,29 @@ export function AudioCapture({
         </div>
       )}
 
+      {/* Mounted before it has anything to say: a live region inserted into
+          the DOM already populated is not announced, so the container is
+          permanent and only its text changes. It carries the short phase
+          headline rather than the full sentence, so screen readers hear state
+          changes, not every percentage tick. */}
+      <span aria-live="polite" className="sr-only">
+        {headline}
+      </span>
+
       {busy && (
         <div className="flex flex-col gap-2">
-          <p className="flex items-center gap-2 text-sm text-ink-muted">
-            {/* `busy-spinner` exempts this from the blanket reduced-motion rule
-                in index.css. A spinner frozen mid-turn reads as hung, which is
-                the opposite of what it exists to say. */}
-            <Loader2 aria-hidden className="busy-spinner size-4 animate-spin" />
-            <span role="status">{status}</span>
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-2 text-sm text-ink-muted">
+              {/* `busy-spinner` exempts this from the blanket reduced-motion rule
+                  in index.css. A spinner frozen mid-turn reads as hung, which is
+                  the opposite of what it exists to say. */}
+              <Loader2 aria-hidden className="busy-spinner size-4 animate-spin" />
+              <span>{status}</span>
+            </p>
+            <Button size="sm" variant="ghost" onClick={() => abort(null)}>
+              Cancel
+            </Button>
+          </div>
 
           {/* A real bar, driven by measured chunk completions rather than by an
               animation, so its position means something. Width is a transition
@@ -337,9 +511,19 @@ export function AudioCapture({
       )}
 
       {error && (
-        <p role="alert" className="text-sm text-emergency">
-          {error}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p role="alert" className="text-sm text-emergency">
+            {error}
+          </p>
+          {/* Only when there is audio to rerun. A consultation recording is
+              unrecoverable, so a failed run keeps its blob rather than
+              pointing the doctor at recording the consultation again. */}
+          {retryBlob !== null && (
+            <Button size="sm" variant="ghost" onClick={() => void transcribe(retryBlob)}>
+              Try Again
+            </Button>
+          )}
+        </div>
       )}
     </div>
   )
