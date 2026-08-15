@@ -1496,7 +1496,27 @@ The v1 rules (open with the doctor, answer after a question, any question to the
 
 What this fixes, each pinned by `frontend/src/audio/draft-turns.test.ts`: the within-segment handoff above, the alternation flips, and the v1 known-wrong case, because "Is it bad that I am coughing up blood?" now scores as first-person symptom and stays the patient's.
 
-**Not re-measured on audio.** The revision is pinned by unit tests over scripted sentences; the 14/08/26 audio methodology has not been re-run, so no v2 prefill-accuracy percentage is claimed. The pattern tables are English-only, so heavily code-switched sentences fall through to the context rules.
+#### Measured, 15/08/26
+
+95 s scripted consultation, one reader voicing both roles, read live into the production recorder path (`onnx-community/whisper-small`, WebGPU, the shipped worker). A single voice is a valid test here precisely because the feature uses no voice information; it is not a test of acoustic diarisation.
+
+Whisper returned **15 segments** spanning **38 sentences**, having merged a speaker handoff into a segment at eleven of the twenty-one turn boundaries, a heavier merge rate than the 14/08/26 sample. v1 was replayed over the identical segments for a like-for-like comparison.
+
+| Metric, per sentence         | v1             | v2                 |
+| ---------------------------- | -------------- | ------------------ |
+| Sentences labelled correctly | 20 of 38 (53%) | **36 of 38 (95%)** |
+| Lines holding two speakers   | 10 of 15       | 2 of 28            |
+| Lines carrying a wrong label | 4 of 15        | 0 of 28            |
+
+v1 scoring 53% here, on different audio and a different metric from the 14/08/26 run that also produced 53%, is corroboration rather than coincidence.
+
+**The red-flag case, on real speech:** v1 labelled "Is it bad that I'm coughing out blood?" **Doctor**, which is the suppression shape `mislabel-suppression.test.ts` pins. v2 labelled it **Patient**.
+
+**Two pattern gaps this run exposed, both fixed and pinned by tests:** a first-person question about one's own care ("Do I need antibiotics?", "anything I should watch out for?") had no content signal, fell to the doctor as a last-resort question, and then cascaded one line through the answer-after-question rule; and the first-person symptom pattern fired on a bare negation, handing "You can see Dr. Tan if I'm not around" to the patient. Together they accounted for 6 of the 9 errors in the first pass, which scored 29 of 38.
+
+**The two remaining errors are structural, not tuning:** Whisper split "Any chest pain or / breathlessness?" across two segments mid-sentence, which no sentence-level labeller can repair, and "Like this." carries no signal in either direction.
+
+**Limits, stated as §20.1 does:** n=1, one voice, scripted rather than spontaneous, and read by a non-clinician. Real ASR errors were present and left in ("phlegm" became "flame", "doctor" became "daughter"), so this measures labelling over imperfect text, which is the honest condition. The pattern tables are English-only, so heavily code-switched sentences fall through to the context rules.
 
 #### The Apply Gate Is The Safety Control
 

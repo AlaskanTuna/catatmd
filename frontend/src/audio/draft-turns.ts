@@ -98,7 +98,10 @@ const PATIENT_PATTERNS: readonly RegExp[] = [
   // title ("Dr. Tan"), and not "the/a doctor", which is a reference.
   /^(?:doctor|doc)\b[,.!?\s]/i,
   /(?<!\b(?:the|a))[\s,](?:doctor|doc)[.!?]*$/i,
-  /\b(?:i(?:'ve| have)(?: been| got| had)?|i (?:feel|felt|keep|kept|noticed|started|took|ate|drank|slept|vomited|coughed)|i (?:can't|cannot|couldn't|didn't|don't|haven't)|i(?:'m| am| was)(?: still)? (?:cough|vomit|feel|having|getting|hurt|dizzy|tired|breathless|worried|not)\w*)\b/i,
+  /\b(?:i(?:'ve| have)(?: been| got| had)?|i (?:feel|felt|keep|kept|noticed|started|took|ate|drank|slept|vomited|coughed)|i (?:can't|cannot|couldn't|didn't|don't|haven't)|i(?:'m| am| was)(?: still)?(?: not)? (?:cough|vomit|feel|having|getting|hurt|dizzy|tired|breathless|worried)\w*)\b/i,
+  // Asking about one's own care. "can I" is deliberately absent: a doctor
+  // says "can I take a look", so it is not a patient signal.
+  /\b(?:do|does|should|will|would|am|must)\s+i\b|\bi (?:should|need to|have to)\b/i,
   /\bmy (?:throat|chest|head|nose|ears?|eyes?|stomach|tummy|neck|back|body|voice|cough|fever|phlegm|wife|husband|son|daughter|mother|father|kids?|children)\b/i,
   /\bit (?:hurts|hurt|started|comes and goes)\b/i,
 ]

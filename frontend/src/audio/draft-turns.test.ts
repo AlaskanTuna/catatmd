@@ -118,6 +118,39 @@ describe('segmentsToDraft', () => {
     expect(draft[1]?.speaker).toBe('patient')
   })
 
+  it('keeps a patient asking about their own care with the patient, and does not cascade', () => {
+    // Measured 15/08/26: without a first-person signal these fell to the
+    // doctor as content-free questions, and the answer-after-question rule
+    // then flipped the doctor's actual reply to the patient.
+    const segments = [
+      seg(0, 4, ' Your lungs sound clear.'),
+      seg(4, 7, ' Do I need antibiotics?'),
+      seg(7, 12, ' Not for this one. It looks viral.'),
+    ]
+    const draft = segmentsToDraft(segments, fullText(segments))
+    expect(draft.map((l) => l.speaker)).toEqual(['doctor', 'patient', 'doctor'])
+  })
+
+  it('reads "anything I should watch out for" as the patient', () => {
+    const segments = [
+      seg(0, 4, ' Take the medicine after food.'),
+      seg(4, 8, ' Okay doctor, anything I should watch out for?'),
+    ]
+    const draft = segmentsToDraft(segments, fullText(segments))
+    expect(draft.map((l) => l.speaker)).toEqual(['doctor', 'patient'])
+  })
+
+  it('does not read "if I am not around" as a patient symptom statement', () => {
+    // The first-person symptom pattern must not fire on a bare negation:
+    // measured 15/08/26 handing a doctor's closing advice to the patient.
+    const segments = [
+      seg(0, 4, ' Come back and see me.'),
+      seg(4, 9, " You can see Dr. Tan if I'm not around."),
+    ]
+    const draft = segmentsToDraft(segments, fullText(segments))
+    expect(draft.map((l) => l.speaker)).toEqual(['doctor', 'doctor'])
+  })
+
   it('does not split on decimals or titles', () => {
     const segments = [
       seg(0, 2, ' Any fever?'),
