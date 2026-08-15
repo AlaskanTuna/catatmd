@@ -274,6 +274,52 @@ export const NAME_STOPWORDS = new Set(
     'have',
     'has',
     'had',
+    // Verbs and prepositions that introduce a name in dictated clinical prose.
+    // Load-bearing since #149: `trimNameSpan` no longer skips to the gazetteer
+    // anchor past a word it does not recognise, because doing so leaked the
+    // leading element of any name outside the gazetteer. The cost of that fix
+    // is that an unrecognised word before a name now stays inside the span, and
+    // stopwords are the sanctioned lever for taking it back out again.
+    //
+    // Every entry here is a word no Malaysian given name or surname takes.
+    // 'see' is deliberately absent although it fits the pattern, because See is
+    // an attested Chinese Malaysian surname and a false stopword truncates a
+    // real name, which is the failure mode that outranks this one.
+    'tell',
+    'call',
+    'ask',
+    'asked',
+    'meet',
+    'send',
+    'bring',
+    'let',
+    'give',
+    'refer',
+    'review',
+    'admit',
+    'advise',
+    'inform',
+    'saw',
+    'seen',
+    'seeing',
+    'attended',
+    'presented',
+    // English symptom vocabulary is deliberately NOT here, although it would
+    // help. `no-stray-clinical-constants.test.ts` refuses it, because several
+    // of those words are versioned red-flag terms and a clinical rule written
+    // down outside the versioned data is exactly what that guard exists to
+    // stop. The gap it leaves is a Title-Cased symptom in front of a name
+    // staying inside the span; that is pinned as known-bad and belongs to #183,
+    // whose fix removes the need for a vocabulary list here at all.
+    'is',
+    'was',
+    'are',
+    'were',
+    'for',
+    'with',
+    'about',
+    'from',
+    'name',
     // Malay everyday words. Load-bearing against the bare 'saya' introducer:
     // without these, "...untuk saya Doktor" mints a false PATIENT token, and a
     // false token corrupts the note on rehydration. Deliberately absent

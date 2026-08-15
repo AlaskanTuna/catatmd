@@ -111,12 +111,16 @@ describe('precision — clinical content must survive', () => {
 
   it('does not tokenise an arbitrary twelve-digit reference number', () => {
     // Pins the 0.3 base for a structurally invalid bare run: no birth date, no
-    // context, no token. The sentence avoids words like "invoice" and
-    // "clinic", whose substrings satisfy the 'ic' context cue: hasContext
-    // matches substrings, a pre-existing behaviour this test must not rely on
-    // either way.
+    // context, no token.
+    //
+    // The sentence used to have to avoid "invoice" and "clinic", because the
+    // 'ic' cue matched as a substring inside them. Since #159 it does not, and
+    // the pair of assertions below is the same sentence with each ending.
     const { text } = deidentify('Reference 123456789012 is printed on the receipt.')
     expect(text).toContain('123456789012')
+
+    const near = deidentify('Reference 123456789012 is printed on the invoice.')
+    expect(near.text).toContain('123456789012')
   })
 
   it('does not tokenise a Malay-month follow-up date that carries no birth cue', () => {
@@ -325,5 +329,394 @@ describe('fixture integration — PRD §16 target: zero identifiers pass through
     const { text } = deidentifyTranscript(fixture.transcript)
     expect(text).toContain('sore throat')
     expect(text).toContain('38.9')
+  })
+})
+
+/**
+ * The four detector defects closed together in one pass (#149, #159, #167, #174).
+ *
+ * One pass rather than four, because they live in one file and two of them are
+ * in the same function's span logic. Fixing them separately would have meant
+ * four rounds of regression risk in the module the whole PHI boundary rests on,
+ * each blind to the others' edits to shared cue and span code.
+ */
+describe('name spans must not drop what the gazetteer does not recognise (#149)', () => {
+  it('tokenises a patronymic name whole when the given name is outside the gazetteer', () => {
+    // The leak. `trimNameSpan` anchored on the first token it recognised, so the
+    // anchor landed on `Ismail` and `Zarul` went to the model in cleartext.
+    // `assertNoIdentifiers` could not catch it: the egress guard re-runs these
+    // same detectors and shared the blind spot.
+    //
+    // NOTE ON THE SENTENCE. It carries no introducer phrase, and that is the
+    // whole point. The first draft of this test used "Nama saya Zarul bin
+    // Ismail", which passes with the bug still in place: the introducer path
+    // matches `Zarul` on its own, so the name never reaches the model even
+    // though the patronymic span dropped it. A test for a span bug has to use a
+    // sentence where the span is the only thing that can catch the name.
+    const { text } = deidentify('Zarul bin Ismail datang hari ini.')
+    expect(text).not.toContain('Zarul')
+    expect(text).toMatch(/\[PATIENT_\d+\]/)
+  })
+
+  it('tokenises the same name whole mid-sentence, with no cue in front of it', () => {
+    const { text } = deidentify('The patient Zarul bin Ismail has a cough.')
+    expect(text).not.toContain('Zarul')
+  })
+
+  it('gives one token to a name an introducer also matches', () => {
+    // The masking path from the note above, asserted rather than relied on.
+    // Before the fix this sentence produced `[PATIENT_2] bin [PATIENT_1]`: the
+    // introducer caught the given name, the patronymic span caught the family
+    // name, and one person arrived at the model as two people.
+    const { text } = deidentify('Nama saya Zarul bin Ismail.')
+    expect(text).not.toContain('Zarul')
+    const tokens = [...text.matchAll(/\[PATIENT_\d+\]/g)].map((m) => m[0])
+    expect(new Set(tokens).size).toBe(1)
+  })
+
+  it('still drops an honorific rather than tokenising it', () => {
+    // The behaviour the anchor existed to produce, which must survive the fix.
+    const { text } = deidentify('Encik Ahmad bin Ismail datang hari ini.')
+    expect(text).toContain('Encik')
+    expect(text).not.toContain('Ahmad')
+  })
+
+  it('keeps one token across honorific, bare and verb-led mentions of one person', () => {
+    // Token stability is what the anchor was really protecting. Keeping an
+    // unrecognised leading word inside the span costs it, so the words that
+    // introduce a name in dictated prose are stopwords instead (gazetteer.ts).
+    const { text } = deidentify(
+      'Encik Ahmad bin Ismail came in. Ahmad bin Ismail has a cough. Tell Ahmad bin Ismail to rest.',
+    )
+    const tokens = [...text.matchAll(/\[PATIENT_\d+\]/g)].map((m) => m[0])
+    expect(tokens.length).toBeGreaterThanOrEqual(3)
+    expect(new Set(tokens).size).toBe(1)
+  })
+})
+
+describe('context cues match words, not substrings (#159)', () => {
+  it.each(['invoice', 'notice', 'receipt'])(
+    'does not boost an invalid twelve-digit number near %s',
+    (word) => {
+      // The actual bug: `ic` fired *inside* these words. None of them is a
+      // clinical term, so none is a cue, and a reference number beside one is
+      // left alone.
+      expect(labelsIn(`Reference 123456789012 appears on the ${word}.`)).not.toContain('NRIC')
+    },
+  )
+
+  it.each(['clinic', 'medical record', 'physician'])(
+    'does boost an invalid twelve-digit number near %s, deliberately',
+    (word) => {
+      // These read the other way, and the third audit is why this test now
+      // asserts the opposite of what it first did.
+      //
+      // Substring matching masked these by accident, and fixing the substring
+      // bug removed the accident: "At the clinic, 990231145677 was recorded"
+      // sent all twelve digits to the provider where main had masked them. A
+      // structurally invalid NRIC scores 0.3 and needs a cue, and it is not
+      // only an invoice number: it is the ordinary shape of a real NRIC that
+      // transcription got wrong, which hosted ASR makes more likely.
+      //
+      // So these are cues on purpose now rather than by accident. In a clinical
+      // transcript a long digit run beside them is more likely an identifier
+      // than a reference, and a recall loss on the boundary outranks a
+      // precision gain.
+      expect(labelsIn(`At the ${word}, 990231145677 was recorded.`)).toContain('NRIC')
+    },
+  )
+
+  it('still boosts on a real cue standing as its own word', () => {
+    // The precision fix must not cost the recall it was protecting.
+    expect(labelsIn('His ic is 850523-14-5677.')).toContain('NRIC')
+    expect(labelsIn('Nombor kad pengenalan saya 900412086543.')).toContain('NRIC')
+  })
+
+  it('keeps every ADDRESS cue that main caught as a substring', () => {
+    // ADDRESS scores 0.45 without a cue, under the threshold, so a cue that
+    // stops matching is a whole street address leaving the boundary. The third
+    // audit found seven of these; the inflections and the Malay clitic forms
+    // are enumerated rather than inferred.
+    for (const sentence of [
+      'Dia beralamat di Jalan Ampang 5.',
+      'Tinggalnya di Jalan Ampang 5.',
+      'Duduknya di Jalan Ampang 5.',
+      'Their addresses include Jalan Ampang 5.',
+      'She addressed it to Jalan Ampang 5.',
+      'Addressing mail to Jalan Ampang 5.',
+      'Postcodes for Jalan Ampang 5.',
+    ]) {
+      expect(labelsIn(sentence), sentence).toContain('ADDRESS')
+    }
+  })
+})
+
+describe('MRN detection tolerates conversational phrasing (#174)', () => {
+  it('still misses a record number introduced with filler words between cue and value', () => {
+    // KNOWN BAD, pinned deliberately. #174 stays open.
+    //
+    // The filler run this asks for was written on this branch and taken back
+    // out after two audit rounds. It matched the phrasing below, which is the
+    // ordinary dictated form and worth having. It also masked clinical values
+    // inside a single sentence: "MRN unknown so I gave 500 mg" tokenised the
+    // dose, and narrowing the run twice never closed that, because a bounded
+    // run of ordinary words is exactly what sits between a cue and an unrelated
+    // number in ordinary prose.
+    //
+    // Masking a dose is a regression against a detector that was previously
+    // only incomplete, and dose is what the model red-flag pass reasons over.
+    // Recall here is not worth a false negative there.
+    expect(labelsIn('Registration number for our clinic file is KLC-004821.')).not.toContain('MRN')
+  })
+
+  it('does not mask a dose behind a record cue in the same sentence', () => {
+    // The reason the filler run is not here. Pinned so a future #174 attempt
+    // has to solve this rather than rediscover it.
+    for (const sentence of [
+      'MRN unknown so I gave 500 mg.',
+      'Patient number not yet issued give her 500 mg.',
+      'I checked the MRN then wrote 1000 mg.',
+    ]) {
+      expect(labelsIn(sentence), sentence).not.toContain('MRN')
+    }
+  })
+
+  it('detects a record number carrying more than one hyphen group, whole', () => {
+    // Asserted on the output text rather than the label, because the label
+    // alone passes with the single-group pattern too: that one matched
+    // `RC-2026` and left `-00842` sitting in the prose, which is a partly
+    // tokenised identifier and worse than an untouched one.
+    const { text } = deidentify('Patient number RC-2026-00842 on file.')
+    expect(text).not.toContain('00842')
+    expect(text).toMatch(/\[MRN_\d+\]/)
+  })
+
+  it('still detects the adjacent form', () => {
+    expect(labelsIn('MRN KLC-004821 please.')).toContain('MRN')
+  })
+
+  // The precision half. `.claude/rules/security.md`: lowering an effective
+  // threshold needs a precision test, not just a recall one.
+  it('does not let a cue reach a number in the next clause', () => {
+    expect(labelsIn('Registration number is not on file, the dose is 500 mg daily.')).not.toContain(
+      'MRN',
+    )
+  })
+
+  it('does not let a cue reach a number in the next sentence', () => {
+    expect(labelsIn('MRN unknown. Paracetamol 1000 mg was given.')).not.toContain('MRN')
+  })
+
+  it('does not reach past the bounded filler run', () => {
+    expect(
+      labelsIn('Registration number for our clinic paper file is really KLC-004821.'),
+    ).not.toContain('MRN')
+  })
+
+  it('leaves an ordinary dose alone', () => {
+    expect(labelsIn('Paracetamol 500 mg three times a day.')).not.toContain('MRN')
+  })
+})
+
+describe('a possessive is the same person (#167)', () => {
+  it('gives one token to a name and its possessive form', () => {
+    const { text } = deidentify("Siti Nurhaliza came in. Siti Nurhaliza's fever has settled.")
+    const tokens = [...text.matchAll(/\[PATIENT_\d+\]/g)].map((m) => m[0])
+    expect(tokens.length).toBeGreaterThanOrEqual(2)
+    expect(new Set(tokens).size).toBe(1)
+  })
+
+  it('leaves the possessive marker in the prose rather than swallowing it', () => {
+    // The token replaces the name only. Eating the `'s` would leave the note
+    // reading "[PATIENT_1] fever has settled" after rehydration.
+    const { text } = deidentify("Siti Nurhaliza's fever has settled.")
+    expect(text).toMatch(/\[PATIENT_\d+\]'s fever/)
+  })
+
+  it('does not strip an apostrophe from inside a name', () => {
+    // `O'Brien` and `Nur'ain` carry an apostrophe that is part of the name, not
+    // a possessive. Only a trailing one is a possessive.
+    const { text } = deidentify("Nama saya Nur'ain binti Rahman.")
+    expect(text).not.toContain("Nur'ain")
+    expect(text).toMatch(/\[PATIENT_\d+\]/)
+  })
+})
+
+/**
+ * Regressions this PR introduced and then fixed, pinned so they cannot return.
+ *
+ * A phi-boundary-auditor pass on the first draft found three of these, every one
+ * a recall loss on the boundary caused by a change whose stated purpose was
+ * precision. They are grouped together because they share a lesson rather than
+ * a mechanism: **in this module, tightening a match is never precision-only.**
+ * Several base scores sit below `ACCEPT_THRESHOLD` and depend on a context cue
+ * to clear it, so a cue that stops matching is not a lower score, it is an
+ * identifier leaving the trust boundary.
+ */
+describe('regressions introduced by this PR, now pinned', () => {
+  it('keeps ADDRESS cues working in their inflected forms', () => {
+    // The worst of them. Word-boundary matching killed `lives`, `lived`,
+    // `living`, `stays` and `staying`, and ADDRESS scores 0.45 without a cue,
+    // under the 0.5 threshold. Every address in a sentence phrased this way,
+    // which is the ordinary phrasing, went to the provider untouched.
+    for (const phrasing of ['lives at', 'lived at', 'stays at', 'staying at']) {
+      const { text } = deidentify(`She ${phrasing} Jalan Ampang 5, 50450 Kuala Lumpur.`)
+      expect(text, phrasing).toContain('[ADDRESS_1]')
+    }
+  })
+
+  it('keeps the Malay possessive clitic working as an NRIC cue', () => {
+    // `pesakit` stopped covering `pesakitnya`, and the fallback was worse than
+    // no match: PHONE claimed ten of the twelve digits and left two in the
+    // clear, which is a partly tokenised identifier.
+    const { text } = deidentify('Pesakitnya ada nombor 991332145501 di sini.')
+    expect(text).not.toContain('99')
+    expect(text).toContain('[NRIC_1]')
+  })
+
+  it('still leaks a leading element when the name is longer than the patronymic pattern admits', () => {
+    // KNOWN BAD, pinned deliberately. Issue #183.
+    //
+    // This is #149's failure mode surviving #149's fix, and it is pinned rather
+    // than fixed because the obvious fix makes things worse. Widening
+    // `PATRONYMIC_PATTERN` from two leading elements to four was tried on this
+    // branch and a boundary audit showed it relocates the leak to six elements
+    // rather than closing it, while making the span greedy enough to swallow
+    // clinical content: "Acute Cough Sore Throat Fever Ahmad bin Ismail" ate the
+    // symptom list, and one person in two sentences became two tokens.
+    //
+    // Deleting a symptom list from what the model reads is a false-negative risk
+    // on the clinical pass, which is a worse trade than the leak. The real cause
+    // is `resolveOverlaps` discarding the uncovered prefix of a partly
+    // overlapping match, filed as #183.
+    const { text } = deidentify('Nur Aina Sofea Batrisyia binti Zulkifli came in.')
+    expect(text).toContain('Nur ')
+    expect(text).toMatch(/\[PATIENT_\d+\] came in\./)
+  })
+
+  it('still swallows Title-Cased clinical words directly in front of a name', () => {
+    // KNOWN BAD, pinned deliberately. Issue #183.
+    //
+    // The cost of closing #149. The gazetteer anchor used to skip past words it
+    // did not recognise to reach a known given name, which both leaked
+    // unrecognised name elements (#149) and protected against this. Removing it
+    // fixed the leak and gave up the protection.
+    //
+    // A vocabulary list in `gazetteer.ts` would close it, and must not be used:
+    // `no-stray-clinical-constants.test.ts` refuses clinical terms outside the
+    // versioned data, and it is right to. #183's fix removes the need for one.
+    //
+    // Bounded in practice: `CAPITALISED_RUN` only reaches Title-Cased words, so
+    // ordinary prose ("acute cough, sore throat") is unaffected. It takes a
+    // header-style line to trigger.
+    //
+    // **It costs token stability too, which is worse than swallowing a word.**
+    // The swallowed word is part of the matched span, so the same person
+    // introduced two different ways mints two tokens and the model is told
+    // there are two patients. That is the exact harm `trimNameSpan` exists to
+    // prevent, per its own docstring, and it is the counterweight to the #149
+    // recall gain rather than a footnote to it. Pinned below so the cost is
+    // measured rather than described.
+    const { text } = deidentify('Acute Cough Sore Throat Fever Ahmad bin Ismail attended.')
+    expect(text).not.toContain('Ahmad')
+    expect(text).toContain('Acute Cough Sore')
+  })
+
+  it('splits one person into two tokens when a Title-Cased word precedes one mention', () => {
+    // KNOWN BAD, pinned deliberately. Issue #183, and the honest price of #149.
+    // `main` gives one token here; this branch gives two.
+    const { text } = deidentify('Wheeze Ahmad bin Ismail has. Ahmad bin Ismail came back.')
+    const tokens = [...text.matchAll(/\[PATIENT_\d+\]/g)].map((m) => m[0])
+    expect(tokens).toHaveLength(2)
+    expect(new Set(tokens).size).toBe(2)
+  })
+
+  it('keeps one token for one person across two sentences', () => {
+    const { text } = deidentify('Saw Ahmad bin Ismail today. Ahmad bin Ismail has a cough.')
+    const tokens = [...text.matchAll(/\[PATIENT_\d+\]/g)].map((m) => m[0])
+    expect(tokens.length).toBe(2)
+    expect(new Set(tokens).size).toBe(1)
+  })
+
+  it('does not let a sentence-final MRN cue reach into the next sentence', () => {
+    // Dose, age and duration are what the model red-flag pass reasons over.
+    // Masking them degrades that pass in the false-negative direction, which
+    // `healthcare-cdss-patterns` holds to zero tolerance.
+    for (const sentence of [
+      'Check her MRN. Give 500 mg of paracetamol.',
+      'Patient ID. She takes metformin 500 mg daily.',
+    ]) {
+      expect(labelsIn(sentence), sentence).not.toContain('MRN')
+    }
+  })
+
+  it('still allows a full stop between cue and value when they are adjacent', () => {
+    // The other side of the same rule. Banning the stop outright broke this,
+    // where it abbreviates rather than ends a sentence.
+    expect(labelsIn('Registration no. KLC-004821 for the file.')).toContain('MRN')
+  })
+
+  it('does not tokenise an age behind a record cue', () => {
+    // A record number is not one or two digits. Relaxing the first digit group
+    // to two masked the age here.
+    expect(labelsIn('MRN pending she is 65 years old.')).not.toContain('MRN')
+  })
+})
+
+/**
+ * Name elements that are also honorific words.
+ *
+ * Pre-existing, and surfaced by the audit rather than introduced here. It
+ * matters now because `trimNameSpan` no longer consults the gazetteer at all,
+ * so `NAME_STOPWORDS` and `HONORIFIC_WORDS` are the only things deciding where
+ * a name starts.
+ */
+describe('an honorific that is also a name', () => {
+  it('does not drop Sri from the front of a name', () => {
+    // `Tan Sri` split on whitespace put `tan` and `sri` into the drop set
+    // individually. Multi-word honorifics are now dropped only as whole
+    // phrases.
+    const { text } = deidentify('Sri Devi a/p Ramasamy came in today.')
+    expect(text).not.toContain('Sri')
+  })
+
+  it('does not drop Tan, the commonest Chinese Malaysian surname', () => {
+    const { text } = deidentify('Tan Wei Ming binti Ahmad came in.')
+    expect(text).not.toContain('Tan')
+  })
+
+  it('still drops Tan Sri when it really is the honorific', () => {
+    // The behaviour the phrase drop exists to preserve.
+    const { text } = deidentify('Tan Sri Ahmad bin Ismail came in.')
+    expect(text).toContain('Tan Sri')
+    expect(text).not.toContain('Ahmad')
+  })
+
+  it('still drops every single-word honorific', () => {
+    for (const title of ['Encik', 'Dr', 'Puan', 'Datuk']) {
+      const { text } = deidentify(`${title} Ahmad bin Ismail came in.`)
+      expect(text, title).toContain(title)
+      expect(text, title).not.toContain('Ahmad')
+    }
+  })
+})
+
+describe('addresses carrying a postcode tokenise whole (#181 covers the rest)', () => {
+  it('reaches the postcode instead of stopping two characters in', () => {
+    // A lazy run followed by an optional group never expands, so this matched
+    // `Jalan Bu` and left street, number, postcode and city in the clear.
+    const { text } = deidentify('Her address is Jalan Bukit Bintang 5, 50450 Kuala Lumpur.')
+    expect(text).not.toContain('Bintang')
+    expect(text).not.toContain('50450')
+    expect(text).toBe('Her address is [ADDRESS_1].')
+  })
+
+  it('is honest about the no-postcode case still truncating', () => {
+    // Pinned as known-bad rather than quietly left. An address with no postcode
+    // has no comparable anchor, and a greedy run there would swallow the
+    // clinical prose after the street name. Issue #181.
+    const { text } = deidentify('She lives at Jalan Ampang 5, Kuala Lumpur.')
+    expect(text).toContain('[ADDRESS_1]')
+    expect(text).toContain('Kuala Lumpur')
   })
 })
