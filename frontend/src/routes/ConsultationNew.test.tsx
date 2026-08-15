@@ -37,20 +37,40 @@ function MockAudioCapture({
   }) => void
 }) {
   return (
-    <button
-      type="button"
-      onClick={() =>
-        onTranscript({
-          text: ' Any fever? Yesterday quite hot.',
-          segments: [
-            { text: ' Any fever?', start: 0, end: 2 },
-            { text: ' Yesterday quite hot.', start: 2, end: 5 },
-          ],
-        })
-      }
-    >
-      mock transcribe
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          onTranscript({
+            text: ' Any fever? Yesterday quite hot.',
+            segments: [
+              { text: ' Any fever?', start: 0, end: 2 },
+              { text: ' Yesterday quite hot.', start: 2, end: 5 },
+            ],
+          })
+        }
+      >
+        mock transcribe
+      </button>
+      {/* An empty middle segment is skipped by segmentsToDraft, leaving a
+          draft whose seg-N ids run past its line count. That is the shape
+          under which appended lines re-idd as seg-<length + i> collide. */}
+      <button
+        type="button"
+        onClick={() =>
+          onTranscript({
+            text: ' Any fever? Yesterday quite hot.',
+            segments: [
+              { text: ' Any fever?', start: 0, end: 2 },
+              { text: '   ', start: 2, end: 3 },
+              { text: ' Yesterday quite hot.', start: 3, end: 5 },
+            ],
+          })
+        }
+      >
+        mock transcribe sparse
+      </button>
+    </>
   )
 }
 
@@ -108,6 +128,32 @@ describe('ConsultationNew record flow', () => {
     expect(textarea.value).toBe(
       'Doctor [0:00]: Any fever?\nPatient [0:02]: Yesterday quite hot.\n' +
         'Doctor: Any fever?\nPatient: Yesterday quite hot.',
+    )
+  })
+
+  it('flips exactly one line when a recording is appended after skipped segments', () => {
+    // With the old seg-<length + i> re-idding, the sparse draft's seg-2 and
+    // the appended recording's first line share an id, and one tap flips both.
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <ConsultationNew />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(screen.getByRole('tab', { name: /record/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe sparse' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
+
+    const doctorToggles = screen.getAllByRole('button', { name: 'Doctor, switch to Patient' })
+    expect(doctorToggles).toHaveLength(2)
+    fireEvent.click(doctorToggles[1] as HTMLElement)
+    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(textarea.value).toBe(
+      'Doctor [0:00]: Any fever?\nPatient [0:03]: Yesterday quite hot.\n' +
+        'Patient: Any fever?\nPatient: Yesterday quite hot.',
     )
   })
 

@@ -46,8 +46,8 @@ export function SpeakerAssign({
         </Button>
       </div>
       <p className="mt-1 text-xs text-ink-muted">
-        Labels are guessed from pauses and question marks, not from the voices, and are often wrong.
-        Tap a label to flip it. A line holding both speakers is best fixed in the transcript box
+        Labels are guessed from what each sentence says, not from the voices, and can be wrong. Tap
+        a label to flip it. A sentence holding both speakers is best fixed in the transcript box
         after applying. Plain text joins the turn above it until you label it.
       </p>
 
