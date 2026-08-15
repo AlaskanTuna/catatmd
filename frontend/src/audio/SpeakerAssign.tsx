@@ -63,7 +63,7 @@ export function SpeakerAssign({
               className={cn(
                 'inline-flex h-8 w-18 shrink-0 items-center justify-center rounded-control border text-xs font-semibold transition-colors',
                 line.speaker === 'doctor'
-                  ? 'border-accent/40 bg-accent/8 text-accent hover:bg-accent/16'
+                  ? 'border-accent/40 bg-accent-soft text-accent hover:bg-accent-soft-hover'
                   : 'border-line bg-sunken text-ink-muted hover:bg-line/60',
               )}
             >

@@ -23,7 +23,7 @@ const LABELS: Record<AssertionState, string> = {
 }
 
 const STYLES: Record<AssertionState, string> = {
-  PRESENT: 'bg-accent/12 text-accent border-accent/25',
+  PRESENT: 'bg-accent-soft text-accent border-accent/25',
   DENIED: 'bg-sunken text-ink border-line',
   CLINICIAN_OBSERVED: 'bg-advisory/12 text-advisory border-advisory/25',
   // Deliberately legible rather than faint. A doctor scanning for what was

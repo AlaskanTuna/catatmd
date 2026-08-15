@@ -41,6 +41,46 @@
   --color-accent: oklch(0.47 0.089 168);
   --color-accent-hover: oklch(0.405 0.082 168);
   --color-accent-ink: oklch(1 0 0);
+  /*
+   * The one accent tint, and it is opaque on purpose.
+   *
+   * Every selected, active and open state used to be `bg-accent/8`, `/12` or
+   * `/16`, which is a translucent fill rather than a colour. On a card that
+   * happens to look right, because the card underneath is opaque. On the
+   * sidebar, the dock, the chrome cluster, the approve bar and the step bar it
+   * does not: those are `.glass`, so the tint composited against whatever was
+   * scrolling behind them and read as a wash rather than a selection. The rule
+   * this breaks is already written down, in the sentence explaining why chrome
+   * is glass and content is not: a translucent surface has a contrast ratio
+   * that depends on what is behind it, so it cannot be verified once.
+   *
+   * A teal *glass* treatment is not the alternative. `backdrop-filter`
+   * establishes a backdrop root and a descendant may only sample inside it, so
+   * glass nested in glass is flat by construction. Every one of those hosts is
+   * itself glass, which leaves opaque as the only option that is actually a
+   * colour.
+   *
+   * Mixed rather than hardcoded so it tracks both themes from one line: the
+   * dark block redefines `--color-accent` and `--color-surface`, and custom
+   * properties resolve at use, so this follows without a second declaration.
+   * Measured at 12% over the surface: `#E3EDEA` light, `#1E2E28` dark, which is
+   * within 8/255 of what the old translucent version happened to render over
+   * glass, so this is the same colour made deterministic rather than a new one.
+   *
+   * One value replaces three. The `/16` step existed only because the sidebar
+   * sat on glass and needed the extra weight to survive it; opaque removes that
+   * reason, and three tints nobody can tell apart were never a system.
+   */
+  --color-accent-soft: color-mix(in oklab, var(--color-accent) 12%, var(--color-surface));
+  /* Paired with the above the way `--color-accent-hover` is paired with
+   * `--color-accent`, so a hover step on a tinted control stays a state rather
+   * than becoming a fourth tint. */
+  --color-accent-soft-hover: color-mix(in oklab, var(--color-accent) 18%, var(--color-surface));
+  /* The neutral counterpart, for hovering an *unselected* control in the
+   * chrome. `bg-sunken/60` had the same defect as the accent tints and in the
+   * same three places, all of them glass: the sidebar, the dock's cluster and
+   * the dropover triggers. */
+  --color-sunken-soft: color-mix(in oklab, var(--color-sunken) 60%, var(--color-surface));
 
   /* The two stops of the coachmark ring's gradient. Same hue as the accent so
    * the tour reads as part of the product, separated on lightness and chroma
