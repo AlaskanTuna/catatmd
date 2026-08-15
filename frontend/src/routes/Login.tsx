@@ -20,7 +20,7 @@ import { Wordmark } from '../ui/Wordmark.js'
 const CLAIMS = [
   { Icon: FileLock2, text: 'Identifiers are replaced with tokens before any text reaches a model' },
   { Icon: UserCheck, text: 'Nothing is finalised without the treating doctor approving it' },
-  { Icon: MapPin, text: 'Application, API and database are all hosted in locally' },
+  { Icon: MapPin, text: 'Application, API and database are all hosted locally' },
 ]
 
 export function Login() {
