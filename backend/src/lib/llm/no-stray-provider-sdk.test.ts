@@ -49,8 +49,20 @@ const SCANNED_TREES = [
  * Exact package names. Scoped families that publish one adapter per provider
  * are matched by prefix below instead, because enumerating them goes stale the
  * day a new provider ships.
+ *
+ * **Transcription vendors belong here too** (issue #172). The list named LLM
+ * vendors only, so an ASR SDK was a second egress that would have passed the
+ * build: `.claude/rules/security.md` bans one under "ASR Egress", and until now
+ * nothing checked. Audio is the worse case of the two, because it cannot be
+ * de-identified at all.
+ *
+ * ILMU itself contributes no entry. It publishes no npm package (checked
+ * against the registry when this list was extended), which is precisely why
+ * `backend/src/lib/asr/ilmu.ts` is written against native fetch, and why that
+ * call is pinned separately by `no-stray-fetch.test.ts`.
  */
 const PROVIDER_PACKAGES = new Set([
+  // Text
   'openai',
   '@google/genai',
   '@google/generative-ai',
@@ -59,9 +71,17 @@ const PROVIDER_PACKAGES = new Set([
   'cohere-ai',
   'groq-sdk',
   'replicate',
+  // Transcription
+  '@deepgram/sdk',
+  'assemblyai',
+  '@google-cloud/speech',
+  '@aws-sdk/client-transcribe',
+  'microsoft-cognitiveservices-speech-sdk',
+  '@azure/cognitiveservices-speech-sdk',
+  'revai-node-sdk',
 ])
 
-const PROVIDER_SCOPES = ['@ai-sdk/', '@mistralai/']
+const PROVIDER_SCOPES = ['@ai-sdk/', '@mistralai/', '@speechmatics/']
 
 /** `import x from 'y'`, `import 'y'`, `require('y')`, `await import('y')`. */
 const SPECIFIER = /(?:\bfrom\s*|\bimport\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)['"]([^'"]+)['"]/g
@@ -155,6 +175,14 @@ describe('only lib/llm imports a provider SDK (issue #81)', () => {
       'ai',
       '@ai-sdk/openai',
       '@mistralai/mistralai',
+      // Transcription vendors, added by #172. An ASR SDK is the egress this
+      // list used to miss entirely.
+      '@deepgram/sdk',
+      '@deepgram/sdk/client',
+      'assemblyai',
+      '@google-cloud/speech',
+      '@aws-sdk/client-transcribe',
+      '@speechmatics/batch-client',
     ]) {
       expect(isProviderSdk(specifier), `${specifier} should be caught`).toBe(true)
     }
@@ -166,6 +194,11 @@ describe('only lib/llm imports a provider SDK (issue #81)', () => {
       './ai.js',
       '../lib/llm/index.js',
       'vitest',
+      // Neighbours of the transcription entries that must not be swept up:
+      // one is our own AWS client for a different service, one is a lookalike.
+      '@aws-sdk/client-s3',
+      'assemblyai-utils',
+      './asr/ilmu.js',
     ]) {
       expect(isProviderSdk(specifier), `${specifier} should not be caught`).toBe(false)
     }
