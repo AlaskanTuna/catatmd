@@ -13,6 +13,13 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3001),
   CORS_ORIGIN: z.string().url().default('http://localhost:5173'),
 
+  // Edge addresses whose forwarded client address may be believed (#156).
+  // Comma-separated, and empty by default: an unset value means every caller is
+  // keyed by the address Cloudflare observed, which is the behaviour that
+  // predates the Vercel rewrite. See middleware/client-ip.ts for why an
+  // allow-list is the only safe way to read `x-forwarded-for` here.
+  TRUSTED_PROXY_IPS: z.string().default(''),
+
   DATABASE_URL: z.string().min(1),
   DIRECT_URL: z.string().min(1),
 
