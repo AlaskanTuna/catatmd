@@ -417,9 +417,9 @@ export function AudioCapture({
           <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-urgent" />
           <div className="min-w-0 flex-1">
             <p className="text-sm text-ink">
-              This device may not have the memory to run the speech model, which needs roughly
-              250&nbsp;MB of weights and holds them in memory. On a constrained machine the browser
-              tab can be killed mid-consultation.
+              This device may not have the memory to run the speech model, which needs roughly 250
+              to 590&nbsp;MB of weights depending on how it runs, and holds them in memory. On a
+              constrained machine the browser tab can be killed mid-consultation.
             </p>
             <Button size="sm" variant="ghost" className="mt-2" onClick={() => setOverridden(true)}>
               Enable Recording Anyway
