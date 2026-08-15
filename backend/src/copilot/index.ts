@@ -46,8 +46,20 @@ export async function* runCopilotTurn(options: {
   const vault = new RequestTokenVault()
   const digestResult = deidentify(renderDigest(consultation), vault)
 
+  /*
+   * A signed note gets a copilot with no tools at all.
+   *
+   * Approval is a terminal state: `PATCH /api/consultations/:id` refuses an
+   * approved record, so every proposal card produced here would be one the
+   * doctor could click and watch fail. Withholding the tools is also the safer
+   * half of that, because a copilot must not be offering edits to a record a
+   * doctor has already taken responsibility for. It is derived from the
+   * consultation the route loaded, never from anything the client sends.
+   */
+  const signed = consultation.status === 'approved'
+
   const system = deidentify(
-    buildCopilotSystemPrompt(digestResult.text, GUIDELINE_CORPUS),
+    buildCopilotSystemPrompt(digestResult.text, GUIDELINE_CORPUS, { signed }),
     vault,
   ).text
 
@@ -69,7 +81,7 @@ export async function* runCopilotTurn(options: {
     operation: 'copilot_turn',
     system,
     turns,
-    tools: COPILOT_TOOLS,
+    tools: signed ? [] : COPILOT_TOOLS,
     signal,
   })
 

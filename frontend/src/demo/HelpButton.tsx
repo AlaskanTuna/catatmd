@@ -1,7 +1,6 @@
-import { Bot, Loader2, Play, X } from 'lucide-react'
+import { Loader2, Play, X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { useMatch } from 'react-router-dom'
-import { cn } from '../lib/cn.js'
 import { TOUR_STEP_COUNT, useDemoTour } from './DemoTour.js'
 
 /**
@@ -20,9 +19,10 @@ export function HelpButton() {
   const { active, preparing, start } = useDemoTour()
   const dialog = useRef<HTMLDialogElement>(null)
 
-  // On a consultation record the corner belongs to the assistant rather than to
-  // the tour. `new` is excluded because the intake screen shares the route
-  // shape but is not a record.
+  // On a consultation record the corner belongs to CatatAI rather than to the
+  // tour, so this yields the corner entirely rather than competing for it.
+  // `new` is excluded because the intake screen shares the route shape but is
+  // not a record.
   const review = useMatch('/consultations/:id')
   const onRecord = review !== null && review.params.id !== 'new'
 
@@ -33,7 +33,7 @@ export function HelpButton() {
     if (active) dialog.current?.close()
   }, [active])
 
-  if (active) return null
+  if (active || onRecord) return null
 
   return (
     <>
@@ -43,16 +43,12 @@ export function HelpButton() {
           layout, and the circle is what separates it from the interface it
           floats above. A bare glyph rather than lucide's `HelpCircle`, whose
           own ring would sit inside this one and read as a double border. */}
-      {/* The assistant's corner on a record, the tour's everywhere else. The
-          assistant has no behaviour yet, so it is disabled and says so rather
-          than accepting a click and doing nothing. */}
       <button
         type="button"
-        disabled={onRecord}
         onClick={() => dialog.current?.showModal()}
         data-print="hide"
-        aria-label={onRecord ? 'Assistant, not available yet' : 'Take the guided tour'}
-        title={onRecord ? 'Assistant (coming soon)' : 'Guided Tour'}
+        aria-label="Take the guided tour"
+        title="Guided Tour"
         style={{ zIndex: 'var(--z-sticky)' }}
         /*
          * Bottom-right corner, lifted only where something is genuinely under
@@ -60,24 +56,18 @@ export function HelpButton() {
          * the button 7rem up on every screen, which reads as misplaced on the
          * majority that have no bottom chrome at all.
          *
-         * The two things it must clear, measured rather than guessed:
-         * the mobile dock below `md` reaches about 4.5rem up (`bottom-3` plus a
-         * `min-h-12` row and padding), and the sticky approve bar on the review
-         * screen reaches about 5rem (`bottom-4` plus `p-3` around an `h-10`
-         * button). `bottom-24` is 6rem and clears both; everywhere else gets
-         * the corner.
+         * The one thing it has to clear, measured rather than guessed: the
+         * mobile dock below `md` reaches about 4.5rem up (`bottom-3` plus a
+         * `min-h-12` row and padding). Everywhere else gets the corner.
          *
-         * The approve bar shares this right offset and is the primary action on
-         * the one screen where a help button must not compete with it.
+         * The approve bar used to be the other one, and no longer is: this
+         * button does not render on a consultation record at all now, so the
+         * `--approve-bar-height` half of `.fab-anchor` is there for CatatAI's
+         * button rather than for this one.
          */
-        className={cn(
-          'glass fab-anchor fixed flex size-12 items-center justify-center rounded-full text-lg font-semibold text-accent transition-[transform,color] duration-150 ease-out-quart',
-          onRecord
-            ? 'cursor-not-allowed text-ink-muted'
-            : 'hover:text-accent-hover active:scale-[0.94]',
-        )}
+        className="glass fab-anchor fixed flex size-12 items-center justify-center rounded-full text-lg font-semibold text-accent transition-[transform,color] duration-150 ease-out-quart hover:text-accent-hover active:scale-[0.94]"
       >
-        {onRecord ? <Bot aria-hidden className="size-5" /> : <span aria-hidden>?</span>}
+        <span aria-hidden>?</span>
       </button>
 
       <dialog

@@ -475,11 +475,15 @@ export function ConsultationReview() {
 
       {/*
        * Not offered on the tour's consultation, which is not stored, so the
-       * copilot route would 404 on every message (#80). Not offered after
-       * approval either: the record is final, and a panel that could still
-       * propose edits would be inviting a change that cannot be made.
+       * copilot route would 404 on every message (#80).
+       *
+       * Offered on an approved record, where it answers but cannot propose:
+       * the backend withholds the tools once `status` is `approved` rather
+       * than the panel hiding, because the questions a doctor asks about a
+       * note they have signed are the same questions, and a copilot that
+       * disappears at sign-off looks like a bug from the outside.
        */}
-      {!isEphemeral && !approved && <CatatAI consultation={detail} onApply={applyProposal} />}
+      {!isEphemeral && <CatatAI consultation={detail} onApply={applyProposal} />}
     </div>
   )
 }

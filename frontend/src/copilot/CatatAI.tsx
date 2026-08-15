@@ -1,5 +1,5 @@
 import type { ConsultationDetail, CopilotProposal } from '@shared/types'
-import { ArrowUp, Check, ChevronDown, Maximize2, Minimize2, X } from 'lucide-react'
+import { ArrowUp, ChevronDown, Maximize2, Minimize2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '../lib/cn.js'
@@ -11,6 +11,7 @@ import {
   OPENING_QUESTIONS,
   pickRandom,
 } from './chips.js'
+import { Markdown } from './Markdown.js'
 import { ProposalCard } from './ProposalCard.js'
 import { type CopilotMessage, useCopilot } from './use-copilot.js'
 
@@ -249,7 +250,15 @@ export function CatatAI({
         <div
           data-print="hide"
           style={{ zIndex: 'var(--z-sidebar)' }}
-          className="glass fixed right-4 bottom-4 flex h-[min(34rem,calc(100vh-2rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-float md:right-6 md:bottom-6"
+          /*
+           * `ring-1 ring-line` on top of the glass, matching the button this
+           * panel opens from. `.glass` carries a border already, but that one
+           * is `--color-glass-line`, a white highlight edge at 55% meant to
+           * catch light on chrome; against the page it does not read as an
+           * edge at all, so the docked panel had no discernible outline. The
+           * ring is a real neutral line and gives it one.
+           */
+          className="glass fixed right-4 bottom-4 flex h-[min(34rem,calc(100vh-2rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-float ring-1 ring-line md:right-6 md:bottom-6"
         >
           {body}
         </div>
@@ -277,9 +286,21 @@ function Turn({
   onApply: (proposal: CopilotProposal, reason?: string) => Promise<void>
   onResolve: (cardId: string) => void
 }) {
+  /*
+   * Both sides are bubbles, and they are told apart by colour rather than by
+   * alignment alone. The doctor's is `accent-soft` and CatatAI's is the plain
+   * surface with a line around it: the record's own voice reads as neutral,
+   * and the accent stays with the person who is accountable for it.
+   *
+   * Both tints are the opaque tokens rather than `bg-accent/12`, which is what
+   * this was. `docs/DESIGN.md` settled that on 15/08/26 and the reason lands
+   * squarely here: this panel is glass, so an alpha fill composites against
+   * whatever is scrolling behind the panel and reads as a wash rather than a
+   * colour.
+   */
   if (message.role === 'doctor') {
     return (
-      <p className="ml-auto w-fit max-w-[85%] rounded-card bg-accent/12 px-3 py-2 text-ink text-sm">
+      <p className="ml-auto w-fit max-w-[85%] rounded-card bg-accent-soft px-3 py-2 text-ink text-sm">
         {message.content}
       </p>
     )
@@ -290,8 +311,8 @@ function Turn({
       {message.tools.length > 0 && <ToolRuns runs={message.tools} settled={!message.streaming} />}
 
       {message.content.length > 0 && (
-        <div className="whitespace-pre-wrap text-ink text-sm leading-relaxed">
-          {message.content}
+        <div className="w-fit max-w-[92%] rounded-card border border-line bg-surface px-3 py-2 text-ink text-sm leading-relaxed">
+          <Markdown>{message.content}</Markdown>
           {message.streaming && (
             <span aria-hidden className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-accent" />
           )}
@@ -318,6 +339,16 @@ function Turn({
  * What the copilot did, shown while it does it and collapsed once the answer
  * arrives. Expanded by default mid-turn is the point: an empty bubble for
  * fifteen seconds reads as a hang, and this says which step is taking them.
+ *
+ * **A timeline rather than a checklist**, because the steps are sequential and
+ * a list of ticks says nothing about order. The rail only appears once there
+ * is a second node to connect, since a line joining one thing to nothing is
+ * just a decoration hanging off a row.
+ *
+ * The collapse animates through `.collapsible`, a `0fr` to `1fr` grid row. It
+ * is the one technique that transitions to the content's true height, so a
+ * two-step turn and a five-step turn both close in proportion to what they
+ * hold rather than against a `max-height` guessed for the worst case.
  */
 function ToolRuns({
   runs,
@@ -332,18 +363,24 @@ function ToolRuns({
     if (settled) setOpen(false)
   }, [settled])
 
+  const active = runs.length - 1
+
   return (
-    <div className="rounded-card border border-line bg-sunken/60 text-xs">
+    <div className="w-fit max-w-[92%] rounded-card border border-line bg-surface text-xs">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
         className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-ink-muted transition-colors hover:text-ink"
       >
         <ChevronDown
           aria-hidden
-          className={cn('size-3.5 transition-transform', open ? '' : '-rotate-90')}
+          className={cn(
+            'size-3.5 transition-transform duration-200 ease-out-quart',
+            open ? '' : '-rotate-90',
+          )}
         />
-        <span>
+        <span className={cn(!settled && 'step-running')}>
           {settled
             ? `${runs.length} ${runs.length === 1 ? 'action' : 'actions'}`
             : (runs.at(-1)?.label ?? 'Working')}
@@ -352,17 +389,46 @@ function ToolRuns({
           <span aria-hidden className="ml-auto size-1.5 animate-pulse rounded-full bg-accent" />
         )}
       </button>
-      {open && (
-        <ul className="space-y-1 px-2.5 pt-0.5 pb-2 text-ink-muted">
-          {/* Keyed on the tool name, which the backend announces once per turn. */}
-          {runs.map((run) => (
-            <li key={run.name} className="flex items-center gap-1.5">
-              <Check aria-hidden className="size-3 text-accent" />
-              {run.label}
-            </li>
-          ))}
-        </ul>
-      )}
+
+      <div className="collapsible" data-open={open}>
+        <div>
+          <ol className="relative flex flex-col gap-1.5 py-1 pr-3 pl-[26px]">
+            {/* Keyed on the tool name, which the backend announces once per turn. */}
+            {runs.map((run, index) => {
+              const running = !settled && index === active
+              return (
+                <li key={run.name} className="relative text-ink-muted">
+                  {/*
+                   * The rail, drawn per node as a segment down to the next one
+                   * rather than once down the whole list. A single rail has to
+                   * be inset from both ends by a constant, and a constant that
+                   * lands on the first and last node centres for one-line rows
+                   * misses them the moment a label wraps. This runs from this
+                   * node's centre through its own row and the `gap-1.5` below
+                   * it, which is the next node's centre by construction and at
+                   * any row height. The last node draws none, so nothing
+                   * dangles off the end.
+                   */}
+                  {index < runs.length - 1 && (
+                    <span
+                      aria-hidden
+                      className="absolute top-[8.5px] -left-[16px] h-[calc(100%+0.375rem)] w-px bg-line"
+                    />
+                  )}
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'absolute top-[5px] -left-[19px] size-[7px] rounded-full bg-accent',
+                      running && 'animate-pulse',
+                    )}
+                  />
+                  <span className={cn(running && 'step-running')}>{run.label}</span>
+                </li>
+              )
+            })}
+          </ol>
+        </div>
+      </div>
     </div>
   )
 }
