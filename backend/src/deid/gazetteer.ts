@@ -274,6 +274,35 @@ export const NAME_STOPWORDS = new Set(
     'have',
     'has',
     'had',
+    // Malay everyday words. Load-bearing against the bare 'saya' introducer:
+    // without these, "...untuk saya Doktor" mints a false PATIENT token, and a
+    // false token corrupts the note on rehydration. Deliberately absent
+    // although they are months or weekdays: 'mei' (a given name in
+    // GIVEN_NAMES) and 'khamis', 'jumaat', 'sabtu', 'ahad' (attested Malay
+    // given names outside the gazetteer, where trimNameSpan's stopword loop
+    // would strip them off a patronymic span and leak them in cleartext).
+    // A recall loss on the PHI boundary outranks the precision gain.
+    'doktor',
+    'klinik',
+    'jururawat',
+    'ubat',
+    'sakit',
+    'demam',
+    'batuk',
+    'selsema',
+    'pesakit',
+    'farmasi',
+    'isnin',
+    'selasa',
+    'rabu',
+    'januari',
+    'februari',
+    'mac',
+    'jun',
+    'julai',
+    'ogos',
+    'oktober',
+    'disember',
     'malaysia',
     'selangor',
     'johor',
