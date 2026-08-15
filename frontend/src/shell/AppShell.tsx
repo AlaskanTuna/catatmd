@@ -59,7 +59,19 @@ export function AppShell() {
               between a page header and the top of the viewport. The bottom half
               also has to clear two different things: the mobile dock below md,
               and the sticky approve bar on the review screen. */}
-          <main className="px-4 pt-8 pb-32 md:py-10 md:pr-6 md:pl-24">
+          {/* The top half clears `ChromeCluster`, which is fixed and therefore
+              out of flow. It ends 62px down, so 80px clears it with a gap and
+              the cluster reads as chrome sitting above the hero rather than
+              floating on it.
+
+              One value at every width, because this is not a mobile-only
+              collision. Measured on the deployed build: 30px of overlap at
+              390px, and still 22px tall by 62px wide at 1024px. The page
+              container is `max-w-3xl` inside `pl-24`, so its right edge only
+              clears the cluster's left edge once the viewport passes ~1148px.
+              Every narrower desktop window collides, which is most of them
+              that are not maximised on a large display. */}
+          <main className="px-4 pt-20 pb-32 md:pb-10 md:pr-6 md:pl-24">
             <Outlet />
           </main>
         </div>
