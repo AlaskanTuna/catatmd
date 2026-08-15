@@ -1457,7 +1457,7 @@ Measured **13/08/26** on a 49.7 s Manglish sample (casual conversation, Malay an
 
 #### What This Is, And Is Not
 
-This is **turn segmentation from timing and punctuation**, not diarisation. Whisper cannot tell the two voices apart, and nothing in this feature listens to the audio for who is speaking: it reads segment boundaries and question marks. A per-line Doctor/Patient toggle in a review list (`frontend/src/audio/SpeakerAssign.tsx`) is prefilled with a guess and stays a guess, editable, until the doctor explicitly applies it. Start Consultation stays disabled until that apply happens, so nothing guessed reaches the transcript unreviewed.
+This is **turn segmentation from timing and sentence content**, not diarisation. Whisper cannot tell the two voices apart, and nothing in this feature listens to the audio for who is speaking: it reads segment boundaries and what each sentence says. A per-line Doctor/Patient toggle in a review list (`frontend/src/audio/SpeakerAssign.tsx`) is prefilled with a guess and stays a guess, editable, until the doctor explicitly applies it. Start Consultation stays disabled until that apply happens, so nothing guessed reaches the transcript unreviewed.
 
 #### The Pipeline Flag And Its Cost
 
@@ -1484,18 +1484,45 @@ This is **turn segmentation from timing and punctuation**, not diarisation. Whis
 | Timestamp decoding cost         | +49% wall clock (above). The production worker run including model init from cache took 180 s                                                                                                                                                                                                                                                                       |
 | Text quality with timestamps on | Equal or better on this sample: the plain run dropped a word ("bit") and ran three sentences together; the stamped run kept them                                                                                                                                                                                                                                    |
 
-#### The Four Rules, In Order
+#### Revised 15/08/26: Sentence Units And Content Scores
 
-1. The consultation opens with the doctor.
-2. The line after a question is the patient answering it.
-3. A line that itself asks a question is the doctor, which re-anchors the alternation at every question so a wrong guess propagates only to the next question, not to the end of the consultation.
-4. Otherwise, alternate from the previous line's speaker.
+The v1 rules (open with the doctor, answer after a question, any question to the doctor, otherwise alternate) are the ones the 53% above was measured on. They were replaced after a production recording folded a doctor greeting, the patient's "I have serious coughing", and the doctor's follow-up into one segment, a handoff per-segment labels cannot see by construction. The unit of labelling is now the sentence, and content outranks structure:
 
-Rule 2 is checked before rule 3 so a reply that itself ends questioning ("Yes, since this morning?") stays the patient's. **Known-wrong case:** a patient asking their own question is handed to the doctor by rule 3.
+- **Split.** Each segment splits at sentence boundaries (`[.!?]` runs followed by a capital or digit), guarded twice: a title Whisper writes ("Dr.") is not a boundary, and a split whose pieces do not reconstruct the segment text exactly is discarded whole. The same text-is-authoritative stance as `usable()`.
+- **Score.** Each sentence is checked against two small pattern tables. Doctor patterns are speech directed at the patient: question openers ("what brings you", "any fever"), instructions ("take these", "let me"), examination ("your throat"). Patient patterns are first-person experience ("I have", "my chest", "I ate") and vocative "doctor". More matches wins.
+- **Context on a tie, keeping v1's ordering rationale.** The answer to a question outranks the sentence's own trailing question mark ("Yes, since this morning?" stays the patient's); a content-free question falls to the doctor as the last resort; a sentence with no signal at all continues the previous speaker. Continuation replaces alternation, whose flips on same-speaker continuations were the largest measured failure mode above.
+- **Merge.** Consecutive same-speaker sentences within one segment fold back into one line, so splitting costs a review line only where the guessed speaker changes.
+- **Offsets.** Only the line that opens a segment carries its start time. A split line's true offset inside the segment is unknown, and a fabricated one would assert a wrong time in the evidence trace.
+
+What this fixes, each pinned by `frontend/src/audio/draft-turns.test.ts`: the within-segment handoff above, the alternation flips, and the v1 known-wrong case, because "Is it bad that I am coughing up blood?" now scores as first-person symptom and stays the patient's.
+
+#### Measured, 15/08/26
+
+95 s scripted consultation, one reader voicing both roles, read live into the production recorder path (`onnx-community/whisper-small`, WebGPU, the shipped worker). A single voice is a valid test here precisely because the feature uses no voice information; it is not a test of acoustic diarisation.
+
+Whisper returned **15 segments** spanning **38 sentences**, having merged a speaker handoff into a segment at eleven of the twenty-one turn boundaries, a heavier merge rate than the 14/08/26 sample. v1 was replayed over the identical segments for a like-for-like comparison.
+
+| Metric, per sentence         | v1             | v2                 |
+| ---------------------------- | -------------- | ------------------ |
+| Sentences labelled correctly | 20 of 38 (53%) | **36 of 38 (95%)** |
+| Lines holding two speakers   | 10 of 15       | 2 of 28            |
+| Lines carrying a wrong label | 4 of 15        | 0 of 28            |
+
+v1 scoring 53% here, on different audio and a different metric from the 14/08/26 run that also produced 53%, is corroboration rather than coincidence.
+
+**The red-flag case, on real speech:** v1 labelled "Is it bad that I'm coughing out blood?" **Doctor**, which is the suppression shape `mislabel-suppression.test.ts` pins. v2 labelled it **Patient**.
+
+**Two pattern gaps this run exposed, both fixed and pinned by tests:** a first-person question about one's own care ("Do I need antibiotics?", "anything I should watch out for?") had no content signal, fell to the doctor as a last-resort question, and then cascaded one line through the answer-after-question rule; and the first-person symptom pattern fired on a bare negation, handing "You can see Dr. Tan if I'm not around" to the patient. Together they accounted for 6 of the 9 errors in the first pass, which scored 29 of 38.
+
+**The two remaining errors are structural, not tuning:** Whisper split "Any chest pain or / breathlessness?" across two segments mid-sentence, which no sentence-level labeller can repair, and "Like this." carries no signal in either direction.
+
+**Confirmation run, same day, fixed code, fresh recording.** The table above scores the corrected patterns replayed over the first recording's segments, so a second reading was recorded end to end to check the result was not fitted to one sample. 31 lines over 39 sentences: **38 of 39 correct (97%), 30 of 31 lines clean, zero wrong labels.** Every fix held in live conditions, including the two that the first run motivated, and the red-flag line landed on the patient again. The single error is the same "Like this.", which is now the only known content-free failure in either recording.
+
+**Limits, stated as §20.1 does:** n=1, one voice, scripted rather than spontaneous, and read by a non-clinician. Real ASR errors were present and left in ("phlegm" became "flame", "doctor" became "daughter"), so this measures labelling over imperfect text, which is the honest condition. The pattern tables are English-only, so heavily code-switched sentences fall through to the context rules.
 
 #### The Apply Gate Is The Safety Control
 
-`backend/src/redflags/mislabel-suppression.test.ts` (test only, zero backend production changes) is the executable rationale. It pins that "Is it bad that I am coughing up blood?" fires the `haemoptysis` trigger when labelled patient, and goes silent when a mislabelling dresses it up as a doctor question followed by a patient denial, which is exactly the shape rule 3 (question to the doctor) plus rule 2 (next line to the patient) produces when a patient asks about their own symptom. Issue #70's suppression is correct given correct labels; it trusts the labels it is given. That is why nothing guessed here reaches `evaluateRedFlags` unreviewed: Start Consultation is disabled until the doctor applies the draft, one line at a time.
+`backend/src/redflags/mislabel-suppression.test.ts` (test only, zero backend production changes) is the executable rationale. It pins that "Is it bad that I am coughing up blood?" fires the `haemoptysis` trigger when labelled patient, and goes silent when a mislabelling dresses it up as a doctor question followed by a patient denial, which is exactly the shape the v1 rules produced when a patient asked about their own symptom. The sentence scoring above now keeps that sentence with the patient, and the gate stays anyway, because a content score is still a guess. Issue #70's suppression is correct given correct labels; it trusts the labels it is given. That is why nothing guessed here reaches `evaluateRedFlags` unreviewed: Start Consultation is disabled until the doctor applies the draft, one line at a time.
 
 #### The Offsets Contract
 
@@ -1510,10 +1537,10 @@ Segments are advisory, text is authoritative. `usable()` in `draft-turns.ts` che
 
 #### Limits
 
-- No voice information is used anywhere in this feature; it is timing and punctuation only.
-- The merged-line case (two speakers folded into one segment) is fixed only by editing the applied text, not by the labelling UI.
+- No voice information is used anywhere in this feature; it is timing and sentence content only.
+- A speaker handoff inside one sentence is not splittable; that line is fixed only by editing the applied text, not by the labelling UI.
 - A third speaker is not representable: `SpeakerSchema` has two values, and the review list offers only Doctor/Patient.
-- The known-wrong case above (a patient's own question handed to the doctor) is a property of rule 3, not a bug; a doctor reviewing the draft is the mitigation.
+- The pattern tables are English-only, and a sentence with no signal stays with the previous speaker, which under-switches where v1 over-switched; a doctor reviewing the draft is the mitigation for both.
 
 #### Voice Diarisation Roadmap (Specified, Not Built)
 
@@ -1551,6 +1578,14 @@ Recorded so the option is scoped, not attempted, in this window.
 - **A direct `onnxruntime-web` dependency.** The lockfile resolves a transformers.js-pinned nightly dev build; a caret range on top would install a second ORT beside it.
 
 **Role-mapping floor.** A one-tap swap control, same as today's Swap All. Stored clinician voiceprints are rejected outright: biometric data, on shared clinic PCs, and this section's own upload claims already forbid it.
+
+**Verified 15/08/26, while revising the draft labels:**
+
+- `onnx-community/whisper-small_timestamped` exists on the hub, so the word-timestamp alignment path is real. Swapping `MODEL` to it invalidates the cached weights and re-downloads them in full; schedule that migration deliberately, not as a side effect.
+- `vercel.json` `connect-src` already covers the hosts the two models above download from; no CSP change is needed.
+- Published ceilings justify the staging: text-only role identification measures ~82% against ~95% once acoustic speaker identities are added (fine-tuned BERT on 117 clinic transcripts, PSB 2026), and DiarizationLM (Interspeech 2024) corrects speaker attribution with an LLM post-pass at double-digit relative error reductions. Sentence scoring raises the floor; voices remain the endgame.
+- PriMock57 (57 acted mock GP consultations, audio plus utterance-level speaker ground truth, downloaded locally and never committed) is the candidate corpus for the EER gate above.
+- A resident warm worker between recordings was considered for load time and rejected: a warm session holds the full weights in memory while the doctor works elsewhere, which is the OOM kill this section's memory failure mode warns about. Prewarm-per-recording through the existing but unsent `load` request is the open alternative, with one hazard: the worker answers it with `ready`, which the component currently reads as the start of transcription.
 
 ---
 

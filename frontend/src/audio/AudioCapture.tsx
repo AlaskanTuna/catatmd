@@ -408,7 +408,7 @@ export function AudioCapture({
       <p className="text-sm text-ink-muted">
         Recording is transcribed on this device and never uploaded. The result appears below as
         lines with guessed <code className="text-ink">Doctor</code> /{' '}
-        <code className="text-ink">Patient</code> labels, drawn from pauses and question marks, not
+        <code className="text-ink">Patient</code> labels, drawn from what each sentence says, not
         from the voices. Check every line, then apply them to the transcript.
       </p>
 

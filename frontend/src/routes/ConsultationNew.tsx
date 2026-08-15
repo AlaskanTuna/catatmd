@@ -192,7 +192,14 @@ export function ConsultationNew() {
                     current
                       ? [
                           ...current,
-                          ...lines.map((line, i) => ({ ...line, id: `seg-${current.length + i}` })),
+                          // Appended lines get their own id namespace: reusing
+                          // seg-N can collide with a seg id already in the
+                          // draft once splits and skipped segments make line
+                          // counts diverge from segment indexes.
+                          ...lines.map((line, i) => ({
+                            ...line,
+                            id: `append-${current.length}-${i}`,
+                          })),
                         ]
                       : lines,
                   )
