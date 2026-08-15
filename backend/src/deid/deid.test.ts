@@ -13,6 +13,47 @@ describe('detector inventory (docs/trd.md §9)', () => {
     expect(labelsIn('My IC number is 850523-14-5677.')).toContain('NRIC')
   })
 
+  it('detects an unhyphenated MyKad number beside a Malay identity cue', () => {
+    expect(labelsIn('Nombor kad pengenalan saya 900412086543.')).toContain('NRIC')
+  })
+
+  it('detects a structurally valid unhyphenated MyKad with no cue at all', () => {
+    // Recall-first: transcription drops hyphens and puts the digits far from
+    // the "IC" that introduced them, so validity alone must gate.
+    expect(labelsIn('The number 900412086543 was on the form.')).toContain('NRIC')
+  })
+
+  it('still detects an invalid unhyphenated number when the context says it is an IC', () => {
+    expect(labelsIn('His IC is 850523175677 lah.')).toContain('NRIC')
+    expect(labelsIn('No. K/P 850523175677 tertera di kad.')).toContain('NRIC')
+  })
+
+  it('detects a date of birth behind a Malay birth cue', () => {
+    expect(labelsIn('Tarikh lahir 23 Mac 1985, betul?')).toContain('DOB')
+    expect(labelsIn('Dia dilahirkan pada 3 Ogos 1990.')).toContain('DOB')
+  })
+
+  it('detects a clinic record number behind a Malay record cue', () => {
+    expect(labelsIn('Nombor pendaftaran KLC-004821 untuk fail.')).toContain('MRN')
+    expect(labelsIn('No. fail KLC-004821 ya.')).toContain('MRN')
+  })
+
+  it('still mints a name introduced by saya after the Malay stopword additions', () => {
+    expect(labelsIn('Nama saya Aisyah binti Osman.')).toContain('PATIENT')
+    expect(labelsIn('Nanti cari saya Khairul di kaunter.')).toContain('PATIENT')
+  })
+
+  it('still detects weekday-named patients, whole span included', () => {
+    // Khamis and Jumaat are attested Malay given names outside the gazetteer,
+    // which is why they are not weekday stopwords: trimNameSpan would strip
+    // them off the front of a patronymic span and leak them in cleartext.
+    expect(labelsIn('Nama saya Khamis.')).toContain('PATIENT')
+    const values = detect('Khamis bin Sulaiman datang tadi.')
+      .filter((m) => m.label === 'PATIENT')
+      .map((m) => m.value)
+    expect(values).toContain('Khamis bin Sulaiman')
+  })
+
   it('detects a Malaysian mobile number', () => {
     expect(labelsIn('You can call me at 012-3456789.')).toContain('PHONE')
   })
@@ -67,6 +108,36 @@ describe('precision — clinical content must survive', () => {
     expect(text).toContain('Paracetamol')
     expect(text).toContain('Monday')
   })
+
+  it('does not tokenise an arbitrary twelve-digit reference number', () => {
+    // Pins the 0.3 base for a structurally invalid bare run: no birth date, no
+    // context, no token. The sentence avoids words like "invoice" and
+    // "clinic", whose substrings satisfy the 'ic' context cue: hasContext
+    // matches substrings, a pre-existing behaviour this test must not rely on
+    // either way.
+    const { text } = deidentify('Reference 123456789012 is printed on the receipt.')
+    expect(text).toContain('123456789012')
+  })
+
+  it('does not tokenise a Malay-month follow-up date that carries no birth cue', () => {
+    const { text } = deidentify('Jumpa lagi 20 Ogos 2026 untuk susulan.')
+    expect(text).toContain('20 Ogos 2026')
+  })
+
+  it('does not read an English word starting with a Malay month prefix as a date', () => {
+    const { text } = deidentify('Date of birth noted; discharge 12 2024 planned.')
+    expect(text).toContain('discharge 12 2024')
+  })
+
+  it('does not mint a name from saya followed by a Malay everyday word', () => {
+    const { text } = deidentify('Boleh tulis surat untuk saya Doktor?')
+    expect(text).toContain('Doktor')
+  })
+
+  it('keeps a Malay weekday in clinical content', () => {
+    const { text } = deidentify('Datang balik jumpa saya Isnin depan.')
+    expect(text).toContain('Isnin')
+  })
 })
 
 describe('NRIC structural validation', () => {
@@ -80,6 +151,19 @@ describe('NRIC structural validation', () => {
 
   it('rejects an unassigned place-of-birth code', () => {
     expect(isStructurallyValidNric('850523-17-5677')).toBe(false)
+  })
+
+  it('accepts the unhyphenated form of a valid number', () => {
+    expect(isStructurallyValidNric('900412086543')).toBe(true)
+  })
+
+  it('rejects an unhyphenated number with an impossible birth month', () => {
+    expect(isStructurallyValidNric('901345086543')).toBe(false)
+  })
+
+  it('rejects a half-hyphenated hybrid neither detector can produce', () => {
+    expect(isStructurallyValidNric('850523-145677')).toBe(false)
+    expect(isStructurallyValidNric('85052314-5677')).toBe(false)
   })
 
   it('still detects a structurally invalid NRIC when the context says it is one', () => {
@@ -115,6 +199,13 @@ describe('tokenisation and the request-scoped vault', () => {
     const original = 'Encik Ahmad bin Ismail, IC 850523-14-5677, phone 012-3456789.'
     const { text, vault } = deidentify(original)
     expect(text).not.toContain('850523-14-5677')
+    expect(vault.rehydrate(text)).toBe(original)
+  })
+
+  it('round-trips an unhyphenated MyKad', () => {
+    const original = 'IC saya 900412086543, doktor.'
+    const { text, vault } = deidentify(original)
+    expect(text).not.toContain('900412086543')
     expect(vault.rehydrate(text)).toBe(original)
   })
 

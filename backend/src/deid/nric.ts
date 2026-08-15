@@ -32,6 +32,13 @@ const UNASSIGNED_PB = new Set([
 
 export const NRIC_PATTERN = /\b(\d{6})-(\d{2})-(\d{4})\b/g
 
+/**
+ * The same number as spoken or casually typed: twelve digits, no hyphens. The
+ * exactly-twelve bound is load-bearing: `\b` on both sides means a longer digit
+ * run (an invoice or account number) does not partially match.
+ */
+export const NRIC_UNHYPHENATED_PATTERN = /\b(\d{6})(\d{2})(\d{4})\b/g
+
 function isValidBirthDate(yymmdd: string): boolean {
   const month = Number(yymmdd.slice(2, 4))
   const day = Number(yymmdd.slice(4, 6))
@@ -46,7 +53,10 @@ function isValidBirthDate(yymmdd: string): boolean {
 }
 
 export function isStructurallyValidNric(candidate: string): boolean {
-  const match = /^(\d{6})-(\d{2})-(\d{4})$/.exec(candidate)
+  // Fully hyphenated or fully bare, never a half-hyphenated hybrid neither
+  // detector pattern can produce.
+  const match =
+    /^(\d{6})-(\d{2})-(\d{4})$/.exec(candidate) ?? /^(\d{6})(\d{2})(\d{4})$/.exec(candidate)
   if (!match) return false
 
   const [, yymmdd, pb] = match

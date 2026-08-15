@@ -5,7 +5,7 @@ import {
   NAME_STOPWORDS,
   PATRONYMICS,
 } from './gazetteer.js'
-import { isStructurallyValidNric, NRIC_PATTERN } from './nric.js'
+import { isStructurallyValidNric, NRIC_PATTERN, NRIC_UNHYPHENATED_PATTERN } from './nric.js'
 
 /**
  * Detector inventory for the Malaysian context (docs/trd.md §9).
@@ -59,7 +59,7 @@ function scoreWith(
 
 // ─── NRIC ────────────────────────────────────────────────────────────────────
 
-const NRIC_CONTEXT = ['ic', 'i/c', 'nric', 'mykad', 'kad pengenalan', 'identity', 'pesakit']
+const NRIC_CONTEXT = ['ic', 'i/c', 'k/p', 'nric', 'mykad', 'kad pengenalan', 'identity', 'pesakit']
 
 function detectNric(text: string): Match[] {
   const out: Match[] = []
@@ -69,6 +69,24 @@ function detectNric(text: string): Match[] {
     // Structural validity is precision, not recall: an implausible NRIC still
     // scores high enough to be tokenised when the context says it is one.
     const base = isStructurallyValidNric(value) ? 0.85 : 0.4
+    out.push({
+      label: 'NRIC',
+      start,
+      end: start + value.length,
+      value,
+      score: scoreWith(text, start, start + value.length, base, NRIC_CONTEXT),
+    })
+  }
+  // Hyphens do not survive speech or casual typing. A structurally valid bare
+  // twelve-digit run gates with no context at all (recall-first: transcription
+  // puts digits far from the "IC" that introduced them), and validity bounds
+  // the false positives: a random twelve-digit reference number rarely carries
+  // a real birth date plus an assigned place-of-birth code. An invalid one
+  // needs the context boost, mirroring the mistyped-IC philosophy above.
+  for (const m of text.matchAll(NRIC_UNHYPHENATED_PATTERN)) {
+    const value = m[0]
+    const start = m.index
+    const base = isStructurallyValidNric(value) ? 0.55 : 0.3
     out.push({
       label: 'NRIC',
       start,
@@ -156,9 +174,19 @@ function detectAddress(text: string): Match[] {
  * tokenising them would destroy the clinical content the note depends on.
  * The DOB cue is therefore mandatory, not a score boost.
  */
-const DOB_CUE = /(?:born(?:\s+on)?|date\s+of\s+birth|d\.?o\.?b\.?|birthday|lahir)\b/gi
-const DATE_NEAR_CUE =
-  /\b(?:\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}|\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?,?\s+\d{4}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4})\b/gi
+const DOB_CUE =
+  /(?:born(?:\s+on)?|date\s+of\s+birth|d\.?o\.?b\.?|birthday|(?:di|ke)?lahir(?:an|kan)?)\b/gi
+// Malay months whose first three letters differ from the English abbreviation:
+// Mac, Mei, Ogos, Okt(ober), Dis(ember). The rest already match via the
+// English prefix plus `[a-z]*` (Januari, Februari, April, Jun, Julai, ...).
+// The Malay alternates sit outside that `[a-z]*` so `Dis` cannot ride it into
+// "discharge" or `Mac` into "macam".
+const MONTH =
+  /(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*|Mac|Mei|Ogos|Okt(?:ober)?|Dis(?:ember)?/
+const DATE_NEAR_CUE = new RegExp(
+  `\\b(?:\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{2,4}|\\d{1,2}(?:st|nd|rd|th)?\\s+(?:${MONTH.source})\\.?,?\\s+\\d{4}|(?:${MONTH.source})\\.?\\s+\\d{1,2},?\\s+\\d{4})\\b`,
+  'gi',
+)
 
 function detectDob(text: string): Match[] {
   const out: Match[] = []
@@ -183,7 +211,7 @@ function detectDob(text: string): Match[] {
 // ─── Medical / clinic record number ──────────────────────────────────────────
 
 const MRN_CUE =
-  /\b(?:MRN|RN|record\s+(?:no|number)|registration\s+(?:no|number)|clinic\s+(?:no|number)|patient\s+(?:id|no|number)|file\s+(?:no|number))\b[:\s.#-]*([A-Z]{0,4}[-/]?\d{3,10}[A-Z]?)\b/gi
+  /\b(?:MRN|RN|record\s+(?:no|number)|registration\s+(?:no|number)|clinic\s+(?:no|number)|patient\s+(?:id|no|number)|file\s+(?:no|number)|(?:no\.?|nombor)\s+(?:pendaftaran|fail|klinik|pesakit))\b[:\s.#-]*([A-Z]{0,4}[-/]?\d{3,10}[A-Z]?)\b/gi
 
 function detectMrn(text: string): Match[] {
   const out: Match[] = []
