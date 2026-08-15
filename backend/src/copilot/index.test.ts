@@ -115,26 +115,27 @@ describe('what reaches the provider', () => {
     expect(questionToken).toBe(digestToken)
   })
 
-  it('mints a second token for a possessive, which is a known quality gap', async () => {
-    // Recorded rather than fixed. `Siti Nurhaliza` and `Siti Nurhaliza's` match
-    // as different spans, so the vault keys them separately and one person
-    // arrives at the model as two tokens. Nothing leaks, which is why this is a
-    // quality bug and not a safety one: the answer may read as though two
-    // people were discussed.
+  it('carries one token across a possessive, so one person stays one person', async () => {
+    // The flip side of the test above, and the reason this one exists
+    // separately: the doctor writes `Siti Nurhaliza's fever` far more often
+    // than the bare name, and until #167 that possessive matched as a different
+    // span, so the vault keyed it separately and the model was told there were
+    // two patients. Nothing leaked either way, both tokens rehydrated, and that
+    // is exactly what made it survive: the answer simply read as though two
+    // people had been discussed.
     //
-    // Deliberately not fixed here. The span logic lives in `deid/detectors.ts`,
-    // the most safety-critical module in the system, where a widened name span
-    // has already once swallowed surrounding prose. Changing it as a side
-    // effect of shipping a copilot is the wrong way to touch it, and there is
-    // already an open issue in that area. This test pins current behaviour so
-    // the fix has something to flip.
+    // This assertion was inverted from the one that pinned the bug. Kept at the
+    // copilot boundary rather than only in `deid.test.ts` because the copilot is
+    // where it did damage: a digest and a question tokenised in the same turn
+    // through the same vault.
     chunks = [{ type: 'text', text: 'ok' }]
 
     await drain(`Did I document ${PATIENT}'s fever?`)
 
     const digestToken = /\[PATIENT_(\d+)\]/.exec(captured?.system ?? '')?.[1]
     const questionToken = /\[PATIENT_(\d+)\]/.exec(captured?.turns.at(-1)?.content ?? '')?.[1]
-    expect(questionToken).not.toBe(digestToken)
+    expect(digestToken).toBeDefined()
+    expect(questionToken).toBe(digestToken)
   })
 
   it('re-gates conversation history rather than trusting what the client returns', async () => {

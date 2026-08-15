@@ -38,11 +38,47 @@ export const ACCEPT_THRESHOLD = 0.5
 const CONTEXT_WINDOW = 48
 const CONTEXT_BOOST = 0.35
 
+/**
+ * Cue patterns, compiled once and matched on word boundaries (#159).
+ *
+ * `window.includes('ic')` was a substring test, so the NRIC cue `ic` fired
+ * inside "invoice", "clinic", "medical" and "notice". A structurally invalid
+ * bare twelve-digit number near any of those was boosted from 0.3 to 0.65 and
+ * tokenised, while the same sentence ending in "receipt" was left alone.
+ *
+ * The cost was precision rather than a leak, because rehydration puts the value
+ * back into the note. It is still worth closing: a vault carrying phantom NRICs
+ * is noise in the one structure whose contents nobody may inspect to check.
+ *
+ * Lookarounds rather than `\b`, because several cues carry `/` (`i/c`, `k/p`)
+ * and one carries a space (`kad pengenalan`). `\b` sits in a different place
+ * relative to those characters than the cue needs.
+ *
+ * **Every cue list had to be re-read when this changed, and the lists below
+ * carry inflected forms because of it.** Under substring matching `live` also
+ * covered `lives`, `lived` and `living` for free. Under word matching it does
+ * not, and ADDRESS scores 0.45 without a cue, which is under `ACCEPT_THRESHOLD`:
+ * "She lives at Jalan Ampang 5" lost its address entirely and sent it onward in
+ * cleartext. A tightening that looks like pure precision is a recall change
+ * wherever a base score sits below the threshold on its own.
+ */
+const CUE_PATTERNS = new Map<string, RegExp>()
+
+function cuePattern(cue: string): RegExp {
+  const cached = CUE_PATTERNS.get(cue)
+  if (cached) return cached
+  const escaped = cue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const built = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu')
+  CUE_PATTERNS.set(cue, built)
+  return built
+}
+
 function hasContext(text: string, start: number, end: number, words: readonly string[]): boolean {
-  const window = text
-    .slice(Math.max(0, start - CONTEXT_WINDOW), Math.min(text.length, end + CONTEXT_WINDOW))
-    .toLowerCase()
-  return words.some((w) => window.includes(w))
+  const window = text.slice(
+    Math.max(0, start - CONTEXT_WINDOW),
+    Math.min(text.length, end + CONTEXT_WINDOW),
+  )
+  return words.some((w) => cuePattern(w).test(window))
 }
 
 function scoreWith(
@@ -59,7 +95,54 @@ function scoreWith(
 
 // ─── NRIC ────────────────────────────────────────────────────────────────────
 
-const NRIC_CONTEXT = ['ic', 'i/c', 'k/p', 'nric', 'mykad', 'kad pengenalan', 'identity', 'pesakit']
+/*
+ * Two kinds of entry, and the second kind is deliberate rather than incidental.
+ *
+ * **The `-nya` forms are enumerated, not inferred.** Malay attaches the
+ * possessive clitic directly to the noun, so `pesakitnya`, `kad pengenalannya`
+ * and `icnya` are ordinary rather than unusual. Substring matching covered them
+ * for free and word matching covers none, and the failure is worse than a miss:
+ * PHONE claims ten of the twelve digits and leaves two in the clear, which is a
+ * partly tokenised identifier. `IC-nya` needs no entry, because the hyphen
+ * already satisfies the lookahead.
+ *
+ * **The clinical-setting words are here on purpose, and used not to be.** A
+ * structurally invalid twelve-digit run scores 0.3 and clears `ACCEPT_THRESHOLD`
+ * only with a cue. Under substring matching, `ic` fired inside "clinic",
+ * "medical", "physician" and "pediatric", so those runs were masked by accident.
+ * Fixing the substring bug removed the accident and with it the masking: "At the
+ * clinic, 990231145677 was recorded" sent all twelve digits onward.
+ *
+ * A structurally invalid NRIC is not only an invoice number. It is also the
+ * ordinary shape of a real NRIC that transcription got wrong, and hosted ASR
+ * (#154) sits in front of this detector, which makes garbled digits more likely
+ * rather than less. So the incidental behaviour is made explicit: in a clinical
+ * transcript, a long digit run beside these words is more likely an identifier
+ * than a reference number, and the repository's own rule is that a recall loss
+ * on the boundary outranks a precision gain.
+ *
+ * The distinction #159 actually fixed survives: `invoice`, `notice` and
+ * `receipt` are not clinical words and are not cues, so they no longer boost
+ * anything. What changed is that the cue has to be a word.
+ */
+const NRIC_CONTEXT = [
+  'ic',
+  'icnya',
+  'i/c',
+  'k/p',
+  'nric',
+  'mykad',
+  'mykadnya',
+  'kad pengenalan',
+  'kad pengenalannya',
+  'identity',
+  'pesakit',
+  'pesakitnya',
+  'clinic',
+  'klinik',
+  'medical',
+  'physician',
+]
 
 function detectNric(text: string): Match[] {
   const out: Match[] = []
@@ -102,7 +185,21 @@ function detectNric(text: string): Match[] {
 
 const PHONE_PATTERN =
   /(?:\+?60[\s-]?)?0?1\d[\s-]?\d{3,4}[\s-]?\d{4}\b|\b0\d[\s-]?\d{3,4}[\s-]?\d{4}\b/g
-const PHONE_CONTEXT = ['phone', 'call', 'contact', 'hp', 'handphone', 'mobile', 'telefon', 'number']
+const PHONE_CONTEXT = [
+  'phone',
+  'telephone',
+  'call',
+  'called',
+  'contact',
+  'contacts',
+  'hp',
+  'handphone',
+  'mobile',
+  'telefon',
+  'number',
+  'numbers',
+  'nombor',
+]
 
 function detectPhone(text: string): Match[] {
   const out: Match[] = []
@@ -138,10 +235,61 @@ function detectEmail(text: string): Match[] {
 
 // ─── Address ─────────────────────────────────────────────────────────────────
 
-/** A street-type keyword through to a 5-digit postcode, or the reverse. */
+/**
+ * A street-type keyword through to a 5-digit postcode, or the reverse.
+ *
+ * **The postcode branch is separate and required, because a lazy run followed
+ * by an optional group never expands.** Written as one expression ending in
+ * `(?:,\s*\d{5}...)?`, the `{2,40}?` always matched its two-character minimum
+ * and stopped, so `Jalan Bukit Bintang 5, 50450 Kuala Lumpur` tokenised as
+ * `Jalan Bu` and sent street, number, postcode and city onward in cleartext.
+ * `hasPostcode` was consequently always false and the 0.8 branch below
+ * unreachable, which is why every address depended entirely on a context cue.
+ *
+ * The city after the postcode is bounded to three words. `[A-Za-z\s]{2,25}`
+ * ran through the sentence after it and, given the same address twice, joined
+ * the first one to the second: one address became two tokens with the prose
+ * between them deleted.
+ *
+ * Splitting it means the first alternative has to reach a postcode to match at
+ * all, so the lazy run expands to find one. The second is the previous
+ * behaviour, unchanged and still truncating: an address with no postcode has no
+ * comparable anchor, and a greedy run there would swallow the clinical prose
+ * after the street name. That half is issue #181 rather than a silent partial
+ * fix here.
+ */
 const ADDRESS_PATTERN =
-  /\b(?:No\.?\s*\d+[A-Za-z]?,?\s*)?(?:Jalan|Jln|Lorong|Lrg|Taman|Tmn|Kampung|Kg|Persiaran|Lebuh)\s+[A-Za-z0-9\s./'-]{2,40}?(?:,\s*\d{5}\s*[A-Za-z\s]{2,25})?/gi
-const ADDRESS_CONTEXT = ['address', 'alamat', 'live', 'stay', 'tinggal', 'duduk', 'postcode']
+  /\b(?:No\.?\s*\d+[A-Za-z]?,?\s*)?(?:Jalan|Jln|Lorong|Lrg|Taman|Tmn|Kampung|Kg|Persiaran|Lebuh)\s+(?:[A-Za-z0-9\s./'-]{2,40}?,\s*\d{5}\s*[A-Za-z]+(?:\s+[A-Za-z]+){0,2}|[A-Za-z0-9\s./'-]{2,40}?)/gi
+/*
+ * Inflected forms are enumerated, not inferred. ADDRESS has no cue-free route
+ * over `ACCEPT_THRESHOLD` at base 0.45, so a cue that stops matching is a whole
+ * address leaving the boundary rather than a score nudge. `lives`, `lived`,
+ * `living`, `stays` and `staying` are all ordinary in a consultation note.
+ */
+const ADDRESS_CONTEXT = [
+  'address',
+  'addresses',
+  'addressed',
+  'addressing',
+  'alamat',
+  'alamatnya',
+  'beralamat',
+  'live',
+  'lives',
+  'lived',
+  'living',
+  'stay',
+  'stays',
+  'stayed',
+  'staying',
+  'tinggal',
+  'tinggalnya',
+  'duduk',
+  'duduknya',
+  'postcode',
+  'postcodes',
+  'poskod',
+]
 
 function detectAddress(text: string): Match[] {
   const out: Match[] = []
@@ -210,8 +358,32 @@ function detectDob(text: string): Match[] {
 
 // ─── Medical / clinic record number ──────────────────────────────────────────
 
+/*
+ * Cue directly before the value, and the separator is unchanged from before
+ * this PR.
+ *
+ * **The filler run that #174 asked for was written, audited twice, and taken
+ * back out.** It let "Registration number for our clinic file is KLC-004821"
+ * match, which is the ordinary dictated phrasing and worth having. It also
+ * masked clinical values inside a single sentence: "MRN unknown so I gave 500
+ * mg" tokenised the dose. Two rounds of narrowing closed the sentence-crossing
+ * cases and never closed that one, because a bounded run of ordinary words is
+ * exactly what sits between a cue and an unrelated number in ordinary prose.
+ *
+ * Dose, age and symptom duration are what the model red-flag pass and gap
+ * detection reason over. Masking them degrades that pass in the false-negative
+ * direction, which `healthcare-cdss-patterns` holds to zero tolerance, and it
+ * is a regression against a detector that was merely incomplete before. #174
+ * stays open with the audit's reproducers on it rather than being closed by a
+ * fix that trades a recall gap for a clinical-content gap.
+ *
+ * The value keeps the widened shape, which was clean across both audits: up to
+ * three digit groups so `RC-2026-00842` is one match rather than `RC-2026` plus
+ * orphaned digits, and a three-digit minimum on the first group so an age or a
+ * tablet count cannot be one.
+ */
 const MRN_CUE =
-  /\b(?:MRN|RN|record\s+(?:no|number)|registration\s+(?:no|number)|clinic\s+(?:no|number)|patient\s+(?:id|no|number)|file\s+(?:no|number)|(?:no\.?|nombor)\s+(?:pendaftaran|fail|klinik|pesakit))\b[:\s.#-]*([A-Z]{0,4}[-/]?\d{3,10}[A-Z]?)\b/gi
+  /\b(?:MRN|RN|record\s+(?:no|number)|registration\s+(?:no|number)|clinic\s+(?:no|number)|patient\s+(?:id|no|number)|file\s+(?:no|number)|(?:no\.?|nombor)\s+(?:pendaftaran|fail|klinik|pesakit))\b[:\s.#-]*([A-Z]{0,4}[-/]?\d{3,10}(?:[-/]?\d{2,10}){0,2}[A-Z]?)\b/gi
 
 function detectMrn(text: string): Match[] {
   const out: Match[] = []
@@ -263,7 +435,31 @@ function isStopword(run: string): boolean {
 
 const normalise = (word: string) => word.toLowerCase().replace(/[^a-z/]/g, '')
 
-const HONORIFIC_WORDS = new Set(HONORIFICS.flatMap((h) => h.toLowerCase().split(/\s+/)))
+/**
+ * Honorifics that may be dropped from the front of a name span.
+ *
+ * **A multi-word honorific is only ever dropped as a whole phrase.** Splitting
+ * them on whitespace is how `Tan Sri` put `tan` and `sri` into the drop set
+ * individually, and both are real Malaysian name elements: `Tan` is the
+ * commonest Chinese Malaysian surname, and `Sri Devi a/p Ramasamy` trimmed to
+ * `Devi`, sending `Sri` onward in cleartext. That is #149's failure mode
+ * arriving through the other half of the same predicate.
+ *
+ * Single-word honorifics are additionally filtered against the gazetteer, as a
+ * backstop for the same class of collision. A word that is both a title and a
+ * name is ambiguous and the tie goes to treating it as a name: a false
+ * honorific truncates a real name, while a missed one only leaves a title
+ * inside a token.
+ */
+const HONORIFIC_WORDS = new Set(
+  HONORIFICS.filter((h) => !h.includes(' '))
+    .map((h) => h.toLowerCase())
+    .filter((w) => !GIVEN_NAMES.has(w)),
+)
+
+const HONORIFIC_PHRASES = HONORIFICS.filter((h) => h.includes(' ')).map((h) =>
+  h.toLowerCase().split(/\s+/),
+)
 
 /**
  * Narrows a candidate name span to the name itself.
@@ -274,16 +470,40 @@ const HONORIFIC_WORDS = new Set(HONORIFICS.flatMap((h) => h.toLowerCase().split(
  * different tokens — the model then sees three patients where there is one,
  * and rehydration writes the stray word back into the note.
  *
- * The gazetteer is the strongest available anchor: where a known given name
- * appears, the name starts there. Otherwise fall back to dropping leading
- * honorifics and stopwords.
+ * **The gazetteer is deliberately not an anchor here, and used to be** (#149).
+ * Jumping to the first word `GIVEN_NAMES` recognised is how `Zarul bin Ismail`
+ * tokenised as `Ismail` and sent `Zarul` to the model in cleartext: the anchor
+ * landed on the one element the gazetteer happened to know and discarded
+ * everything before it on that basis alone. The gazetteer holds roughly 130
+ * names, so being outside it is the ordinary case for a real patient, and
+ * `assertNoIdentifiers` cannot catch the miss because the egress guard re-runs
+ * these same detectors and shares the blind spot.
+ *
+ * What decides where a name starts is now only `NAME_STOPWORDS` and
+ * `HONORIFIC_WORDS`. Every entry in either is a word that can no longer begin a
+ * detected name, which makes both lists safety-critical rather than cosmetic.
+ *
+ * Keeping an unrecognised leading word leaves a stray word inside a token,
+ * costing token stability. That is the trade this module already makes
+ * deliberately: see the Malay weekday note in `gazetteer.ts`, which keeps
+ * `Jumaat` and `Ahad` out of the stopword list for exactly this reason. A
+ * recall loss on the PHI boundary outranks a precision gain.
  */
 function trimNameSpan(value: string, start: number): { value: string; start: number } | null {
   const words = value.split(/\s+/)
 
-  const anchor = words.findIndex((w) => GIVEN_NAMES.has(normalise(w)))
-  let lead = anchor > 0 ? anchor : 0
+  let lead = 0
   let tail = words.length
+
+  // A multi-word honorific is dropped only as a whole phrase, never word by
+  // word: `Tan Sri` split into `tan` and `sri` is two real name elements.
+  for (const phrase of HONORIFIC_PHRASES) {
+    if (phrase.every((word, i) => normalise(words[i] ?? '') === word)) {
+      lead = phrase.length
+      break
+    }
+  }
+
   while (
     lead < tail &&
     (NAME_STOPWORDS.has(normalise(words[lead] ?? '')) ||
@@ -356,7 +576,28 @@ function detectNames(text: string): Match[] {
     })
   }
 
-  return out
+  return out.map(stripPossessive)
+}
+
+/**
+ * `Siti Nurhaliza` and `Siti Nurhaliza's` are one person (#167).
+ *
+ * The name patterns admit `'` inside a word so that `O'Brien` and `Nur'ain`
+ * survive intact, which also lets a trailing possessive into the span. The
+ * vault keys on the matched text, so the possessive form minted `[PATIENT_2]`
+ * for somebody already carrying `[PATIENT_1]`, and the model was told there
+ * were two people in the room.
+ *
+ * Nothing leaks, which is what makes this a quality fix rather than a boundary
+ * one: both tokens rehydrate correctly. Applied to every name path rather than
+ * inside `trimNameSpan`, because only the patronymic path goes through that
+ * function and a possessive is just as likely after an honorific or an
+ * introducer.
+ */
+function stripPossessive(match: Match): Match {
+  const trimmed = match.value.replace(/['’]s?$/, '')
+  if (trimmed === match.value || trimmed.length === 0) return match
+  return { ...match, value: trimmed, end: match.start + trimmed.length }
 }
 
 // ─── Assembly ────────────────────────────────────────────────────────────────
