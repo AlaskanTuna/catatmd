@@ -393,10 +393,34 @@ describe('name spans must not drop what the gazetteer does not recognise (#149)'
 })
 
 describe('context cues match words, not substrings (#159)', () => {
-  it.each(['invoice', 'clinic', 'notice', 'medical record'])(
+  it.each(['invoice', 'notice', 'receipt'])(
     'does not boost an invalid twelve-digit number near %s',
     (word) => {
+      // The actual bug: `ic` fired *inside* these words. None of them is a
+      // clinical term, so none is a cue, and a reference number beside one is
+      // left alone.
       expect(labelsIn(`Reference 123456789012 appears on the ${word}.`)).not.toContain('NRIC')
+    },
+  )
+
+  it.each(['clinic', 'medical record', 'physician'])(
+    'does boost an invalid twelve-digit number near %s, deliberately',
+    (word) => {
+      // These read the other way, and the third audit is why this test now
+      // asserts the opposite of what it first did.
+      //
+      // Substring matching masked these by accident, and fixing the substring
+      // bug removed the accident: "At the clinic, 990231145677 was recorded"
+      // sent all twelve digits to the provider where main had masked them. A
+      // structurally invalid NRIC scores 0.3 and needs a cue, and it is not
+      // only an invoice number: it is the ordinary shape of a real NRIC that
+      // transcription got wrong, which hosted ASR makes more likely.
+      //
+      // So these are cues on purpose now rather than by accident. In a clinical
+      // transcript a long digit run beside them is more likely an identifier
+      // than a reference, and a recall loss on the boundary outranks a
+      // precision gain.
+      expect(labelsIn(`At the ${word}, 990231145677 was recorded.`)).toContain('NRIC')
     },
   )
 
@@ -404,6 +428,24 @@ describe('context cues match words, not substrings (#159)', () => {
     // The precision fix must not cost the recall it was protecting.
     expect(labelsIn('His ic is 850523-14-5677.')).toContain('NRIC')
     expect(labelsIn('Nombor kad pengenalan saya 900412086543.')).toContain('NRIC')
+  })
+
+  it('keeps every ADDRESS cue that main caught as a substring', () => {
+    // ADDRESS scores 0.45 without a cue, under the threshold, so a cue that
+    // stops matching is a whole street address leaving the boundary. The third
+    // audit found seven of these; the inflections and the Malay clitic forms
+    // are enumerated rather than inferred.
+    for (const sentence of [
+      'Dia beralamat di Jalan Ampang 5.',
+      'Tinggalnya di Jalan Ampang 5.',
+      'Duduknya di Jalan Ampang 5.',
+      'Their addresses include Jalan Ampang 5.',
+      'She addressed it to Jalan Ampang 5.',
+      'Addressing mail to Jalan Ampang 5.',
+      'Postcodes for Jalan Ampang 5.',
+    ]) {
+      expect(labelsIn(sentence), sentence).toContain('ADDRESS')
+    }
   })
 })
 
@@ -565,9 +607,26 @@ describe('regressions introduced by this PR, now pinned', () => {
     // Bounded in practice: `CAPITALISED_RUN` only reaches Title-Cased words, so
     // ordinary prose ("acute cough, sore throat") is unaffected. It takes a
     // header-style line to trigger.
+    //
+    // **It costs token stability too, which is worse than swallowing a word.**
+    // The swallowed word is part of the matched span, so the same person
+    // introduced two different ways mints two tokens and the model is told
+    // there are two patients. That is the exact harm `trimNameSpan` exists to
+    // prevent, per its own docstring, and it is the counterweight to the #149
+    // recall gain rather than a footnote to it. Pinned below so the cost is
+    // measured rather than described.
     const { text } = deidentify('Acute Cough Sore Throat Fever Ahmad bin Ismail attended.')
     expect(text).not.toContain('Ahmad')
     expect(text).toContain('Acute Cough Sore')
+  })
+
+  it('splits one person into two tokens when a Title-Cased word precedes one mention', () => {
+    // KNOWN BAD, pinned deliberately. Issue #183, and the honest price of #149.
+    // `main` gives one token here; this branch gives two.
+    const { text } = deidentify('Wheeze Ahmad bin Ismail has. Ahmad bin Ismail came back.')
+    const tokens = [...text.matchAll(/\[PATIENT_\d+\]/g)].map((m) => m[0])
+    expect(tokens).toHaveLength(2)
+    expect(new Set(tokens).size).toBe(2)
   })
 
   it('keeps one token for one person across two sentences', () => {

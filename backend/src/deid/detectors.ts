@@ -96,14 +96,34 @@ function scoreWith(
 // ─── NRIC ────────────────────────────────────────────────────────────────────
 
 /*
- * The `-nya` forms are enumerated, not inferred.
+ * Two kinds of entry, and the second kind is deliberate rather than incidental.
  *
- * Malay attaches the possessive clitic directly to the noun, so `pesakitnya`,
- * `kad pengenalannya` and `icnya` are ordinary rather than unusual. Substring
- * matching covered all of them for free and word matching covers none, and the
- * failure is worse than a miss: PHONE claims ten of the twelve digits and
- * leaves two in the clear, which is a partly tokenised identifier. `IC-nya`
- * needs no entry, because the hyphen already satisfies the lookahead.
+ * **The `-nya` forms are enumerated, not inferred.** Malay attaches the
+ * possessive clitic directly to the noun, so `pesakitnya`, `kad pengenalannya`
+ * and `icnya` are ordinary rather than unusual. Substring matching covered them
+ * for free and word matching covers none, and the failure is worse than a miss:
+ * PHONE claims ten of the twelve digits and leaves two in the clear, which is a
+ * partly tokenised identifier. `IC-nya` needs no entry, because the hyphen
+ * already satisfies the lookahead.
+ *
+ * **The clinical-setting words are here on purpose, and used not to be.** A
+ * structurally invalid twelve-digit run scores 0.3 and clears `ACCEPT_THRESHOLD`
+ * only with a cue. Under substring matching, `ic` fired inside "clinic",
+ * "medical", "physician" and "pediatric", so those runs were masked by accident.
+ * Fixing the substring bug removed the accident and with it the masking: "At the
+ * clinic, 990231145677 was recorded" sent all twelve digits onward.
+ *
+ * A structurally invalid NRIC is not only an invoice number. It is also the
+ * ordinary shape of a real NRIC that transcription got wrong, and hosted ASR
+ * (#154) sits in front of this detector, which makes garbled digits more likely
+ * rather than less. So the incidental behaviour is made explicit: in a clinical
+ * transcript, a long digit run beside these words is more likely an identifier
+ * than a reference number, and the repository's own rule is that a recall loss
+ * on the boundary outranks a precision gain.
+ *
+ * The distinction #159 actually fixed survives: `invoice`, `notice` and
+ * `receipt` are not clinical words and are not cues, so they no longer boost
+ * anything. What changed is that the cue has to be a word.
  */
 const NRIC_CONTEXT = [
   'ic',
@@ -118,6 +138,10 @@ const NRIC_CONTEXT = [
   'identity',
   'pesakit',
   'pesakitnya',
+  'clinic',
+  'klinik',
+  'medical',
+  'physician',
 ]
 
 function detectNric(text: string): Match[] {
@@ -244,8 +268,12 @@ const ADDRESS_PATTERN =
  */
 const ADDRESS_CONTEXT = [
   'address',
+  'addresses',
+  'addressed',
+  'addressing',
   'alamat',
   'alamatnya',
+  'beralamat',
   'live',
   'lives',
   'lived',
@@ -255,8 +283,11 @@ const ADDRESS_CONTEXT = [
   'stayed',
   'staying',
   'tinggal',
+  'tinggalnya',
   'duduk',
+  'duduknya',
   'postcode',
+  'postcodes',
   'poskod',
 ]
 
