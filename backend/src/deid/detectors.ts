@@ -53,6 +53,14 @@ const CONTEXT_BOOST = 0.35
  * Lookarounds rather than `\b`, because several cues carry `/` (`i/c`, `k/p`)
  * and one carries a space (`kad pengenalan`). `\b` sits in a different place
  * relative to those characters than the cue needs.
+ *
+ * **Every cue list had to be re-read when this changed, and the lists below
+ * carry inflected forms because of it.** Under substring matching `live` also
+ * covered `lives`, `lived` and `living` for free. Under word matching it does
+ * not, and ADDRESS scores 0.45 without a cue, which is under `ACCEPT_THRESHOLD`:
+ * "She lives at Jalan Ampang 5" lost its address entirely and sent it onward in
+ * cleartext. A tightening that looks like pure precision is a recall change
+ * wherever a base score sits below the threshold on its own.
  */
 const CUE_PATTERNS = new Map<string, RegExp>()
 
@@ -87,7 +95,19 @@ function scoreWith(
 
 // ─── NRIC ────────────────────────────────────────────────────────────────────
 
-const NRIC_CONTEXT = ['ic', 'i/c', 'k/p', 'nric', 'mykad', 'kad pengenalan', 'identity', 'pesakit']
+// `pesakitnya` is the ordinary Malay possessive clitic form and was covered by
+// substring matching before word matching arrived.
+const NRIC_CONTEXT = [
+  'ic',
+  'i/c',
+  'k/p',
+  'nric',
+  'mykad',
+  'kad pengenalan',
+  'identity',
+  'pesakit',
+  'pesakitnya',
+]
 
 function detectNric(text: string): Match[] {
   const out: Match[] = []
@@ -130,7 +150,21 @@ function detectNric(text: string): Match[] {
 
 const PHONE_PATTERN =
   /(?:\+?60[\s-]?)?0?1\d[\s-]?\d{3,4}[\s-]?\d{4}\b|\b0\d[\s-]?\d{3,4}[\s-]?\d{4}\b/g
-const PHONE_CONTEXT = ['phone', 'call', 'contact', 'hp', 'handphone', 'mobile', 'telefon', 'number']
+const PHONE_CONTEXT = [
+  'phone',
+  'telephone',
+  'call',
+  'called',
+  'contact',
+  'contacts',
+  'hp',
+  'handphone',
+  'mobile',
+  'telefon',
+  'number',
+  'numbers',
+  'nombor',
+]
 
 function detectPhone(text: string): Match[] {
   const out: Match[] = []
@@ -166,10 +200,49 @@ function detectEmail(text: string): Match[] {
 
 // ─── Address ─────────────────────────────────────────────────────────────────
 
-/** A street-type keyword through to a 5-digit postcode, or the reverse. */
+/**
+ * A street-type keyword through to a 5-digit postcode, or the reverse.
+ *
+ * **The postcode branch is separate and required, because a lazy run followed
+ * by an optional group never expands.** Written as one expression ending in
+ * `(?:,\s*\d{5}...)?`, the `{2,40}?` always matched its two-character minimum
+ * and stopped, so `Jalan Bukit Bintang 5, 50450 Kuala Lumpur` tokenised as
+ * `Jalan Bu` and sent street, number, postcode and city onward in cleartext.
+ * `hasPostcode` was consequently always false and the 0.8 branch below
+ * unreachable, which is why every address depended entirely on a context cue.
+ *
+ * Splitting it means the first alternative has to reach a postcode to match at
+ * all, so the lazy run expands to find one. The second is the previous
+ * behaviour, unchanged and still truncating: an address with no postcode has no
+ * comparable anchor, and a greedy run there would swallow the clinical prose
+ * after the street name. That half is issue #181 rather than a silent partial
+ * fix here.
+ */
 const ADDRESS_PATTERN =
-  /\b(?:No\.?\s*\d+[A-Za-z]?,?\s*)?(?:Jalan|Jln|Lorong|Lrg|Taman|Tmn|Kampung|Kg|Persiaran|Lebuh)\s+[A-Za-z0-9\s./'-]{2,40}?(?:,\s*\d{5}\s*[A-Za-z\s]{2,25})?/gi
-const ADDRESS_CONTEXT = ['address', 'alamat', 'live', 'stay', 'tinggal', 'duduk', 'postcode']
+  /\b(?:No\.?\s*\d+[A-Za-z]?,?\s*)?(?:Jalan|Jln|Lorong|Lrg|Taman|Tmn|Kampung|Kg|Persiaran|Lebuh)\s+(?:[A-Za-z0-9\s./'-]{2,40}?,\s*\d{5}\s*[A-Za-z\s]{2,25}|[A-Za-z0-9\s./'-]{2,40}?)/gi
+/*
+ * Inflected forms are enumerated, not inferred. ADDRESS has no cue-free route
+ * over `ACCEPT_THRESHOLD` at base 0.45, so a cue that stops matching is a whole
+ * address leaving the boundary rather than a score nudge. `lives`, `lived`,
+ * `living`, `stays` and `staying` are all ordinary in a consultation note.
+ */
+const ADDRESS_CONTEXT = [
+  'address',
+  'alamat',
+  'alamatnya',
+  'live',
+  'lives',
+  'lived',
+  'living',
+  'stay',
+  'stays',
+  'stayed',
+  'staying',
+  'tinggal',
+  'duduk',
+  'postcode',
+  'poskod',
+]
 
 function detectAddress(text: string): Match[] {
   const out: Match[] = []
@@ -250,16 +323,35 @@ function detectDob(text: string): Match[] {
  * The filler run is bounded, admits letters only, and carries no punctuation.
  * Unbounded, the cue at the start of a paragraph would reach the first number
  * anywhere after it; allowing digits inside the run would let it step over the
- * real record number and tokenise a later dose or duration instead. Excluding
- * punctuation is what stops the run crossing a comma or a full stop, so a cue
- * cannot reach a number in the following clause or sentence.
+ * real record number and tokenise a later dose or duration instead.
+ *
+ * **A full stop may sit between cue and value only when they are adjacent**,
+ * which is the two-branch alternation. `[:\s.#-]*` admitted a full stop and a
+ * newline in front of the filler run, so a sentence-final cue reached straight
+ * into the next sentence: "Check her MRN. Give 500 mg of paracetamol"
+ * tokenised the dose as a record number.
+ *
+ * Simply banning the full stop breaks "Registration no. KLC-004821", where it
+ * abbreviates rather than ends a sentence. The distinguishing feature is not
+ * the character, it is what follows: an abbreviation is followed by the value,
+ * a sentence end by another sentence. So the adjacent branch allows the stop
+ * and admits no filler, and the filler branch admits no stop.
+ *
+ * That failure was not vault noise. Dose, age and symptom duration are exactly
+ * what the model red-flag pass and gap detection reason over, and masking them
+ * degrades the pass in the false-negative direction.
  *
  * The value admits up to three digit groups so `RC-2026-00842` is one match.
  * One group was enough for the seeded fixtures and not for real clinic formats,
  * which commonly carry a year segment.
+ *
+ * The first group keeps its three-digit minimum, and that is what separates a
+ * record number from the rest of a sentence. Relaxed to two, "MRN pending she
+ * is 65 years old" masked the age. Ages, tablet counts and day counts are one
+ * or two digits; clinic record numbers are not.
  */
 const MRN_CUE =
-  /\b(?:MRN|RN|record\s+(?:no|number)|registration\s+(?:no|number)|clinic\s+(?:no|number)|patient\s+(?:id|no|number)|file\s+(?:no|number)|(?:no\.?|nombor)\s+(?:pendaftaran|fail|klinik|pesakit))\b(?:[:\s.#-]*(?:[A-Za-z]{1,12}[ \t]+){0,6})([A-Z]{0,4}(?:[-/]?\d{2,10}){1,3}[A-Z]?)\b/gi
+  /\b(?:MRN|RN|record\s+(?:no|number)|registration\s+(?:no|number)|clinic\s+(?:no|number)|patient\s+(?:id|no|number)|file\s+(?:no|number)|(?:no\.?|nombor)\s+(?:pendaftaran|fail|klinik|pesakit))\b(?:[ \t]*[.:#]?[ \t]*|[ \t]*[:#]?[ \t]*(?:[A-Za-z]{1,12}[ \t]+){1,6})([A-Z]{0,4}[-/]?\d{3,10}(?:[-/]?\d{2,10}){0,2}[A-Z]?)\b/gi
 
 function detectMrn(text: string): Match[] {
   const out: Match[] = []
@@ -299,7 +391,7 @@ function caseInsensitiveLiteral(literal: string): string {
 const PARTICLE_ALTERNATION = PATRONYMICS.map(caseInsensitiveLiteral).join('|')
 
 const PATRONYMIC_PATTERN = new RegExp(
-  `\\b([A-Z][A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+){0,2})\\s+(?:${PARTICLE_ALTERNATION})\\.?\\s+([A-Z][A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+){0,2})`,
+  `\\b([A-Z][A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+){0,4})\\s+(?:${PARTICLE_ALTERNATION})\\.?\\s+([A-Z][A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+){0,2})`,
   'g',
 )
 
@@ -311,7 +403,31 @@ function isStopword(run: string): boolean {
 
 const normalise = (word: string) => word.toLowerCase().replace(/[^a-z/]/g, '')
 
-const HONORIFIC_WORDS = new Set(HONORIFICS.flatMap((h) => h.toLowerCase().split(/\s+/)))
+/**
+ * Honorifics that may be dropped from the front of a name span.
+ *
+ * **A multi-word honorific is only ever dropped as a whole phrase.** Splitting
+ * them on whitespace is how `Tan Sri` put `tan` and `sri` into the drop set
+ * individually, and both are real Malaysian name elements: `Tan` is the
+ * commonest Chinese Malaysian surname, and `Sri Devi a/p Ramasamy` trimmed to
+ * `Devi`, sending `Sri` onward in cleartext. That is #149's failure mode
+ * arriving through the other half of the same predicate.
+ *
+ * Single-word honorifics are additionally filtered against the gazetteer, as a
+ * backstop for the same class of collision. A word that is both a title and a
+ * name is ambiguous and the tie goes to treating it as a name: a false
+ * honorific truncates a real name, while a missed one only leaves a title
+ * inside a token.
+ */
+const HONORIFIC_WORDS = new Set(
+  HONORIFICS.filter((h) => !h.includes(' '))
+    .map((h) => h.toLowerCase())
+    .filter((w) => !GIVEN_NAMES.has(w)),
+)
+
+const HONORIFIC_PHRASES = HONORIFICS.filter((h) => h.includes(' ')).map((h) =>
+  h.toLowerCase().split(/\s+/),
+)
 
 /**
  * Narrows a candidate name span to the name itself.
@@ -322,37 +438,40 @@ const HONORIFIC_WORDS = new Set(HONORIFICS.flatMap((h) => h.toLowerCase().split(
  * different tokens — the model then sees three patients where there is one,
  * and rehydration writes the stray word back into the note.
  *
- * The gazetteer is the strongest available anchor: where a known given name
- * appears, the name starts there. Otherwise fall back to dropping leading
- * honorifics and stopwords.
+ * **The gazetteer is deliberately not an anchor here, and used to be** (#149).
+ * Jumping to the first word `GIVEN_NAMES` recognised is how `Zarul bin Ismail`
+ * tokenised as `Ismail` and sent `Zarul` to the model in cleartext: the anchor
+ * landed on the one element the gazetteer happened to know and discarded
+ * everything before it on that basis alone. The gazetteer holds roughly 130
+ * names, so being outside it is the ordinary case for a real patient, and
+ * `assertNoIdentifiers` cannot catch the miss because the egress guard re-runs
+ * these same detectors and shares the blind spot.
+ *
+ * What decides where a name starts is now only `NAME_STOPWORDS` and
+ * `HONORIFIC_WORDS`. Every entry in either is a word that can no longer begin a
+ * detected name, which makes both lists safety-critical rather than cosmetic.
+ *
+ * Keeping an unrecognised leading word leaves a stray word inside a token,
+ * costing token stability. That is the trade this module already makes
+ * deliberately: see the Malay weekday note in `gazetteer.ts`, which keeps
+ * `Jumaat` and `Ahad` out of the stopword list for exactly this reason. A
+ * recall loss on the PHI boundary outranks a precision gain.
  */
 function trimNameSpan(value: string, start: number): { value: string; start: number } | null {
   const words = value.split(/\s+/)
 
-  const droppable = (word: string) =>
-    NAME_STOPWORDS.has(normalise(word)) || HONORIFIC_WORDS.has(normalise(word))
-
-  /*
-   * The gazetteer anchor may only skip words that were droppable anyway (#149).
-   *
-   * Jumping to it unconditionally is how `Zarul bin Ismail` tokenised as
-   * `Ismail` and sent `Zarul` to the model in cleartext: the anchor landed on
-   * the one element the gazetteer happened to know, and everything before it
-   * was discarded on that basis alone. `GIVEN_NAMES` holds roughly 130 names,
-   * so being outside it is the ordinary case for a real patient rather than a
-   * rare one, and `assertNoIdentifiers` cannot catch the miss because the
-   * egress guard re-runs these same detectors and shares the blind spot.
-   *
-   * Keeping an unrecognised leading word can leave a stray word inside a token,
-   * which is a precision cost paid in vault noise. That is the trade this
-   * module already makes deliberately: see the Malay weekday note in
-   * `gazetteer.ts`, which keeps `Jumaat` and `Ahad` out of the stopword list
-   * for this exact reason. A recall loss on the PHI boundary outranks a
-   * precision gain.
-   */
-  const anchor = words.findIndex((w) => GIVEN_NAMES.has(normalise(w)))
-  let lead = anchor > 0 && words.slice(0, anchor).every(droppable) ? anchor : 0
+  let lead = 0
   let tail = words.length
+
+  // A multi-word honorific is dropped only as a whole phrase, never word by
+  // word: `Tan Sri` split into `tan` and `sri` is two real name elements.
+  for (const phrase of HONORIFIC_PHRASES) {
+    if (phrase.every((word, i) => normalise(words[i] ?? '') === word)) {
+      lead = phrase.length
+      break
+    }
+  }
+
   while (
     lead < tail &&
     (NAME_STOPWORDS.has(normalise(words[lead] ?? '')) ||

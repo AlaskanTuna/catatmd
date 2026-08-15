@@ -472,3 +472,128 @@ describe('a possessive is the same person (#167)', () => {
     expect(text).toMatch(/\[PATIENT_\d+\]/)
   })
 })
+
+/**
+ * Regressions this PR introduced and then fixed, pinned so they cannot return.
+ *
+ * A phi-boundary-auditor pass on the first draft found three of these, every one
+ * a recall loss on the boundary caused by a change whose stated purpose was
+ * precision. They are grouped together because they share a lesson rather than
+ * a mechanism: **in this module, tightening a match is never precision-only.**
+ * Several base scores sit below `ACCEPT_THRESHOLD` and depend on a context cue
+ * to clear it, so a cue that stops matching is not a lower score, it is an
+ * identifier leaving the trust boundary.
+ */
+describe('regressions introduced by this PR, now pinned', () => {
+  it('keeps ADDRESS cues working in their inflected forms', () => {
+    // The worst of them. Word-boundary matching killed `lives`, `lived`,
+    // `living`, `stays` and `staying`, and ADDRESS scores 0.45 without a cue,
+    // under the 0.5 threshold. Every address in a sentence phrased this way,
+    // which is the ordinary phrasing, went to the provider untouched.
+    for (const phrasing of ['lives at', 'lived at', 'stays at', 'staying at']) {
+      const { text } = deidentify(`She ${phrasing} Jalan Ampang 5, 50450 Kuala Lumpur.`)
+      expect(text, phrasing).toContain('[ADDRESS_1]')
+    }
+  })
+
+  it('keeps the Malay possessive clitic working as an NRIC cue', () => {
+    // `pesakit` stopped covering `pesakitnya`, and the fallback was worse than
+    // no match: PHONE claimed ten of the twelve digits and left two in the
+    // clear, which is a partly tokenised identifier.
+    const { text } = deidentify('Pesakitnya ada nombor 991332145501 di sini.')
+    expect(text).not.toContain('99')
+    expect(text).toContain('[NRIC_1]')
+  })
+
+  it('tokenises a name carrying four elements before the particle', () => {
+    // The #149 fix lengthened the patronymic span, which made it overlap the
+    // gazetteer run. `resolveOverlaps` drops the shorter match whole rather
+    // than keeping its uncovered prefix, so the leading element leaked again.
+    // This is #149's own failure mode arriving through the fix for #149.
+    const { text } = deidentify('Nur Aina Sofea Batrisyia binti Zulkifli came in.')
+    expect(text).not.toContain('Nur ')
+    expect(text).toMatch(/\[PATIENT_\d+\] came in\./)
+  })
+
+  it('does not let a sentence-final MRN cue reach into the next sentence', () => {
+    // Dose, age and duration are what the model red-flag pass reasons over.
+    // Masking them degrades that pass in the false-negative direction, which
+    // `healthcare-cdss-patterns` holds to zero tolerance.
+    for (const sentence of [
+      'Check her MRN. Give 500 mg of paracetamol.',
+      'Patient ID. She takes metformin 500 mg daily.',
+    ]) {
+      expect(labelsIn(sentence), sentence).not.toContain('MRN')
+    }
+  })
+
+  it('still allows a full stop between cue and value when they are adjacent', () => {
+    // The other side of the same rule. Banning the stop outright broke this,
+    // where it abbreviates rather than ends a sentence.
+    expect(labelsIn('Registration no. KLC-004821 for the file.')).toContain('MRN')
+  })
+
+  it('does not tokenise an age behind a record cue', () => {
+    // A record number is not one or two digits. Relaxing the first digit group
+    // to two masked the age here.
+    expect(labelsIn('MRN pending she is 65 years old.')).not.toContain('MRN')
+  })
+})
+
+/**
+ * Name elements that are also honorific words.
+ *
+ * Pre-existing, and surfaced by the audit rather than introduced here. It
+ * matters now because `trimNameSpan` no longer consults the gazetteer at all,
+ * so `NAME_STOPWORDS` and `HONORIFIC_WORDS` are the only things deciding where
+ * a name starts.
+ */
+describe('an honorific that is also a name', () => {
+  it('does not drop Sri from the front of a name', () => {
+    // `Tan Sri` split on whitespace put `tan` and `sri` into the drop set
+    // individually. Multi-word honorifics are now dropped only as whole
+    // phrases.
+    const { text } = deidentify('Sri Devi a/p Ramasamy came in today.')
+    expect(text).not.toContain('Sri')
+  })
+
+  it('does not drop Tan, the commonest Chinese Malaysian surname', () => {
+    const { text } = deidentify('Tan Wei Ming binti Ahmad came in.')
+    expect(text).not.toContain('Tan')
+  })
+
+  it('still drops Tan Sri when it really is the honorific', () => {
+    // The behaviour the phrase drop exists to preserve.
+    const { text } = deidentify('Tan Sri Ahmad bin Ismail came in.')
+    expect(text).toContain('Tan Sri')
+    expect(text).not.toContain('Ahmad')
+  })
+
+  it('still drops every single-word honorific', () => {
+    for (const title of ['Encik', 'Dr', 'Puan', 'Datuk']) {
+      const { text } = deidentify(`${title} Ahmad bin Ismail came in.`)
+      expect(text, title).toContain(title)
+      expect(text, title).not.toContain('Ahmad')
+    }
+  })
+})
+
+describe('addresses carrying a postcode tokenise whole (#181 covers the rest)', () => {
+  it('reaches the postcode instead of stopping two characters in', () => {
+    // A lazy run followed by an optional group never expands, so this matched
+    // `Jalan Bu` and left street, number, postcode and city in the clear.
+    const { text } = deidentify('Her address is Jalan Bukit Bintang 5, 50450 Kuala Lumpur.')
+    expect(text).not.toContain('Bintang')
+    expect(text).not.toContain('50450')
+    expect(text).toBe('Her address is [ADDRESS_1].')
+  })
+
+  it('is honest about the no-postcode case still truncating', () => {
+    // Pinned as known-bad rather than quietly left. An address with no postcode
+    // has no comparable anchor, and a greedy run there would swallow the
+    // clinical prose after the street name. Issue #181.
+    const { text } = deidentify('She lives at Jalan Ampang 5, Kuala Lumpur.')
+    expect(text).toContain('[ADDRESS_1]')
+    expect(text).toContain('Kuala Lumpur')
+  })
+})
