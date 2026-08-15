@@ -307,8 +307,10 @@ describe('fixture integration — PRD §16 target: zero identifiers pass through
       expect(text, `"${value}" survived de-identification`).not.toContain(value)
     }
 
+    // All seven classes, so a fixture reword that silently breaks one
+    // detector's match cannot pass vacuously again (issue #148).
     expect(detected).toEqual(
-      expect.arrayContaining(['ADDRESS', 'EMAIL', 'NRIC', 'PATIENT', 'PHONE']),
+      expect.arrayContaining(['ADDRESS', 'DOB', 'EMAIL', 'MRN', 'NRIC', 'PATIENT', 'PHONE']),
     )
   })
 
