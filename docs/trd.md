@@ -1298,6 +1298,25 @@ The residency argument needs **one disclosed origin, not zero**, and is stronger
 
 `asr_local` is **`Built`** as of issue #2, so this describes shipping behaviour rather than a contract to hold to. Measured on a real Malaysian English sample: 25 seconds of audio transcribed in 33 seconds on WASM, with the weights fetched once (~240 MB) and browser-cached after. The register held: the output keeps `lah` and renders "aunties" correctly, which is the exact word §20.1 recorded `whisper-base` mangling into "until".
 
+### Bounding The Wait: The Worker Speaks, Silence Is Terminated
+
+Shipping behaviour as of issues #138 and #139. The contract in one line: **the worker speaks continuously from the first request to the result, and the component terminates any worker silent for `STALL_TIMEOUT_MS` (180 s), tells the doctor what happened, and points at typing or pasting.** A wedged weight fetch, a hung `requestAdapter()`, a dead worker and a malformed audio container all end the same way: bounded, visible, and recoverable, never an infinite spinner.
+
+| Rule                        | Mechanism                                                                                                                                                                                                                                            |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every phase is on screen    | Aggregate download bytes (the library's `progress_total`, whose denominator covers every file from its first event), a `ready` stage change, a per-chunk `transcribing` tick, an `alive` token heartbeat, and `finishing` once before the merge tail |
+| Silence is bounded          | One timer armed before the audio decode and rearmed by every worker message; expiry terminates the worker and surfaces the typing-or-pasting sentence                                                                                                |
+| The doctor can always leave | A Cancel control that terminates the worker; after a failure, Try Again reruns the retained audio rather than asking for the consultation again                                                                                                      |
+| Failure degrades to paste   | The stall and worker-death sentences point at typing or pasting and never mention hosted ASR (the governing rule above)                                                                                                                              |
+
+Three properties are load-bearing and worth defending against future edits:
+
+- **The budget is on silence, not duration.** §20.1 measures an RTF of 1.5 to 3.0, so a consultation-length recording legitimately transcribes for many minutes; a deadline on the whole job would abort exactly the recordings most expensive to lose. 180 s is floored by ONNX session creation, which blocks the worker thread on a ~240 MB decoder and is legitimately silent throughout.
+- **The heartbeat rides on tokens, not Whisper timestamps.** Timestamps go silent over stride overlaps, quiet audio and repetition loops, any of which would let the budget kill a healthy run; tokens fire per decoding step whatever the audio contains (`HEARTBEAT_TOKENS`, one `alive` per eight).
+- **`finishing` clears the budget rather than rearming it.** After the last chunk the tokenizer merge blocks the worker thread, so no heartbeat is physically possible until the result. The phase is named on screen, the spinner carries liveness, and Cancel remains the doctor's bound. A cap here would have to be sized for the slowest legitimate merge, at which point it protects nothing Cancel does not, while a wrong one destroys a finished transcription, the worst outcome this feature has.
+
+Cancel is a `terminate()`, never a message: a worker wedged inside a fetch that never settles will not read one. Every exit, whether expiry, cancel, worker death or unmount, leaves no worker running and no timer armed. The bar also stopped claiming a finished download: at 100% the copy reads "Opening the speech model", because the ORT backend import and the session open both happen after the last byte, which is the same stretch where a blocked backend used to surface only after a finished-looking download.
+
 ### Deciding Whether To Offer Audio — The Two-Stage Capability Probe
 
 The probe's job is to decide **whether to offer audio on this device at all** — not to silently pick a mode. Mode selection is the doctor's (see the governing rule); capability is a fact about the machine.
