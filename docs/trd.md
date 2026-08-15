@@ -1516,6 +1516,8 @@ v1 scoring 53% here, on different audio and a different metric from the 14/08/26
 
 **The two remaining errors are structural, not tuning:** Whisper split "Any chest pain or / breathlessness?" across two segments mid-sentence, which no sentence-level labeller can repair, and "Like this." carries no signal in either direction.
 
+**Confirmation run, same day, fixed code, fresh recording.** The table above scores the corrected patterns replayed over the first recording's segments, so a second reading was recorded end to end to check the result was not fitted to one sample. 31 lines over 39 sentences: **38 of 39 correct (97%), 30 of 31 lines clean, zero wrong labels.** Every fix held in live conditions, including the two that the first run motivated, and the red-flag line landed on the patient again. The single error is the same "Like this.", which is now the only known content-free failure in either recording.
+
 **Limits, stated as §20.1 does:** n=1, one voice, scripted rather than spontaneous, and read by a non-clinician. Real ASR errors were present and left in ("phlegm" became "flame", "doctor" became "daughter"), so this measures labelling over imperfect text, which is the honest condition. The pattern tables are English-only, so heavily code-switched sentences fall through to the context rules.
 
 #### The Apply Gate Is The Safety Control
