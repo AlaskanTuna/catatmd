@@ -14,6 +14,7 @@ function build(): LLMClient {
       return new OpenAICompatibleClient('qwen', env.QWEN_MODEL, {
         apiKey: env.QWEN_API_KEY,
         baseURL: env.QWEN_BASE_URL,
+        resolvesSchemaRefs: true,
       })
     }
     case 'gemini': {
@@ -22,6 +23,12 @@ function build(): LLMClient {
       return new OpenAICompatibleClient('gemini', env.GEMINI_MODEL, {
         apiKey: env.GEMINI_API_KEY,
         baseURL: GEMINI_BASE_URL,
+        // The only provider here that will not resolve a `$ref`. Measured
+        // 15/08/26 against the live endpoint: the referencing form of
+        // `clinical_facts` returns a bodiless HTTP 400, so this pays the full
+        // 14,240 B rather than 3,558 B (issue #109). Local dev only, so the
+        // cost falls where it matters least.
+        resolvesSchemaRefs: false,
       })
     }
     case 'deepseek': {
@@ -30,6 +37,12 @@ function build(): LLMClient {
       return new OpenAICompatibleClient('deepseek', env.DEEPSEEK_MODEL, {
         apiKey: env.DEEPSEEK_API_KEY,
         baseURL: env.DEEPSEEK_BASE_URL,
+        // Deliberately unverified rather than assumed. The 15/08/26 sweep that
+        // settled the other two could not reach DeepSeek: the configured key
+        // returns 401 on every request, schema-independent. `false` is the
+        // form this provider has always been sent, so it keeps behaviour
+        // identical until someone with a working key measures it (issue #109).
+        resolvesSchemaRefs: false,
       })
     }
   }
