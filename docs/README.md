@@ -12,11 +12,11 @@ _Catat_ — Malay, "to note down". The product documents; the doctor decides.
 
 ## Live
 
-| Component    | URL                                                      | Host                |
-| ------------ | -------------------------------------------------------- | ------------------- |
-| **Frontend** | https://catatmd.vercel.app                               | Vercel              |
-| **API**      | https://catatmd-api.onrender.com · health: `/api/health` | Render, Singapore   |
-| **Database** | not publicly reachable — API-only access                 | Supabase, Singapore |
+| Component    | URL                                                      | Host     |
+| ------------ | -------------------------------------------------------- | -------- |
+| **Frontend** | https://catatmd.vercel.app                               | Vercel   |
+| **API**      | https://catatmd-api.onrender.com · health: `/api/health` | Render   |
+| **Database** | not publicly reachable — API-only access                 | Supabase |
 
 All three are on free tiers by design. Render free instances spin down when idle and Supabase free projects auto-pause after roughly a week, so an external scheduler pings `/api/health` every 10 minutes to keep both awake — one ping covers both, because the health check runs a query (`docs/trd.md` §17).
 
@@ -24,7 +24,7 @@ All three are on free tiers by design. Render free instances spin down when idle
 
 ## Status
 
-**The backend is built; the review UI is not.** As of 13/08/26 the de-identification gate, the deterministic red-flag engine, the Malaysian guideline corpus, the structured-extraction pipeline with its evidence-bound assertion check, the gaps engine, authentication and the synthetic fixtures are all implemented and tested. The React review UI remains a Vite scaffold. The hosted-ASR path has since been built (#154, #155) behind a per-consultation consent gate, and stays inert until the provider key is set.
+**The backend is built; the review UI is not.** As of 13/08/26 the de-identification gate, the deterministic red-flag engine, the Malaysian guideline corpus, the structured-extraction pipeline with its evidence-bound assertion check, the gaps engine, authentication and the synthetic fixtures are all implemented and tested. The React review UI remains a Vite scaffold. The hosted-ASR path has since been built (#154, #155) and is live in production behind a per-consultation consent gate.
 
 `docs/trd.md` tags every section `Built`, `Specified`, or `Open`, and never describes unwritten code as if it exists. Where implementation contradicted the specification, the TRD records which won and why rather than quietly conforming — see §3 (the assertion schema had to split in two), §5 and §7.
 
@@ -60,7 +60,7 @@ Table stakes are named as table stakes: doctor-approves-everything, "does not di
 
 Acceptance criteria for each live in `docs/prd.md` §9.
 
-![CatatMD doctor journey, from consultation to approved note. The doctor consults in-room with the patient still present, then starts a consultation from one of four inputs: a bundled fixture, pasted text, an uploaded .txt or .json file, or live audio transcribed on the doctor's device by default. The transcript is saved as a draft consultation, passed through the de-identification gate, and sent as safe text to the language model, which returns a structured note, documentation gaps, cited suggestions and red-flag candidates only. Real names are restored before anything is saved or shown. Separately, and before the model call, a deterministic rules engine checks red flags against the original transcript and never shows its results to the model, while a deterministic checklist derives documentation gaps from the note's assertion states. Findings are assembled as a union and never filtered. The doctor reviews, edits, acknowledges red flags without removing them, and approves; the approved note is locked and final, copyable and exportable as PDF. The hosted transcription adapter is drawn dashed outside the trust boundary: it is reachable only by per-consultation consent, and is specified rather than built.](assets/user-journey.drawio.png)
+![CatatMD doctor journey, from consultation to approved note. The doctor consults in-room with the patient still present, then starts a consultation from one of four inputs: a bundled fixture, pasted text, an uploaded .txt or .json file, or live audio transcribed on the doctor's device by default. The transcript is saved as a draft consultation, passed through the de-identification gate, and sent as safe text to the language model, which returns a structured note, documentation gaps, cited suggestions and red-flag candidates only. Real names are restored before anything is saved or shown. Separately, and before the model call, a deterministic rules engine checks red flags against the original transcript and never shows its results to the model, while a deterministic checklist derives documentation gaps from the note's assertion states. Findings are assembled as a union and never filtered. The doctor reviews, edits, acknowledges red flags without removing them, and approves; the approved note is locked and final, copyable and exportable as PDF. The hosted transcription adapter is drawn dashed outside the trust boundary, reachable only by per-consultation consent.](assets/user-journey.drawio.png)
 
 Three claims the diagram is drawn to make checkable:
 
@@ -126,7 +126,7 @@ The claim stops there rather than going one word further, because on modest clin
 
 > **On-device is the default and the floor. Hosted is only ever entered by an explicit, recorded, per-consultation act. Failure degrades to paste, never to the cloud.**
 
-That last clause is the load-bearing one. Silently switching to hosted transcription because a device is slow would be a privacy control that fails **open** under load — degrading exactly when the doctor is least able to notice — so it is written down as rejected rather than left to an implementer's judgement. The hosted adapter is now **built**, behind a per-consultation consent gate the doctor must tick for each recording: always on screen, never highlighted, never remembered, and never mentioned by the on-device failure copy. It stays inert in production until the provider key is set. See `docs/trd.md` §20 and §20.4.
+That last clause is the load-bearing one. Silently switching to hosted transcription because a device is slow would be a privacy control that fails **open** under load — degrading exactly when the doctor is least able to notice — so it is written down as rejected rather than left to an implementer's judgement. The hosted adapter is now **built**, behind a per-consultation consent gate the doctor must tick for each recording: always on screen, never highlighted, never remembered, and never mentioned by the on-device failure copy. The provider key is set in production, so the path is live: a doctor who ticks the box sends that recording to ILMU. See `docs/trd.md` §20 and §20.4.
 
 **A recording now comes back as timestamped, speaker-labelled draft lines the doctor reviews and applies.** Each line's Doctor/Patient label is a guess from segment timing and what the sentence says, never from the voices, and the doctor can flip any line before applying, one review list, no auto-populated transcript (`docs/trd.md` §20.2).
 
@@ -138,11 +138,11 @@ All three supported providers speak the OpenAI-compatible protocol and are selec
 
 | Provider                        | Role                                    | Data Residency                                                      |
 | ------------------------------- | --------------------------------------- | ------------------------------------------------------------------- |
-| **Qwen** (Alibaba Model Studio) | default — demo and proposal path        | Singapore endpoint                                                  |
+| **Qwen** (Alibaba Model Studio) | default — demo and proposal path        | in-region endpoint                                                  |
 | Gemini                          | **local dev only, synthetic data only** | free-tier terms permit use for product improvement and human review |
 | DeepSeek                        | benchmarking only                       | PRC; raises a further PDPA s.129 cross-border question              |
 
-**Residency, stated accurately.** Hosting in Singapore is **not** "data residency solved" — under the amended PDPA (Act A1719) the whitelist regime is gone, and s.129 now requires an affirmative basis for any cross-border transfer, which Singapore hosting of Malaysian data _is_. The claim this project makes is narrower and true: **in-region ASEAN hosting, a documented s.129 basis, and a region-portable adapter.** This prototype also processes no personal data at all — every consultation is synthetic. `docs/prd.md` §11.
+**Residency, stated accurately.** In-region hosting is **not** "data residency solved". Under the amended PDPA (Act A1719) the whitelist regime is gone, and s.129 now requires an affirmative basis for any transfer of Malaysian data out of Malaysia, which hosting anywhere else _is_. The claim this project makes is narrower and true: **in-region hosting, a documented s.129 basis, and a region-portable adapter.** This prototype also processes no personal data at all, because every consultation is synthetic. `docs/prd.md` §11.
 
 ---
 
@@ -150,7 +150,7 @@ All three supported providers speak the OpenAI-compatible protocol and are selec
 
 The safety argument is not "a doctor reviews everything". Doctors do not reliably catch well-formed AI errors, and the failure this system was built against is exactly that shape.
 
-**The finding it was built against, measured on 13/08/26** against the live Singapore endpoint: given a one-line transcript ("cough 3 days, no fever"), the default implementation produced a note denying chills, night sweats, **haemoptysis**, chest pain, dyspnoea, sick contacts, allergies and medications — none of which either speaker had raised — in **5 of 5 runs**. On a richer transcript it fabricated nothing in 3 of 3 runs. The model fabricates in proportion to how _sparse_ the transcript is, which is precisely the input this product exists to serve. Full method and output in `docs/trd.md` §21.1.
+**The finding it was built against, measured on 13/08/26** against the live production endpoint: given a one-line transcript ("cough 3 days, no fever"), the default implementation produced a note denying chills, night sweats, **haemoptysis**, chest pain, dyspnoea, sick contacts, allergies and medications — none of which either speaker had raised — in **5 of 5 runs**. On a richer transcript it fabricated nothing in 3 of 3 runs. The model fabricates in proportion to how _sparse_ the transcript is, which is precisely the input this product exists to serve. Full method and output in `docs/trd.md` §21.1.
 
 Four controls follow from it, ranked by what makes them hold rather than by how they are worded (`docs/trd.md` §21.3):
 
@@ -236,9 +236,9 @@ Fuller treatment in `docs/prd.md` §12; every unresolved engineering question is
 
 Bun workspaces · TypeScript · Zod (shared contracts) · Express 5 · Prisma 6 · better-auth · React 19 + Vite 7 + Tailwind 4 · Supabase Postgres · Vitest · Biome
 
-Hosting: frontend → Vercel · backend → Render (Singapore) · database → Supabase (Singapore). All three in-region by design.
+Hosting: frontend → Vercel · backend → Render · database → Supabase. All three sit in one region by design, and the region is configuration rather than architecture.
 
-![CatatMD technical stack. Inside the trust boundary: React, TypeScript, Vite and Tailwind on Vercel; Node, Express and Bun on Render Singapore, carrying the deid PHI gate, the lib/llm client, and the routes, redflags, guidelines and audit modules; PostgreSQL, Prisma and Supabase in Singapore. Outside it: the Qwen language model, reachable only through lib/llm, and the specified-but-unbuilt hosted ASR adapter.](assets/tech-stack.drawio.png)
+![CatatMD technical stack. Inside the trust boundary: React, TypeScript, Vite and Tailwind on Vercel; Node, Express and Bun on Render, carrying the deid PHI gate, the lib/llm client, and the routes, redflags, guidelines and audit modules; PostgreSQL, Prisma and Supabase. Outside it: the Qwen language model, reachable only through lib/llm, and the hosted ASR adapter.](assets/tech-stack.drawio.png)
 
 Two claims the diagram is drawn to make checkable. `lib/llm/` is the **only** text egress, and everything crossing that line has already passed `deid/`. Speech-to-text runs on the device by default, so the hosted ASR adapter is the one other path out of the boundary, and it opens only when a doctor ticks the per-consultation consent box. The diagram still draws it dashed and labelled specified, not built; that is now stale, and regenerating it is a named follow-up (`docs/trd.md` §20.4).
 
