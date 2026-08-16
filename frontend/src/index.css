@@ -557,30 +557,31 @@
    * picture: woven fibre and a faint dyed wash, no imagery, nothing that
    * competes with the three claims sitting on it.
    *
-   * **Two files, because the pane inverts rather than darkens.** In dark theme
-   * `--color-accent` goes light and `--color-accent-ink` goes near-black, so the
-   * panel becomes a bright teal card carrying dark text. A single darkened image
-   * would put dark text on a dark ground. Each file is generated at the theme's
-   * own accent lightness and measured against the text colour it actually
-   * carries.
+   * **One file, and the pane does not follow the theme.** The rest of the app
+   * inverts: in dark theme `--color-accent` goes light and `--color-accent-ink`
+   * goes near-black, so an accent panel becomes a bright card carrying dark
+   * text. This pane opts out of that and stays the deep teal ground with white
+   * text in both themes, which is why the two tokens are redefined here rather
+   * than inherited.
+   *
+   * That redefinition is load-bearing, not tidiness. The canvas is generated at
+   * the light theme's accent lightness, so inheriting a dark-theme
+   * `--color-accent-ink` would put near-black text on a dark ground, and every
+   * descendant reading `text-accent-ink` would go unreadable at once. Scoping
+   * both tokens to the pane keeps that impossible without a single colour being
+   * hard-coded on a component.
    *
    * `--color-accent` stays underneath as `background-color`: it is what shows
    * while the image loads, and what remains if it fails, so the pane is never
    * unstyled and the text never lands on bare white.
-   *
-   * The theme provider resolves `system` to an explicit `light` or `dark` before
-   * writing `data-theme`, so this one selector is the whole story and no
-   * `prefers-color-scheme` fallback is needed.
    */
   .auth-canvas {
+    --color-accent: oklch(0.47 0.089 168);
+    --color-accent-ink: oklch(1 0 0);
     background-color: var(--color-accent);
     background-image: url('/art/auth-canvas-light.webp');
     background-position: center;
     background-size: cover;
-  }
-
-  :root[data-theme='dark'] .auth-canvas {
-    background-image: url('/art/auth-canvas-dark.webp');
   }
 
   .reveal-page {
