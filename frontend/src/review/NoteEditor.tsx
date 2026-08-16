@@ -66,7 +66,7 @@ export function NoteEditor({
                 {!readOnly && !isEditing && (
                   <Button
                     size="sm"
-                    variant="ghost"
+                    variant="neutral"
                     data-print="hide"
                     onClick={() => {
                       setEditing(key)
@@ -99,7 +99,7 @@ export function NoteEditor({
                   >
                     Save
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                  <Button size="sm" variant="neutral" onClick={() => setEditing(null)}>
                     Cancel
                   </Button>
                 </div>

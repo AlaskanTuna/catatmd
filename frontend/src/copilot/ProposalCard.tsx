@@ -103,7 +103,7 @@ export function ProposalCard({
         <Button size="sm" variant="primary" onClick={apply} loading={busy} disabled={blocked}>
           Apply
         </Button>
-        <Button size="sm" variant="ghost" onClick={onResolve} disabled={busy}>
+        <Button size="sm" variant="neutral" onClick={onResolve} disabled={busy}>
           Discard
         </Button>
         {blocked && <span className="text-ink-muted text-xs">A reason is required.</span>}

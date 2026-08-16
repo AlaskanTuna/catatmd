@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
+import { count } from '../lib/plural.js'
 import { Button } from '../ui/Button.js'
 import { EmptyState, Skeleton } from '../ui/Card.js'
 import { Checkbox } from '../ui/Checkbox.js'
@@ -44,8 +45,6 @@ const formatDate = (value: Date) =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(value)
-
-const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 
 export function ConsultationList() {
   const queryClient = useQueryClient()
@@ -137,7 +136,7 @@ export function ConsultationList() {
 
           {selected.length > 0 && (
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>
+              <Button size="sm" variant="neutral" onClick={() => setPicked(new Set())}>
                 Clear
               </Button>
               <Button

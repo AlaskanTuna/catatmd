@@ -1,9 +1,10 @@
 import { type DraftTurn, type HostedAsrResult, MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
-import { AlertTriangle, CircleHelp, FileAudio, Loader2, Mic, Square } from 'lucide-react'
-import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { AlertTriangle, Cpu, FileAudio, Loader2, Mic, Server, Square } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
+import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
-import { Checkbox } from '../ui/Checkbox.js'
+import { InfoTip } from '../ui/InfoTip.js'
 import {
   TARGET_SAMPLE_RATE,
   type TranscriptSegment,
@@ -180,72 +181,42 @@ function estimateRemaining(done: number, total: number, elapsedMs: number): stri
 }
 
 /**
- * The supplementary disclaimer beside the model name (issue #155).
+ * The two transcription engines, presented as a choice rather than as a
+ * checkbox buried under a paragraph (issue: Record tab UX).
  *
- * **A disclosure, not a hover tooltip.** It toggles on click and stays open, so
- * it works on touch, where hover does not exist and a doctor on a tablet would
- * otherwise never reach it. Focus and Escape behave the way `ui/Select.tsx`
- * establishes for this codebase.
+ * **Neither entry is recommended and the order is not a ranking**, it is
+ * default-first. On-device is the default and the floor (docs/trd.md section
+ * 20); hosted is entered only by an explicit, recorded, per-consultation act.
+ * Presenting them as two peers is what makes that act explicit: the previous
+ * unlabelled checkbox asked the doctor to opt into something without ever
+ * naming what they were opting out of.
  *
- * Hand-rolled for the reason `ui/Select.tsx` gives at length: nothing here uses
- * a headless UI library, and one disclosure is a poor reason to add a
- * dependency. It stays local to this file rather than moving to `ui/` because
- * there is exactly one of them; it earns a promotion when there is a second.
- *
- * **Nothing load-bearing lives in here.** The consent facts the doctor is
- * agreeing to are in the paragraph itself, because the tradeoff has to be
- * stated in the same breath as the choice rather than hidden behind an
- * interaction (docs/trd.md section 20).
+ * The summaries state the real tradeoff in one line each, because the tradeoff
+ * is the whole basis of the choice. Everything that elaborates rather than
+ * decides sits behind the tip.
  */
-function InfoTip({ label, children }: { label: string; children: ReactNode }) {
-  const [open, setOpen] = useState(false)
-  const panelId = useId()
-  const wrap = useRef<HTMLSpanElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    // `pointerdown` rather than `click`, so a press that begins outside closes
-    // the panel before it can also activate whatever it landed on.
-    const onPointer = (event: PointerEvent) => {
-      if (!wrap.current?.contains(event.target as Node)) setOpen(false)
-    }
-    document.addEventListener('keydown', onKey)
-    document.addEventListener('pointerdown', onPointer)
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      document.removeEventListener('pointerdown', onPointer)
-    }
-  }, [open])
-
-  return (
-    <span ref={wrap} className="relative inline-flex align-middle">
-      <button
-        type="button"
-        aria-label={label}
-        aria-expanded={open}
-        aria-controls={open ? panelId : undefined}
-        onClick={() => setOpen((current) => !current)}
-        className="inline-flex size-5 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-sunken hover:text-ink"
-      >
-        <CircleHelp aria-hidden className="size-3.5" />
-      </button>
-      {open && (
-        <span
-          id={panelId}
-          role="tooltip"
-          // Anchored above and left-aligned so a panel this wide cannot push the
-          // Record tab into a horizontal scroll on a narrow screen.
-          className="absolute bottom-full left-0 z-10 mb-1.5 w-72 max-w-[80vw] rounded-card border border-line bg-surface p-3 text-xs leading-relaxed font-normal text-ink-muted shadow-lg"
-        >
-          {children}
-        </span>
-      )}
-    </span>
-  )
-}
+const ENGINES = [
+  {
+    id: 'local',
+    hosted: false,
+    name: 'On this device',
+    model: 'whisper-small · WebGPU',
+    Icon: Cpu,
+    summary: 'The audio never leaves this device. Tuned for English and Manglish.',
+    detail:
+      'Runs in this browser on the GPU where one is available, and falls back to the CPU where it is not. The model weights are downloaded once from a public CDN and then cached; that request carries no audio, no transcript and no identifier, because it happens before any of them exist. A consultation held mainly in Malay can come back rewritten in English rather than transcribed, which is the case the other option exists for.',
+  },
+  {
+    id: 'hosted',
+    hosted: true,
+    name: 'ILMU (Malaysia)',
+    model: 'ilmu-asr-v4.2',
+    Icon: Server,
+    summary: 'The audio leaves this device. Better on Malay-dominant consultations.',
+    detail:
+      'An early-access service. On our scripted Malay consultation it kept code-switched sentences intact, but sometimes hardened the first consonant of a Malay clinical word, hearing batuk as patut and demam as teman, so check those words when you review the draft (TRD 20.3). Handled under the PDPA as amended in 2024, under which voice is biometric data and therefore sensitive personal data requiring explicit consent.',
+  },
+] as const
 
 export function AudioCapture({
   onTranscript,
@@ -308,7 +279,9 @@ export function AudioCapture({
   hostedRef.current = hosted
 
   /** Ties the consent label to its checkbox without wrapping the disclosure. */
-  const consentId = useId()
+  // Groups the two engine radios. Instance-scoped rather than a literal, so two
+  // AudioCapture mounts on one page cannot share a group and toggle each other.
+  const engineName = useId()
 
   /**
    * True from the prewarm `load` posted at record start until the real
@@ -793,14 +766,24 @@ export function AudioCapture({
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-ink-muted">
-        Recording is transcribed on this device and not uploaded unless you choose hosted
-        transcription below for this consultation. The result appears below as lines with guessed{' '}
-        <code className="text-ink">Doctor</code> / <code className="text-ink">Patient</code> labels,
-        drawn from what each sentence says, not from the voices. Check every line, then apply them
-        to the transcript. On-device transcription is tuned for English and Manglish, and a
-        consultation held mainly in Malay can come back rewritten in English rather than
-        transcribed; for Malay-dominant consultations, the hosted option below may work better.
+      {/*
+        Was ninety-five words of muted prose above the only button on the
+        screen, and most of it restated what the engine picker below now says
+        structurally. What survives here is the one thing the doctor has to know
+        before pressing record and cannot infer from the controls: the result
+        arrives as a draft they have to check, not as a finished transcript.
+      */}
+      <p className="flex items-start gap-1.5 text-sm text-ink-muted">
+        <span>
+          Transcription returns <span className="text-ink">draft</span>{' '}
+          <code className="text-ink">Doctor</code> / <code className="text-ink">Patient</code> lines
+          for you to check and apply. Nothing enters the transcript until you do.
+        </span>
+        <InfoTip label="About the draft speaker labels" className="mt-0.5">
+          The labels are guessed from what each sentence says and from segment timing, never from
+          the voices: no voice model runs and no speaker identification happens anywhere in this
+          product. You can flip any line, edit its text, or insert the transcript unlabelled.
+        </InfoTip>
       </p>
 
       {thin && (
@@ -812,7 +795,12 @@ export function AudioCapture({
               to 590&nbsp;MB of weights depending on how it runs, and holds them in memory. On a
               constrained machine the browser tab can be killed mid-consultation.
             </p>
-            <Button size="sm" variant="ghost" className="mt-2" onClick={() => setOverridden(true)}>
+            <Button
+              size="sm"
+              variant="neutral"
+              className="mt-2"
+              onClick={() => setOverridden(true)}
+            >
               Enable Recording Anyway
             </Button>
           </div>
@@ -837,7 +825,14 @@ export function AudioCapture({
           {/* An audio file takes the same on-device path. It is what makes the
               claim demonstrable to a reviewer on a machine with no microphone,
               and what makes it testable without one. */}
-          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-control px-3 py-2 text-sm font-medium text-ink-muted transition-colors hover:bg-sunken">
+          {/*
+            Styled as the `neutral` button it has always behaved like. It was
+            the last ghost-styled control in the app: a file input with no
+            background, sitting directly beside a filled Start Recording and
+            presented as its peer. The height matches `SIZES.md` so the pair
+            aligns.
+          */}
+          <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-control border border-line bg-sunken-soft px-4 text-sm font-medium text-ink shadow-raised transition-colors hover:bg-sunken">
             <FileAudio aria-hidden className="size-4" />
             Use an Audio File
             <input
@@ -874,7 +869,7 @@ export function AudioCapture({
               <Loader2 aria-hidden className="busy-spinner size-4 animate-spin" />
               <span>{status}</span>
             </p>
-            <Button size="sm" variant="ghost" onClick={() => abort(null)}>
+            <Button size="sm" variant="neutral" onClick={() => abort(null)}>
               Cancel
             </Button>
           </div>
@@ -910,7 +905,7 @@ export function AudioCapture({
               unrecoverable, so a failed run keeps its blob rather than
               pointing the doctor at recording the consultation again. */}
           {retryBlob !== null && (
-            <Button size="sm" variant="ghost" onClick={() => void transcribe(retryBlob)}>
+            <Button size="sm" variant="neutral" onClick={() => void transcribe(retryBlob)}>
               Try Again
             </Button>
           )}
@@ -928,55 +923,82 @@ export function AudioCapture({
         not a freely given one. This is why the local failure copy above never
         mentions it.
       */}
-      <div className="mt-1 flex flex-col gap-2 border-t border-line pt-4">
-        <p className="text-sm text-ink-muted">
-          <span className="font-medium text-ink">Transcription options.</span> By default this
-          recording is transcribed on this device and the audio never leaves it. For this
-          consultation only, you can instead send the recording to ILMU, a Malaysian transcription
-          service built for Malaysian speech. The audio passes through our server in Singapore to
-          ILMU and is processed in Malaysia. We have not agreed separate retention or training terms
-          with ILMU, so their standard early-access terms apply. After transcription, the returned
-          text is de-identified and sent to the note model to draft{' '}
-          <code className="text-ink">Doctor</code> / <code className="text-ink">Patient</code>{' '}
-          labels, which you review line by line before anything enters the transcript. This choice
-          is optional, applies to this one consultation, and is recorded in the audit trail.
-        </p>
+      <fieldset className="mt-1 border-t border-line pt-4">
+        <legend className="text-sm font-medium text-ink">Transcription engine</legend>
+
+        <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+          {ENGINES.map((engine) => {
+            const selected = hosted === engine.hosted
+            return (
+              <label
+                key={engine.id}
+                className={cn(
+                  'flex cursor-pointer gap-2.5 rounded-card border p-3 transition-colors',
+                  selected
+                    ? 'border-accent/40 bg-accent-soft'
+                    : 'border-line bg-surface hover:bg-sunken-soft',
+                  phase !== 'idle' && 'cursor-not-allowed opacity-60',
+                )}
+              >
+                <input
+                  type="radio"
+                  name={engineName}
+                  value={engine.id}
+                  checked={selected}
+                  onChange={() => setHosted(engine.hosted)}
+                  // Set on the input rather than inherited from the fieldset.
+                  // A fieldset's `disabled` blocks interaction but does not
+                  // reflect into `input.disabled`, so inheriting it would leave
+                  // the property that every caller and test reads saying the
+                  // control is live while a run is in flight.
+                  disabled={phase !== 'idle'}
+                  className="mt-0.5 size-4 shrink-0 accent-[var(--color-accent)]"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <engine.Icon aria-hidden className="size-3.5 shrink-0 text-ink-muted" />
+                    <span className="text-sm font-medium text-ink">{engine.name}</span>
+                    <InfoTip label={`About ${engine.name} transcription`}>{engine.detail}</InfoTip>
+                  </span>
+                  <code className="mt-0.5 block truncate text-2xs text-ink-muted">
+                    {engine.model}
+                  </code>
+                  <span className="mt-1 block text-xs leading-relaxed text-ink-muted">
+                    {engine.summary}
+                  </span>
+                </span>
+              </label>
+            )
+          })}
+        </div>
 
         {/*
-          Associated by id rather than by wrapping, because the disclosure below
-          is a button: nested inside a `<label>`, every press of it would also
-          toggle the consent it is trying to explain.
+          Findable, but never funnelled (docs/trd.md section 20).
+
+          The two options carry equal visual weight and the hosted one gains no
+          accent, no badge and no recommendation, whether the doctor arrived
+          here fresh or after an on-device failure. A choice offered at the
+          moment of frustration is not a freely given one, which is also why the
+          local failure copy above never mentions it.
+
+          **The consent facts stay out here rather than inside the disclosure.**
+          The tradeoff has to be stated in the same breath as the choice, so
+          what leaves the device, where it goes, and under whose terms is
+          visible the moment hosted is selected. The tip carries elaboration
+          only.
         */}
-        <div className="flex items-start gap-2.5">
-          <Checkbox
-            id={consentId}
-            className="mt-0.5"
-            checked={hosted}
-            // Idle only. Flipping it mid-run would leave the fork the recording
-            // already took disagreeing with what the box shows.
-            disabled={phase !== 'idle'}
-            onChange={(event) => setHosted(event.target.checked)}
-          />
-          <div className="min-w-0 flex-1">
-            <label htmlFor={consentId} className="text-sm text-ink-muted">
-              Send this consultation&apos;s recording to ILMU for transcription
-            </label>
-            <span className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
-              <code className="text-ink">ilmu-asr-v4.2</code>
-              <InfoTip label="About hosted transcription with ILMU">
-                An early-access service. On our scripted Malay consultation it kept code-switched
-                sentences intact, but sometimes hardened the first consonant of a Malay clinical
-                word, hearing batuk as patut and demam as teman, so check those words when you
-                review the draft (TRD 20.3). The recording travels from this browser, to our server
-                in Singapore, to ILMU in Malaysia. Retention and training follow ILMU&apos;s
-                standard early-access terms, which we have not varied by agreement. Handled under
-                the PDPA as amended in 2024, under which voice is biometric data and therefore
-                sensitive personal data requiring explicit consent.
-              </InfoTip>
-            </span>
-          </div>
-        </div>
-      </div>
+        {hosted && (
+          <p className="mt-2.5 text-xs leading-relaxed text-ink-muted">
+            This recording leaves this device. It passes through our server to ILMU and is processed
+            in Malaysia. We have not agreed separate retention or training terms, so ILMU&apos;s
+            standard early-access terms apply. The returned text is de-identified before the note
+            model drafts <code className="text-ink">Doctor</code> /{' '}
+            <code className="text-ink">Patient</code> labels, which you review line by line before
+            anything enters the transcript. This choice applies to this consultation only and is
+            recorded in the audit trail.
+          </p>
+        )}
+      </fieldset>
     </div>
   )
 }

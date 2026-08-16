@@ -85,7 +85,7 @@ export function NotificationPanel({ onSeen, close }: { onSeen: () => void; close
         {(data?.length ?? 0) > 0 && (
           <Button
             size="sm"
-            variant="ghost"
+            variant="neutral"
             loading={clear.isPending}
             onClick={() => clear.mutate()}
             // "Clear", not "Delete". The rows are audit events and they survive

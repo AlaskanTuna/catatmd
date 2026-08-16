@@ -15,6 +15,7 @@ import { CatatAI } from '../copilot/CatatAI.js'
 import { DEMO_CONSULTATION_ID, useDemoTour } from '../demo/DemoTour.js'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
+import { count } from '../lib/plural.js'
 import { ApproveBar } from '../review/ApproveBar.js'
 import { ChecklistPanel } from '../review/ChecklistPanel.js'
 import { NoteEditor } from '../review/NoteEditor.js'
@@ -114,7 +115,32 @@ export function ConsultationReview() {
     toast.success('Note approved. This record is now final.')
   }
 
-  const analyze = useMutation({ mutationFn: () => api.analyze(id), onSuccess: invalidate })
+  /*
+   * Analysis is the one action in this product that takes real time and then
+   * changes the whole screen underneath the doctor, and it was the only write
+   * path with no transient feedback at all: no success, and no error either, so
+   * a failed analyse left the button springing back with the screen unchanged
+   * and nothing said. That reads as a dead button rather than as a failure.
+   *
+   * The success line names what arrived rather than saying "done", because the
+   * three panels populate at once and the useful thing to know is which of them
+   * to look at first. Nothing clinical goes in it: counts only, never a finding
+   * or its text (`ui/Toaster.tsx`).
+   */
+  const analyze = useMutation({
+    mutationFn: () => api.analyze(id),
+    onSuccess: (next) => {
+      invalidate(next)
+      const flags = next.analysis?.redFlags.length ?? 0
+      const gaps = next.analysis?.gaps.length ?? 0
+      toast.success(
+        flags === 0
+          ? `Analysis complete. ${count(gaps, 'documentation gap')} to review.`
+          : `Analysis complete. ${count(flags, 'red flag')} raised, ${count(gaps, 'documentation gap')} to review.`,
+      )
+    },
+    onError: () => toast.error('Analysis failed. Nothing was saved, and you can run it again.'),
+  })
 
   /**
    * Applies a CatatAI proposal the doctor approved (#169).

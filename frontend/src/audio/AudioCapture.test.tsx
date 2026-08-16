@@ -203,8 +203,19 @@ function pickFile() {
   })
 }
 
-const consentBox = () =>
-  screen.getByLabelText(/send this consultation.s recording to ilmu/i) as HTMLInputElement
+/*
+ * The consent control is a two-option engine picker rather than a single
+ * checkbox. The assertions below are unchanged in meaning: `consentBox` is
+ * still the input whose checked state grants hosted transcription, and it is
+ * still off unless something ticks it. Only the control it points at moved.
+ *
+ * Queried by role rather than by label text, because each option also carries
+ * an InfoTip button whose `aria-label` names the same engine.
+ */
+const consentBox = () => screen.getByRole('radio', { name: /ilmu/i }) as HTMLInputElement
+
+/** The on-device engine, which is the default and the floor. */
+const localBox = () => screen.getByRole('radio', { name: /on this device/i }) as HTMLInputElement
 
 /** Gives per-consultation hosted consent, the only way to reach the relay. */
 function tickHosted() {
@@ -900,9 +911,11 @@ describe('a hosted upload', () => {
     await stopRecording()
     expect(screen.getByRole('alert')).toBeTruthy()
 
-    // The doctor unticks and retries: the retry is on-device, not a second
-    // upload of audio they have just withdrawn consent for.
-    fireEvent.click(consentBox())
+    // The doctor switches back to on-device and retries: the retry is local,
+    // not a second upload of audio they have just withdrawn consent for.
+    // Selecting the other engine is the withdrawal now that this is a radio
+    // pair; clicking the selected option again would be a no-op.
+    fireEvent.click(localBox())
     fireEvent.click(screen.getByRole('button', { name: /try again/i }))
     await settle()
 
