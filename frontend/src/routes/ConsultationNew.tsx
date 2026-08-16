@@ -19,12 +19,11 @@ import { Card, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
 
 /*
- * Ordered by how central each path is to the product, not by how it was built.
+ * Ordered by how central each path is to the product, not by how it was built,
+ * and the first tab is the one that opens.
  *
- * `fixture` stays the opening tab even though it is last. A reviewer arriving
- * with no microphone and no Malay recording still has to be able to run the
- * pipeline in one click, and defaulting to Record would put an empty capture
- * screen in front of them instead.
+ * A reviewer with no microphone is one tab away from the bundled cases, which
+ * is the right cost to put on the path that is not the product. Recording is.
  */
 const TABS = [
   { id: 'record', label: 'Record', Icon: Mic },
@@ -35,7 +34,7 @@ const TABS = [
 
 export function ConsultationNew() {
   const navigate = useNavigate()
-  const [tab, setTab] = useState<(typeof TABS)[number]['id']>('fixture')
+  const [tab, setTab] = useState<(typeof TABS)[number]['id']>(TABS[0].id)
   const [text, setText] = useState('')
   const [source, setSource] = useState<TranscriptSource>('fixture')
   /*

@@ -83,7 +83,7 @@ export const TOUR_STEPS: TourStep[] = [
     label: 'Intake',
     route: '/consultations/new',
     target: '[data-tour="intake"]',
-    hint: 'A consultation starts as a transcript. Load a bundled case, paste one, or upload a file. All three feed one parser.',
+    hint: 'A consultation starts as a transcript. Record it, upload or paste one, or load a bundled case. All four feed one parser.',
   },
   {
     label: 'Transcript',
