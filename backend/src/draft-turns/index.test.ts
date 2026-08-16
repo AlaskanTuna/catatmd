@@ -96,3 +96,121 @@ describe('draftTurns', () => {
     })
   })
 })
+
+/*
+ * Chunking (#189 follow-up).
+ *
+ * The pass is a verbatim echo guarded by word-for-word reconstruction, so one
+ * drifted word discarded every label in the call. Measured against production,
+ * 653 characters labelled cleanly and 1,335 returned `draft_failed`, while a
+ * real consultation is several thousand: the pass failed on the input it
+ * exists for.
+ */
+describe('draftTurns over a consultation-length transcript', () => {
+  /** Long enough to cross several chunk boundaries, in the unpunctuated
+   * lowercase shape the hosted relay actually returns (docs/trd.md 20.3). */
+  const longStream = (() => {
+    const unit =
+      'doctor good morning what brings you in today patient i have had a cough for four days and my throat hurts when i swallow '
+    let text = ''
+    while (text.length < 2_400) text += unit
+    return text.trim()
+  })()
+
+  it('splits the work rather than sending one oversized call', async () => {
+    const { text: content } = deidentify(longStream)
+    const spy = stubClient(async (request) => {
+      const chunk = (request as unknown as { content: string }).content
+      return { turns: [{ speaker: 'doctor', text: chunk }] }
+    })
+
+    await draftTurns(content)
+
+    expect(spy.mock.calls.length).toBeGreaterThan(1)
+    for (const call of spy.mock.calls) {
+      const chunk = (call[0] as unknown as { content: string }).content
+      expect(chunk.length).toBeLessThanOrEqual(600)
+    }
+  })
+
+  it('keeps every word of the transcript across the boundaries', async () => {
+    const { text: content } = deidentify(longStream)
+    stubClient(async (request) => {
+      const chunk = (request as unknown as { content: string }).content
+      return { turns: [{ speaker: 'doctor', text: chunk }] }
+    })
+
+    const turns = await draftTurns(content)
+    const words = (text: string) => text.split(/\s+/).filter(Boolean)
+    expect(words(turns.map((turn) => turn.text).join(' '))).toEqual(words(content))
+  })
+
+  /*
+   * A rejected chunk fails the whole pass, deliberately.
+   *
+   * Keeping the other chunks and giving the rejected one its neighbour's
+   * speaker was the tempting alternative, and it fabricates attribution: up to
+   * a chunk of patient speech presented as the doctor's, with nothing marking
+   * it invented. Failing is safe because the client's fallback drafts labels on
+   * the device and says on screen that they are guesses.
+   */
+  it('fails rather than inventing a speaker for a rejected chunk', async () => {
+    const { text: content } = deidentify(longStream)
+    let call = 0
+    stubClient(async (request) => {
+      const chunk = (request as unknown as { content: string }).content
+      call += 1
+      if (call === 2) return { turns: [{ speaker: 'patient', text: 'not the input' }] }
+      return { turns: [{ speaker: 'doctor', text: chunk }] }
+    })
+
+    await expect(draftTurns(content)).rejects.toBeInstanceOf(DraftTurnsError)
+  })
+
+  it('never opens more than four provider calls at once', async () => {
+    const { text: content } = deidentify(longStream)
+    let live = 0
+    let peak = 0
+    stubClient(async (request) => {
+      live += 1
+      peak = Math.max(peak, live)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      live -= 1
+      return {
+        turns: [{ speaker: 'doctor', text: (request as unknown as { content: string }).content }],
+      }
+    })
+
+    await draftTurns(content)
+
+    expect(peak).toBeLessThanOrEqual(4)
+    expect(peak).toBeGreaterThan(1)
+  })
+
+  it('still fails when no chunk survives, so a broken pass is never a draft', async () => {
+    const { text: content } = deidentify(longStream)
+    stubClient(async () => ({ turns: [{ speaker: 'doctor', text: 'not the input at all' }] }))
+
+    await expect(draftTurns(content)).rejects.toBeInstanceOf(DraftTurnsError)
+  })
+
+  it('reports a provider outage as llm_failed rather than a reconstruction mismatch', async () => {
+    const { text: content } = deidentify(longStream)
+    stubClient(async () => {
+      throw new LLMResponseError('provider is down', 'draft_turns')
+    })
+
+    await expect(draftTurns(content)).rejects.toMatchObject({ reason: 'llm_failed' })
+  })
+
+  it('leaves a short transcript as exactly one call', async () => {
+    const { text: content } = deidentify('doctor good morning patient i have a cough')
+    const spy = stubClient(async (request) => ({
+      turns: [{ speaker: 'doctor', text: (request as unknown as { content: string }).content }],
+    }))
+
+    await draftTurns(content)
+
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+})

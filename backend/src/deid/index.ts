@@ -90,6 +90,49 @@ export function serialiseTranscript(transcript: Transcript): string {
  * enforcement gap docs/trd.md §5 records, where the type system guarantees the
  * *shape* of what reaches `LLMClient` but not its *provenance*.
  */
+/**
+ * Splits an already-gated value into whitespace-bounded pieces that are still
+ * `Deidentified`.
+ *
+ * **It lives here because this is the module that owns the brand.** The caller
+ * that needs it, the turn-labelling pass, cannot slice for itself: rebranding a
+ * substring anywhere else is the `as Deidentified` cast that
+ * `no-stray-brand-casts.test.ts` fails the build on, and rightly so.
+ *
+ * **Slicing after the gate rather than chunking before it is the whole point.**
+ * Detection is context-sensitive: `Ahmad Ismail` is one PATIENT span only while
+ * the two words are adjacent, so de-identifying chunk by chunk would let any
+ * identifier straddling a boundary through. Running `deidentify` once over the
+ * whole text and cutting the result keeps detection at full context, and every
+ * piece inherits a guarantee the whole already earned.
+ *
+ * Cuts fall on whitespace, never inside a word, so a vault token cannot be
+ * split into a `[PATIENT` and a `_1]` that no longer reads as one.
+ *
+ * The safety net is unchanged and per piece: each one goes to `LLMClient`
+ * separately, so `assertNoIdentifiers` runs on each rather than once on the
+ * whole, which makes this strictly more checked than the unsliced path.
+ */
+export function sliceDeidentified(content: Deidentified, maxChars: number): Deidentified[] {
+  if (content.length <= maxChars) return [content]
+
+  const pieces: Deidentified[] = []
+  const words = content.split(/(\s+)/)
+  let current = ''
+  for (const part of words) {
+    // A single word longer than the budget still goes out whole: cutting it
+    // would break the alignment the caller reconstructs against.
+    if (current !== '' && current.length + part.length > maxChars && part.trim() !== '') {
+      pieces.push(markDeidentified(current.trimEnd()))
+      current = ''
+    }
+    if (current === '' && part.trim() === '') continue
+    current += part
+  }
+  if (current.trim() !== '') pieces.push(markDeidentified(current.trimEnd()))
+  return pieces
+}
+
 export function assertNoIdentifiers(content: Deidentified, operation: string): void {
   const withoutTokens = content.replace(TOKEN_PATTERN, ' ')
   const leaked = detect(withoutTokens)
