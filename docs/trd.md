@@ -2215,6 +2215,8 @@ A change is an improvement only if the edit rate rises while the question rate d
 
 ### 25.4 Four Revisions Were Trialled And All Four Rejected
 
+**The result to read first is v4**, because it is the one that would have passed review. It produced the best headline rate of any arm, 26 of 34, and got there by halving the cases where the copilot correctly declines because the content is already in the note. A revision that improves the metric by removing the behaviour the metric exists to protect is the reason the acceptance table below was written down before any of this ran.
+
 Rule 5 in `buildCopilotSystemPrompt` is entirely defensive: it describes the mechanism once and then polices tense, with worked examples of overclaiming and none of using the tool. Three prompt revisions and one tool-description revision followed from that reading. None shipped. **`prompt.ts` and `tools.ts` are unchanged.**
 
 Denominators differ where a turn errored, so they are given rather than assumed. The v3 and v4 runs bound each turn at 120 s (§25.6); the first three did not, which is why only they show errors.
@@ -2267,5 +2269,5 @@ An evaluation that spends real model calls must treat its **raw per-turn outputs
 
 - The defect is real but small, about 4 in 36, and neither the three prompt revisions nor the tool-description revision beat it without introducing something worse. Both levers are now spent; what remains untried is a different tier, for example a post-hoc check that a turn composing replacement wording actually called the tool.
 - One turn in 36 truncated mid-answer, emitting four characters. Cause unknown, not reproduced, not investigated.
-- One statement prompt, "her temperature was 38.2 when the nurse checked", holds the stream open past 120 s and is the cause of most errored turns in v3 and v4. Not diagnosed.
+- One statement prompt, "her temperature was 38.2 when the nurse checked", reliably exceeds the provider bound and is the cause of most errored turns in v3 and v4. **This is slow, not hung, and the cause is known:** `openai-compatible.ts` sets `REQUEST_TIMEOUT_MS = 60_000` with `MAX_RETRIES = 1` on the one shared client, the SDK retries timeouts, and `stream()` uses that client, so a request that exceeds 60 s is attempted twice and the turn ends at roughly 120 s. That is the §94 bound behaving as specified. The open question is not why it hangs but why this prompt exceeds 60 s when its neighbours return in seconds, and the likely answer is the model working on a sentence that is genuinely ambiguous between dictation and context, which is the ambiguity the statement arm exists to measure.
 - The bare-statement arm sits near 78% and is unexplained: the model proposes readily on "she is allergic to penicillin" while declining on explicit imperatives. Whether that is correct is undecided, so it has no target.
