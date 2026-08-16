@@ -101,6 +101,9 @@ class FakeMediaRecorder {
 let getUserMedia: () => Promise<{ getTracks: () => { stop: () => void }[] }>
 let tracks: { stop: ReturnType<typeof vi.fn> }[]
 
+/** Every constraints object handed to getUserMedia, so tests can pin them. */
+let gumCalls: unknown[]
+
 /** Swappable per test, so a decode can be made to hang or settle late. */
 let decodeAudioData: () => Promise<unknown>
 
@@ -144,6 +147,7 @@ beforeEach(() => {
   draftHostedTurns.mockRejectedValue(new Error('not configured'))
   decodeAudioData = async () => ({ duration: 1 })
   tracks = [{ stop: vi.fn() }]
+  gumCalls = []
   getUserMedia = async () => ({ getTracks: () => tracks })
   vi.stubGlobal('Worker', FakeWorker)
   vi.stubGlobal('AudioContext', FakeAudioContext)
@@ -151,7 +155,12 @@ beforeEach(() => {
   vi.stubGlobal('MediaRecorder', FakeMediaRecorder)
   // jsdom has no mediaDevices at all, so this defines rather than spies.
   Object.defineProperty(navigator, 'mediaDevices', {
-    value: { getUserMedia: () => getUserMedia() },
+    value: {
+      getUserMedia: (constraints: unknown) => {
+        gumCalls.push(constraints)
+        return getUserMedia()
+      },
+    },
     configurable: true,
   })
   // jsdom reports few cores and no memory, and the hardware floor would hide
@@ -677,6 +686,25 @@ describe('prewarming the speech model', () => {
     expect(workers).toHaveLength(0)
     expect(screen.getByRole('alert').textContent).toMatch(/microphone/i)
     expect(screen.queryByRole('button', { name: /try again/i })).toBeNull()
+  })
+
+  it('requests dictation constraints, not the browser voice-call defaults', async () => {
+    renderCapture()
+    await startRecording()
+
+    // Pinned exactly so a refactor cannot drift back to `{ audio: true }`,
+    // which would re-enable the DSP behind the devoicing family measured in
+    // docs/trd.md §20.3 ("patut" for "batuk").
+    expect(gumCalls).toEqual([
+      {
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      },
+    ])
   })
 })
 
