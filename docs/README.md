@@ -530,24 +530,15 @@ Port 5434 rather than 5432 because 5432 and 5433 are commonly already bound. Ove
     <td align="center" width="260">
       <a href="https://github.com/AlaskanTuna"><img src="https://github.com/AlaskanTuna.png" width="100" alt="AlaskanTuna" /></a><br/>
       <a href="https://github.com/AlaskanTuna"><sub><strong>@AlaskanTuna</strong></sub></a><br/>
-      <sub>Review UI, HTTP API, deploy and CI, docs</sub>
+      <sub>Frontend, Backend, DevOps</sub>
     </td>
     <td align="center" width="260">
       <a href="https://github.com/Andersonnn7788"><img src="https://github.com/Andersonnn7788.png" width="100" alt="Andersonnn7788" /></a><br/>
       <a href="https://github.com/Andersonnn7788"><sub><strong>@Andersonnn7788</strong></sub></a><br/>
-      <sub>LLM pipeline, red-flag engine, de-identification gate</sub>
+      <sub>Backend, Docs, Testing</sub>
     </td>
   </tr>
 </table>
-
-Split taken from closed issues rather than asserted, by their `area:` labels:
-
-|                     | Closed | Mostly                                                             |
-| ------------------- | ------ | ------------------------------------------------------------------ |
-| **@AlaskanTuna**    | 21     | `area:ui` ×10 · `area:api` ×5 · `area:infra` ×4                    |
-| **@Andersonnn7788** | 44     | `area:llm` ×7 · `area:redflags` ×7 · `area:deid` ×6 · `area:ui` ×9 |
-
-Both worked across the UI and the API; the tiers below them were not shared.
 
 <div align="right"><a href="#top">&#8593;</a></div>
 
