@@ -5,6 +5,7 @@ import {
   ClinicalFactsResponseSchema,
   ClinicalFactsSchema,
   ConsultationDetailSchema,
+  ConsultationListItemSchema,
   DraftTurnsRequestSchema,
   DraftTurnsResponseSchema,
   ErrorEnvelopeSchema,
@@ -319,6 +320,7 @@ describe('API envelope schemas', () => {
     const result = ConsultationDetailSchema.safeParse({
       id: 'c1',
       status: 'awaiting_review',
+      title: null,
       createdAt: '2026-08-13T00:00:00.000Z',
       updatedAt: '2026-08-13T00:00:00.000Z',
       transcript: null,
@@ -340,6 +342,7 @@ describe('API envelope schemas', () => {
     const approved = ConsultationDetailSchema.safeParse({
       id: 'c1',
       status: 'approved',
+      title: null,
       createdAt: '2026-08-13T00:00:00.000Z',
       updatedAt: '2026-08-13T00:00:00.000Z',
       transcript: null,
@@ -452,5 +455,38 @@ describe('DraftTurnsResponseSchema', () => {
     if (result.success) {
       expect(result.data).toEqual(payload)
     }
+  })
+})
+
+/*
+ * The consultations list is the screen a deploy skew would black out.
+ *
+ * Vercel and Render deploy from their own triggers on the same merge, so the
+ * new SPA talks to the old API until the slower build finishes. Requiring
+ * `title` would fail every list and detail parse for that window.
+ */
+describe('ConsultationListItemSchema title tolerance', () => {
+  const row = {
+    id: 'c1',
+    status: 'draft',
+    createdAt: '2026-08-16T00:00:00.000Z',
+    updatedAt: '2026-08-16T00:00:00.000Z',
+  }
+
+  it('reads a response from an API that does not know about titles yet', () => {
+    const result = ConsultationListItemSchema.safeParse(row)
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data.title).toBeNull()
+  })
+
+  it('normalises an explicit null and an absent field to the same value', () => {
+    const absent = ConsultationListItemSchema.parse(row)
+    const explicit = ConsultationListItemSchema.parse({ ...row, title: null })
+    expect(absent.title).toEqual(explicit.title)
+  })
+
+  it('still carries a title through when the API sends one', () => {
+    const result = ConsultationListItemSchema.parse({ ...row, title: 'Cough, sore throat' })
+    expect(result.title).toBe('Cough, sore throat')
   })
 })

@@ -73,6 +73,18 @@ export type ConsultationAuditEvent =
     }
   | { action: 'consultation.analysis_failed'; metadata: { reason: AnalysisFailureReason } }
   | { action: 'consultation.edited' }
+  /*
+   * Its own action rather than folded into `consultation.edited`, because
+   * `title` is a PHI-bearing column a doctor writes free text into, and it is
+   * the one field that stays editable after approval. A trail that cannot tell
+   * "the note was changed" from "the record was renamed after it was signed"
+   * loses the distinction precisely where it matters.
+   *
+   * No metadata. The old and new titles are exactly the free text this must not
+   * carry, so the row records that a rename happened, by whom and when, and the
+   * value lives only in the column.
+   */
+  | { action: 'consultation.renamed' }
   | { action: 'consultation.erased' }
   | { action: 'redflag.acknowledged'; metadata: { redFlagId: string } }
   | { action: 'gap.reviewed'; metadata: { gapId: string } }

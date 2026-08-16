@@ -4,6 +4,7 @@ import {
   ConsultationAnalysisSchema,
   ConsultationDetailSchema,
   ConsultationListItemSchema,
+  ConsultationTitleSchema,
   type Disposition,
   type DispositionInput,
   DispositionInputSchema,
@@ -18,6 +19,7 @@ import {
 import { Router } from 'express'
 import { z } from 'zod'
 import { analyseNote, buildEvidenceLinks } from '../analysis/index.js'
+import { deriveConsultationTitle } from '../analysis/title.js'
 import { eraseConsultation } from '../audit/erasure.js'
 import { type AnalysisFailureReason, getAuditHistory, recordAuditEvent } from '../audit/index.js'
 import {
@@ -79,6 +81,11 @@ function toDetail(row: Consultation, approvedBy: string | null = null) {
   return ConsultationDetailSchema.parse({
     id: row.id,
     status: row.status,
+    // `?? null` for the same reason the JSON columns below carry it: a row
+    // built before this column existed, or by a caller that did not select it,
+    // arrives as `undefined`, and the contract distinguishes "no title" from
+    // "field absent" only by rejecting the second.
+    title: row.title ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     transcript: row.transcript ?? null,
@@ -178,7 +185,7 @@ consultationsRouter.get('/', async (req, res) => {
   const rows = await prisma.consultation.findMany({
     where: { doctorId: doctorId(req), erasedAt: null },
     orderBy: { updatedAt: 'desc' },
-    select: { id: true, status: true, createdAt: true, updatedAt: true },
+    select: { id: true, status: true, title: true, createdAt: true, updatedAt: true },
   })
 
   res.json({ consultations: rows.map((row) => ConsultationListItemSchema.parse(row)) })
@@ -399,6 +406,36 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
       consultation.id,
     )
 
+    /*
+     * The derived title is written once and never overwritten.
+     *
+     * A doctor who has renamed a record has said what they want it filed as,
+     * and re-analysis must not take that back. Re-analysis also regenerates
+     * `analysis` wholesale, so a title that tracked it would change under the
+     * doctor for reasons they did not ask for. First run names it; after that
+     * the name is theirs.
+     *
+     * **`updateMany` with `title: null` in the where clause, rather than the
+     * `consultation.title` this handler read minutes ago.** A record is
+     * renameable in every state it appears in, `analyzing` included, and
+     * analysis can take a couple of minutes, so a doctor renaming a row while
+     * it analyses is a reachable sequence rather than a theoretical one. Testing
+     * the stale read would let the derived name overwrite the one they just
+     * chose. Postgres evaluates this predicate at write time, so the doctor
+     * wins whenever they got there first.
+     */
+    const derivedTitle =
+      analysis.clinicalFacts === undefined ? null : deriveConsultationTitle(analysis.clinicalFacts)
+
+    if (derivedTitle !== null) {
+      await prisma.consultation.updateMany({
+        where: { id: consultation.id, title: null },
+        data: { title: derivedTitle },
+      })
+    }
+
+    // Reads back whatever the statement above settled on, so the response
+    // carries the winning title rather than the one this request proposed.
     const updated = await timeStage('persistence', () =>
       prisma.consultation.update({
         where: { id: consultation.id },
@@ -549,6 +586,19 @@ consultationsRouter.post('/analyze-ephemeral', async (req, res) => {
 
 const PatchBodySchema = z
   .object({
+    /*
+     * Renaming stays available after approval, and that is a decision rather
+     * than an oversight.
+     *
+     * `approved` is terminal and no clinical content may change after it. A
+     * filing label is not clinical content: it is how the record is found
+     * later, and an approved consultation is precisely the one somebody will
+     * need to find. Locking it would make the archive unsearchable at exactly
+     * the moment it starts being an archive. The note, the flags and the
+     * dispositions remain immutable, and every rename writes an audit event, so
+     * the change is attributable.
+     */
+    title: ConsultationTitleSchema.optional(),
     editedNote: SoapNoteSchema.partial().optional(),
     acknowledgedRedFlagIds: z.array(z.string()).optional(),
     reviewedGapIds: z.array(z.string()).optional(),
@@ -584,7 +634,26 @@ consultationsRouter.patch('/:id', async (req, res) => {
   const actor = doctorId(req)
   const consultation = await assertOwnedConsultation(req.params.id, actor)
 
-  if (consultation.status !== 'awaiting_review') {
+  const parsed = PatchBodySchema.safeParse(req.body)
+  if (!parsed.success) {
+    throw new HttpError(400, 'invalid_body', 'No valid changes supplied.')
+  }
+  const patch = parsed.data
+
+  /*
+   * The state gate applies to clinical content, and a filing name is not
+   * clinical content.
+   *
+   * A rename carries no note text, no finding and no disposition, so nothing it
+   * can change is part of the record `approved` freezes. Letting it through is
+   * what keeps an archive searchable, since the consultations somebody needs to
+   * find later are exactly the signed ones. Any patch touching anything else
+   * still meets the original gate unchanged, and a mixed patch is judged by the
+   * clinical half rather than excused by the title.
+   */
+  const titleOnly = patch.title !== undefined && Object.keys(patch).length === 1
+
+  if (!titleOnly && consultation.status !== 'awaiting_review') {
     throw new HttpError(
       409,
       'invalid_state',
@@ -593,12 +662,6 @@ consultationsRouter.patch('/:id', async (req, res) => {
         : 'This consultation is not open for review.',
     )
   }
-
-  const parsed = PatchBodySchema.safeParse(req.body)
-  if (!parsed.success) {
-    throw new HttpError(400, 'invalid_body', 'No valid changes supplied.')
-  }
-  const patch = parsed.data
 
   /**
    * The PATCH body is a `Partial<SoapNote>`, but `editedNote` on the wire is a
@@ -658,6 +721,7 @@ consultationsRouter.patch('/:id', async (req, res) => {
   const updated = await prisma.consultation.update({
     where: { id: consultation.id },
     data: {
+      ...(patch.title === undefined ? {} : { title: patch.title }),
       ...(nextEditedNote === undefined ? {} : { editedNote: nextEditedNote }),
       ...(patch.acknowledgedRedFlagIds === undefined
         ? {}
@@ -686,6 +750,13 @@ consultationsRouter.patch('/:id', async (req, res) => {
     },
   })
 
+  if (patch.title !== undefined) {
+    await recordAuditEvent({
+      action: 'consultation.renamed',
+      actorId: actor,
+      consultationId: consultation.id,
+    })
+  }
   if (patch.editedNote !== undefined) {
     await recordAuditEvent({
       action: 'consultation.edited',

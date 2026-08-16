@@ -117,6 +117,23 @@ vi.mock('../lib/prisma.js', () => ({
           return { ...row }
         },
       ),
+      // The analyse path names an unnamed consultation through a check-and-set,
+      // so this stub filters on the predicates present exactly as Prisma does.
+      updateMany: vi.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: { id: string; title?: string | null }
+          data: Record<string, unknown>
+        }) => {
+          const row = store.get(where.id)
+          if (!row) return { count: 0 }
+          if ('title' in where && row.title !== where.title) return { count: 0 }
+          store.set(where.id, { ...row, ...data, updatedAt: new Date() })
+          return { count: 1 }
+        },
+      ),
     },
     auditEvent,
     // Appends run inside a transaction (issue #27); run the callback against
@@ -148,6 +165,7 @@ beforeEach(() => {
     id: 'c1',
     doctorId: 'doctor-1',
     status: 'draft',
+    title: null,
     transcript: FIXTURE.transcript,
     analysis: null,
     editedNote: null,

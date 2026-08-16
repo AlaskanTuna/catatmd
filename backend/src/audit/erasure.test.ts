@@ -5,6 +5,8 @@ import { type AuditChainRow, recordAuditEvent, verifyAuditChainFromDatabase } fr
 type ConsultationRow = {
   id: string
   doctorId: string
+  /** The fourth PHI column, and the only one that is not Json. */
+  title: string | null
   transcript: unknown
   analysis: unknown
   editedNote: unknown
@@ -71,6 +73,7 @@ beforeEach(() => {
   consultations.set('consult-1', {
     id: 'consult-1',
     doctorId: 'doctor-1',
+    title: null,
     transcript: { turns: [{ speaker: 'patient', text: 'I am Ahmad with a cough' }] },
     analysis: { note: { subjective: 'Ahmad reports cough' } },
     editedNote: { subjective: 'Doctor note about Ahmad' },
@@ -106,5 +109,34 @@ describe('eraseConsultation', () => {
       consultationId: 'consult-1',
     })
     await expect(verifyAuditChainFromDatabase()).resolves.toMatchObject({ ok: true, verified: 3 })
+  })
+
+  /*
+   * The fourth erasure target, pinned separately from the three above because
+   * it is the one that is not a Json column and the one a reader is most likely
+   * to forget.
+   *
+   * `title` is doctor-editable free text shown on every list row, so it holds a
+   * patient's name whenever that is the useful thing to file under. An erasure
+   * that cleared the transcript and left the title would leave the name of the
+   * person whose record was just erased sitting at the top of the list, which
+   * is the most visible place in the product it could possibly survive.
+   */
+  it('clears the title, which is free text a doctor may have put a name in', async () => {
+    consultations.set('consult-2', {
+      id: 'consult-2',
+      doctorId: 'doctor-1',
+      title: 'Siti Nurhaliza, recurrent cough',
+      transcript: { turns: [] },
+      analysis: {},
+      editedNote: {},
+      erasedAt: null,
+    })
+
+    await eraseConsultation('consult-2', 'doctor-1')
+
+    const erased = consultations.get('consult-2')
+    expect(erased).toMatchObject({ title: null, erasedAt: expect.any(Date) })
+    expect(JSON.stringify(erased)).not.toMatch(/Siti|Nurhaliza/)
   })
 })

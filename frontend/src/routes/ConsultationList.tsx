@@ -1,6 +1,6 @@
 import type { ConsultationListItem, ConsultationStatus } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useId, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
@@ -11,6 +11,7 @@ import { Button } from '../ui/Button.js'
 import { EmptyState, Skeleton } from '../ui/Card.js'
 import { Checkbox } from '../ui/Checkbox.js'
 import { PageHeader } from '../ui/PageHeader.js'
+import { RenameField } from '../ui/RenameField.js'
 
 /**
  * Status is carried by colour, shape and a word together, never colour alone
@@ -53,6 +54,15 @@ export function ConsultationList() {
     queryFn: api.listConsultations,
   })
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
+  /**
+   * Which row is open for renaming, owned here rather than inside the field.
+   *
+   * A row is a link, so the pencil has to sit outside the anchor to be its own
+   * target, and it therefore cannot be the thing that holds the open state. One
+   * id rather than a set, because two rows renaming at once is not a state a
+   * doctor can be in.
+   */
+  const [renaming, setRenaming] = useState<string | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   // Associated explicitly rather than by wrapping. The input lives inside the
   // `Checkbox` component, so a wrapping label reads as having no control in it.
@@ -85,6 +95,14 @@ export function ConsultationList() {
       void queryClient.invalidateQueries({ queryKey: ['notifications'] })
       return queryClient.invalidateQueries({ queryKey: ['consultations'] })
     },
+  })
+
+  const rename = useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string | null }) => api.patch(id, { title }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['consultations'] }),
+    // Named rather than silent: a rename that failed leaves the old name on
+    // screen, which is indistinguishable from one the doctor never made.
+    onError: () => toast.error('That name could not be saved.'),
   })
 
   const toggle = (id: string) =>
@@ -181,7 +199,7 @@ export function ConsultationList() {
             <div
               key={consultation.id}
               className={cn(
-                'flex items-center gap-3 rounded-card border bg-surface pl-4 transition-colors',
+                'group/row flex items-center gap-3 rounded-card border bg-surface pl-4 transition-colors',
                 // The tint is a layer over the surface, not a replacement for
                 // it: as a `background-color` it won the cascade and left the
                 // row translucent over the page's dot grid.
@@ -198,25 +216,59 @@ export function ConsultationList() {
                 onChange={() => toggle(consultation.id)}
                 aria-label={`Select consultation from ${when}`}
               />
-              <Link
-                to={`/consultations/${consultation.id}`}
-                className="flex min-w-0 flex-1 items-center justify-between gap-4 py-4 pr-4"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{when}</p>
-                  <p className="mt-0.5 font-mono text-2xs text-ink-muted">
-                    {consultation.id.slice(0, 8)}
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    'shrink-0 rounded-full border px-2.5 py-1 text-2xs font-medium',
-                    status.className,
-                  )}
+              {renaming === consultation.id ? (
+                <RenameField
+                  defaultEditing
+                  value={consultation.title}
+                  fallback={when}
+                  label={`Rename the consultation from ${when}`}
+                  className="min-w-0 flex-1 py-3 pr-4"
+                  onDone={() => setRenaming(null)}
+                  onSave={(title) => rename.mutate({ id: consultation.id, title })}
+                />
+              ) : (
+                <Link
+                  to={`/consultations/${consultation.id}`}
+                  className="flex min-w-0 flex-1 items-center justify-between gap-4 py-4 pr-4"
                 >
-                  {status.label}
-                </span>
-              </Link>
+                  <div className="min-w-0">
+                    {/*
+                    The name is the row's identity now, and the timestamp moves
+                    down beside the id rather than being dropped: when a record
+                    was created is still real bookkeeping, it just stops being
+                    the only thing distinguishing one row from the next.
+                  */}
+                    <p className="truncate text-sm font-medium">{consultation.title ?? when}</p>
+                    <p className="mt-0.5 truncate text-2xs text-ink-muted">
+                      <span className="font-mono">{consultation.id.slice(0, 8)}</span>
+                      {consultation.title === null ? null : ` · ${when}`}
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-full border px-2.5 py-1 text-2xs font-medium',
+                      status.className,
+                    )}
+                  >
+                    {status.label}
+                  </span>
+                </Link>
+              )}
+
+              {/* A sibling of the link for the same reason the checkbox is: a
+                  button inside an anchor is not reachable as its own target,
+                  and pressing it would navigate instead of renaming. */}
+              {renaming === consultation.id ? null : (
+                <button
+                  type="button"
+                  data-print="hide"
+                  aria-label={`Rename the consultation from ${when}`}
+                  onClick={() => setRenaming(consultation.id)}
+                  className="mr-3 flex size-8 shrink-0 items-center justify-center rounded-control text-ink-muted opacity-0 transition-opacity hover:bg-sunken hover:text-ink focus-visible:opacity-100 group-hover/row:opacity-100 pointer-coarse:opacity-100"
+                >
+                  <Pencil aria-hidden className="size-3.5" />
+                </button>
+              )}
             </div>
           )
         })}

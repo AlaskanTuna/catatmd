@@ -491,9 +491,48 @@ export const ConsultationStatusSchema = z.enum([
   'approved',
 ])
 
+/**
+ * The record's filing name, or `null` when it has never been named.
+ *
+ * Bounded, unlike `TranscriptSchema`, whose missing `.max()` is named as a gap
+ * in `.claude/rules/security.md`. 120 characters is a filing label with room to
+ * spare, and past that a title stops being scannable, which is the whole reason
+ * it exists.
+ *
+ * Trimmed to `null` rather than kept as an empty string, so "cleared" and
+ * "never named" are one state instead of two that render identically and sort
+ * differently.
+ */
+export const ConsultationTitleSchema = z
+  .string()
+  .max(120)
+  .transform((value) => value.trim())
+  .refine((value) => value.length <= 120)
+  .transform((value) => (value.length === 0 ? null : value))
+  .nullable()
+
 export const ConsultationSchema = z.object({
   id: z.string(),
   status: ConsultationStatusSchema,
+  /*
+   * Absent reads as "no title", rather than failing the parse.
+   *
+   * Vercel and Render deploy from their own triggers on the same merge, so the
+   * new SPA reaches the old API for as long as the slower build takes. This
+   * field is the first thing added to the consultations list since, and the
+   * frontend `safeParse`s every response into `invalid_response`, so requiring
+   * it would black out the list and the detail page for that whole window.
+   *
+   * PR #124 shipped exactly this shape of mismatch and was caught by hand
+   * (`.github/workflows/ci.yml`, "Migration notice"). Tolerating an absent
+   * additive field is what makes the rollout ordering-independent.
+   *
+   * Output stays `string | null`, so nothing downstream handles `undefined`.
+   */
+  title: z
+    .string()
+    .nullish()
+    .transform((value) => value ?? null),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
   transcript: TranscriptSchema.nullable(),
@@ -569,9 +608,21 @@ export const makeSuggestionsAndRedFlagsSchema = (corpusIds: readonly [string, ..
 
 // ─── API contracts (docs/trd.md §13) ─────────────────────────────────────────
 
+/*
+ * `title` is the one clinical field this projection carries, and the widening
+ * is deliberate rather than incidental.
+ *
+ * The list was PHI-free: id, status and two timestamps. A title changes that,
+ * because a doctor renaming a record will use whatever makes it findable and
+ * that is frequently a patient's name. The derived title carries no transcript
+ * text by construction (`backend/src/analysis/title.ts`), but a renamed one is
+ * free text and is treated as PHI everywhere it matters: erased with the other
+ * three columns, never logged, never sent to a provider.
+ */
 export const ConsultationListItemSchema = ConsultationSchema.pick({
   id: true,
   status: true,
+  title: true,
   createdAt: true,
   updatedAt: true,
 })
