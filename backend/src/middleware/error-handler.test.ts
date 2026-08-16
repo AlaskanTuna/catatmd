@@ -99,6 +99,33 @@ describe('errorHandler', () => {
     expect(lines.join('')).toContain('"errorClass":"model_error"')
   })
 
+  it('classifies a draft_failed HttpError as a model error, not an internal one', () => {
+    const lines: string[] = []
+    const spy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      lines.push(String(chunk))
+      return true
+    })
+
+    errorHandler(
+      new HttpError(502, 'draft_failed', 'Speaker labelling failed.'),
+      {} as Request,
+      mockRes(),
+      vi.fn(),
+    )
+    errorHandler(
+      new HttpError(500, 'deid_failed', 'Speaker labelling failed.'),
+      {} as Request,
+      mockRes(),
+      vi.fn(),
+    )
+    spy.mockRestore()
+
+    expect(lines.join('')).toContain('"errorClass":"model_error"')
+    expect(lines.join('')).toContain('"status":502')
+    expect(lines.join('')).toContain('"errorClass":"deidentification_error"')
+    expect(lines.join('')).toContain('"status":500')
+  })
+
   it('delegates to express when headers are already sent', () => {
     const res = mockRes()
     res.headersSent = true

@@ -204,6 +204,40 @@ describe('recordAuditEvent', () => {
     }
   })
 
+  /**
+   * The hosted-draft-labelling pair that follows a relay (#189), same
+   * actor-only shape and same no-prose sweep as the relay events above.
+   */
+  it('writes only numbers and closed labels for the hosted-draft-labelling events', async () => {
+    await recordAuditEvent({
+      action: 'asr.hosted_draft_labelled',
+      actorId: 'doctor-1',
+      metadata: { turnCount: 6, detected: ['NRIC', 'MRN'], model: 'qwen3.7-flash' },
+    })
+    await recordAuditEvent({
+      action: 'asr.hosted_draft_failed',
+      actorId: 'doctor-1',
+      metadata: { reason: 'not_reconstructed' },
+    })
+
+    for (const row of appended) expect(row.consultationId).toBeNull()
+    expect(verifyAuditChain(appended)).toMatchObject({ ok: true, verified: 2 })
+
+    const written = vi
+      .mocked(prisma.auditEvent.create)
+      .mock.calls.map((call) => JSON.stringify((call[0] as { data: unknown }).data))
+      .join(' ')
+
+    expect(written).not.toMatch(/\[[A-Z]+_\d+\]/)
+    expect(written).not.toMatch(/patient|doctor:|complains|reports|prescrib/i)
+    for (const call of vi.mocked(prisma.auditEvent.create).mock.calls) {
+      const meta = (call[0] as { data: { metadata?: unknown } }).data.metadata
+      for (const value of JSON.stringify(meta ?? {}).match(/"[^"]*"/g) ?? []) {
+        expect(value.length).toBeLessThan(40)
+      }
+    }
+  })
+
   it('exposes no update or delete path', async () => {
     const audit = await import('./index.js')
 
