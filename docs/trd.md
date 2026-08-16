@@ -1801,13 +1801,39 @@ The §20.2 sentence-scoring heuristic reads segment boundaries and punctuation, 
 
 #### Mechanism
 
-`POST /api/asr/draft-turns` (§13), session-guarded, own limiter (`draftTurnsRateLimit`, 5/min per client key), body `{ text }` trimmed to 1..30,000 chars (`MAX_DRAFT_TEXT_CHARACTERS`, reconciled with the 16,384-token output ceiling: the response echoes the input verbatim, and at a conservative 2.5 chars/token for code-switched Malay a 30,000-char echo plus JSON scaffolding stays inside the ceiling, where a larger cap would pay the full output budget for a guaranteed truncation failure):
+`POST /api/asr/draft-turns` (§13), session-guarded, own limiter (`draftTurnsRateLimit`, 5/min per client key), body `{ text }` trimmed to 1..30,000 chars (`MAX_DRAFT_TEXT_CHARACTERS`, reconciled with the 16,384-token output ceiling: the response echoes the input verbatim, and at a conservative 2.5 chars/token for code-switched Malay the echo is now per chunk rather than per request, so the ceiling has ample headroom; the cap remains the bound on how much text one request may submit, and therefore on the fan-out below):
 
 1. `deidentify(text)` mints the branded content plus a request-scoped vault before anything leaves the API, the same PHI-boundary gate every other egress uses. `detected` labels are kept for the audit row.
-2. `LLMClient.generate`, operation `draft_turns`, `temperature: 0`, `maxTokens: 16_384`, output constrained to `DraftTurnsResponseSchema` (`{ turns: [{ speaker: 'doctor' | 'patient', text }] }`, 1 to 600 turns, each turn's text 1 to 4,000 chars), system prompt in `backend/src/draft-turns/prompt.ts`.
-3. **Reconstruction guard** (`backend/src/draft-turns/reconstruction.ts`). The model's turns are trusted only for boundaries and speaker labels, never for their text. Each turn is canon-aligned word-for-word against the input (lowercased; letters, digits, `[]`, `_` kept, so a pseudonym token compares as one word), then the shipped turn text is re-sliced from the input's own characters, not from the model's. Punctuation and casing changes are forgiven during comparison but excluded from the output; a paraphrase, drop, reorder, translation, or split token discards the whole draft. This is stronger than a string diff: the guarantee is that shipped text is provably the input's own characters, not merely similar to it.
-4. Per-turn `vault.rehydrate`, then a **second** schema parse against `DraftTurnsResponseSchema` after rehydration, because a restored span can push a turn past the 4,000-char cap. This failure is classified `not_reconstructed` and happens before the audit row is written.
-5. Exactly one audit row is written after the LLM call is attempted: `asr.hosted_draft_labelled` on success or `asr.hosted_draft_failed` with a closed `reason` (`llm_failed` or `not_reconstructed`) on failure (§15). Pre-egress rejections (`401`, `400`, `429`, a `DeidentificationError`) write no row, mirroring the relay pair (§15).
+2. **`sliceDeidentified` cuts the gated value into 600-character, whitespace-bounded chunks**, at most four in flight at once. Detail and rationale in §20.6 below.
+3. `LLMClient.generate` **per chunk**, operation `draft_turns`, `temperature: 0`, `maxTokens: 16_384`, output constrained to `DraftTurnsResponseSchema` (`{ turns: [{ speaker: 'doctor' | 'patient', text }] }`, 1 to 600 turns, each turn's text 1 to 4,000 chars), system prompt in `backend/src/draft-turns/prompt.ts`.
+4. **Reconstruction guard** (`backend/src/draft-turns/reconstruction.ts`). The model's turns are trusted only for boundaries and speaker labels, never for their text. Each turn is canon-aligned word-for-word against the input (lowercased; letters, digits, `[]`, `_` kept, so a pseudonym token compares as one word), then the shipped turn text is re-sliced from the input's own characters, not from the model's. Punctuation and casing changes are forgiven during comparison but excluded from the output; a paraphrase, drop, reorder, translation, or split token discards the whole draft. This is stronger than a string diff: the guarantee is that shipped text is provably the input's own characters, not merely similar to it.
+5. Per-turn `vault.rehydrate`, then a **second** schema parse against `DraftTurnsResponseSchema` after rehydration, because a restored span can push a turn past the 4,000-char cap. This failure is classified `not_reconstructed` and happens before the audit row is written.
+6. Exactly one audit row is written after the LLM call is attempted: `asr.hosted_draft_labelled` on success or `asr.hosted_draft_failed` with a closed `reason` (`llm_failed` or `not_reconstructed`) on failure (§15). Pre-egress rejections (`401`, `400`, `429`, a `DeidentificationError`) write no row, mirroring the relay pair (§15).
+
+#### Chunking, And Why The Pass Needed It
+
+Measured against production on 16/08/26, before chunking:
+
+| Input       | Result                   |
+| ----------- | ------------------------ |
+| 180 chars   | labelled, 16 s           |
+| 653 chars   | labelled, 19.5 s         |
+| 1,335 chars | `502 draft_failed`, 22 s |
+
+A real consultation is several thousand characters, so the pass failed on exactly the input it exists for, and the failure was invisible: the client swallowed it and delivered unlabelled prose.
+
+**The cause is the reconstruction guard's granularity, not the guard itself.** Word-for-word alignment is all-or-nothing across whatever was submitted, so one drifted word in four thousand discarded every label. Shrinking the unit shrinks the blast radius without weakening the guarantee, because each chunk is still aligned and re-sliced in full.
+
+- **`sliceDeidentified` (`backend/src/deid/index.ts`) cuts the value after the gate, never before it.** Detection is context-sensitive: `Ahmad Ismail` is one `PATIENT` span only while the two words are adjacent, so de-identifying chunk by chunk would let an identifier straddling a boundary through. The whole text is gated once and the result is cut, so every piece inherits a guarantee the whole already earned.
+- **It lives in `deid/` because that module owns the brand.** Rebranding a substring anywhere else is the `as Deidentified` cast `no-stray-brand-casts.test.ts` fails the build on. The function takes a `Deidentified` and returns `Deidentified[]`, so it is a brand-preserving transform and cannot launder a raw string.
+- **Cuts land only on whitespace**, so a vault token can never be split into a `[PATIENT` and a `_1]` that no longer matches `TOKEN_PATTERN`. A single word longer than the budget ships whole rather than being cut.
+- **`assertNoIdentifiers` now runs per chunk** rather than once per request, which is strictly more checking than the unsliced path.
+- **600 characters, at most 4 concurrent.** The size sits inside the range that was reliably passing rather than at its edge. The concurrency bound matters because `MAX_DRAFT_TEXT_CHARACTERS` is 30,000: unbounded fan-out would open up to 50 provider calls for one request, the unbounded-consumption shape `MAX_CONCURRENT_RELAYS` already guards against on the audio route (OWASP LLM10).
+- **A rejected chunk fails the whole pass.** Keeping the surviving chunks and giving the rejected one its neighbour's speaker was considered and refused: it fabricates attribution, presenting up to 600 characters of patient speech as the doctor's with nothing in the response marking it invented, and it would flow into the note and the red-flag engine that way. Failing is safe because the client's fallback is a real one (`proseToDraft`), drafting on-device labels that the review step already describes as guesses.
+
+Measured after, same 2,543-character unpunctuated Malay stream: **11 turns, both speakers, every word verbatim, 37.9 s**, against a 150 s client deadline.
+
+**Open:** partial success is not available. One rejected chunk still costs the transcript its server labels, where per-chunk reporting could keep the rest. That needs a contract field marking a turn as undrafted so the client can render it unlabelled rather than inheriting a guess, and is deliberately not bundled here.
 
 #### Failure Taxonomy And Fallback
 

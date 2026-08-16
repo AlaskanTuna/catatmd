@@ -275,15 +275,37 @@ describe('hosted draft-turn labelling', () => {
     expect(textarea.value).toBe('Doctor: Any fever?\nPatient: Yesterday quite hot.')
   })
 
-  it('falls back to raw prose when a hosted result carries no drafted turns', () => {
+  /*
+   * The hosted labelling pass fails on a consultation-length transcript, and
+   * this is the path that leaves. Measured against production: 653 characters
+   * labelled in 19.5 s, 1,335 returned `draft_failed`, and a real recording is
+   * several thousand.
+   *
+   * This used to assert that the prose landed straight in the textarea, which
+   * described the behaviour accurately and hid that it was a dead end: a hosted
+   * recording carries no segments, so nothing drafted labels, `parseTranscript`
+   * read zero turns, and Start Consultation is disabled on exactly that. The
+   * relay had billed for a transcription the doctor could not use.
+   */
+  it('keeps a hosted recording usable when no drafted turns come back', () => {
     openRecordTab()
     fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted raw' }))
 
-    // No draft pending: the text landed straight in the textarea rather than
-    // behind SpeakerAssign, unlike the drafted-turns path above.
-    expect(screen.queryByRole('button', { name: /apply labels/i })).toBeNull()
+    // Drafted locally instead of dumped as prose, so the doctor gets the same
+    // review step the labelled path reaches.
+    expect(screen.getByRole('button', { name: /apply labels/i })).toBeTruthy()
+    expect(screen.getByText(/Batuk sudah tiga hari\./)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
+
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-    expect(textarea.value).toBe('Batuk sudah tiga hari.')
+    expect(textarea.value).toMatch(/Batuk sudah tiga hari\./)
+    // The point of the fix: the transcript now parses to turns, so the button
+    // that was permanently disabled is reachable.
+    expect(screen.getByRole('button', { name: /start consultation/i })).not.toHaveProperty(
+      'disabled',
+      true,
+    )
   })
 
   it('corrects a measured mishear on tap and applies the corrected line', () => {

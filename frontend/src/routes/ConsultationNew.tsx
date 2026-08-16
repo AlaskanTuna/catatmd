@@ -4,7 +4,12 @@ import { FileUp, FolderOpen, Mic, Type } from 'lucide-react'
 import { type ChangeEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AudioCapture } from '../audio/AudioCapture.js'
-import { type DraftLine, draftToTurns, segmentsToDraft } from '../audio/draft-turns.js'
+import {
+  type DraftLine,
+  draftToTurns,
+  proseToDraft,
+  segmentsToDraft,
+} from '../audio/draft-turns.js'
 import { SpeakerAssign } from '../audio/SpeakerAssign.js'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
@@ -13,11 +18,19 @@ import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
 
+/*
+ * Ordered by how central each path is to the product, not by how it was built.
+ *
+ * `fixture` stays the opening tab even though it is last. A reviewer arriving
+ * with no microphone and no Malay recording still has to be able to run the
+ * pipeline in one click, and defaulting to Record would put an empty capture
+ * screen in front of them instead.
+ */
 const TABS = [
-  { id: 'fixture', label: 'Bundled Case', Icon: FolderOpen },
-  { id: 'paste', label: 'Paste', Icon: Type },
-  { id: 'upload', label: 'Upload', Icon: FileUp },
   { id: 'record', label: 'Record', Icon: Mic },
+  { id: 'upload', label: 'Upload', Icon: FileUp },
+  { id: 'paste', label: 'Paste', Icon: Type },
+  { id: 'fixture', label: 'Bundled Case', Icon: FolderOpen },
 ] as const
 
 export function ConsultationNew() {
@@ -190,16 +203,29 @@ export function ConsultationNew() {
                 // segments (#189); `hosted-` ids are a namespace disjoint from
                 // the local `seg-` ones, and the turns carry no offsets, so a
                 // wrong timestamp can never be asserted for them.
+                //
+                // The third branch is the one that keeps this from being a
+                // dead end. A hosted recording carries no segments, so when the
+                // labelling pass does not return, the first two produce nothing
+                // and the doctor is left with a block of prose that parses to
+                // zero turns, which is exactly the condition Start Consultation
+                // is disabled on. `proseToDraft` applies the same rules to the
+                // text alone, so the recording stays usable and the labels stay
+                // the doctor's to confirm.
+                const hostedLines = (draftTurns ?? []).map(
+                  (turn, i): DraftLine => ({
+                    id: `hosted-${i}`,
+                    speaker: turn.speaker,
+                    text: turn.text,
+                  }),
+                )
+                const timedLines = segmentsToDraft(segments, transcribed, { withOffsets })
                 const lines =
-                  draftTurns && draftTurns.length > 0
-                    ? draftTurns.map(
-                        (turn, i): DraftLine => ({
-                          id: `hosted-${i}`,
-                          speaker: turn.speaker,
-                          text: turn.text,
-                        }),
-                      )
-                    : segmentsToDraft(segments, transcribed, { withOffsets })
+                  hostedLines.length > 0
+                    ? hostedLines
+                    : timedLines.length > 0
+                      ? timedLines
+                      : proseToDraft(transcribed)
                 if (lines.length > 0) {
                   setDraft((current) =>
                     current
@@ -256,6 +282,7 @@ export function ConsultationNew() {
                   appendText(serialiseTurns(draftToTurns(draft)))
                   setDraft(null)
                 }}
+                canInsertPlain={turns.length > 0}
                 onInsertPlain={() => {
                   if (!draft) return
                   appendText(draft.map((line) => line.text).join(' '))
@@ -283,7 +310,13 @@ export function ConsultationNew() {
         )}
       </div>
 
-      {(text || draft) && (
+      {/*
+        Gated on the same tab condition as the textarea above, because this card
+        reports on that textarea. On the Bundled Case tab there is no editing
+        surface on screen, so a parse count for text the doctor cannot see reads
+        as a stray leftover from the tab they came from.
+      */}
+      {tab !== 'fixture' && (text || draft) && (
         <Card className="mt-4 p-4">
           <p className="text-sm font-medium">
             {turns.length} turn{turns.length === 1 ? '' : 's'} parsed

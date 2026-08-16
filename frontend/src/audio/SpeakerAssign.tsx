@@ -2,6 +2,7 @@ import { ArrowLeftRight, Check, Type } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
+import { InfoTip } from '../ui/InfoTip.js'
 import { applyConfusable, findConfusables } from './confusables.js'
 import type { DraftLine } from './draft-turns.js'
 
@@ -66,6 +67,7 @@ export function SpeakerAssign({
   onSwapAll,
   onApply,
   onInsertPlain,
+  canInsertPlain,
 }: {
   draft: readonly DraftLine[]
   onToggle: (id: string) => void
@@ -73,15 +75,37 @@ export function SpeakerAssign({
   onSwapAll: () => void
   onApply: () => void
   onInsertPlain: () => void
+  /**
+   * Whether there is already a labelled turn for plain text to join.
+   *
+   * Inserting unlabelled text is only ever a continuation: the parser folds a
+   * line with no `Doctor:` or `Patient:` prefix into the turn above it, and
+   * drops it entirely when there is no turn above. So on an empty transcript
+   * this control produced zero turns and disabled Start Consultation, which is
+   * the doctor blocking themselves with the button next to the one that works.
+   */
+  canInsertPlain: boolean
 }) {
   return (
     <div className="mt-4 border-t border-line pt-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-medium">
+        <p className="flex items-center gap-2 text-sm font-medium">
           Draft Labels
-          <span className="ml-2 text-xs font-normal text-ink-muted">
+          <span className="text-xs font-normal text-ink-muted">
             {draft.length} line{draft.length === 1 ? '' : 's'}
           </span>
+          {/*
+            The mechanics live in the tip; the one sentence below does not,
+            because it is the only part that changes what the doctor does. A
+            reader who takes these for finished labels applies them unread, and
+            that is the mislabel the review step exists to catch.
+          */}
+          <InfoTip label="How draft labels work">
+            Tap a label to flip it. A dotted word is a measured mishear of a Malay clinical word;
+            tap the suggestion after it to correct that word only. A sentence holding both speakers
+            is best fixed in the transcript box after applying. Plain text joins the turn above it
+            until you label it.
+          </InfoTip>
         </p>
         <Button
           size="sm"
@@ -92,11 +116,7 @@ export function SpeakerAssign({
         </Button>
       </div>
       <p className="mt-1 text-xs text-ink-muted">
-        Labels are guessed from what each sentence says, not from the voices, and can be wrong. Tap
-        a label to flip it. A dotted word is a measured mishear of a Malay clinical word; tap the
-        suggestion after it to correct that word only. A sentence holding both speakers is best
-        fixed in the transcript box after applying. Plain text joins the turn above it until you
-        label it.
+        Labels are guessed from what each sentence says, not from the voices, and can be wrong.
       </p>
 
       <ul className="mt-3 flex max-h-80 flex-col gap-1 overflow-y-auto pr-1">
@@ -133,14 +153,16 @@ export function SpeakerAssign({
         <Button icon={<Check aria-hidden className="size-4" />} onClick={onApply}>
           Apply Labels to Transcript
         </Button>
-        <Button
-          variant="neutral"
-          size="sm"
-          icon={<Type aria-hidden className="size-3.5" />}
-          onClick={onInsertPlain}
-        >
-          Insert as Plain Text
-        </Button>
+        {canInsertPlain && (
+          <Button
+            variant="neutral"
+            size="sm"
+            icon={<Type aria-hidden className="size-3.5" />}
+            onClick={onInsertPlain}
+          >
+            Append as Plain Text
+          </Button>
+        )}
       </div>
     </div>
   )
