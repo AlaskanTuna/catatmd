@@ -48,7 +48,7 @@ _Catat_ — Malay, "to note down". The product documents; the doctor decides.
   </tr>
 </table>
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -67,7 +67,7 @@ _Catat_ — Malay, "to note down". The product documents; the doctor decides.
   </tr>
 </table>
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -87,7 +87,7 @@ Five pressures follow, each measured rather than asserted:
 
 **About 60% of patients arrive through a TPA or corporate panel, and the note those payers read is not SOAP.** The contractually enforced shape is condition, treatment, itemised medication dispensed, MC days, referral. Two of those fields have no home in SOAP at all, because the Malaysian GP dispenses in-house and issues the MC in the room.
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -106,7 +106,7 @@ Every field above is **extraction, not generation**: each carries a verbatim spa
 
 **Stated honestly, because a doctor will find out in one clinic session:** for a fast three-minute URTI consult this may well be slower than the handwritten line it replaces. The claim is documentation quality and a safety net that does not depend on memory. It is not a time-saving claim, and no time-saved figure is offered anywhere in this repository.
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -121,7 +121,7 @@ AI note-taking is already commoditised in this market, bundled into clinic syste
 | "Our citations are reliable"   | The model may only cite guideline IDs from a supplied corpus; a free-text reference fails validation before the doctor ever sees it    |
 | "The doctor reviews it"        | Approval is a state transition with an audit event, not a checkbox, and it is terminal                                                 |
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -150,7 +150,7 @@ Two claims the stack diagram is drawn to make checkable:
 
 Bun workspaces · TypeScript · Zod (shared contracts) · Express 5 · Prisma 6 · better-auth · React 19 + Vite 7 + Tailwind 4 · Supabase Postgres · Vitest · Biome. Hosting: frontend to Vercel, backend to Render, database to Supabase, all three in one region by design.
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -164,7 +164,7 @@ Bun workspaces · TypeScript · Zod (shared contracts) · Express 5 · Prisma 6 
 
 All three are on free tiers by design. Render free instances spin down when idle and Supabase free projects auto-pause after roughly a week, so an external scheduler pings `/api/health` every 10 minutes to keep both awake — one ping covers both, because the health check runs a query (`docs/trd.md` §17).
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -180,9 +180,9 @@ All three are on free tiers by design. Render free instances spin down when idle
 
 `docs/trd.md` tags every section `Built`, `Specified`, or `Open`, and never describes unwritten code as if it exists. Where implementation contradicted the specification, the TRD records which won and why rather than quietly conforming — see §3 (the assertion schema had to split in two), §5 and §7.
 
-**No clinician has reviewed any of it**, and all data is synthetic. See [Known Limitations](#known-limitations).
+**No clinician has reviewed any of it**, and all data is synthetic. See [`prd.md` §12](./prd.md#12-known-limitations).
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -211,7 +211,7 @@ So this project does not compete on transcription. It competes on **the boundary
 
 **Ground already occupied locally is named rather than claimed.** Browser-side NRIC tokenisation ships today at DocReport, and Malaysian CPG citation lookup is held by Qmed AskCPG, co-developed with MOH. Full analysis in `docs/prd.md` §5.
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -233,7 +233,7 @@ The note therefore carries an operational block alongside the four SOAP strings 
 
 **Every one of these is extraction, not generation.** Each carries a verbatim transcript span, and a field nobody raised resolves to `NOT_ASSESSED` rather than being defaulted to absent.
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -265,9 +265,10 @@ The two sit at different tiers deliberately. The first stops the convenient bypa
 
 What remains honest to say: a deliberate cast still compiles. The claim is that it cannot reach a provider undetected, not that it cannot be written.
 
-Detection is pattern-based and best-effort — see [Known Limitations](#known-limitations).
+Detection is pattern-based and best-effort — see [`prd.md` §12](./prd.md#12-known-limitations).
 
-### Audio Stays On The Device By Default
+<details>
+<summary><strong>Audio Stays On The Device By Default</strong></summary>
 
 Raw audio cannot be de-identified, only transcribed. A hosted service would therefore carry un-redacted patient audio, and voice itself as a biometric identifier, outside the trust boundary before the gate ever saw it.
 
@@ -303,7 +304,10 @@ The hosted adapter is **built and live**. Its consent gate (`docs/trd.md` §20, 
 
 Who observes what, and why those two assets are treated differently, is set out in full in `docs/trd.md` §20.
 
-### The Provider Is A Swappable Adapter
+</details>
+
+<details>
+<summary><strong>The Provider Is A Swappable Adapter</strong></summary>
 
 All three supported providers speak the OpenAI-compatible protocol and are selected by `LLM_PROVIDER`. This is a deliberate architectural commitment: it is what makes "what happens when data residency requirements change" answerable with a configuration change rather than a rewrite.
 
@@ -317,7 +321,9 @@ All three supported providers speak the OpenAI-compatible protocol and are selec
 
 The claim this project makes is narrower and true: **in-region hosting, a documented s.129 basis, and a region-portable adapter.** This prototype also processes no personal data at all, because every consultation is synthetic (`docs/prd.md` §11).
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+</details>
+
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -325,7 +331,8 @@ The claim this project makes is narrower and true: **in-region hosting, a docume
 
 The safety argument is not "a doctor reviews everything". Doctors do not reliably catch well-formed AI errors, and the failure this system was built against is exactly that shape.
 
-### The Finding It Was Built Against
+<details>
+<summary><strong>The Finding It Was Built Against</strong></summary>
 
 Measured **13/08/26** against the live production endpoint. Full method and output in `docs/trd.md` §21.1.
 
@@ -336,7 +343,10 @@ Measured **13/08/26** against the live production endpoint. Full method and outp
 
 **The model fabricates in proportion to how _sparse_ the transcript is**, which is precisely the input this product exists to serve.
 
-### The Four Controls
+</details>
+
+<details>
+<summary><strong>The Four Controls</strong></summary>
 
 Ranked by what makes them hold rather than by how they are worded (`docs/trd.md` §21.3):
 
@@ -354,7 +364,10 @@ Two properties the diagram is drawn to make checkable:
 - **Rule-sourced red flags and derived gaps reach assembly without passing through the model at all**, so a model response has nothing to suppress. The union is computed in the route handler, after the model has already returned.
 - **Every arrow leaving the boundary passes through one node**, which re-scans its own payload immediately before it sends.
 
-### The Four Invariants
+</details>
+
+<details>
+<summary><strong>The Four Invariants</strong></summary>
 
 | Invariant                                  | How It Is Enforced                                                                                                                                                                                                                     |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -367,7 +380,10 @@ Two properties the diagram is drawn to make checkable:
 
 **The diagnosis invariant is machine-checkable rather than promised.** The system may not produce a diagnosis the doctor did not say, and no generated prose, whether assessment text, gaps, suggestions or UI copy, states or implies one at all.
 
-### The Guideline Corpus
+</details>
+
+<details>
+<summary><strong>The Guideline Corpus</strong></summary>
 
 10–15 chunks, anchored on Malaysian sources, each carrying its own licence posture:
 
@@ -383,7 +399,9 @@ Two properties the diagram is drawn to make checkable:
 
 **The ID-constrained citation mechanism cannot catch that**, because the model would be citing a real, valid ID. So one source per chunk: the UI attributes per chunk and never says "the guideline says" over merged sources.
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+</details>
+
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -419,41 +437,7 @@ The bar is real and it is clearable. The argument is not that this product escap
 
 The Act 737 intended-purpose statement is written out in `docs/prd.md` §11. This is a prototype, is not placed on the market, and is not for clinical use.
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
-
----
-
-<a id="known-limitations"></a>
-
-## ⚠️ Known Limitations
-
-Stated plainly, because an evaluator learns more from these than from the feature list.
-
-**Clinical and evidential**
-
-- **No clinician has reviewed this prototype, and no Malaysian GP was interviewed.** The red-flag triggers, the corpus, and every clinical statement here are drawn from published, cited sources — none of it is clinically signed off.
-- **There is no published measurement of Malaysian GP documentation burden.** Every AI-scribe ROI figure in circulation is US/AU/UK. None is borrowed here.
-- **This may be slower than writing the note unaided.** For the modal 3-minute URTI consult, a review-edit-paste loop plausibly costs more time than the handwritten line it replaces. The product is positioned on documentation quality and the safety net — never on time saved.
-- **The structured schema is a hypothesis, not a proven mitigation.** The one published study that imposed a template on LLM note generation measured _increased_ major hallucinations. The six-state assertion model must be tested against free-form output on the same sparse transcripts, not assumed (`docs/trd.md` §19 row 16).
-- Narrow clinical scope, a small corpus (10–15 chunks), and synthetic data only — no real-world validation of note quality, gap relevance, or suggestion accuracy.
-
-**Technical**
-
-- **Speech recognition is a second fabrication surface the guardrails cannot see.** A hallucinated ASR span **passes** the evidence-binding check, because the evidence genuinely is in the transcript — the transcript is what is wrong. Every control in this system sits downstream of the transcript. Published measurement puts fabricated phrases at roughly 1% of transcriptions, with about 40% of those judged capable of harm.
-- **Declaring the wrong language produces fluent nonsense, not an error.** Measured on Malaysian audio (`docs/trd.md` §20.1): told the speech was Malay when it was Manglish, the model emitted a grammatical repetition loop — 238 words for 50 seconds of audio. Confident, well-formed, entirely fabricated. The language parameter is therefore fixed at English and never taken from a locale setting or a patient's recorded language. (An earlier claim here, that the model silently _translates_ code-switched audio, did not reproduce under measurement and has been withdrawn.)
-- **The smallest practical model is not usable in this market.** Measured (`docs/trd.md` §20.1): it rendered "auntie" as "until" and dropped "pasar malam" entirely — a meaning change in well-formed English that no downstream control can flag. The larger model recovers it, at ~240 MB of first-use download and roughly double the compute. That measurement rests on a single 50-second non-clinical clip with no ground-truth transcript: enough to settle a model choice, not a benchmark, and never presented as one.
-- **Audio is withheld on low-end hardware rather than merely discouraged.** The model plus runtime plus browser, on a 4 GB machine already running the clinic's own system, is a plausible out-of-memory kill — a dead tab mid-consultation, from which a half-transcribed consultation is not recoverable. A zero-network capability check decides whether to offer audio at all, and the real verdict is measured on the first transcribed chunk.
-- **Consent quality is the weak point in the hosted-audio design.** The doctor on weak hardware is exactly the one offered the hosted path, at the moment of most friction, which is how meaningful consent degrades into clicking past an obstacle. Answered structurally rather than by wording: the consent block is always rendered, muted and unhighlighted, in the same place whether the doctor arrived fresh or after a failure, and the on-device failure copy never mentions the hosted option (`docs/trd.md` §20.4, closing §19 row 18). What stays open is the terms behind it, not the affordance: no retention or training carve-out has been negotiated with the provider.
-- **The review copilot answers with prose instead of a proposal card in about one request in nine.** Measured over 90 turns per arm (`docs/trd.md` §25): the doctor reads a correctly worded replacement paragraph with nothing to apply. Four revisions were trialled and all four rejected on the measurements. Each suppressed one prose form and produced another, and the one with the best headline rate got there by halving the cases where the copilot correctly says the content is already in the note.
-- **Input language is the real limitation**, not output. Malaysian clinical records run in English regardless of what is spoken in the room, but consultations code-switch between Malay, Manglish and dialect, and no quantified code-switching rate for Malaysian GP consultations exists in the literature.
-- **De-identification recall is best-effort.** Detectors are pattern-based and may miss an identifier, particularly an unmarked name — and an ML NER would miss it too, disproportionately for Malay names. This is why raw transcripts are still treated as sensitive at rest.
-- **No retention schedule, and no deletion or access-request path.** Both are prerequisites before any real patient data, not features. An engineering DPIA does exist ([`dpia.md`](./dpia.md)), but it is input for legal review rather than legal sign-off.
-- **No note-to-transcript traceability in the UI.** Evidence spans exist in the data but are not yet surfaced for the doctor to click through. Scoped out for this iteration, not overlooked (`docs/trd.md` §19 row 17).
-- **LLM output is non-deterministic**, and alert-fatigue risk is unmeasured.
-
-Fuller treatment in `docs/prd.md` §12; every unresolved engineering question is enumerated in `docs/trd.md` §19.
-
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -478,7 +462,7 @@ docs/            product and workflow docs
 
 The load-bearing module rule: **no module outside `backend/src/lib/llm/` may import an LLM provider SDK directly** (`docs/trd.md` §2).
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -526,7 +510,7 @@ Port 5434 rather than 5432 because 5432 and 5433 are commonly already bound. Ove
 - `PORT` defaults to `3001`, which is commonly taken (Grafana, other dev servers). Set `PORT` and `BETTER_AUTH_URL` together if you move it — better-auth's URL must match the origin the API actually serves on.
 - Migrations run from a developer machine against `DIRECT_URL` (`:5432`); the app itself runs on the pooled `DATABASE_URL` (`:6543`).
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -541,7 +525,7 @@ Port 5434 rather than 5432 because 5432 and 5433 are commonly already bound. Ove
 | [`superpowers/research/`](./superpowers/) | The research phase behind the positioning and clinical claims, graded by evidence strength |
 | [`../AGENTS.md`](../AGENTS.md)            | Contributor and agent working conventions, canonical for every tool                        |
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -549,31 +533,39 @@ Port 5434 rather than 5432 because 5432 and 5433 are commonly already bound. Ove
 
 <table align="center">
   <tr>
-    <td align="center" width="240">
+    <td align="center" width="260">
       <a href="https://github.com/AlaskanTuna"><img src="https://github.com/AlaskanTuna.png" width="100" alt="AlaskanTuna" /></a><br/>
-      <a href="https://github.com/AlaskanTuna"><sub><strong>@AlaskanTuna</strong></sub></a>
+      <a href="https://github.com/AlaskanTuna"><sub><strong>@AlaskanTuna</strong></sub></a><br/>
+      <sub>Review UI, HTTP API, deploy and CI, docs</sub>
     </td>
-    <td align="center" width="240">
+    <td align="center" width="260">
       <a href="https://github.com/Andersonnn7788"><img src="https://github.com/Andersonnn7788.png" width="100" alt="Andersonnn7788" /></a><br/>
-      <a href="https://github.com/Andersonnn7788"><sub><strong>@Andersonnn7788</strong></sub></a>
+      <a href="https://github.com/Andersonnn7788"><sub><strong>@Andersonnn7788</strong></sub></a><br/>
+      <sub>LLM pipeline, red-flag engine, de-identification gate</sub>
     </td>
   </tr>
 </table>
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+Split taken from closed issues rather than asserted, by their `area:` labels:
+
+|                     | Closed | Mostly                                                             |
+| ------------------- | ------ | ------------------------------------------------------------------ |
+| **@AlaskanTuna**    | 21     | `area:ui` ×10 · `area:api` ×5 · `area:infra` ×4                    |
+| **@Andersonnn7788** | 44     | `area:llm` ×7 · `area:redflags` ×7 · `area:deid` ×6 · `area:ui` ×9 |
+
+Both worked across the UI and the API; the tiers below them were not shared.
+
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
 ## 🤝 AI Disclosure
 
-This prototype was produced with AI coding assistants under human direction, in the pipeline described in [`../AGENTS.md`](../AGENTS.md), with two human gates: a plan is approved before implementation, and a diff is reviewed before it ships. No commit reaches `main` without human authorization.
+**Claude Code and Codex were used throughout development and testing**, under the pipeline in [`../AGENTS.md`](../AGENTS.md). No commit reaches `main` without human authorization.
 
-The same discipline the product enforces was applied to building it:
+**Every regulatory and clinical position in this repository was provisioned manually by the two of us.** The PDPA reading, the MDA class assessment, the licence posture on each guideline source, and the scope boundaries were decided by humans and are not model output.
 
-- Figures here are **measured rather than recalled**. Where a number could not be verified it was left out, not estimated.
-- Where a measurement contradicted a claim already written down, the claim was **withdrawn rather than softened**. The ASR translation claim in Known Limitations and the copilot phantom-click figure in `docs/trd.md` §25 are both recorded that way.
-
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
 
 ---
 
@@ -583,4 +575,4 @@ Conventional Commits, enforced by commitlint: `<type>[scope]: <description>`.
 
 `main` is shared by two developers — `git pull --rebase` before pushing.
 
-<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+<div align="right"><a href="#top">&#8593;</a></div>
