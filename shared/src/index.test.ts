@@ -319,6 +319,7 @@ describe('API envelope schemas', () => {
     const result = ConsultationDetailSchema.safeParse({
       id: 'c1',
       status: 'awaiting_review',
+      title: null,
       createdAt: '2026-08-13T00:00:00.000Z',
       updatedAt: '2026-08-13T00:00:00.000Z',
       transcript: null,
@@ -340,6 +341,7 @@ describe('API envelope schemas', () => {
     const approved = ConsultationDetailSchema.safeParse({
       id: 'c1',
       status: 'approved',
+      title: null,
       createdAt: '2026-08-13T00:00:00.000Z',
       updatedAt: '2026-08-13T00:00:00.000Z',
       transcript: null,

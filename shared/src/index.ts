@@ -491,9 +491,30 @@ export const ConsultationStatusSchema = z.enum([
   'approved',
 ])
 
+/**
+ * The record's filing name, or `null` when it has never been named.
+ *
+ * Bounded, unlike `TranscriptSchema`, whose missing `.max()` is named as a gap
+ * in `.claude/rules/security.md`. 120 characters is a filing label with room to
+ * spare, and past that a title stops being scannable, which is the whole reason
+ * it exists.
+ *
+ * Trimmed to `null` rather than kept as an empty string, so "cleared" and
+ * "never named" are one state instead of two that render identically and sort
+ * differently.
+ */
+export const ConsultationTitleSchema = z
+  .string()
+  .max(120)
+  .transform((value) => value.trim())
+  .refine((value) => value.length <= 120)
+  .transform((value) => (value.length === 0 ? null : value))
+  .nullable()
+
 export const ConsultationSchema = z.object({
   id: z.string(),
   status: ConsultationStatusSchema,
+  title: z.string().nullable(),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
   transcript: TranscriptSchema.nullable(),
@@ -569,9 +590,21 @@ export const makeSuggestionsAndRedFlagsSchema = (corpusIds: readonly [string, ..
 
 // ─── API contracts (docs/trd.md §13) ─────────────────────────────────────────
 
+/*
+ * `title` is the one clinical field this projection carries, and the widening
+ * is deliberate rather than incidental.
+ *
+ * The list was PHI-free: id, status and two timestamps. A title changes that,
+ * because a doctor renaming a record will use whatever makes it findable and
+ * that is frequently a patient's name. The derived title carries no transcript
+ * text by construction (`backend/src/analysis/title.ts`), but a renamed one is
+ * free text and is treated as PHI everywhere it matters: erased with the other
+ * three columns, never logged, never sent to a provider.
+ */
 export const ConsultationListItemSchema = ConsultationSchema.pick({
   id: true,
   status: true,
+  title: true,
   createdAt: true,
   updatedAt: true,
 })

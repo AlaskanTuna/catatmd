@@ -220,6 +220,10 @@ function seed(status: string, extra: Record<string, unknown> = {}) {
     id: 'c1',
     doctorId: 'doctor-1',
     status,
+    // Null rather than absent, because that is what the column returns for a
+    // consultation nobody has named. A factory that omits it would let a route
+    // reading `row.title` pass here and fail against Postgres.
+    title: null,
     transcript: TRANSCRIPT,
     analysis: null,
     editedNote: null,
@@ -406,6 +410,77 @@ describe('analyse output', () => {
     ).toMatchObject({
       profileId: 'adult-acute-uncomplicated-uti',
     })
+  })
+})
+
+/*
+ * Renaming is filing, not clinical editing, and the difference is what decides
+ * which rules apply to it.
+ */
+describe('renaming a consultation', () => {
+  it('stores the new name and records it as its own audit action', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    const res = await call('PATCH', '/api/consultations/c1', { title: 'Cough, sore throat' })
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')).toMatchObject({ title: 'Cough, sore throat' })
+    // Not `consultation.edited`: a trail that cannot tell a rename from a note
+    // change loses the distinction on the one field editable after sign-off.
+    expect(audits.map((a) => a.action)).toContain('consultation.renamed')
+    expect(audits.map((a) => a.action)).not.toContain('consultation.edited')
+  })
+
+  it('collapses a blank name to null, so cleared and never-named are one state', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS, title: 'Something' })
+
+    const res = await call('PATCH', '/api/consultations/c1', { title: '   ' })
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')).toMatchObject({ title: null })
+  })
+
+  it('rejects a name past the bound rather than storing it', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    const res = await call('PATCH', '/api/consultations/c1', { title: 'x'.repeat(121) })
+
+    expect(res.status).toBe(400)
+  })
+
+  /*
+   * The deliberate exception to the terminal state, and the reason it is safe.
+   *
+   * `approved` freezes the clinical record. A filing name is not part of that
+   * record: it carries no note text, no finding and no disposition. Locking it
+   * would make the archive unsearchable at exactly the point it becomes an
+   * archive, since the consultations somebody needs to find later are the
+   * signed ones.
+   */
+  it('renames an approved consultation, which is the one edit sign-off allows', async () => {
+    seed('approved', { analysis: ANALYSIS, approvedAt: new Date() })
+
+    const res = await call('PATCH', '/api/consultations/c1', { title: 'Filed under this' })
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')).toMatchObject({ title: 'Filed under this' })
+  })
+
+  it('still refuses clinical content on an approved consultation', async () => {
+    seed('approved', { analysis: ANALYSIS, approvedAt: new Date() })
+
+    expect(
+      (await call('PATCH', '/api/consultations/c1', { editedNote: { plan: 'No' } })).status,
+    ).toBe(409)
+    // And a rename cannot be used to smuggle one through alongside it.
+    expect(
+      (
+        await call('PATCH', '/api/consultations/c1', {
+          title: 'Still no',
+          editedNote: { plan: 'No' },
+        })
+      ).status,
+    ).toBe(409)
   })
 })
 
