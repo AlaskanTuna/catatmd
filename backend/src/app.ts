@@ -7,6 +7,7 @@ import { clientIp } from './middleware/client-ip.js'
 import { errorHandler } from './middleware/error-handler.js'
 import {
   analyzeRateLimit,
+  draftTurnsRateLimit,
   ephemeralAnalyzeRateLimit,
   eraseRateLimit,
   guestSignInRateLimit,
@@ -85,6 +86,9 @@ export function createApp() {
   // bucket too; runs after the session guard above and before the route-level
   // body parser, so a limited request is refused before any audio is read (#154).
   app.post('/api/asr/transcriptions', hostedAsrRateLimit)
+  // The labelling pass that follows a hosted relay is an LLM call, so it
+  // carries its own bucket for the same reason the relay does.
+  app.post('/api/asr/draft-turns', draftTurnsRateLimit)
 
   // ── Clinical routers ─────────────────────────────────────────────────────
   // These inherit the session guard and the analyze limiter above, and must

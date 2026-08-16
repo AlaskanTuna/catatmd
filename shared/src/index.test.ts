@@ -5,10 +5,13 @@ import {
   ClinicalFactsResponseSchema,
   ClinicalFactsSchema,
   ConsultationDetailSchema,
+  DraftTurnsRequestSchema,
+  DraftTurnsResponseSchema,
   ErrorEnvelopeSchema,
   GuidelineChunkSchema,
   LlmClinicalAssertionSchema,
   LlmClinicalFactsSchema,
+  MAX_DRAFT_TEXT_CHARACTERS,
   makeSuggestionsAndRedFlagsSchema,
   NoteAndGapsResponseSchema,
   OperationalBlockSchema,
@@ -390,5 +393,64 @@ describe('API envelope schemas', () => {
       quote: 'Respiratory complaints account for 26.8% of primary care problems.',
     })
     expect(result.success).toBe(true)
+  })
+})
+
+describe('DraftTurnsRequestSchema', () => {
+  it('trims surrounding whitespace from text', () => {
+    const result = DraftTurnsRequestSchema.safeParse({ text: '  doctor how are you feeling  ' })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.text).toBe('doctor how are you feeling')
+    }
+  })
+
+  it('rejects an empty text field', () => {
+    expect(DraftTurnsRequestSchema.safeParse({ text: '' }).success).toBe(false)
+  })
+
+  it('rejects a whitespace-only text field, since trim runs before the length check', () => {
+    expect(DraftTurnsRequestSchema.safeParse({ text: '   \n\t  ' }).success).toBe(false)
+  })
+
+  it('rejects text over MAX_DRAFT_TEXT_CHARACTERS', () => {
+    const result = DraftTurnsRequestSchema.safeParse({
+      text: 'a'.repeat(MAX_DRAFT_TEXT_CHARACTERS + 1),
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('accepts text at the MAX_DRAFT_TEXT_CHARACTERS boundary', () => {
+    const result = DraftTurnsRequestSchema.safeParse({
+      text: 'a'.repeat(MAX_DRAFT_TEXT_CHARACTERS),
+    })
+    expect(result.success).toBe(true)
+  })
+})
+
+describe('DraftTurnsResponseSchema', () => {
+  it('rejects a response with zero turns', () => {
+    expect(DraftTurnsResponseSchema.safeParse({ turns: [] }).success).toBe(false)
+  })
+
+  it('rejects a turn with a speaker outside the closed enum', () => {
+    const result = DraftTurnsResponseSchema.safeParse({
+      turns: [{ speaker: 'nurse', text: 'How are you feeling?' }],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('round-trips a valid payload, and drops no field and adds none', () => {
+    const payload = {
+      turns: [
+        { speaker: 'doctor', text: 'How are you feeling?' },
+        { speaker: 'patient', text: 'I have a cough.' },
+      ],
+    }
+    const result = DraftTurnsResponseSchema.safeParse(payload)
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data).toEqual(payload)
+    }
   })
 })

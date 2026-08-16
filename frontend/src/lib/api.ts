@@ -6,6 +6,8 @@ import {
   type ConsultationListItem,
   ConsultationListItemSchema,
   type DispositionInput,
+  type DraftTurn,
+  DraftTurnsResponseSchema,
   type EraseConsultationsResult,
   EraseConsultationsResultSchema,
   ErrorEnvelopeSchema,
@@ -225,6 +227,25 @@ export const api = {
       headers: { 'Content-Type': blob.type },
       signal,
     }),
+
+  /**
+   * Drafts Doctor / Patient labels for a hosted transcript (#189).
+   *
+   * **Only ever called with text the relay above just returned**, so it sends
+   * nothing that has not already left the device with consent. The on-device
+   * path never calls this: its labels are drafted locally in
+   * `audio/draft-turns.ts`, and a local recording's text going to any server
+   * would break the Record tab's own promise. The backend de-identifies the
+   * text before its LLM sees it and rejects any draft that fails to
+   * reconstruct the input verbatim; a failure here is answered by falling
+   * back to the unlabelled prose the caller already holds.
+   */
+  draftHostedTurns: (text: string, signal: AbortSignal): Promise<DraftTurn[]> =>
+    request('/asr/draft-turns', DraftTurnsResponseSchema, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+      signal,
+    }).then((r) => r.turns),
 
   /**
    * The doctor's own recent completed work, derived from `AuditEvent` (#116).

@@ -169,7 +169,7 @@ export function ConsultationNew() {
         {tab === 'record' && (
           <Card className="p-6">
             <AudioCapture
-              onTranscript={({ text: transcribed, segments, source: from }) => {
+              onTranscript={({ text: transcribed, segments, source: from, draftTurns }) => {
                 /*
                  * Appended, never replacing what is already there. A doctor may
                  * record in passes, or have started typing, and silently
@@ -186,7 +186,20 @@ export function ConsultationNew() {
                  * which is why nothing in the safety architecture rests on it.
                  */
                 const withOffsets = text === '' && draft === null
-                const lines = segmentsToDraft(segments, transcribed, { withOffsets })
+                // Hosted recordings carry server-drafted labels instead of
+                // segments (#189); `hosted-` ids are a namespace disjoint from
+                // the local `seg-` ones, and the turns carry no offsets, so a
+                // wrong timestamp can never be asserted for them.
+                const lines =
+                  draftTurns && draftTurns.length > 0
+                    ? draftTurns.map(
+                        (turn, i): DraftLine => ({
+                          id: `hosted-${i}`,
+                          speaker: turn.speaker,
+                          text: turn.text,
+                        }),
+                      )
+                    : segmentsToDraft(segments, transcribed, { withOffsets })
                 if (lines.length > 0) {
                   setDraft((current) =>
                     current

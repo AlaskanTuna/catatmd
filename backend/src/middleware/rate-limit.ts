@@ -156,3 +156,24 @@ export const hostedAsrRateLimit = rateLimit({
     },
   },
 })
+
+/**
+ * Per-IP limiter for `POST /api/asr/draft-turns`, the labelling pass that
+ * follows a hosted relay. An LLM call, so it registers its own limiter like
+ * every route that spends model budget; its own bucket rather than the relay's
+ * because a retried labelling attempt must not consume the credit to relay the
+ * next recording, and 5/min matches the relay it follows one-to-one.
+ */
+export const draftTurnsRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: {
+      code: 'rate_limited',
+      message: 'Too many labelling requests. Please retry shortly.',
+    },
+  },
+})

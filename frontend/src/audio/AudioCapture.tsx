@@ -1,3 +1,4 @@
+import { type DraftTurn, type HostedAsrResult, MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
 import { AlertTriangle, CircleHelp, FileAudio, Loader2, Mic, Square } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
@@ -30,10 +31,13 @@ import {
  * **The one exception is opt-in, per consultation, and never remembered**
  * (issue #155). Ticking the hosted-transcription box below sends that single
  * recording to the relay in `POST /api/asr/transcriptions`, which forwards it
- * to ILMU. The tick lives in plain `useState`, so it dies with the component
- * and cannot carry from one patient to the next. On-device stays the default
- * and the floor: nothing switches the doctor to hosted, and an on-device
- * failure degrades to typing or pasting, never to the cloud
+ * to ILMU. The returned text then goes to `POST /api/asr/draft-turns`, where
+ * the API de-identifies it and the note model drafts the same per-line
+ * speaker labels for review; a labelling failure of any kind falls back to
+ * the unlabelled prose (#189). The tick lives in plain `useState`, so it dies
+ * with the component and cannot carry from one patient to the next. On-device
+ * stays the default and the floor: nothing switches the doctor to hosted, and
+ * an on-device failure degrades to typing or pasting, never to the cloud
  * (docs/trd.md section 20).
  */
 
@@ -102,7 +106,25 @@ export const STALL_TIMEOUT_MS = 180_000
  */
 export const UPLOAD_TIMEOUT_MS = 180_000
 
-type Phase = 'idle' | 'recording' | 'loading-model' | 'transcribing' | 'finishing' | 'uploading'
+/**
+ * How long the labelling pass after a hosted transcription may run (#189).
+ *
+ * A total deadline like the upload's, and for the same reason: one request
+ * with no progress to listen to. Sized to the LLM adapter's own bounds, a
+ * 60 s timeout with one retry, plus headroom. Expiring is not reported as a
+ * failure: the transcription is already in hand, so the doctor gets the
+ * unlabelled prose rather than an error about the labels.
+ */
+export const LABEL_TIMEOUT_MS = 150_000
+
+type Phase =
+  | 'idle'
+  | 'recording'
+  | 'loading-model'
+  | 'transcribing'
+  | 'finishing'
+  | 'uploading'
+  | 'labelling'
 
 /**
  * What the doctor is told when the budget expires or the worker dies. Both
@@ -232,6 +254,8 @@ export function AudioCapture({
     text: string
     segments: readonly TranscriptSegment[]
     source: 'asr_local' | 'asr_hosted'
+    /** Server-drafted labels, hosted path only; absent whenever labelling failed. */
+    draftTurns?: readonly DraftTurn[]
   }) => void
 }) {
   const [phase, setPhase] = useState<Phase>('idle')
@@ -543,21 +567,70 @@ export function AudioCapture({
    * a cancelled upload returns before it can raise a banner, while the 180 s
    * bound aborts without bumping and is reported.
    */
-  const transcribeHosted = useCallback(async (blob: Blob) => {
-    setError(null)
-    setPhase('uploading')
-    setProgress(null)
-    setChunkProgress(null)
-    startedAt.current = null
-    setRetryBlob(blob)
+  /**
+   * The labelling pass that follows a successful relay (#189). It sends only
+   * text the relay just returned, so nothing new leaves the device; the API
+   * de-identifies it before its model sees it. Never throws: every failure,
+   * the timeout included, resolves to null and the caller delivers the
+   * unlabelled prose it already holds. A cancel is the one exception, and the
+   * caller's attempt guard is what separates it.
+   *
+   * The controller takes the `upload` slot, so Cancel and unmount abort a
+   * labelling request exactly as they abort the upload before it.
+   */
+  const labelHostedTurns = useCallback(
+    async (transcribed: string): Promise<readonly DraftTurn[] | null> => {
+      if (transcribed.trim() === '' || transcribed.length > MAX_DRAFT_TEXT_CHARACTERS) return null
+      setPhase('labelling')
+      const controller = new AbortController()
+      upload.current = controller
+      const bound = window.setTimeout(() => controller.abort(), LABEL_TIMEOUT_MS)
+      try {
+        return await api.draftHostedTurns(transcribed, controller.signal)
+      } catch {
+        return null
+      } finally {
+        window.clearTimeout(bound)
+        if (upload.current === controller) upload.current = null
+      }
+    },
+    [],
+  )
 
-    const id = attempt.current
-    const controller = new AbortController()
-    upload.current = controller
-    const bound = window.setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
+  const transcribeHosted = useCallback(
+    async (blob: Blob) => {
+      setError(null)
+      setPhase('uploading')
+      setProgress(null)
+      setChunkProgress(null)
+      startedAt.current = null
+      setRetryBlob(blob)
 
-    try {
-      const result = await api.transcribeHostedAsr(blob, controller.signal)
+      const id = attempt.current
+      const controller = new AbortController()
+      upload.current = controller
+      const bound = window.setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
+
+      let result: HostedAsrResult
+      try {
+        result = await api.transcribeHostedAsr(blob, controller.signal)
+      } catch {
+        if (attempt.current !== id) return
+        setPhase('idle')
+        setError(HOSTED_FAILED_ERROR)
+        return
+      } finally {
+        window.clearTimeout(bound)
+        // Only if it is still ours: a later run may already have installed its
+        // own controller, and clearing that one would strand its Cancel.
+        if (upload.current === controller) upload.current = null
+      }
+      if (attempt.current !== id) return
+
+      // Labels are a bonus on top of a transcription already in hand, so a
+      // labelling failure delivers the raw text with no banner and no Try
+      // Again: retrying would re-upload audio the relay already billed for.
+      const draftTurns = await labelHostedTurns(result.text)
       if (attempt.current !== id) return
       setPhase('idle')
       setRetryBlob(null)
@@ -565,18 +638,11 @@ export function AudioCapture({
         text: result.text,
         segments: result.segments,
         source: 'asr_hosted',
+        ...(draftTurns && draftTurns.length > 0 ? { draftTurns } : {}),
       })
-    } catch {
-      if (attempt.current !== id) return
-      setPhase('idle')
-      setError(HOSTED_FAILED_ERROR)
-    } finally {
-      window.clearTimeout(bound)
-      // Only if it is still ours: a later run may already have installed its
-      // own controller, and clearing that one would strand its Cancel.
-      if (upload.current === controller) upload.current = null
-    }
-  }, [])
+    },
+    [labelHostedTurns],
+  )
 
   /**
    * The single fork every audio source goes through: the Stop button, the file
@@ -639,7 +705,8 @@ export function AudioCapture({
     phase === 'loading-model' ||
     phase === 'transcribing' ||
     phase === 'finishing' ||
-    phase === 'uploading'
+    phase === 'uploading' ||
+    phase === 'labelling'
 
   /*
    * One line that always says what is actually happening, and a bar only when
@@ -670,17 +737,21 @@ export function AudioCapture({
         // to report, and an invented bar here would be the exact dishonesty
         // the measured one below exists to avoid.
         'Sending this recording to ILMU for transcription. It is leaving this device.'
-      : phase === 'loading-model'
-        ? progress === null
-          ? 'Preparing the speech model. The first run downloads it once and the browser caches it.'
-          : progress >= 100
-            ? 'Opening the speech model. On a first run this can take a couple of minutes.'
-            : `Downloading the speech model, ${progress}%. This happens once.`
-        : phase === 'finishing'
-          ? 'Finishing up. Joining the transcribed chunks into one transcript.'
-          : percent === null
-            ? 'Transcribing on this device. Longer recordings take a few minutes.'
-            : `Transcribing on this device, ${percent}%${remaining === null ? '' : `, ${remaining}`}.`
+      : phase === 'labelling'
+        ? // Progress-free for the same reason as the upload, and honest about
+          // the wait and the review gate that follows it.
+          'Drafting Doctor / Patient labels from the transcript. This can take up to two and a half minutes, and you will review every line before anything is applied.'
+        : phase === 'loading-model'
+          ? progress === null
+            ? 'Preparing the speech model. The first run downloads it once and the browser caches it.'
+            : progress >= 100
+              ? 'Opening the speech model. On a first run this can take a couple of minutes.'
+              : `Downloading the speech model, ${progress}%. This happens once.`
+          : phase === 'finishing'
+            ? 'Finishing up. Joining the transcribed chunks into one transcript.'
+            : percent === null
+              ? 'Transcribing on this device. Longer recordings take a few minutes.'
+              : `Transcribing on this device, ${percent}%${remaining === null ? '' : `, ${remaining}`}.`
 
   const bar = phase === 'loading-model' ? progress : phase === 'finishing' ? 100 : percent
 
@@ -688,17 +759,19 @@ export function AudioCapture({
   const headline =
     phase === 'uploading'
       ? 'Sending the recording to ILMU'
-      : phase === 'loading-model'
-        ? progress === null
-          ? 'Preparing the speech model'
-          : progress >= 100
-            ? 'Opening the speech model'
-            : 'Downloading the speech model'
-        : phase === 'transcribing'
-          ? 'Transcribing on this device'
-          : phase === 'finishing'
-            ? 'Finishing up'
-            : ''
+      : phase === 'labelling'
+        ? 'Drafting speaker labels'
+        : phase === 'loading-model'
+          ? progress === null
+            ? 'Preparing the speech model'
+            : progress >= 100
+              ? 'Opening the speech model'
+              : 'Downloading the speech model'
+          : phase === 'transcribing'
+            ? 'Transcribing on this device'
+            : phase === 'finishing'
+              ? 'Finishing up'
+              : ''
 
   return (
     <div className="flex flex-col gap-3">
@@ -842,8 +915,11 @@ export function AudioCapture({
           consultation only, you can instead send the recording to ILMU, a Malaysian transcription
           service built for Malaysian speech. The audio passes through our server in Singapore to
           ILMU and is processed in Malaysia. We have not agreed separate retention or training terms
-          with ILMU, so their standard early-access terms apply. This choice is optional, applies to
-          this one consultation, and is recorded in the audit trail.
+          with ILMU, so their standard early-access terms apply. After transcription, the returned
+          text is de-identified and sent to the note model to draft{' '}
+          <code className="text-ink">Doctor</code> / <code className="text-ink">Patient</code>{' '}
+          labels, which you review line by line before anything enters the transcript. This choice
+          is optional, applies to this one consultation, and is recorded in the audit trail.
         </p>
 
         {/*

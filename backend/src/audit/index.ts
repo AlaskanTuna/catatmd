@@ -148,6 +148,20 @@ export type AsrRelayFailureReason =
 export type AsrAuditEvent =
   | { action: 'asr.hosted_relayed'; metadata: { durationSeconds: number; model: string } }
   | { action: 'asr.hosted_relay_failed'; metadata: { reason: AsrRelayFailureReason } }
+  | {
+      action: 'asr.hosted_draft_labelled'
+      metadata: { turnCount: number; detected: readonly string[]; model: string }
+    }
+  | { action: 'asr.hosted_draft_failed'; metadata: { reason: DraftTurnsFailureReason } }
+
+/**
+ * Closed failure categories for `asr.hosted_draft_failed`, never raw error
+ * text: on this path an error message can embed model output, which is
+ * transcript-derived. `llm_failed` covers the provider call and its schema
+ * validation; `not_reconstructed` is the verbatim guard rejecting a draft
+ * whose turns do not rebuild the input.
+ */
+export type DraftTurnsFailureReason = 'llm_failed' | 'not_reconstructed'
 
 export type AuditEventInput =
   | ConsultationAuditEvent
