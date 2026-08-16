@@ -1,16 +1,72 @@
+<div align="center">
+
+<img src="../frontend/public/favicon-64.png" width="64" alt="CatatMD" />
+
 # CatatMD
 
-An assistant that turns a GP consultation transcript into a **reviewable** structured clinical note — with documentation gaps surfaced as prompts to ask, deterministic red-flag detection, and clinical suggestions carrying citations that cannot be fabricated.
+### An Assistant That Turns A GP Consultation Into A **Reviewable** Clinical Note
+
+_Documentation gaps surfaced as prompts to ask · Deterministic red-flag detection · Citations that cannot be fabricated_
+
+<br/>
+
+<p>
+  <img src="https://img.shields.io/badge/typescript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5.9" />
+  <img src="https://img.shields.io/badge/react-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19" />
+  <img src="https://img.shields.io/badge/express-5-000000?style=flat-square&logo=express&logoColor=white" alt="Express 5" />
+  <img src="https://img.shields.io/badge/prisma-6-2D3748?style=flat-square&logo=prisma&logoColor=white" alt="Prisma 6" />
+  <img src="https://img.shields.io/badge/zod-4-3E67B1?style=flat-square&logo=zod&logoColor=white" alt="Zod 4" />
+  <img src="https://img.shields.io/badge/tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind 4" />
+  <img src="https://img.shields.io/badge/vite-7-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite 7" />
+  <img src="https://img.shields.io/badge/postgres-Supabase-3ECF8E?style=flat-square&logo=supabase&logoColor=white" alt="Supabase Postgres" />
+  <img src="https://img.shields.io/badge/runtime-Bun%20%C2%B7%20Node%2024-000000?style=flat-square&logo=bun&logoColor=white" alt="Bun and Node 24" />
+</p>
+
+[**Live Demo**](https://catatmd.vercel.app) · [**Requirements**](./prd.md) · [**Technical Reference**](./trd.md) · [**Privacy Assessment**](./dpia.md) · [**Architecture**](#architecture-at-a-glance)
 
 _Catat_ — Malay, "to note down". The product documents; the doctor decides.
 
-> **The doctor decides.** This system does not diagnose and does not replace clinical judgement. Every output is reviewed, edited, and explicitly approved by the clinician, who remains fully responsible for all medical decisions. All consultation data in this repository is **simulated**.
+</div>
+
+---
+
+> ### ⚕️ The Doctor Decides
+>
+> This system does not diagnose and does not replace clinical judgement. Every output is reviewed, edited, and explicitly approved by the clinician, who remains fully responsible for all medical decisions. All consultation data in this repository is **simulated**.
 
 **Clinical scope:** adult consultations in Malaysian private GP clinics, for acute cough, sore throat, and other upper respiratory symptoms — the modal Malaysian private-clinic presentation at **13.1% of cases** (National Medical Care Survey 2014).
 
 ---
 
-## The Problem
+## ⚡ In Three Numbers
+
+<table>
+  <tr>
+    <td align="center" width="33%"><strong>5 of 5</strong><br/><sub>runs in which the unguarded pipeline invented clinical negatives on a sparse transcript, the measured finding every guardrail here answers to</sub></td>
+    <td align="center" width="33%"><strong>0</strong><br/><sub>red flags the model is able to suppress, because the rules engine runs before it and assembly is a union, never a filter</sub></td>
+    <td align="center" width="33%"><strong>1</strong><br/><sub>egress point for text, type-enforced, so an un-gated string is a compile error rather than a code-review question</sub></td>
+  </tr>
+</table>
+
+---
+
+## 📷 Screenshots
+
+<table>
+  <tr>
+    <td width="33%"><img src="assets/01-consultation-list.png" alt="Consultation list showing Draft, Awaiting Review and Approved statuses" /><p align="center"><sub>Consultation list. Every consultation carries a status: Draft, Awaiting Review, or Approved.</sub></p></td>
+    <td width="33%"><img src="assets/02-review-three-panels.png" alt="Three-panel review with transcript, clinical note and red flags" /><p align="center"><sub>Three-panel review: the transcript, the drafted note, and the red flags side by side.</sub></p></td>
+    <td width="33%"><img src="assets/03-red-flag-provenance.png" alt="Red flags each labelled Rule or AI Suggested with the phrase heard" /><p align="center"><sub>Red-flag provenance. Each flag is marked <code>Rule</code> or <code>AI Suggested</code> and quotes the phrase it was heard in.</sub></p></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="assets/04-completeness-checklist-gap.png" alt="Completeness checklist with assertion states and missing-information prompts" /><p align="center"><sub>Completeness checklist. An explicit state per field, beside what the record does not establish.</sub></p></td>
+    <td width="33%"><img src="assets/05-catatai-proposal-card.png" alt="CatatAI proposing a plan edit as a card with Apply and Discard" /><p align="center"><sub>CatatAI proposes an edit as a card the doctor applies or discards. It never signs off.</sub></p></td>
+    <td width="33%"><img src="assets/06-approval-gate-confirm.png" alt="Approval confirmation stating the note cannot be edited afterwards" /><p align="center"><sub>The approval gate. An explicit act, stating plainly that the note cannot be edited afterwards.</sub></p></td>
+  </tr>
+</table>
+---
+
+## 🧭 The Problem
 
 A Malaysian private GP sees a **median of 32.3 patients a day**, inside a consultation the regulator prices at **10 minutes or less**. The note is written in the room with the patient still present, because the clinic dispenses the medicine and issues the MC before that patient leaves. The realistic budget for writing it is **30 to 60 seconds**.
 
@@ -26,21 +82,22 @@ Five pressures follow, each measured rather than asserted:
 
 **About 60% of patients arrive through a TPA or corporate panel, and the note those payers read is not SOAP.** The contractually enforced shape is condition, treatment, itemised medication dispensed, MC days, referral. Two of those fields have no home in SOAP at all, because the Malaysian GP dispenses in-house and issues the MC in the room.
 
-## What CatatMD Does About It
+## 🩺 What CatatMD Does About It
 
-| What The Doctor Gets                                                                                                                                                          | Which Pressure It Answers                          |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| **A structured note from the consultation**, SOAP scaffold plus the operational block the payer actually reads: diagnosis, medication dispensed, MC days, referral, follow-up | The 30 to 60 second budget, and the TPA audit      |
-| **Missing documentation surfaced as prompts to ask**, each with a rationale                                                                                                   | The 98% incomplete-record baseline                 |
-| **Deterministic red-flag detection** the model can never suppress or downgrade                                                                                                | Nothing systematically checking danger signs       |
-| **Clinical suggestions carrying real, inspectable citations**                                                                                                                 | Justifying decisions on a record that gets audited |
-| **Review, edit, and explicit approval** before anything is final                                                                                                              | The doctor stays the author, and stays responsible |
+| What The Doctor Gets                                                                                                                                                          | Which Pressure It Answers                            |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| **A structured note from the consultation**, SOAP scaffold plus the operational block the payer actually reads: diagnosis, medication dispensed, MC days, referral, follow-up | The 30 to 60 second budget, and the TPA audit        |
+| **Missing documentation surfaced as prompts to ask**, each with a rationale                                                                                                   | The 98% incomplete-record baseline                   |
+| **Deterministic red-flag detection** the model can never suppress or downgrade                                                                                                | Nothing systematically checking danger signs         |
+| **Clinical suggestions carrying real, inspectable citations**                                                                                                                 | Justifying decisions on a record that gets audited   |
+| **A review copilot that answers about the record** and proposes edits as cards it cannot apply itself                                                                         | Reviewing 32 notes a day without moving the decision |
+| **Review, edit, and explicit approval** before anything is final                                                                                                              | The doctor stays the author, and stays responsible   |
 
 Every field above is **extraction, not generation**: each carries a verbatim span from the transcript, and anything the consultation never raised resolves to `NOT_ASSESSED` rather than being quietly filled in. Acceptance criteria for each capability live in `docs/prd.md` §9.
 
 **Stated honestly, because a doctor will find out in one clinic session:** for a fast three-minute URTI consult this may well be slower than the handwritten line it replaces. The claim is documentation quality and a safety net that does not depend on memory. It is not a time-saving claim, and no time-saved figure is offered anywhere in this repository.
 
-## How We Tackle It
+## 🧠 How We Tackle It
 
 AI note-taking is already commoditised in this market, bundled into clinic systems at prices no scribe can compete with (Positioning, below, names the incumbents). So this is not positioned as another scribe. What is different is that the safety properties are **architectural rather than promised**, and each is checkable by someone who has no reason to trust us.
 
@@ -51,7 +108,9 @@ AI note-taking is already commoditised in this market, bundled into clinic syste
 | "Our citations are reliable"   | The model may only cite guideline IDs from a supplied corpus; a free-text reference fails validation before the doctor ever sees it    |
 | "The doctor reviews it"        | Approval is a state transition with an audit event, not a checkbox, and it is terminal                                                 |
 
-## Architecture At A Glance
+<a id="architecture-at-a-glance"></a>
+
+## 🏗 Architecture At A Glance
 
 The two diagrams below are the system as it actually runs. The first is what the doctor experiences; the second is what it is built from.
 
@@ -73,7 +132,7 @@ Bun workspaces · TypeScript · Zod (shared contracts) · Express 5 · Prisma 6 
 
 ---
 
-## Live
+## 🌐 Live
 
 | Component    | URL                                                      | Host     |
 | ------------ | -------------------------------------------------------- | -------- |
@@ -85,17 +144,17 @@ All three are on free tiers by design. Render free instances spin down when idle
 
 ---
 
-## Status
+## 📍 Status
 
 **Both tiers are built and running.** The de-identification gate, the deterministic red-flag engine, the Malaysian guideline corpus, the structured-extraction pipeline with its evidence-bound assertion check, the gaps engine, authentication and the synthetic fixtures are implemented and tested. The React UI is built too: the consultation list, the four-input capture screen, the review screen carrying gap, red-flag and suggestion cards, the approval control, and on-device audio capture with draft speaker labels the doctor applies. The hosted-ASR path is live in production behind a per-consultation consent gate (#154, #155, #190).
 
 `docs/trd.md` tags every section `Built`, `Specified`, or `Open`, and never describes unwritten code as if it exists. Where implementation contradicted the specification, the TRD records which won and why rather than quietly conforming — see §3 (the assertion schema had to split in two), §5 and §7.
 
-**No clinician has reviewed any of it**, and all data is synthetic. See Known Limitations.
+**No clinician has reviewed any of it**, and all data is synthetic. See [Known Limitations](#known-limitations).
 
 ---
 
-## Positioning — Why This Is Not "An AI Scribe"
+## 🎯 Positioning — Why This Is Not "An AI Scribe"
 
 **The scribe function is already commoditised in Malaysia.** AI SOAP notes ship bundled inside a **RM45/clinic/month** clinic management system (MedicalMet) and from **RM179** (Cliniclah); Qmed Asia ships Qmed Scribe and already holds **ISO 13485 and MDA approval**; Heidi Health opened a Singapore SEA HQ on 31 July 2026 with a free tier. The marginal price of AI documentation here is effectively RM0, and Western per-clinician scribe pricing is several times the cost of an entire Malaysian CMS.
 
@@ -111,7 +170,7 @@ Table stakes are named as table stakes: doctor-approves-everything, "does not di
 
 ---
 
-## The Note Is Not Just SOAP
+## 📝 The Note Is Not Just SOAP
 
 **SOAP is a review scaffold, not a Malaysian norm.** No Malaysian regulation mandates it — MMC Guideline 002/2006 requires contemporaneous, chronological, signed entries and never mentions SOAP. What _is_ enforced is the payer contract: condition → treatment → itemised medication dispensed → MC days → referral. Two of those fields have no home in SOAP at all, because the Malaysian GP dispenses in-house and issues the MC in the room.
 
@@ -129,7 +188,7 @@ The note therefore carries an operational block alongside the four SOAP strings 
 
 ---
 
-## The PHI Boundary
+## 🔐 The PHI Boundary
 
 The central architectural invariant: **no text containing patient identifiers leaves the API.**
 
@@ -157,7 +216,7 @@ The two sit at different tiers deliberately. The first stops the convenient bypa
 
 What remains honest to say: a deliberate cast still compiles. The claim is that it cannot reach a provider undetected, not that it cannot be written.
 
-Detection is pattern-based and best-effort — see Known Limitations.
+Detection is pattern-based and best-effort — see [Known Limitations](#known-limitations).
 
 ### Audio Stays On The Device By Default
 
@@ -187,7 +246,7 @@ All three supported providers speak the OpenAI-compatible protocol and are selec
 
 ---
 
-## Guardrails Against Fabrication
+## 🛡 Guardrails Against Fabrication
 
 The safety argument is not "a doctor reviews everything". Doctors do not reliably catch well-formed AI errors, and the failure this system was built against is exactly that shape.
 
@@ -230,7 +289,7 @@ Two properties the diagram is drawn to make checkable. **Rule-sourced red flags 
 
 ---
 
-## Boundaries
+## 🚧 Boundaries
 
 **No EMR write-back — because there is no rail to write back to.** This is a market fact, not MVP triage: the Malaysian private-GP clinic-system market is a fragmented long tail with no published API standard, and the national interoperability layer reaches private **hospitals** from January 2027, not GP clinics. PDF export is the honest interim.
 
@@ -244,7 +303,9 @@ The argument is not that this product escapes the question — it is that **the 
 
 ---
 
-## Known Limitations
+<a id="known-limitations"></a>
+
+## ⚠️ Known Limitations
 
 Stated plainly, because an evaluator learns more from these than from the feature list.
 
@@ -263,6 +324,7 @@ Stated plainly, because an evaluator learns more from these than from the featur
 - **The smallest practical model is not usable in this market.** Measured (`docs/trd.md` §20.1): it rendered "auntie" as "until" and dropped "pasar malam" entirely — a meaning change in well-formed English that no downstream control can flag. The larger model recovers it, at ~240 MB of first-use download and roughly double the compute. That measurement rests on a single 50-second non-clinical clip with no ground-truth transcript: enough to settle a model choice, not a benchmark, and never presented as one.
 - **Audio is withheld on low-end hardware rather than merely discouraged.** The model plus runtime plus browser, on a 4 GB machine already running the clinic's own system, is a plausible out-of-memory kill — a dead tab mid-consultation, from which a half-transcribed consultation is not recoverable. A zero-network capability check decides whether to offer audio at all, and the real verdict is measured on the first transcribed chunk.
 - **Consent quality is the weak point in the hosted-audio design.** The doctor on weak hardware is exactly the one offered the hosted path, at the moment of most friction, which is how meaningful consent degrades into clicking past an obstacle. Answered structurally rather than by wording: the consent block is always rendered, muted and unhighlighted, in the same place whether the doctor arrived fresh or after a failure, and the on-device failure copy never mentions the hosted option (`docs/trd.md` §20.4, closing §19 row 18). What stays open is the terms behind it, not the affordance: no retention or training carve-out has been negotiated with the provider.
+- **The review copilot answers with prose instead of a proposal card in about one request in nine.** Measured over 90 turns (`docs/trd.md` §25): the doctor reads a correctly worded replacement paragraph with nothing to apply. Two prompt revisions were trialled and both rejected on the measurements, one of which made it worse.
 - **Input language is the real limitation**, not output. Malaysian clinical records run in English regardless of what is spoken in the room, but consultations code-switch between Malay, Manglish and dialect, and no quantified code-switching rate for Malaysian GP consultations exists in the literature.
 - **De-identification recall is best-effort.** Detectors are pattern-based and may miss an identifier, particularly an unmarked name — and an ML NER would miss it too, disproportionately for Malay names. This is why raw transcripts are still treated as sensitive at rest.
 - **No retention schedule, and no deletion or access-request path.** Both are prerequisites before any real patient data, not features. An engineering DPIA does exist ([`dpia.md`](./dpia.md)), but it is input for legal review rather than legal sign-off.
@@ -273,7 +335,7 @@ Fuller treatment in `docs/prd.md` §12; every unresolved engineering question is
 
 ---
 
-## Repo Layout
+## 📂 Repo Layout
 
 The stack itself is summarised under [Architecture At A Glance](#architecture-at-a-glance); the region is configuration rather than architecture.
 
@@ -284,9 +346,11 @@ backend/
   src/lib/llm/   LLMClient port + provider adapter                ← only egress point
   src/redflags/  deterministic escalation-trigger rules
   src/guidelines/ curated citation corpus
+  src/copilot/   CatatAI review copilot, proposal-only tool surface
   src/fixtures/  synthetic consultation transcripts
 frontend/        React SPA
 prisma/          schema + migrations
+evals/           measurements that spend real model calls, kept out of the test suite
 docs/            product and workflow docs
 ```
 
@@ -294,7 +358,7 @@ The load-bearing module rule: **no module outside `backend/src/lib/llm/` may imp
 
 ---
 
-## Getting Started
+## 🚀 Getting Started
 
 ```bash
 bun install
@@ -340,7 +404,7 @@ Port 5434 rather than 5432 because 5432 and 5433 are commonly already bound. Ove
 
 ---
 
-## Documentation Map
+## 📁 Documentation Map
 
 | Document                                  | Owns                                                                                       |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -349,10 +413,36 @@ Port 5434 rather than 5432 because 5432 and 5433 are commonly already bound. Ove
 | [`trd.md`](./trd.md)                      | Canonical implementation reference — contracts, schemas, security posture                  |
 | [`dpia.md`](./dpia.md)                    | Production data-flow, PDPA engineering assessment, retention, rights, and residual risks   |
 | [`superpowers/research/`](./superpowers/) | The research phase behind the positioning and clinical claims, graded by evidence strength |
+| [`../AGENTS.md`](../AGENTS.md)            | Contributor and agent working conventions, canonical for every tool                        |
 
 ---
 
-## Contributing
+## 👥 Team
+
+<table align="center">
+  <tr>
+    <td align="center" width="240">
+      <a href="https://github.com/AlaskanTuna"><img src="https://github.com/AlaskanTuna.png" width="100" alt="AlaskanTuna" /></a><br/>
+      <a href="https://github.com/AlaskanTuna"><sub><strong>@AlaskanTuna</strong></sub></a>
+    </td>
+    <td align="center" width="240">
+      <a href="https://github.com/Andersonnn7788"><img src="https://github.com/Andersonnn7788.png" width="100" alt="Andersonnn7788" /></a><br/>
+      <a href="https://github.com/Andersonnn7788"><sub><strong>@Andersonnn7788</strong></sub></a>
+    </td>
+  </tr>
+</table>
+
+---
+
+## 🤝 AI Disclosure
+
+This prototype was produced with AI coding assistants under human direction, in the pipeline described in [`../AGENTS.md`](../AGENTS.md), with two human gates: a plan is approved before implementation, and a diff is reviewed before it ships. No commit reaches `main` without human authorization.
+
+The same discipline the product enforces was applied to building it. Figures in this document are measured rather than recalled, and where a number could not be verified it was left out rather than estimated. Where a measurement contradicted a claim already written down, the claim was withdrawn rather than softened. The ASR translation claim in Known Limitations and the copilot phantom-click figure in `docs/trd.md` §25 are both recorded that way.
+
+---
+
+## ✍️ Contributing
 
 Conventional Commits, enforced by commitlint: `<type>[scope]: <description>`.
 
