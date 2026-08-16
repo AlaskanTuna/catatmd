@@ -1,14 +1,24 @@
+import { type DraftTurn, MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AudioCapture, STALL_TIMEOUT_MS, UPLOAD_TIMEOUT_MS } from './AudioCapture.js'
+import {
+  AudioCapture,
+  LABEL_TIMEOUT_MS,
+  STALL_TIMEOUT_MS,
+  UPLOAD_TIMEOUT_MS,
+} from './AudioCapture.js'
 import type { WorkerResponse } from './protocol.js'
 
 /**
- * The relay client, mocked so the hosted path can be driven without a network.
- * Hoisted because `vi.mock` is lifted above the imports.
+ * The relay client and the labelling client, mocked so the hosted path can be
+ * driven without a network. Hoisted because `vi.mock` is lifted above the
+ * imports.
  */
-const { transcribeHostedAsr } = vi.hoisted(() => ({ transcribeHostedAsr: vi.fn() }))
-vi.mock('../lib/api.js', () => ({ api: { transcribeHostedAsr } }))
+const { transcribeHostedAsr, draftHostedTurns } = vi.hoisted(() => ({
+  transcribeHostedAsr: vi.fn(),
+  draftHostedTurns: vi.fn(),
+}))
+vi.mock('../lib/api.js', () => ({ api: { transcribeHostedAsr, draftHostedTurns } }))
 
 /**
  * The component's side of the wedge contract (issues #138 and #139): every
@@ -126,6 +136,12 @@ beforeEach(() => {
         )
       }),
   )
+  // Rejects promptly by default, the same outcome a caller with no labelling
+  // client sees: labelling is a bonus on top of a transcription already in
+  // hand, so a test that does not care about it must not have to wait out a
+  // hang before its own assertions can run.
+  draftHostedTurns.mockReset()
+  draftHostedTurns.mockRejectedValue(new Error('not configured'))
   decodeAudioData = async () => ({ duration: 1 })
   tracks = [{ stop: vi.fn() }]
   getUserMedia = async () => ({ getTracks: () => tracks })
@@ -191,6 +207,18 @@ function uploadSignal(): AbortSignal {
   const call = transcribeHostedAsr.mock.calls.at(-1)
   if (!call) throw new Error('expected an upload to have been attempted')
   return call[1] as AbortSignal
+}
+
+/** Never settles until its signal aborts, the same shape as the relay's own default. */
+function hangUntilAborted(mock: ReturnType<typeof vi.fn>) {
+  mock.mockImplementation(
+    (_text: string, signal: AbortSignal) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () =>
+          reject(new DOMException('The operation was aborted.', 'AbortError')),
+        )
+      }),
+  )
 }
 
 /** Whether any worker was ever asked to transcribe, as opposed to prewarm. */
@@ -886,5 +914,152 @@ describe('on-device failure copy', () => {
     const alert = screen.getByRole('alert').textContent ?? ''
     expect(alert).toMatch(/type or paste/i)
     expect(alert).not.toMatch(NEVER)
+  })
+})
+
+/**
+ * The hosted-draft-labelling pass that follows a successful relay (#189). It
+ * sends only text the relay already returned, never audio, and every failure
+ * on it, including a timeout and a cancel, degrades to the unlabelled prose
+ * the doctor already has rather than to an error.
+ */
+describe('hosted draft-turn labelling', () => {
+  const SAMPLE_TURNS: DraftTurn[] = [
+    { speaker: 'doctor', text: 'How are you feeling?' },
+    { speaker: 'patient', text: 'I have a cough.' },
+  ]
+
+  it('delivers the drafted turns alongside the transcript and returns to idle', async () => {
+    const { onTranscript } = renderCapture()
+    tickHosted()
+    transcribeHostedAsr.mockResolvedValue({ text: 'hosted text', durationSeconds: 4, segments: [] })
+    draftHostedTurns.mockResolvedValue(SAMPLE_TURNS)
+
+    await startRecording()
+    await stopRecording()
+
+    expect(draftHostedTurns).toHaveBeenCalledWith('hosted text', expect.any(AbortSignal))
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: 'hosted text',
+      segments: [],
+      source: 'asr_hosted',
+      draftTurns: SAMPLE_TURNS,
+    })
+    expect(startButton().disabled).toBe(false)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('delivers the transcript without draftTurns and raises no banner when labelling is rejected', async () => {
+    const { onTranscript } = renderCapture()
+    tickHosted()
+    transcribeHostedAsr.mockResolvedValue({ text: 'hosted text', durationSeconds: 4, segments: [] })
+    draftHostedTurns.mockRejectedValue(new Error('labelling failed'))
+
+    await startRecording()
+    await stopRecording()
+
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: 'hosted text',
+      segments: [],
+      source: 'asr_hosted',
+    })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('falls back to the unlabelled transcript once the label timeout expires', async () => {
+    const { onTranscript } = renderCapture()
+    tickHosted()
+    transcribeHostedAsr.mockResolvedValue({ text: 'hosted text', durationSeconds: 4, segments: [] })
+    hangUntilAborted(draftHostedTurns)
+
+    await startRecording()
+    await stopRecording()
+    expect(consentBox().disabled).toBe(true)
+
+    act(() => {
+      vi.advanceTimersByTime(LABEL_TIMEOUT_MS)
+    })
+    await settle()
+
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: 'hosted text',
+      segments: [],
+      source: 'asr_hosted',
+    })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('is abandoned by Cancel mid-labelling, with no onTranscript call and no banner', async () => {
+    const { onTranscript } = renderCapture()
+    tickHosted()
+    transcribeHostedAsr.mockResolvedValue({ text: 'hosted text', durationSeconds: 4, segments: [] })
+    hangUntilAborted(draftHostedTurns)
+
+    await startRecording()
+    await stopRecording()
+
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await settle()
+
+    expect(onTranscript).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(startButton().disabled).toBe(false)
+  })
+
+  it('never calls the labelling client for an empty relay result', async () => {
+    const { onTranscript } = renderCapture()
+    tickHosted()
+    transcribeHostedAsr.mockResolvedValue({ text: '', durationSeconds: 0, segments: [] })
+
+    await startRecording()
+    await stopRecording()
+
+    expect(draftHostedTurns).not.toHaveBeenCalled()
+    expect(onTranscript).toHaveBeenCalledWith({ text: '', segments: [], source: 'asr_hosted' })
+  })
+
+  it('never calls the labelling client for a relay result over the request bound', async () => {
+    const { onTranscript } = renderCapture()
+    tickHosted()
+    const oversized = 'a'.repeat(MAX_DRAFT_TEXT_CHARACTERS + 1)
+    transcribeHostedAsr.mockResolvedValue({ text: oversized, durationSeconds: 9, segments: [] })
+
+    await startRecording()
+    await stopRecording()
+
+    expect(draftHostedTurns).not.toHaveBeenCalled()
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: oversized,
+      segments: [],
+      source: 'asr_hosted',
+    })
+  })
+
+  it('never calls the labelling client on the on-device path', async () => {
+    renderCapture()
+    pickFile()
+    await settle()
+    const worker = spawned()
+    worker.reply({ type: 'ready' })
+    worker.reply({ type: 'result', text: 'on-device text', segments: [] })
+    await settle()
+
+    expect(draftHostedTurns).not.toHaveBeenCalled()
+  })
+
+  it('disables the hosted-consent checkbox while labelling is in flight', async () => {
+    renderCapture()
+    tickHosted()
+    transcribeHostedAsr.mockResolvedValue({ text: 'hosted text', durationSeconds: 4, segments: [] })
+    hangUntilAborted(draftHostedTurns)
+
+    await startRecording()
+    await stopRecording()
+
+    expect(consentBox().disabled).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
+    await settle()
+    expect(consentBox().disabled).toBe(false)
   })
 })

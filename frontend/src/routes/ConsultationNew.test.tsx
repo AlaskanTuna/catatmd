@@ -1,3 +1,4 @@
+import type { DraftTurn } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
@@ -36,6 +37,7 @@ function MockAudioCapture({
     text: string
     segments: { text: string; start: number; end: number | null }[]
     source: 'asr_local' | 'asr_hosted'
+    draftTurns?: readonly DraftTurn[]
   }) => void
 }) {
   return (
@@ -90,6 +92,38 @@ function MockAudioCapture({
         }
       >
         mock transcribe sparse
+      </button>
+      {/* The hosted path once the server has drafted turns (#189): no
+          segments and no offsets, since the hosted relay carries no timing. */}
+      <button
+        type="button"
+        onClick={() =>
+          onTranscript({
+            text: 'Any fever? Yesterday quite hot.',
+            segments: [],
+            source: 'asr_hosted',
+            draftTurns: [
+              { speaker: 'doctor', text: 'Any fever?' },
+              { speaker: 'patient', text: 'Yesterday quite hot.' },
+            ],
+          })
+        }
+      >
+        mock transcribe hosted labelled
+      </button>
+      {/* Hosted with no drafted turns and no usable segments: labelling
+          failed server-side, so the caller falls back to raw prose. */}
+      <button
+        type="button"
+        onClick={() =>
+          onTranscript({
+            text: 'Batuk sudah tiga hari.',
+            segments: [],
+            source: 'asr_hosted',
+          })
+        }
+      >
+        mock transcribe hosted raw
       </button>
     </>
   )
@@ -186,6 +220,74 @@ describe('ConsultationNew record flow', () => {
     expect(textarea.value).toBe(
       'Doctor [0:00]: Any fever?\nPatient [0:02]: Yesterday quite hot.\n' +
         'Doctor: Any fever?\nPatient: Yesterday quite hot.',
+    )
+  })
+})
+
+/**
+ * The hosted-draft-labelling pass (#189): server-drafted turns feed the same
+ * review surface as the on-device draft, carry no offsets, and a labelling
+ * failure falls back to the unlabelled prose the record path always had.
+ */
+describe('hosted draft-turn labelling', () => {
+  function openRecordTab() {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <ConsultationNew />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(screen.getByRole('tab', { name: /record/i }))
+  }
+
+  it('renders the server-drafted turns in SpeakerAssign and keeps Start disabled', () => {
+    openRecordTab()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted labelled' }))
+
+    expect(screen.getByText('Any fever?')).toBeTruthy()
+    expect(screen.getByText('Yesterday quite hot.')).toBeTruthy()
+    const start = screen.getByRole('button', { name: /start consultation/i }) as HTMLButtonElement
+    expect(start.disabled).toBe(true)
+  })
+
+  it('applies drafted hosted turns as lines with no timestamps', () => {
+    openRecordTab()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted labelled' }))
+    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(textarea.value).toBe('Doctor: Any fever?\nPatient: Yesterday quite hot.')
+  })
+
+  it('falls back to raw prose when a hosted result carries no drafted turns', () => {
+    openRecordTab()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted raw' }))
+
+    // No draft pending: the text landed straight in the textarea rather than
+    // behind SpeakerAssign, unlike the drafted-turns path above.
+    expect(screen.queryByRole('button', { name: /apply labels/i })).toBeNull()
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(textarea.value).toBe('Batuk sudah tiga hari.')
+  })
+
+  it('re-ids a second delivery appended to a pending hosted draft without colliding', () => {
+    openRecordTab()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted labelled' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
+
+    const doctorToggles = screen.getAllByRole('button', { name: 'Doctor, switch to Patient' })
+    expect(doctorToggles).toHaveLength(2)
+    // Flips only the appended recording's doctor line, leaving the hosted
+    // draft's own doctor line untouched: proof the two id namespaces
+    // (`hosted-N` and `append-N-i`) do not collide.
+    fireEvent.click(doctorToggles[1] as HTMLElement)
+    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(textarea.value).toBe(
+      'Doctor: Any fever?\nPatient: Yesterday quite hot.\n' +
+        'Patient: Any fever?\nPatient: Yesterday quite hot.',
     )
   })
 })

@@ -75,7 +75,12 @@ export const ERROR_CLASSES = [
 export type ErrorClass = (typeof ERROR_CLASSES)[number]
 
 /** `GenerateRequest.operation` values, which name an LLM call site. */
-const LLM_OPERATIONS = ['clinical_facts', 'note_and_gaps', 'suggestions_and_red_flags'] as const
+const LLM_OPERATIONS = [
+  'clinical_facts',
+  'note_and_gaps',
+  'suggestions_and_red_flags',
+  'draft_turns',
+] as const
 
 export type LlmOperation = (typeof LLM_OPERATIONS)[number]
 

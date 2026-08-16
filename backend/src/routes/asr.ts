@@ -1,8 +1,12 @@
+import { DraftTurnsRequestSchema, DraftTurnsResponseSchema } from '@shared/types'
 import express, { type NextFunction, type Request, type Response, Router } from 'express'
 import { type AsrRelayFailureReason, recordAuditEvent } from '../audit/index.js'
 import { env } from '../config/env.js'
+import { DeidentificationError, deidentify } from '../deid/index.js'
+import { DraftTurnsError, draftTurns } from '../draft-turns/index.js'
 import { getAsrDescriptor, IlmuRelayError, transcribeWithIlmu } from '../lib/asr/ilmu.js'
 import { HttpError } from '../lib/http-error.js'
+import { getLLMDescriptor } from '../lib/llm/index.js'
 import { logger } from '../lib/logger.js'
 
 export const asrRouter = Router()
@@ -198,3 +202,105 @@ asrRouter.post(
     }
   },
 )
+
+/*
+ * The labelling pass that follows a hosted relay (docs/trd.md §20.3): the
+ * relay's flat prose comes back here as text, is de-identified, and the LLM
+ * drafts Doctor / Patient turns that the client shows for review. Nothing is
+ * stored, exactly like the relay above; the consultation, if submitted,
+ * arrives later through `POST /api/consultations`.
+ *
+ * The audit contract is the relay's too. Pre-egress rejections (401, 400,
+ * 429, and a `DeidentificationError`, which blocks the provider call before
+ * it is made) write no row; once the LLM call is attempted, exactly one of
+ * the two draft events is written before any response leaves.
+ *
+ * Failure detail is deliberately flat: every post-egress failure is one
+ * generic 502, because on this path an error message can embed model output,
+ * which is transcript-derived. The client's only move on any failure is the
+ * same, falling back to the unlabelled prose it already holds.
+ */
+asrRouter.post('/draft-turns', async (req, res) => {
+  const actor = doctorId(req)
+
+  const parsed = DraftTurnsRequestSchema.safeParse(req.body)
+  if (!parsed.success) {
+    throw new HttpError(400, 'invalid_body', 'A non-empty transcript text is required.')
+  }
+
+  const { model } = getLLMDescriptor()
+  const startedAt = performance.now()
+
+  try {
+    const { text: content, vault, detected } = deidentify(parsed.data.text)
+    const turns = await draftTurns(content)
+
+    // Rehydrated per turn against the request-scoped vault, so the doctor
+    // reviews the words that were actually said, not the pseudonym tokens.
+    const rehydrated = turns.map((turn) => ({
+      speaker: turn.speaker,
+      text: vault.rehydrate(turn.text),
+    }))
+
+    // Re-parsed after rehydration because restoring an original span can push
+    // a turn past the schema's character cap; failing here, before the audit
+    // row, keeps `res.json` structurally unable to follow a recorded success
+    // with an invalid body.
+    const body = DraftTurnsResponseSchema.safeParse({ turns: rehydrated })
+    if (!body.success) throw new DraftTurnsError('not_reconstructed')
+
+    // Before the response and unguarded, like the relay's success row: a
+    // labelling egress the trail did not record is never observable.
+    await recordAuditEvent({
+      action: 'asr.hosted_draft_labelled',
+      actorId: actor,
+      metadata: { turnCount: rehydrated.length, detected, model },
+    })
+
+    logger.info('hosted draft turns labelled', {
+      actorId: actor,
+      outcome: 'ok',
+      durationMs: Math.round(performance.now() - startedAt),
+      model,
+      status: 200,
+      count: rehydrated.length,
+    })
+
+    res.json(body.data)
+  } catch (error) {
+    if (error instanceof DraftTurnsError) {
+      await recordAuditEvent({
+        action: 'asr.hosted_draft_failed',
+        actorId: actor,
+        metadata: { reason: error.reason },
+      })
+
+      logger.warn('hosted draft turns failed', {
+        actorId: actor,
+        outcome: 'error',
+        durationMs: Math.round(performance.now() - startedAt),
+        model,
+        status: 502,
+      })
+
+      throw new HttpError(502, 'draft_failed', 'Speaker labelling failed.')
+    }
+
+    if (error instanceof DeidentificationError) {
+      logger.warn('hosted draft turns failed', {
+        actorId: actor,
+        outcome: 'error',
+        durationMs: Math.round(performance.now() - startedAt),
+        model,
+        status: 500,
+      })
+
+      // Its own code, not `draft_failed`: the egress guard firing is the one
+      // alarm the log taxonomy exists to surface, and `errorHandler` maps
+      // `deid_failed` to `deidentification_error` rather than `model_error`.
+      throw new HttpError(500, 'deid_failed', 'Speaker labelling failed.')
+    }
+
+    throw error
+  }
+})

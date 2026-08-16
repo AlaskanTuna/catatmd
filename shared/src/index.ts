@@ -90,6 +90,49 @@ export const HostedAsrResultSchema = z.object({
   segments: z.array(HostedAsrSegmentSchema),
 })
 
+// ─── Hosted draft speaker labels ─────────────────────────────────────────────
+
+/**
+ * One drafted turn of a hosted transcript. Deliberately narrower than
+ * `TranscriptTurnSchema`: no `offsetSeconds`, because the hosted path carries
+ * no timing and a fabricated offset would assert a wrong time in the evidence
+ * trace (the same rule `segmentsToDraft` applies to split lines).
+ */
+export const DraftTurnSchema = z.object({
+  speaker: SpeakerSchema,
+  text: z.string().min(1).max(MAX_TURN_CHARACTERS),
+})
+
+/**
+ * Bound on one hosted transcript submitted for turn drafting, reconciled with
+ * the drafting call's 16,384-token output ceiling rather than with transport:
+ * the output is a verbatim echo of the input, and at a conservative 2.5
+ * characters per token for code-switched Malay, 30,000 characters is roughly
+ * 12,000 echoed tokens plus per-turn JSON scaffolding, inside the ceiling
+ * with margin. A larger cap would accept text whose echo is guaranteed to
+ * truncate, paying the full output budget for a certain failure (OWASP
+ * LLM10). Still ~1.6x the longest consultation measured during development
+ * (~18,000 characters). Exported so the client can skip a call the API would
+ * refuse.
+ */
+export const MAX_DRAFT_TEXT_CHARACTERS = 30_000
+
+/** Body of `POST /api/asr/draft-turns`. */
+export const DraftTurnsRequestSchema = z.object({
+  text: z.string().trim().min(1).max(MAX_DRAFT_TEXT_CHARACTERS),
+})
+
+/**
+ * What `POST /api/asr/draft-turns` returns, and also the schema the model's
+ * own output is validated against (precedent: `ClinicalFactsResponseSchema`).
+ * The turn list is the only content field, and the backend accepts it only
+ * when the concatenated turn text reconstructs the input verbatim, so the
+ * model can relabel speech but never rewrite it.
+ */
+export const DraftTurnsResponseSchema = z.object({
+  turns: z.array(DraftTurnSchema).min(1).max(MAX_TRANSCRIPT_TURNS),
+})
+
 // ─── Structured clinical note (SOAP) ─────────────────────────────────────────
 
 export const SoapNoteSchema = z.object({
@@ -886,6 +929,9 @@ export type TranscriptSource = z.infer<typeof TranscriptSourceSchema>
 export type Transcript = z.infer<typeof TranscriptSchema>
 export type HostedAsrSegment = z.infer<typeof HostedAsrSegmentSchema>
 export type HostedAsrResult = z.infer<typeof HostedAsrResultSchema>
+export type DraftTurn = z.infer<typeof DraftTurnSchema>
+export type DraftTurnsRequest = z.infer<typeof DraftTurnsRequestSchema>
+export type DraftTurnsResponse = z.infer<typeof DraftTurnsResponseSchema>
 export type SoapNote = z.infer<typeof SoapNoteSchema>
 export type AssertionState = z.infer<typeof AssertionStateSchema>
 export type ClinicalAssertion = z.infer<typeof ClinicalAssertionSchema>
