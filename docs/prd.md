@@ -422,6 +422,8 @@ The argument is not that this product avoids the question; it is that the design
 - **Synthetic data only.** No real-world clinical validation of note quality, gap relevance, or suggestion accuracy has been performed.
 - **Free-tier hosting.** Render free instances spin down when idle and Supabase free projects auto-pause after roughly a week. Evaluation happens after submission, so a sleeping demo is a real failure mode — keep-alive mechanism at `docs/trd.md` §19 row 14. The Gemini free tier's terms permit use for product improvement and is restricted to local development on synthetic data only.
 - **Alert-fatigue risk is unmeasured.** Severity levels and acknowledge-not-remove bound how a flag is presented, but the MVP does not track acknowledgment or dismissal rates.
+- **The review copilot proposes in prose instead of a card in about one request in nine.** Measured over 90 turns per arm (`docs/trd.md` §25): the doctor reads a correctly worded replacement paragraph with nothing to apply. Four revisions were trialled and all four rejected on the measurements, one of which raised the headline rate by halving the cases where the copilot correctly declines because the content is already in the note.
+- **No retention schedule, and no deletion or access-request path.** Both are prerequisites before any real patient data, not features. An engineering DPIA exists ([`dpia.md`](./dpia.md)), but it is input for legal review rather than legal sign-off.
 
 ---
 
