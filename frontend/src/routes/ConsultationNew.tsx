@@ -18,11 +18,19 @@ import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
 
+/*
+ * Ordered by how central each path is to the product, not by how it was built.
+ *
+ * `fixture` stays the opening tab even though it is last. A reviewer arriving
+ * with no microphone and no Malay recording still has to be able to run the
+ * pipeline in one click, and defaulting to Record would put an empty capture
+ * screen in front of them instead.
+ */
 const TABS = [
-  { id: 'fixture', label: 'Bundled Case', Icon: FolderOpen },
-  { id: 'paste', label: 'Paste', Icon: Type },
-  { id: 'upload', label: 'Upload', Icon: FileUp },
   { id: 'record', label: 'Record', Icon: Mic },
+  { id: 'upload', label: 'Upload', Icon: FileUp },
+  { id: 'paste', label: 'Paste', Icon: Type },
+  { id: 'fixture', label: 'Bundled Case', Icon: FolderOpen },
 ] as const
 
 export function ConsultationNew() {
@@ -274,6 +282,7 @@ export function ConsultationNew() {
                   appendText(serialiseTurns(draftToTurns(draft)))
                   setDraft(null)
                 }}
+                canInsertPlain={turns.length > 0}
                 onInsertPlain={() => {
                   if (!draft) return
                   appendText(draft.map((line) => line.text).join(' '))
@@ -301,7 +310,13 @@ export function ConsultationNew() {
         )}
       </div>
 
-      {(text || draft) && (
+      {/*
+        Gated on the same tab condition as the textarea above, because this card
+        reports on that textarea. On the Bundled Case tab there is no editing
+        surface on screen, so a parse count for text the doctor cannot see reads
+        as a stray leftover from the tab they came from.
+      */}
+      {tab !== 'fixture' && (text || draft) && (
         <Card className="mt-4 p-4">
           <p className="text-sm font-medium">
             {turns.length} turn{turns.length === 1 ? '' : 's'} parsed
