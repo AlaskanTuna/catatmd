@@ -14,8 +14,8 @@ import type { RedFlagTrigger } from './types.js'
  * changes. Recorded with every analysis (docs/trd.md §15).
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v5',
-  effectiveDate: '2026-08-15',
+  id: 'redflag-list-v6',
+  effectiveDate: '2026-08-16',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -248,6 +248,22 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /kahak\s+(?:ada\s+)?(?:ber)?darah/i,
         /darah\s+dalam\s+kahak/i,
         /ludah\s+(?:ber)?darah/i,
+        // The devoiced forms both measured ASR arms produce for "batuk"
+        // ("patut", "patuk"; docs/trd.md §20.3), appended AFTER the originals
+        // rather than widened into them: findSpan gives each pattern one exec
+        // per turn, so a widened pattern whose leftmost match landed on a
+        // negated everyday "tak patut ... berdarah" would spend that one
+        // attempt and silence a genuine "batuk berdarah" later in the same
+        // turn. Appended patterns can only add fires. The darah context
+        // bounds the everyday word "patut"; the residual over-fire ("luka tu
+        // patut berdarah") is accepted, because firing is the direction this
+        // engine must fail in. "teman" for "demam" is deliberately absent
+        // everywhere: bare /\bdemam\b/ further down is deliberately broad, so
+        // that variant would fire on every mention of a companion. "tenggi"
+        // for "denggi" and "pengkat" for "bengkak" have no trigger to widen;
+        // the transcript mishear hints carry those pairs instead.
+        /patu[kt](?:-patu[kt])?\s+(?:sampai\s+)?(?:ber)?darah/i,
+        /patu[kt](?:-patu[kt])?\s+(?:sampai\s+)?(?:keluar|ada)\s+darah/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
     listVersion: RED_FLAG_LIST_VERSION.id,
@@ -282,6 +298,11 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /na[fp]as\s+pendek/i,
         /\btercungap/i,
         /\btermengah/i,
+        // "sempuk", the measured devoiced form of "semput" (docs/trd.md
+        // §20.3), appended after the originals for the same one-exec reason
+        // as the patu[kt] patterns in haemoptysis; not a Malay word, so no
+        // innocent reading needs bounding.
+        /\bsempuk\b/i,
       ]) ??
       findDeniedAbility(transcript, [
         /(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat|larat)\s+(?:nak\s+)?(?:tarik\s+)?(?:ber)?na[fp]as/i,

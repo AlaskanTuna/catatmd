@@ -251,3 +251,50 @@ describe('genuine Malay denials still suppress', () => {
     expect(ruleIds(patient('Tak ada demam, tak ada menggigil.'))).toEqual([])
   })
 })
+
+describe('measured ASR devoicing variants (docs/trd.md §20.3, issue #192)', () => {
+  // Both measured ASR arms harden the first consonant of Malay clinical words
+  // ("patut" for "batuk", "sempuk" for "semput"), so the emergency matchers
+  // tolerate the variant wherever its reading is bounded. Zero tolerance for
+  // false negatives outranks precision here too.
+  it.each([
+    ['haemoptysis', 'Patut sampai berdarah semalam.'],
+    ['haemoptysis', 'Patuk-patuk keluar darah.'],
+    ['significant-dyspnoea', 'Sempuk bila naik tangga.'],
+  ])('%s fires on the devoiced variant "%s"', (id, text) => {
+    expect(ruleIds(patient(text))).toContain(id)
+  })
+
+  it('does not fire haemoptysis on everyday "patut", because the widening rides on the darah context', () => {
+    expect(ruleIds(patient('Patut la rehat rumah dulu.'))).not.toContain('haemoptysis')
+  })
+
+  it('still suppresses a devoiced variant behind a trailing negator', () => {
+    expect(ruleIds(patient('Takde sempuk pun.'))).not.toContain('significant-dyspnoea')
+  })
+
+  it('still suppresses a devoiced variant denied in reply to a screening question', () => {
+    expect(
+      ruleIds(
+        transcript([
+          { speaker: 'doctor', text: 'Ada sempuk tak?' },
+          { speaker: 'patient', text: 'Takde.' },
+        ]),
+      ),
+    ).not.toContain('significant-dyspnoea')
+  })
+
+  it('cannot silence a v5 fire behind a negated everyday word in the same turn', () => {
+    // Pins the append-only design. A widened /[bp]atu[kt]/ spends findSpan's
+    // single exec on the negated "Tak patut sampai berdarah" and silences the
+    // genuine "batuk berdarah" after it, losing a v5 fire (caught in review
+    // of #192). The devoiced forms are separate later patterns, so every
+    // pattern that fired under v5 still gets its own attempt under v6.
+    expect(
+      ruleIds(patient('Tak patut sampai berdarah, tapi batuk berdarah sejak pagi.')),
+    ).toContain('haemoptysis')
+    expect(ruleIds(patient('Takde sempuk masa rehat, tapi semput bila naik tangga.'))).toContain(
+      'significant-dyspnoea',
+    )
+  })
+})
