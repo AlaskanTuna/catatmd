@@ -146,15 +146,34 @@ describe('draftTurns over a consultation-length transcript', () => {
   })
 
   /*
-   * A rejected chunk fails the whole pass, deliberately.
+   * A rejected chunk costs its own labels and nothing else.
    *
-   * Keeping the other chunks and giving the rejected one its neighbour's
-   * speaker was the tempting alternative, and it fabricates attribution: up to
-   * a chunk of patient speech presented as the doctor's, with nothing marking
-   * it invented. Failing is safe because the client's fallback drafts labels on
-   * the device and says on screen that they are guesses.
+   * Failing the whole pass was the previous behaviour and it did not hold up:
+   * measured in production, a 2,543-character transcript still returned
+   * `draft_failed` at ~28 s, because all five chunks had to land. The opposite,
+   * giving the rejected chunk its neighbour's speaker, fabricates attribution.
+   * The marker is what makes the third option honest.
    */
-  it('fails rather than inventing a speaker for a rejected chunk', async () => {
+  it('keeps the labels the other chunks earned, and marks the one that failed', async () => {
+    const { text: content } = deidentify(longStream)
+    let call = 0
+    stubClient(async (request) => {
+      const chunk = (request as unknown as { content: string }).content
+      call += 1
+      // A dropped word, which is exactly what reconstruction refuses.
+      if (call === 2) return { turns: [{ speaker: 'patient', text: 'not the input' }] }
+      return { turns: [{ speaker: 'doctor', text: chunk }] }
+    })
+
+    const turns = await draftTurns(content)
+
+    expect(turns.some((turn) => turn.undrafted === true)).toBe(true)
+    expect(turns.some((turn) => turn.undrafted === undefined)).toBe(true)
+    const words = (text: string) => text.split(/\s+/).filter(Boolean)
+    expect(words(turns.map((turn) => turn.text).join(' '))).toEqual(words(content))
+  })
+
+  it('never folds an unlabelled span into a labelled neighbour', async () => {
     const { text: content } = deidentify(longStream)
     let call = 0
     stubClient(async (request) => {
@@ -164,7 +183,34 @@ describe('draftTurns over a consultation-length transcript', () => {
       return { turns: [{ speaker: 'doctor', text: chunk }] }
     })
 
-    await expect(draftTurns(content)).rejects.toBeInstanceOf(DraftTurnsError)
+    const turns = await draftTurns(content)
+
+    // Every neighbouring pair differs in speaker or in drafted state, so an
+    // unlabelled span is never hidden inside a labelled turn.
+    for (const [index, turn] of turns.entries()) {
+      const next = turns[index + 1]
+      if (next === undefined) continue
+      expect(
+        turn.speaker !== next.speaker || Boolean(turn.undrafted) !== Boolean(next.undrafted),
+      ).toBe(true)
+    }
+  })
+
+  it('discards an undrafted flag the model tries to set', async () => {
+    const { text: content } = deidentify('doctor good morning patient i have a cough')
+    stubClient(async (request) => ({
+      turns: [
+        {
+          speaker: 'doctor',
+          text: (request as unknown as { content: string }).content,
+          undrafted: true,
+        },
+      ],
+    }))
+
+    const turns = await draftTurns(content)
+
+    expect(turns.every((turn) => turn.undrafted === undefined)).toBe(true)
   })
 
   it('never opens more than four provider calls at once', async () => {

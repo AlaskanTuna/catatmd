@@ -31,6 +31,12 @@ export type DraftLine = {
   speaker: TranscriptTurn['speaker']
   text: string
   offsetSeconds?: number
+  /**
+   * Set when the server labelled the rest of the transcript but not this span,
+   * so `speaker` is a placeholder rather than a guess with anything behind it.
+   * The review list marks these instead of showing them as drafted.
+   */
+  undrafted?: boolean
 }
 
 type Speaker = TranscriptTurn['speaker']

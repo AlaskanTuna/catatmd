@@ -140,6 +140,24 @@ function MockAudioCapture({
       >
         mock transcribe hosted misheard
       </button>
+      {/* A hosted draft where one chunk came back unlabelled, so the server
+          marked it rather than inventing a speaker for it. */}
+      <button
+        type="button"
+        onClick={() =>
+          onTranscript({
+            text: 'What brings you in? batuk sudah tiga hari',
+            segments: [],
+            source: 'asr_hosted',
+            draftTurns: [
+              { speaker: 'doctor', text: 'What brings you in?' },
+              { speaker: 'doctor', text: 'batuk sudah tiga hari', undrafted: true },
+            ],
+          })
+        }
+      >
+        mock transcribe hosted partial
+      </button>
     </>
   )
 }
@@ -339,6 +357,40 @@ describe('hosted draft-turn labelling', () => {
       'Doctor: Any fever?\nPatient: Yesterday quite hot.\n' +
         'Patient: Any fever?\nPatient: Yesterday quite hot.',
     )
+  })
+  /*
+   * The labelling pass runs in chunks and a rejected chunk ships its text with
+   * `undrafted` set. The placeholder speaker is not a guess with anything behind
+   * it, so the doctor resolving it is what turns it into a label.
+   */
+  describe('an unlabelled span from a partial draft', () => {
+    it('is marked in the review list rather than shown as drafted', () => {
+      openRecordTab()
+      fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted partial' }))
+
+      expect(screen.getByRole('button', { name: /needs a label/i })).toBeTruthy()
+      expect(screen.getByText(/1 line could not be labelled/i)).toBeTruthy()
+    })
+
+    it('stops being marked once the doctor sets it', () => {
+      openRecordTab()
+      fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted partial' }))
+      fireEvent.click(screen.getByRole('button', { name: /needs a label/i }))
+
+      expect(screen.queryByRole('button', { name: /needs a label/i })).toBeNull()
+      expect(screen.queryByText(/could not be labelled/i)).toBeNull()
+    })
+
+    it('applies with every line carrying a speaker the doctor accepted', () => {
+      openRecordTab()
+      fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted partial' }))
+      fireEvent.click(screen.getByRole('button', { name: /needs a label/i }))
+      fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
+
+      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+      expect(textarea.value).toMatch(/batuk sudah tiga hari/)
+      expect(textarea.value).not.toMatch(/undrafted/)
+    })
   })
 })
 
