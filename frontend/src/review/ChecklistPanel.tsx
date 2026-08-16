@@ -4,7 +4,7 @@ import type {
   EvidenceLink,
   OperationalBlock,
 } from '@shared/types'
-import { Quote } from 'lucide-react'
+import { ChevronRight, Quote } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '../lib/cn.js'
 import { AssertionStateBadge } from '../ui/AssertionState.js'
@@ -49,36 +49,55 @@ function ChecklistRow({
 
   const summary = (
     <>
-      <dt className="text-sm text-ink">{label}</dt>
-      <dd className="flex items-center gap-1.5">
-        {assertion.value && <span className="text-xs text-ink-muted">{assertion.value}</span>}
+      <dt className="min-w-0 truncate text-sm text-ink">{label}</dt>
+      <dd className="flex shrink-0 items-center gap-2">
+        {assertion.value && (
+          <span className="max-w-[10rem] truncate text-xs text-ink-muted">{assertion.value}</span>
+        )}
         <AssertionStateBadge state={assertion.state} />
       </dd>
     </>
   )
 
+  // A row with no evidence is inert rather than a button that does nothing, so
+  // the affordance itself says which fields are traceable. The padding matches
+  // the interactive row exactly, or the two would sit at different heights and
+  // the list would look ragged for a reason the reader cannot see.
   if (!link) {
-    return <div className="flex items-baseline justify-between gap-2">{summary}</div>
+    return (
+      <div className="flex items-center justify-between gap-3 border-b border-line/60 py-2 last:border-0">
+        {summary}
+      </div>
+    )
   }
 
   return (
-    <div>
+    <div className="border-b border-line/60 last:border-0">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-baseline justify-between gap-2 rounded-control text-left transition-colors hover:bg-sunken"
+        className="group -mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-control px-2 py-2 text-left transition-colors hover:bg-sunken-soft"
       >
         {summary}
         <Quote
           aria-hidden
-          className={cn('size-3 shrink-0 self-center text-accent', open && 'opacity-60')}
+          className={cn(
+            'size-3 shrink-0 text-accent transition-opacity',
+            open ? 'opacity-100' : 'opacity-45 group-hover:opacity-100',
+          )}
         />
         <span className="sr-only">Show the transcript source for {label}</span>
       </button>
 
+      {/*
+        A tinted block rather than a left rule. `border-l-2` on a quotation is
+        the side-tab pattern `impeccable detect` flags, and the accent tint
+        separates the evidence from the row above it without adding an edge that
+        competes with the row separators.
+      */}
       {open && (
-        <div className="mt-1 mb-1.5 rounded-control border-l-2 border-accent/40 bg-sunken px-2.5 py-2">
+        <div className="mt-1 mb-2 rounded-control bg-accent-soft px-3 py-2.5">
           {/*
            * Speaker and timing are omitted when the span could not be located in
            * exactly one turn, or when the transcript carries no timings at all.
@@ -159,15 +178,33 @@ export function ChecklistPanel({
 
   return (
     <Card className="mt-5">
+      {/*
+       * The disclosure had no visual affordance at all. `aria-expanded` told a
+       * screen reader it was expandable and nothing told anyone else, so the
+       * panel read as a static header with a count beside it and the content
+       * behind it was effectively undiscoverable.
+       *
+       * The chevron is the whole fix and it is deliberately the only addition:
+       * it is the one control users already read as "this opens", it rotates
+       * rather than swapping glyph so the state change is continuous, and it
+       * needs no label because the heading beside it already names the thing.
+       */}
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 p-4 text-left"
+        className="flex w-full items-center gap-3 rounded-card p-4 text-left transition-colors hover:bg-sunken-soft"
         data-tour="checklist"
       >
-        <span className="text-sm font-semibold">Completeness Checklist</span>
-        <span className="text-xs text-ink-muted">
+        <ChevronRight
+          aria-hidden
+          className={cn(
+            'size-4 shrink-0 text-ink-muted transition-transform duration-150 ease-out-quart',
+            open && 'rotate-90',
+          )}
+        />
+        <span className="flex-1 text-sm font-semibold">Completeness Checklist</span>
+        <span className="shrink-0 text-xs tabular-nums text-ink-muted">
           {assessed} of {entries.length} established
         </span>
       </button>
@@ -177,11 +214,11 @@ export function ChecklistPanel({
           clinical document is just an omission. */}
       <div className={open ? 'block' : 'hidden'} data-print="block">
         {GROUPS.map(({ key, label }) => (
-          <section key={key} className="border-t border-line px-4 py-3 page-break-avoid">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+          <section key={key} className="border-t border-line px-4 py-4 page-break-avoid">
+            <h3 className="mb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
               {label}
             </h3>
-            <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+            <dl className="mt-1 grid gap-x-10 sm:grid-cols-2">
               {Object.entries(clinicalFacts[key] as Record<string, ClinicalAssertion>).map(
                 ([field, assertion]) => (
                   <ChecklistRow
@@ -196,8 +233,8 @@ export function ChecklistPanel({
           </section>
         ))}
 
-        <section className="border-t border-line px-4 py-3 page-break-avoid">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+        <section className="border-t border-line px-4 py-4 page-break-avoid">
+          <h3 className="mb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
             Operational
           </h3>
           <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2">

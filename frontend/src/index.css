@@ -82,6 +82,20 @@
    * the dropover triggers. */
   --color-sunken-soft: color-mix(in oklab, var(--color-sunken) 60%, var(--color-surface));
 
+  /* The destructive counterpart, mixed the same way and for the same reason.
+   * `danger` used to sit on `bg-surface` with a red border, which on a card of
+   * the identical colour left the fill doing nothing and the border carrying
+   * the whole signal. Held lighter than the accent pair at 10% and 16%: red at
+   * 12% over white reads as a filled warning rather than as a tint, and this
+   * variant has to stay quieter than `primary` while still being the most
+   * visible thing in a confirm dialog. */
+  --color-emergency-soft: color-mix(in oklab, var(--color-emergency) 10%, var(--color-surface));
+  --color-emergency-soft-hover: color-mix(
+    in oklab,
+    var(--color-emergency) 16%,
+    var(--color-surface)
+  );
+
   /* The two stops of the coachmark ring's gradient. Same hue as the accent so
    * the tour reads as part of the product, separated on lightness and chroma
    * rather than hue so the travelling highlight is legible at 50% opacity. */

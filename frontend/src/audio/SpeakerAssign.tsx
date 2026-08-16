@@ -134,7 +134,7 @@ export function SpeakerAssign({
           Apply Labels to Transcript
         </Button>
         <Button
-          variant="ghost"
+          variant="neutral"
           size="sm"
           icon={<Type aria-hidden className="size-3.5" />}
           onClick={onInsertPlain}
