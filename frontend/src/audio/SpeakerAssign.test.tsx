@@ -94,3 +94,42 @@ describe('the plain-text control', () => {
     expect(screen.getByRole('button', { name: /plain text/i })).toBeTruthy()
   })
 })
+
+/*
+ * A span the server could not label arrives with a placeholder speaker and
+ * `undrafted` set. Rendering it as Doctor or Patient would be exactly the
+ * fabricated attribution the server refuses to send.
+ */
+describe('an unlabelled span', () => {
+  const MIXED: DraftLine[] = [
+    { id: 'a', speaker: 'doctor', text: 'What brings you in?' },
+    { id: 'b', speaker: 'doctor', text: 'batuk sudah tiga hari', undrafted: true },
+  ]
+
+  it('is not shown as a drafted label', () => {
+    setup(MIXED)
+    expect(screen.getByRole('button', { name: /needs a label/i })).toBeTruthy()
+  })
+
+  it('says how many lines still need a speaker', () => {
+    setup(MIXED)
+    expect(screen.getByText(/1 line could not be labelled/i)).toBeTruthy()
+  })
+
+  it('still shows the text, so no speech is hidden behind the marker', () => {
+    setup(MIXED)
+    expect(screen.getByText(/batuk sudah tiga hari/)).toBeTruthy()
+  })
+
+  it('reports the tap so the caller can resolve it', () => {
+    const handlers = setup(MIXED)
+    fireEvent.click(screen.getByRole('button', { name: /needs a label/i }))
+    expect(handlers.onToggle).toHaveBeenCalledWith('b')
+  })
+
+  it('says nothing about unlabelled lines when every line is drafted', () => {
+    setup([{ id: 'a', speaker: 'doctor', text: 'What brings you in?' }])
+    expect(screen.queryByText(/could not be labelled/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /needs a label/i })).toBeNull()
+  })
+})

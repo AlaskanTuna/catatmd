@@ -62,10 +62,22 @@ export function ConsultationNew() {
   const appendText = (addition: string) =>
     setText((current) => (current ? `${current.trimEnd()}\n${addition}` : addition))
 
-  const flip = (line: DraftLine): DraftLine => ({
-    ...line,
-    speaker: line.speaker === 'doctor' ? 'patient' : 'doctor',
-  })
+  /*
+   * Flipping an undrafted line also resolves it. Its speaker was a placeholder
+   * the server declared it did not stand behind; once the doctor has picked a
+   * side it is theirs, so it stops being marked as needing one.
+   *
+   * The first tap on an undrafted line keeps the speaker shown and only clears
+   * the mark, so choosing the side already displayed takes one tap rather than
+   * two.
+   */
+  const flip = (line: DraftLine): DraftLine => {
+    if (line.undrafted) {
+      const { undrafted: _resolved, ...rest } = line
+      return rest
+    }
+    return { ...line, speaker: line.speaker === 'doctor' ? 'patient' : 'doctor' }
+  }
 
   const onUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -217,6 +229,10 @@ export function ConsultationNew() {
                     id: `hosted-${i}`,
                     speaker: turn.speaker,
                     text: turn.text,
+                    // Carried through rather than dropped: a chunk the server
+                    // could not label arrives with a placeholder speaker, and
+                    // the review list has to say so.
+                    ...(turn.undrafted === true ? { undrafted: true } : {}),
                   }),
                 )
                 const timedLines = segmentsToDraft(segments, transcribed, { withOffsets })
