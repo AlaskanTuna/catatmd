@@ -4,7 +4,12 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["**/*.ts", "../backend/src/fixtures/**/*.ts", "../backend/src/guidelines/**/*.ts"],
+  "include": [
+    "**/*.ts",
+    "../backend/src/fixtures/**/*.ts",
+    "../backend/src/guidelines/**/*.ts",
+    "../backend/src/copilot/phantom-click.ts"
+  ],
   "exclude": ["reports"],
   "references": [{ "path": "../shared" }]
 }

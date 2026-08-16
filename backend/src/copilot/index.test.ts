@@ -1,6 +1,7 @@
 import type { ConsultationDetail } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { StreamChunk, StreamRequest } from '../lib/llm/types.js'
+import { hasPhantomClickInstruction } from './phantom-click.js'
 
 /**
  * The copilot's de-identification boundary, which is the part of this feature
@@ -281,5 +282,52 @@ describe('a signed note', () => {
 
     expect(captured?.system).toContain('[PATIENT_1]')
     expect(captured?.system).not.toContain(PATIENT)
+  })
+})
+
+/**
+ * The phantom-click pin from GitHub issue #185, driven through the real turn
+ * rather than against a string, so it holds over what the doctor actually
+ * receives. The detector's own cases live in `phantom-click.test.ts`; what is
+ * added here is that it sees the pipeline's output, after the reasoning filter
+ * has taken its cut and after rehydration.
+ *
+ * That distinction is the whole reason this one is not a string test. A model
+ * that reasons about clicking inside a `<think>` block and then answers
+ * cleanly has not pointed the doctor at anything, and a detector run over the
+ * raw stream would call that a defect.
+ */
+describe('pointing at a card that was never rendered', () => {
+  it('flags a turn that says click while proposing nothing', async () => {
+    chunks = [
+      { type: 'text', text: 'That belongs in the plan. Click Apply on the card to add it.' },
+    ]
+
+    const out = await drain('add a safety net to the plan')
+    const text = out
+      .filter((chunk) => chunk.type === 'token')
+      .map((chunk) => chunk.text)
+      .join('')
+    const proposals = out.filter((chunk) => chunk.type === 'proposal').length
+
+    expect(proposals).toBe(0)
+    expect(hasPhantomClickInstruction(text, proposals)).toBe(true)
+  })
+
+  it('says nothing when the click language was only in the reasoning block', async () => {
+    chunks = [
+      { type: 'text', text: '<think>I should tell them to click Apply.</think>' },
+      { type: 'text', text: 'The plan does not yet say when she should return.' },
+    ]
+
+    const out = await drain('does the plan say when she should come back?')
+    const text = out
+      .filter((chunk) => chunk.type === 'token')
+      .map((chunk) => chunk.text)
+      .join('')
+    const proposals = out.filter((chunk) => chunk.type === 'proposal').length
+
+    expect(text).not.toMatch(/click/i)
+    expect(hasPhantomClickInstruction(text, proposals)).toBe(false)
   })
 })
