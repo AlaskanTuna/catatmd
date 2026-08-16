@@ -1,3 +1,5 @@
+<a id="top"></a>
+
 <div align="center">
 
 <img src="../frontend/public/favicon-64.png" width="64" alt="CatatMD" />
@@ -28,8 +30,6 @@ _Catat_ — Malay, "to note down". The product documents; the doctor decides.
 
 </div>
 
----
-
 > ### ⚕️ The Doctor Decides
 >
 > This system does not diagnose and does not replace clinical judgement. Every output is reviewed, edited, and explicitly approved by the clinician, who remains fully responsible for all medical decisions. All consultation data in this repository is **simulated**.
@@ -48,6 +48,8 @@ _Catat_ — Malay, "to note down". The product documents; the doctor decides.
   </tr>
 </table>
 
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+
 ---
 
 ## 📷 Screenshots
@@ -64,6 +66,9 @@ _Catat_ — Malay, "to note down". The product documents; the doctor decides.
     <td width="33%"><img src="assets/06-approval-gate-confirm.png" alt="Approval confirmation stating the note cannot be edited afterwards" /><p align="center"><sub>The approval gate. An explicit act, stating plainly that the note cannot be edited afterwards.</sub></p></td>
   </tr>
 </table>
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+
 ---
 
 ## 🧭 The Problem
@@ -82,6 +87,10 @@ Five pressures follow, each measured rather than asserted:
 
 **About 60% of patients arrive through a TPA or corporate panel, and the note those payers read is not SOAP.** The contractually enforced shape is condition, treatment, itemised medication dispensed, MC days, referral. Two of those fields have no home in SOAP at all, because the Malaysian GP dispenses in-house and issues the MC in the room.
 
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+
+---
+
 ## 🩺 What CatatMD Does About It
 
 | What The Doctor Gets                                                                                                                                                          | Which Pressure It Answers                            |
@@ -97,6 +106,10 @@ Every field above is **extraction, not generation**: each carries a verbatim spa
 
 **Stated honestly, because a doctor will find out in one clinic session:** for a fast three-minute URTI consult this may well be slower than the handwritten line it replaces. The claim is documentation quality and a safety net that does not depend on memory. It is not a time-saving claim, and no time-saved figure is offered anywhere in this repository.
 
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+
+---
+
 ## 🧠 How We Tackle It
 
 AI note-taking is already commoditised in this market, bundled into clinic systems at prices no scribe can compete with (Positioning, below, names the incumbents). So this is not positioned as another scribe. What is different is that the safety properties are **architectural rather than promised**, and each is checkable by someone who has no reason to trust us.
@@ -107,6 +120,10 @@ AI note-taking is already commoditised in this market, bundled into clinic syste
 | "Our AI catches red flags"     | A deterministic rules engine runs **before** the model, and the model is never shown its output, so it has nothing to suppress         |
 | "Our citations are reliable"   | The model may only cite guideline IDs from a supplied corpus; a free-text reference fails validation before the doctor ever sees it    |
 | "The doctor reviews it"        | Approval is a state transition with an audit event, not a checkbox, and it is terminal                                                 |
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+
+---
 
 <a id="architecture-at-a-glance"></a>
 
@@ -126,9 +143,14 @@ Three claims the journey diagram is drawn to make checkable:
 
 ![CatatMD technical stack. Inside the trust boundary: React, TypeScript, Vite and Tailwind on Vercel; Node, Express and Bun on Render, carrying the deid PHI gate, the lib/llm client, and the routes, redflags, guidelines and audit modules; PostgreSQL, Prisma and Supabase. Outside it: the Qwen language model, reachable only through lib/llm, and the hosted ASR provider ILMU, reached only by an API relay under per-consultation consent.](assets/tech-stack.drawio.png)
 
-Two claims the stack diagram is drawn to make checkable. `lib/llm/` is the **only** text egress, and everything crossing that line has already passed `deid/`. Speech-to-text runs on the device by default, so the hosted ASR adapter is the one other path out of the boundary, and it opens only when a doctor ticks the per-consultation consent box. The diagram draws it dashed because it sits outside the boundary, and the audio reaches it only as a relay through the API (`docs/trd.md` §20.4).
+Two claims the stack diagram is drawn to make checkable:
+
+- **`lib/llm/` is the only text egress**, and everything crossing that line has already passed `deid/`.
+- **The hosted ASR adapter is the one other path out of the boundary.** Speech-to-text runs on the device by default, so it opens only when a doctor ticks the per-consultation consent box. The diagram draws it dashed because it sits outside the boundary, and the audio reaches it only as a relay through the API (`docs/trd.md` §20.4).
 
 Bun workspaces · TypeScript · Zod (shared contracts) · Express 5 · Prisma 6 · better-auth · React 19 + Vite 7 + Tailwind 4 · Supabase Postgres · Vitest · Biome. Hosting: frontend to Vercel, backend to Render, database to Supabase, all three in one region by design.
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
 
 ---
 
@@ -142,21 +164,40 @@ Bun workspaces · TypeScript · Zod (shared contracts) · Express 5 · Prisma 6 
 
 All three are on free tiers by design. Render free instances spin down when idle and Supabase free projects auto-pause after roughly a week, so an external scheduler pings `/api/health` every 10 minutes to keep both awake — one ping covers both, because the health check runs a query (`docs/trd.md` §17).
 
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+
 ---
 
 ## 📍 Status
 
-**Both tiers are built and running.** The de-identification gate, the deterministic red-flag engine, the Malaysian guideline corpus, the structured-extraction pipeline with its evidence-bound assertion check, the gaps engine, authentication and the synthetic fixtures are implemented and tested. The React UI is built too: the consultation list, the four-input capture screen, the review screen carrying gap, red-flag and suggestion cards, the approval control, and on-device audio capture with draft speaker labels the doctor applies. The hosted-ASR path is live in production behind a per-consultation consent gate (#154, #155, #190).
+**Both tiers are built and running.**
+
+| Layer          | What Is Built                                                                                                                                                                                              |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Backend**    | De-identification gate, deterministic red-flag engine, Malaysian guideline corpus, structured-extraction pipeline with its evidence-bound assertion check, gaps engine, authentication, synthetic fixtures |
+| **Frontend**   | Consultation list, four-input capture screen, review screen carrying gap, red-flag and suggestion cards, the approval control, on-device audio capture with draft speaker labels                           |
+| **Hosted ASR** | Live in production behind a per-consultation consent gate (#154, #155, #190)                                                                                                                               |
 
 `docs/trd.md` tags every section `Built`, `Specified`, or `Open`, and never describes unwritten code as if it exists. Where implementation contradicted the specification, the TRD records which won and why rather than quietly conforming — see §3 (the assertion schema had to split in two), §5 and §7.
 
 **No clinician has reviewed any of it**, and all data is synthetic. See [Known Limitations](#known-limitations).
 
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+
 ---
 
 ## 🎯 Positioning — Why This Is Not "An AI Scribe"
 
-**The scribe function is already commoditised in Malaysia.** AI SOAP notes ship bundled inside a **RM45/clinic/month** clinic management system (MedicalMet) and from **RM179** (Cliniclah); Qmed Asia ships Qmed Scribe and already holds **ISO 13485 and MDA approval**; Heidi Health opened a Singapore SEA HQ on 31 July 2026 with a free tier. The marginal price of AI documentation here is effectively RM0, and Western per-clinician scribe pricing is several times the cost of an entire Malaysian CMS.
+**The scribe function is already commoditised in Malaysia.**
+
+| Incumbent        | Position                                                                      |
+| ---------------- | ----------------------------------------------------------------------------- |
+| **MedicalMet**   | AI SOAP notes bundled inside a **RM45/clinic/month** clinic management system |
+| **Cliniclah**    | From **RM179**                                                                |
+| **Qmed Asia**    | Ships Qmed Scribe, and already holds **ISO 13485 and MDA approval**           |
+| **Heidi Health** | Opened a Singapore SEA HQ on 31 July 2026 with a free tier                    |
+
+The marginal price of AI documentation here is effectively RM0, and Western per-clinician scribe pricing is several times the cost of an entire Malaysian CMS.
 
 So this project does not compete on transcription. It competes on **the boundary** — three properties that are architectural rather than promised:
 
@@ -166,13 +207,19 @@ So this project does not compete on transcription. It competes on **the boundary
 | **Deterministic red flags the model cannot suppress** | No scribe vendor ships this. Patient safety does not depend on model behaviour                                                                    |
 | **ID-constrained citations**                          | Hallucinated medical references are structurally impossible, not statistically unlikely                                                           |
 
-Table stakes are named as table stakes: doctor-approves-everything, "does not diagnose", audio-not-retained, and SOAP templates are stated by every vendor in this market. They are kept here only in their **enforced** form — a state transition with an audit event, not a sentence in a marketing page. Ground already occupied locally is named rather than claimed: browser-side NRIC tokenisation ships today at DocReport, and Malaysian CPG citation lookup is held by Qmed AskCPG, co-developed with MOH. Full analysis in `docs/prd.md` §5.
+**Table stakes are named as table stakes.** Doctor-approves-everything, "does not diagnose", audio-not-retained, and SOAP templates are stated by every vendor in this market. They are kept here only in their **enforced** form: a state transition with an audit event, not a sentence in a marketing page.
+
+**Ground already occupied locally is named rather than claimed.** Browser-side NRIC tokenisation ships today at DocReport, and Malaysian CPG citation lookup is held by Qmed AskCPG, co-developed with MOH. Full analysis in `docs/prd.md` §5.
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
 
 ---
 
 ## 📝 The Note Is Not Just SOAP
 
-**SOAP is a review scaffold, not a Malaysian norm.** No Malaysian regulation mandates it — MMC Guideline 002/2006 requires contemporaneous, chronological, signed entries and never mentions SOAP. What _is_ enforced is the payer contract: condition → treatment → itemised medication dispensed → MC days → referral. Two of those fields have no home in SOAP at all, because the Malaysian GP dispenses in-house and issues the MC in the room.
+**SOAP is a review scaffold, not a Malaysian norm.** No Malaysian regulation mandates it: MMC Guideline 002/2006 requires contemporaneous, chronological, signed entries and never mentions SOAP.
+
+What _is_ enforced is the payer contract: condition → treatment → itemised medication dispensed → MC days → referral. Two of those fields have no home in SOAP at all, because the Malaysian GP dispenses in-house and issues the MC in the room.
 
 The note therefore carries an operational block alongside the four SOAP strings (`docs/trd.md` §3):
 
@@ -185,6 +232,8 @@ The note therefore carries an operational block alongside the four SOAP strings 
 | `followUp`             | Follow-up interval the doctor stated                   | `NOT_ASSESSED`                |
 
 **Every one of these is extraction, not generation.** Each carries a verbatim transcript span, and a field nobody raised resolves to `NOT_ASSESSED` rather than being defaulted to absent.
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
 
 ---
 
@@ -220,17 +269,39 @@ Detection is pattern-based and best-effort — see [Known Limitations](#known-li
 
 ### Audio Stays On The Device By Default
 
-Raw audio cannot be de-identified, only transcribed — so a hosted transcription service would carry un-redacted patient audio, and voice itself as a biometric identifier, outside the trust boundary before the gate ever saw it. **Transcription therefore runs on the doctor's device**, and only the resulting transcript text reaches the API, where it enters the same pipeline as text pasted, uploaded, or picked from a fixture.
+Raw audio cannot be de-identified, only transcribed. A hosted service would therefore carry un-redacted patient audio, and voice itself as a biometric identifier, outside the trust boundary before the gate ever saw it.
 
-The claim stops there rather than going one word further, because on modest clinic hardware the on-device path has a real cost. The rule is a default with a gate, not an absolute:
+**Transcription runs on the doctor's device.** Only the resulting transcript text reaches the API, where it enters the same pipeline as text pasted, uploaded, or picked from a fixture.
+
+The claim stops there, because on modest clinic hardware the on-device path has a real cost. The rule is a default with a gate, not an absolute:
 
 > **On-device is the default and the floor. Hosted is only ever entered by an explicit, recorded, per-consultation act. Failure degrades to paste, never to the cloud.**
 
-That last clause is the load-bearing one. Silently switching to hosted transcription because a device is slow would be a privacy control that fails **open** under load — degrading exactly when the doctor is least able to notice — so it is written down as rejected rather than left to an implementer's judgement. The hosted adapter is now **built**, behind a per-consultation consent gate the doctor must tick for each recording: always on screen, never highlighted, never remembered, and never mentioned by the on-device failure copy. The provider key is set in production, so the path is live: a doctor who ticks the box sends that recording to ILMU. See `docs/trd.md` §20 and §20.4.
+**That last clause is the load-bearing one.** Silently switching to hosted transcription because a device is slow would be a privacy control that fails **open** under load, degrading exactly when the doctor is least able to notice. It is written down as rejected rather than left to an implementer's judgement.
 
-**A recording now comes back as timestamped, speaker-labelled draft lines the doctor reviews and applies.** Each line's Doctor/Patient label is a guess from segment timing and what the sentence says, never from the voices, and the doctor can flip any line before applying, one review list, no auto-populated transcript (`docs/trd.md` §20.2).
+The hosted adapter is **built and live**. Its consent gate (`docs/trd.md` §20, §20.4):
 
-**One request does leave the browser on the on-device path, and it is named here rather than left to be discovered.** The speech model's weights are fetched from a public CDN the first time they are needed, then cached. It is a download of public model weights, not an upload: no audio, no transcript and no identifier is part of it, because the request happens before any of them exist. The CDN sees the clinic's IP address and which model was asked for, and nothing else. Nothing that data-residency rules attach to leaves the country on that path, because no patient data is in the request. **If a deployment requires that no third-party endpoint be contacted at all, that is a configuration change rather than a rebuild:** `VITE_ASR_MODEL_HOST` points the download at a mirror, the path layout matches the CDN's so mirroring is a file copy, and the last third-party request disappears. The runtime itself is already served from our own origin. Who observes what, and why those two assets are treated differently, is set out in full in `docs/trd.md` §20.
+| Property         | Behaviour                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| **Scope**        | One recording. Never remembered, never carried to the next patient                  |
+| **Placement**    | Always on screen, never highlighted                                                 |
+| **Failure copy** | The on-device failure message never mentions it                                     |
+| **Effect**       | The provider key is set in production, so a ticked box sends that recording to ILMU |
+
+**A recording returns as timestamped, speaker-labelled draft lines the doctor reviews and applies.** Each Doctor/Patient label is a guess from segment timing and what the sentence says, never from the voices. Any line can be flipped before applying: one review list, no auto-populated transcript (`docs/trd.md` §20.2).
+
+**One request does leave the browser on the on-device path**, and it is named here rather than left to be discovered. The speech model's weights are fetched from a public CDN the first time they are needed, then cached.
+
+| Question                    | Answer                                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------------- |
+| **What is it?**             | A download of public model weights, not an upload                                      |
+| **What is in it?**          | No audio, no transcript, no identifier. The request happens before any of them exist   |
+| **What does the CDN see?**  | The clinic's IP address and which model was asked for. Nothing else                    |
+| **Does it cross a border?** | Nothing that data-residency rules attach to, because no patient data is in the request |
+
+**Removing even that request is configuration, not a rebuild.** `VITE_ASR_MODEL_HOST` points the download at a mirror, the path layout matches the CDN's so mirroring is a file copy, and the last third-party request disappears. The runtime itself is already served from our own origin.
+
+Who observes what, and why those two assets are treated differently, is set out in full in `docs/trd.md` §20.
 
 ### The Provider Is A Swappable Adapter
 
@@ -242,7 +313,11 @@ All three supported providers speak the OpenAI-compatible protocol and are selec
 | Gemini                          | **local dev only, synthetic data only** | free-tier terms permit use for product improvement and human review |
 | DeepSeek                        | benchmarking only                       | PRC; raises a further PDPA s.129 cross-border question              |
 
-**Residency, stated accurately.** In-region hosting is **not** "data residency solved". Under the amended PDPA (Act A1719) the whitelist regime is gone, and s.129 now requires an affirmative basis for any transfer of Malaysian data out of Malaysia, which hosting anywhere else _is_. The claim this project makes is narrower and true: **in-region hosting, a documented s.129 basis, and a region-portable adapter.** This prototype also processes no personal data at all, because every consultation is synthetic. `docs/prd.md` §11.
+**Residency, stated accurately.** In-region hosting is **not** "data residency solved". Under the amended PDPA (Act A1719) the whitelist regime is gone, and s.129 now requires an affirmative basis for any transfer of Malaysian data out of Malaysia, which hosting anywhere else _is_.
+
+The claim this project makes is narrower and true: **in-region hosting, a documented s.129 basis, and a region-portable adapter.** This prototype also processes no personal data at all, because every consultation is synthetic (`docs/prd.md` §11).
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
 
 ---
 
@@ -250,9 +325,20 @@ All three supported providers speak the OpenAI-compatible protocol and are selec
 
 The safety argument is not "a doctor reviews everything". Doctors do not reliably catch well-formed AI errors, and the failure this system was built against is exactly that shape.
 
-**The finding it was built against, measured on 13/08/26** against the live production endpoint: given a one-line transcript ("cough 3 days, no fever"), the default implementation produced a note denying chills, night sweats, **haemoptysis**, chest pain, dyspnoea, sick contacts, allergies and medications — none of which either speaker had raised — in **5 of 5 runs**. On a richer transcript it fabricated nothing in 3 of 3 runs. The model fabricates in proportion to how _sparse_ the transcript is, which is precisely the input this product exists to serve. Full method and output in `docs/trd.md` §21.1.
+### The Finding It Was Built Against
 
-Four controls follow from it, ranked by what makes them hold rather than by how they are worded (`docs/trd.md` §21.3):
+Measured **13/08/26** against the live production endpoint. Full method and output in `docs/trd.md` §21.1.
+
+| Transcript                         | Result                                                                                                                                                                        |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| One line, "cough 3 days, no fever" | A note **denying** chills, night sweats, **haemoptysis**, chest pain, dyspnoea, sick contacts, allergies and medications. Neither speaker raised any of them. **5 of 5 runs** |
+| Richer, multi-turn                 | Fabricated nothing. **3 of 3 runs**                                                                                                                                           |
+
+**The model fabricates in proportion to how _sparse_ the transcript is**, which is precisely the input this product exists to serve.
+
+### The Four Controls
+
+Ranked by what makes them hold rather than by how they are worded (`docs/trd.md` §21.3):
 
 | Control                                                                    | Tier              | How It Fails                                                   |
 | -------------------------------------------------------------------------- | ----------------- | -------------------------------------------------------------- |
@@ -263,15 +349,23 @@ Four controls follow from it, ranked by what makes them hold rather than by how 
 
 ![The CatatMD analyse pipeline. A POST to the analyze route passes an ownership check, then splits: the raw transcript goes to the de-identification gate and, separately, to the deterministic red-flag engine, which runs in-process and never egresses. De-identified text feeds three concurrent LLM operations, clinical_facts, note_and_gaps and suggestions_and_red_flags, which reach the provider only through lib/llm, the single egress point, and it re-scans its own outbound payload before sending. Returning output passes the evidence check, deterministic gap derivation, and a union assembly that adds model output to rule output without ever filtering it, then rehydration, persistence, and an audit event carrying labels and ids but never content.](assets/module-detail.png)
 
-Two properties the diagram is drawn to make checkable. **Rule-sourced red flags and derived gaps reach assembly without passing through the model at all**, so a model response has nothing to suppress: the union is computed in the route handler, after the model has already returned. And **every arrow leaving the boundary passes through one node**, which re-scans its own payload immediately before it sends.
+Two properties the diagram is drawn to make checkable:
 
-**Unknown is never recorded as negative.** Every clinical fact resolves to one of six explicit states — `PRESENT`, `DENIED`, `CLINICIAN_OBSERVED`, `NOT_ASSESSED`, `UNKNOWN`, `NOT_APPLICABLE` — and a fact whose evidence does not match the transcript verbatim is forced to `NOT_ASSESSED` in code. The asymmetry is deliberate: a false `NOT_ASSESSED` costs the doctor one dismissed prompt, while a false `DENIED` lets a later clinician rule out a diagnosis on a finding nobody ever checked.
+- **Rule-sourced red flags and derived gaps reach assembly without passing through the model at all**, so a model response has nothing to suppress. The union is computed in the route handler, after the model has already returned.
+- **Every arrow leaving the boundary passes through one node**, which re-scans its own payload immediately before it sends.
 
-**Diagnosis is recorded, never generated.** The `diagnosis` field exists because the payer-enforced record requires one, and it is populated **only by transcription**: it must carry a verbatim span in which the doctor states the impression, and resolves to `NOT_ASSESSED` where they state none. The model is never asked what the diagnosis is. The invariant is machine-checkable rather than a promise — **the system may not produce a diagnosis the doctor did not say** — and no generated prose (assessment text, gaps, suggestions, UI copy) states or implies a diagnosis at all. `docs/prd.md` §10.
+### The Four Invariants
 
-**Red flags cannot be suppressed.** The rules engine is a pure function over the transcript; it runs before the model, and the model is never shown its results to "reconcile" against. Assembly is a union, never a filter (`docs/trd.md` §10).
+| Invariant                                  | How It Is Enforced                                                                                                                                                                                                                     |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Unknown is never recorded as negative**  | Six explicit states: `PRESENT`, `DENIED`, `CLINICIAN_OBSERVED`, `NOT_ASSESSED`, `UNKNOWN`, `NOT_APPLICABLE`. A fact whose evidence does not match the transcript verbatim is forced to `NOT_ASSESSED` in code                          |
+| **Diagnosis is recorded, never generated** | Populated **only by transcription**. It must carry a verbatim span in which the doctor states the impression, and resolves to `NOT_ASSESSED` where they state none. The model is never asked what the diagnosis is (`docs/prd.md` §10) |
+| **Red flags cannot be suppressed**         | The rules engine is a pure function over the transcript. It runs before the model, and its results are never shown to the model to "reconcile" against. Assembly is a union, never a filter (`docs/trd.md` §10)                        |
+| **Citations cannot be invented**           | The request-time schema narrows `guidelineId` to the live corpus ids, so a citation naming anything else fails validation inside the adapter and never reaches the doctor (`docs/trd.md` §11)                                          |
 
-**Citations cannot be invented.** The request-time schema narrows `guidelineId` to the live corpus ids, so a citation naming anything else fails validation inside the adapter and the suggestion never reaches the doctor (`docs/trd.md` §11).
+**The asymmetry on assertion states is deliberate.** A false `NOT_ASSESSED` costs the doctor one dismissed prompt. A false `DENIED` lets a later clinician rule out a diagnosis on a finding nobody ever checked.
+
+**The diagnosis invariant is machine-checkable rather than promised.** The system may not produce a diagnosis the doctor did not say, and no generated prose, whether assessment text, gaps, suggestions or UI copy, states or implies one at all.
 
 ### The Guideline Corpus
 
@@ -285,7 +379,11 @@ Two properties the diagram is drawn to make checkable. **Rule-sourced red flags 
 
 **NICE is excluded.** Its Open Content Licence expressly does not cover use for artificial-intelligence purposes, in the UK or internationally.
 
-**Disagreeing sources stay separate.** NAG puts the antibiotic threshold at Modified Centor ≥3; the 2024 Delphi consensus puts it at McIsaac ≥4. Merging them would manufacture a consensus that does not exist — and the ID-constrained citation mechanism **cannot catch that**, because the model would be citing a real, valid ID. One source per chunk; the UI attributes per chunk and never says "the guideline says" over merged sources.
+**Disagreeing sources stay separate.** NAG puts the antibiotic threshold at Modified Centor ≥3; the 2024 Delphi consensus puts it at McIsaac ≥4. Merging them would manufacture a consensus that does not exist.
+
+**The ID-constrained citation mechanism cannot catch that**, because the model would be citing a real, valid ID. So one source per chunk: the UI attributes per chunk and never says "the guideline says" over merged sources.
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
 
 ---
 
@@ -293,13 +391,35 @@ Two properties the diagram is drawn to make checkable. **Rule-sourced red flags 
 
 **No EMR write-back — because there is no rail to write back to.** This is a market fact, not MVP triage: the Malaysian private-GP clinic-system market is a fragmented long tail with no published API standard, and the national interoperability layer reaches private **hospitals** from January 2027, not GP clinics. PDF export is the honest interim.
 
-Also deliberately absent: diagnosis, triage decisions and prescribing (safety boundaries, not deferred features); red-flag deletion or silent dismissal (flags may be acknowledged, never removed); any edit after approval; any autonomous action; any confidence or uncertainty score; and any billing, MC-duration or fee-code output — the highest-value addition for a real Malaysian GP, and left unbuilt because generating it invites rubber-stamping. `docs/prd.md` §6.
+Also deliberately absent (`docs/prd.md` §6):
+
+- **Diagnosis, triage decisions and prescribing.** Safety boundaries, not deferred features
+- **Red-flag deletion or silent dismissal.** Flags may be acknowledged, never removed
+- **Any edit after approval**, and any autonomous action
+- **Any confidence or uncertainty score**
+- **Any billing, MC-duration or fee-code output.** The highest-value addition for a real Malaysian GP, left unbuilt because generating it invites rubber-stamping
 
 ### Regulatory Posture — Conceded, Not Defended
 
-Red flags plus cited clinical suggestions **constitute clinical decision support**, which under Malaysia's MDA applying ASEAN AMDD rules is Class B territory. No documentation-software carve-out was found, and the market corroborates the read: Microsoft's Dragon Copilot hard-codes refusal of clinical-decision prompts, Heidi withholds its Evidence feature in the UK and EU, Tortus carries UKCA Class IIa, and Qmed Asia already holds ISO 13485 and MDA approval locally. The bar is real and it is clearable.
+Red flags plus cited clinical suggestions **constitute clinical decision support**, which under Malaysia's MDA applying ASEAN AMDD rules is Class B territory. No documentation-software carve-out was found, and the market corroborates the read:
 
-The argument is not that this product escapes the question — it is that **the architecture is the compliance strategy**: a versioned deterministic trigger list is auditable in a way a prompt is not, ID-constrained citations make hallucinated references structurally impossible, the doctor-approval state transition is a documented risk control with an audit event, and the transcription-bound `diagnosis` field is the intended-purpose hinge. The Act 737 intended-purpose statement is written out in `docs/prd.md` §11. This is a prototype, is not placed on the market, and is not for clinical use.
+| Vendor                       | What They Do About It                            |
+| ---------------------------- | ------------------------------------------------ |
+| **Microsoft Dragon Copilot** | Hard-codes refusal of clinical-decision prompts  |
+| **Heidi**                    | Withholds its Evidence feature in the UK and EU  |
+| **Tortus**                   | Carries UKCA Class IIa                           |
+| **Qmed Asia**                | Already holds ISO 13485 and MDA approval locally |
+
+The bar is real and it is clearable. The argument is not that this product escapes the question, it is that **the architecture is the compliance strategy**:
+
+- A versioned deterministic trigger list is auditable in a way a prompt is not
+- ID-constrained citations make hallucinated references structurally impossible
+- The doctor-approval state transition is a documented risk control with an audit event
+- The transcription-bound `diagnosis` field is the intended-purpose hinge
+
+The Act 737 intended-purpose statement is written out in `docs/prd.md` §11. This is a prototype, is not placed on the market, and is not for clinical use.
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
 
 ---
 
@@ -333,6 +453,8 @@ Stated plainly, because an evaluator learns more from these than from the featur
 
 Fuller treatment in `docs/prd.md` §12; every unresolved engineering question is enumerated in `docs/trd.md` §19.
 
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+
 ---
 
 ## 📂 Repo Layout
@@ -355,6 +477,8 @@ docs/            product and workflow docs
 ```
 
 The load-bearing module rule: **no module outside `backend/src/lib/llm/` may import an LLM provider SDK directly** (`docs/trd.md` §2).
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
 
 ---
 
@@ -402,6 +526,8 @@ Port 5434 rather than 5432 because 5432 and 5433 are commonly already bound. Ove
 - `PORT` defaults to `3001`, which is commonly taken (Grafana, other dev servers). Set `PORT` and `BETTER_AUTH_URL` together if you move it — better-auth's URL must match the origin the API actually serves on.
 - Migrations run from a developer machine against `DIRECT_URL` (`:5432`); the app itself runs on the pooled `DATABASE_URL` (`:6543`).
 
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+
 ---
 
 ## 📁 Documentation Map
@@ -414,6 +540,8 @@ Port 5434 rather than 5432 because 5432 and 5433 are commonly already bound. Ove
 | [`dpia.md`](./dpia.md)                    | Production data-flow, PDPA engineering assessment, retention, rights, and residual risks   |
 | [`superpowers/research/`](./superpowers/) | The research phase behind the positioning and clinical claims, graded by evidence strength |
 | [`../AGENTS.md`](../AGENTS.md)            | Contributor and agent working conventions, canonical for every tool                        |
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
 
 ---
 
@@ -432,13 +560,20 @@ Port 5434 rather than 5432 because 5432 and 5433 are commonly already bound. Ove
   </tr>
 </table>
 
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+
 ---
 
 ## 🤝 AI Disclosure
 
 This prototype was produced with AI coding assistants under human direction, in the pipeline described in [`../AGENTS.md`](../AGENTS.md), with two human gates: a plan is approved before implementation, and a diff is reviewed before it ships. No commit reaches `main` without human authorization.
 
-The same discipline the product enforces was applied to building it. Figures in this document are measured rather than recalled, and where a number could not be verified it was left out rather than estimated. Where a measurement contradicted a claim already written down, the claim was withdrawn rather than softened. The ASR translation claim in Known Limitations and the copilot phantom-click figure in `docs/trd.md` §25 are both recorded that way.
+The same discipline the product enforces was applied to building it:
+
+- Figures here are **measured rather than recalled**. Where a number could not be verified it was left out, not estimated.
+- Where a measurement contradicted a claim already written down, the claim was **withdrawn rather than softened**. The ASR translation claim in Known Limitations and the copilot phantom-click figure in `docs/trd.md` §25 are both recorded that way.
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
 
 ---
 
@@ -447,3 +582,5 @@ The same discipline the product enforces was applied to building it. Figures in 
 Conventional Commits, enforced by commitlint: `<type>[scope]: <description>`.
 
 `main` is shared by two developers — `git pull --rebase` before pushing.
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
