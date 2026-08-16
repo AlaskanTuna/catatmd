@@ -116,7 +116,7 @@ function DispositionControl({
           >
             Confirm Dismissal
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setMode('settled')}>
+          <Button size="sm" variant="neutral" onClick={() => setMode('settled')}>
             Cancel
           </Button>
         </div>
@@ -135,12 +135,12 @@ function DispositionControl({
       >
         {acknowledgeLabel}
       </Button>
-      <Button size="sm" variant="ghost" onClick={() => setMode('reason')}>
+      <Button size="sm" variant="neutral" onClick={() => setMode('reason')}>
         Dismiss
       </Button>
       <Button
         size="sm"
-        variant="ghost"
+        variant="neutral"
         onClick={() => {
           onDecide({ id: findingId, state: 'not_applicable' })
           setMode('settled')

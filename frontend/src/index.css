@@ -82,6 +82,20 @@
    * the dropover triggers. */
   --color-sunken-soft: color-mix(in oklab, var(--color-sunken) 60%, var(--color-surface));
 
+  /* The destructive counterpart, mixed the same way and for the same reason.
+   * `danger` used to sit on `bg-surface` with a red border, which on a card of
+   * the identical colour left the fill doing nothing and the border carrying
+   * the whole signal. Held lighter than the accent pair at 10% and 16%: red at
+   * 12% over white reads as a filled warning rather than as a tint, and this
+   * variant has to stay quieter than `primary` while still being the most
+   * visible thing in a confirm dialog. */
+  --color-emergency-soft: color-mix(in oklab, var(--color-emergency) 10%, var(--color-surface));
+  --color-emergency-soft-hover: color-mix(
+    in oklab,
+    var(--color-emergency) 16%,
+    var(--color-surface)
+  );
+
   /* The two stops of the coachmark ring's gradient. Same hue as the accent so
    * the tour reads as part of the product, separated on lightness and chroma
    * rather than hue so the travelling highlight is legible at 50% opacity. */
@@ -533,6 +547,40 @@
     background-color: var(--color-ground);
     background-image: radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 0);
     background-size: 18px 18px;
+  }
+
+  /*
+   * The sign-in brand pane's textured ground.
+   *
+   * A flat `bg-accent` fill is what the pane had, and at half the viewport it
+   * read as a slab of colour. The canvas gives it a surface without giving it a
+   * picture: woven fibre and a faint dyed wash, no imagery, nothing that
+   * competes with the three claims sitting on it.
+   *
+   * **Two files, because the pane inverts rather than darkens.** In dark theme
+   * `--color-accent` goes light and `--color-accent-ink` goes near-black, so the
+   * panel becomes a bright teal card carrying dark text. A single darkened image
+   * would put dark text on a dark ground. Each file is generated at the theme's
+   * own accent lightness and measured against the text colour it actually
+   * carries.
+   *
+   * `--color-accent` stays underneath as `background-color`: it is what shows
+   * while the image loads, and what remains if it fails, so the pane is never
+   * unstyled and the text never lands on bare white.
+   *
+   * The theme provider resolves `system` to an explicit `light` or `dark` before
+   * writing `data-theme`, so this one selector is the whole story and no
+   * `prefers-color-scheme` fallback is needed.
+   */
+  .auth-canvas {
+    background-color: var(--color-accent);
+    background-image: url('/art/auth-canvas-light.webp');
+    background-position: center;
+    background-size: cover;
+  }
+
+  :root[data-theme='dark'] .auth-canvas {
+    background-image: url('/art/auth-canvas-dark.webp');
   }
 
   .reveal-page {

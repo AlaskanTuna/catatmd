@@ -4,6 +4,7 @@ import { ExternalLink, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { api } from '../lib/api.js'
 import { Card, Skeleton } from '../ui/Card.js'
+import { InfoTip } from '../ui/InfoTip.js'
 import { PageHeader } from '../ui/PageHeader.js'
 import { Select } from '../ui/Select.js'
 
@@ -100,13 +101,33 @@ export function Guidelines() {
 
       {guidelines.data && (
         <>
-          <Card data-tour="corpus" className="mt-6 p-5">
+          {/*
+            The claim, not the essay.
+
+            This was a five-line paragraph in its own card, and four of those
+            lines explained rather than asserted. What has to be visible is the
+            claim a reader came here to check, and the count that makes it
+            checkable; how parse-time rejection works and who wrote the
+            summaries are elaboration, and elaboration belongs behind the tip.
+
+            `data-tour="corpus"` stays on this element: the tour points a
+            coachmark at it, and moving the anchor would leave the final step
+            highlighting nothing.
+          */}
+          <Card data-tour="corpus" className="mt-6 flex items-start gap-2 p-5">
             <p className="text-sm leading-relaxed text-ink-muted">
               A suggestion carries a guideline ID, never free text. The model is given only these{' '}
               <span className="font-medium text-ink">{all.length} entries</span> and can cite
-              nothing else, so a fabricated reference is rejected at parse time rather than caught
-              by review. Summaries below are ours; follow the link for the source document.
+              nothing else.
             </p>
+            <InfoTip label="How the citation constraint is enforced" align="right">
+              The request-time schema narrows the citation field to exactly the IDs above, so a
+              reference naming anything else fails validation inside the adapter and the suggestion
+              never reaches the doctor. It is rejected at parse time rather than caught in review,
+              which is what makes a hallucinated reference structurally impossible rather than
+              merely unlikely. The summaries below are ours, written from the source documents;
+              follow each link for the document itself.
+            </InfoTip>
           </Card>
 
           {/* Search narrows what is shown, never what the model is given. The
