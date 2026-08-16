@@ -132,9 +132,6 @@ export function Login() {
             <h1 className="text-2xl font-semibold tracking-tight">
               {mode === 'signin' ? 'Sign In' : 'Create an Account'}
             </h1>
-            <p className="mt-2 text-sm text-ink-muted">
-              All consultations in this prototype are simulated. No real patient data.
-            </p>
 
             {/* Not attached to either sign-in path, because it is neither's
                 fault: the credential was accepted and the browser dropped the
