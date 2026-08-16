@@ -549,6 +549,40 @@
     background-size: 18px 18px;
   }
 
+  /*
+   * The sign-in brand pane's textured ground.
+   *
+   * A flat `bg-accent` fill is what the pane had, and at half the viewport it
+   * read as a slab of colour. The canvas gives it a surface without giving it a
+   * picture: woven fibre and a faint dyed wash, no imagery, nothing that
+   * competes with the three claims sitting on it.
+   *
+   * **Two files, because the pane inverts rather than darkens.** In dark theme
+   * `--color-accent` goes light and `--color-accent-ink` goes near-black, so the
+   * panel becomes a bright teal card carrying dark text. A single darkened image
+   * would put dark text on a dark ground. Each file is generated at the theme's
+   * own accent lightness and measured against the text colour it actually
+   * carries.
+   *
+   * `--color-accent` stays underneath as `background-color`: it is what shows
+   * while the image loads, and what remains if it fails, so the pane is never
+   * unstyled and the text never lands on bare white.
+   *
+   * The theme provider resolves `system` to an explicit `light` or `dark` before
+   * writing `data-theme`, so this one selector is the whole story and no
+   * `prefers-color-scheme` fallback is needed.
+   */
+  .auth-canvas {
+    background-color: var(--color-accent);
+    background-image: url('/art/auth-canvas-light.webp');
+    background-position: center;
+    background-size: cover;
+  }
+
+  :root[data-theme='dark'] .auth-canvas {
+    background-image: url('/art/auth-canvas-dark.webp');
+  }
+
   .reveal-page {
     position: relative;
     z-index: var(--z-sticky);

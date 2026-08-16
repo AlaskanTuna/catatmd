@@ -4,6 +4,7 @@ import { type FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ApiError, api } from '../lib/api.js'
 import { Button } from '../ui/Button.js'
+import { CursorGlow } from '../ui/CursorGlow.js'
 import { Mark } from '../ui/Mark.js'
 import { ThemeToggle } from '../ui/ThemeToggle.js'
 import { Wordmark } from '../ui/Wordmark.js'
@@ -73,7 +74,7 @@ export function Login() {
         them with restraint, so this is the credential row given room, not a
         gradient with a logo on it.
       */}
-      <aside className="relative hidden w-1/2 flex-col justify-between bg-accent p-10 lg:flex">
+      <aside className="auth-canvas relative hidden w-1/2 flex-col justify-between p-10 lg:flex">
         <Link to="/" className="flex items-center gap-2.5 text-accent-ink">
           <Mark className="size-6" />
           <Wordmark tone="inverse" className="text-xl" />
@@ -94,7 +95,27 @@ export function Login() {
         </div>
       </aside>
 
-      <main className="flex w-full flex-col lg:w-1/2">
+      {/*
+        The form pane gets the app's own ground: the dot grid, and the pointer
+        trail that runs on it everywhere else.
+
+        Sign-in was the one screen with a plain fill, so it read as a different
+        product from both the marketing pages and the dashboard it leads to. The
+        grid is what makes it the same surface.
+
+        `relative` is required rather than incidental. `.cursor-glow` is
+        `position: fixed` with `z-index: -1`, which paints it after this pane's
+        own background and before its content, so the trail washes over the grid
+        and passes behind the form. Without a positioned ancestor it would paint
+        against the document instead and the pane's background would cover it.
+
+        The trail gates itself on `(any-pointer: fine) and (min-width: 48rem)`,
+        so touch devices and the mobile layout never run it. That is inside
+        `CursorGlow` rather than here, so the rule cannot drift between the
+        three places it is now mounted.
+      */}
+      <main className="dot-grid relative flex w-full flex-col lg:w-1/2">
+        <CursorGlow />
         <div className="flex items-center justify-between px-6 py-6">
           <Link
             to="/"
