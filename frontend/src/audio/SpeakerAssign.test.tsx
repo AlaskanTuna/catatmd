@@ -11,7 +11,7 @@ const DRAFT: DraftLine[] = [
   { id: 'seg-1', speaker: 'patient', text: 'Yesterday quite hot.', offsetSeconds: 2.1 },
 ]
 
-function setup(draft: DraftLine[] = DRAFT) {
+function setup(draft: DraftLine[] = DRAFT, canInsertPlain = true) {
   const handlers = {
     onToggle: vi.fn(),
     onReplace: vi.fn(),
@@ -19,7 +19,7 @@ function setup(draft: DraftLine[] = DRAFT) {
     onApply: vi.fn(),
     onInsertPlain: vi.fn(),
   }
-  render(<SpeakerAssign draft={draft} {...handlers} />)
+  render(<SpeakerAssign draft={draft} canInsertPlain={canInsertPlain} {...handlers} />)
   return handlers
 }
 
@@ -43,7 +43,7 @@ describe('SpeakerAssign', () => {
     const { onSwapAll, onApply, onInsertPlain } = setup()
     fireEvent.click(screen.getByRole('button', { name: /swap all/i }))
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
-    fireEvent.click(screen.getByRole('button', { name: /insert as plain/i }))
+    fireEvent.click(screen.getByRole('button', { name: /append as plain/i }))
     expect(onSwapAll).toHaveBeenCalledTimes(1)
     expect(onApply).toHaveBeenCalledTimes(1)
     expect(onInsertPlain).toHaveBeenCalledTimes(1)
@@ -73,5 +73,24 @@ describe('SpeakerAssign', () => {
     fireEvent.click(chips[1] as HTMLElement)
     expect(onReplace).toHaveBeenCalledTimes(1)
     expect(onReplace).toHaveBeenCalledWith('seg-0', 'patut pagi, batuk malam')
+  })
+})
+
+/*
+ * Appending unlabelled text is only ever a continuation: the parser folds a
+ * line with no prefix into the turn above it and drops it when there is none.
+ * Offered on an empty transcript it produced zero turns and disabled Start
+ * Consultation, so the doctor blocked themselves with the button beside the
+ * one that works.
+ */
+describe('the plain-text control', () => {
+  it('is hidden when there is no turn for the text to join', () => {
+    setup(DRAFT, false)
+    expect(screen.queryByRole('button', { name: /plain text/i })).toBeNull()
+  })
+
+  it('is offered once the transcript already has a turn', () => {
+    setup(DRAFT, true)
+    expect(screen.getByRole('button', { name: /plain text/i })).toBeTruthy()
   })
 })

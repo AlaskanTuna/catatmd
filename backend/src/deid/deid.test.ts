@@ -2,7 +2,12 @@ import type { Transcript } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import { FIXTURES } from '../fixtures/index.js'
 import { detect } from './detectors.js'
-import { assertNoIdentifiers, deidentify, deidentifyTranscript } from './index.js'
+import {
+  assertNoIdentifiers,
+  deidentify,
+  deidentifyTranscript,
+  sliceDeidentified,
+} from './index.js'
 import { isStructurallyValidNric } from './nric.js'
 import { RequestTokenVault } from './vault.js'
 
@@ -830,5 +835,67 @@ describe('addresses tokenise whole, postcode or not (#181)', () => {
     // address must not annex the first Title-Cased word of the next line.
     const { text } = deidentify('She lives at Taman Melati 3\nPanadol was given.')
     expect(text).toContain('Panadol was given.')
+  })
+})
+
+/*
+ * Slicing happens after the gate, never before it, because detection is
+ * context-sensitive: `Ahmad Ismail` is one PATIENT span only while the two
+ * words are adjacent. De-identifying chunk by chunk would let an identifier
+ * straddling a boundary through, so the whole text is gated once and the
+ * result is cut.
+ */
+describe('sliceDeidentified', () => {
+  const gated = (text: string) => deidentify(text).text
+
+  it('returns the value untouched when it already fits', () => {
+    const content = gated('doctor good morning patient i have a cough')
+    expect(sliceDeidentified(content, 600)).toEqual([content])
+  })
+
+  it('cuts only on whitespace, so every piece is a substring of the whole', () => {
+    const content = gated('one two three four five six seven eight nine ten eleven twelve')
+    for (const piece of sliceDeidentified(content, 20)) {
+      expect(content).toContain(piece)
+    }
+  })
+
+  it('loses no word across the cuts', () => {
+    const content = gated('one two three four five six seven eight nine ten eleven twelve')
+    const words = (text: string) => text.split(/\s+/).filter(Boolean)
+    expect(sliceDeidentified(content, 20).flatMap(words)).toEqual(words(content))
+  })
+
+  /*
+   * The case that matters most: a vault token split into `[PATIENT` and `_1]`
+   * would stop matching the token pattern, and `assertNoIdentifiers` strips
+   * tokens before re-running detection, so a broken one could read as a leaked
+   * identifier or slip past as ordinary words.
+   */
+  it('never splits a vault token, at any budget', () => {
+    const content = gated('Ahmad bin Ismail called about his cough and his fever today')
+    expect(content).toMatch(/\[PATIENT_1\]/)
+    for (let budget = 4; budget < content.length; budget += 1) {
+      for (const piece of sliceDeidentified(content, budget)) {
+        expect(piece).not.toMatch(/\[[A-Z]+_\d*$/)
+        expect(piece).not.toMatch(/^_?\d*\]/)
+      }
+    }
+  })
+
+  it('ships a single word longer than the budget whole rather than cutting it', () => {
+    const content = gated('supercalifragilisticexpialidocious cough')
+    const pieces = sliceDeidentified(content, 5)
+    expect(pieces.some((piece) => piece.includes('supercalifragilisticexpialidocious'))).toBe(true)
+    expect(pieces.flatMap((piece) => piece.split(/\s+/)).filter(Boolean)).toEqual(
+      content.split(/\s+/).filter(Boolean),
+    )
+  })
+
+  it('yields no empty piece, whatever the whitespace looks like', () => {
+    const content = gated('one   two \n\n three    four')
+    for (const piece of sliceDeidentified(content, 6)) {
+      expect(piece.trim()).not.toBe('')
+    }
   })
 })

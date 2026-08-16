@@ -131,6 +131,42 @@ function classify(
   return previous.speaker
 }
 
+/**
+ * The same rules applied to prose alone, for a transcript that arrives with no
+ * timing and no server-drafted labels.
+ *
+ * That is the hosted path whenever the labelling pass does not return: the
+ * relay sends no segments, so `segmentsToDraft` refuses at its first line, and
+ * the doctor was left holding an unlabelled block that `parseTranscript` reads
+ * as zero turns. Start Consultation is disabled on exactly that condition, so
+ * the documented "falls back to the unlabelled prose" was in practice a dead
+ * end: the recording succeeded, was billed, and could not be used.
+ *
+ * A guess the doctor corrects is the right floor here, because it is already
+ * what the labelled path produces. Both drafts land in the same review step
+ * with the same per-line flip and swap-all, and neither is a claim about who
+ * spoke until the doctor applies it.
+ *
+ * No offsets, ever. Prose carries no timing, and inventing one would assert a
+ * wrong time in the evidence trace, which is the rule the split-line branch of
+ * `segmentsToDraft` already follows.
+ */
+export function proseToDraft(fullText: string): DraftLine[] {
+  const text = normalise(fullText)
+  if (text === '') return []
+
+  const lines: DraftLine[] = []
+  let previous: { speaker: Speaker; text: string } | undefined
+  for (const sentence of splitSentences(text)) {
+    const speaker = classify(sentence, previous)
+    previous = { speaker, text: sentence }
+    const last = lines.at(-1)
+    if (last && last.speaker === speaker) last.text = `${last.text} ${sentence}`
+    else lines.push({ id: `prose-${lines.length}`, speaker, text: sentence })
+  }
+  return lines
+}
+
 export function segmentsToDraft(
   segments: readonly TranscriptSegment[],
   fullText: string,
