@@ -175,6 +175,32 @@ vi.mock('../lib/prisma.js', () => ({
           return { ...row }
         },
       ),
+      /*
+       * Honours the whole `where`, not just the id. The analyse path names an
+       * unnamed consultation with `where: { id, title: null }`, and a stub that
+       * ignored the predicate would write the title unconditionally and report
+       * the check-and-set as working when it was not.
+       */
+      updateMany: vi.fn(
+        async ({
+          where,
+          data,
+        }: {
+          where: { id: string; title?: string | null }
+          data: Record<string, unknown>
+        }) => {
+          const row = store.get(where.id)
+          if (!row) return { count: 0 }
+          // Only the predicates actually present filter, exactly as Prisma
+          // behaves. Comparing an absent `title` against the row's would make
+          // dropping the predicate match nothing, so removing the guard would
+          // fail the plain "names an unnamed consultation" test rather than
+          // the race test written to catch it.
+          if ('title' in where && row.title !== where.title) return { count: 0 }
+          store.set(where.id, { ...row, ...data, updatedAt: new Date() })
+          return { count: 1 }
+        },
+      ),
     },
     // Issue #26: an approved consultation names the clinician who approved it,
     // so the detail serialiser resolves the owning doctor. Only reached once
@@ -220,6 +246,10 @@ function seed(status: string, extra: Record<string, unknown> = {}) {
     id: 'c1',
     doctorId: 'doctor-1',
     status,
+    // Null rather than absent, because that is what the column returns for a
+    // consultation nobody has named. A factory that omits it would let a route
+    // reading `row.title` pass here and fail against Postgres.
+    title: null,
     transcript: TRANSCRIPT,
     analysis: null,
     editedNote: null,
@@ -263,6 +293,54 @@ const call = (method: string, path: string, body?: unknown) =>
     },
     body: body ? JSON.stringify(body) : undefined,
   })
+
+describe('the title analysis derives', () => {
+  it('names an unnamed consultation from its own findings', async () => {
+    seed('draft')
+
+    await call('POST', '/api/consultations/c1/analyze')
+
+    // Composed from the assertion keys, so it is clinical vocabulary from
+    // `shared/` and carries nothing either speaker said.
+    expect(store.get('c1')?.title).toEqual(expect.any(String))
+  })
+
+  /*
+   * The doctor's name wins, and the check is at write time rather than against
+   * the row this handler read.
+   *
+   * A record is renameable in every state it appears in, `analyzing` included,
+   * and analysis can run for a couple of minutes. So renaming a row while it
+   * analyses is an ordinary sequence, and a stale-read guard would let the
+   * derived name overwrite the one the doctor had just chosen.
+   */
+  it('does not overwrite a name the doctor set while the analysis was running', async () => {
+    seed('draft')
+
+    // Stands in for the rename landing mid-run: the row is named after this
+    // handler has read it and before it writes the derived one.
+    const renameMidRun = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        const row = store.get('c1')
+        if (row) store.set('c1', { ...row, title: 'Mrs Tan, follow-up' })
+        resolve()
+      }, 0)
+    })
+
+    const [res] = await Promise.all([call('POST', '/api/consultations/c1/analyze'), renameMidRun])
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')?.title).toBe('Mrs Tan, follow-up')
+  })
+
+  it('leaves a name alone on re-analysis', async () => {
+    seed('awaiting_review', { title: 'Filed under this' })
+
+    await call('POST', '/api/consultations/c1/analyze')
+
+    expect(store.get('c1')?.title).toBe('Filed under this')
+  })
+})
 
 describe('state machine — analyze', () => {
   it.each(['draft', 'awaiting_review'])('is allowed from %s', async (status) => {
@@ -406,6 +484,99 @@ describe('analyse output', () => {
     ).toMatchObject({
       profileId: 'adult-acute-uncomplicated-uti',
     })
+  })
+})
+
+/*
+ * Renaming is filing, not clinical editing, and the difference is what decides
+ * which rules apply to it.
+ */
+describe('renaming a consultation', () => {
+  it('stores the new name and records it as its own audit action', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    const res = await call('PATCH', '/api/consultations/c1', { title: 'Cough, sore throat' })
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')).toMatchObject({ title: 'Cough, sore throat' })
+    // Not `consultation.edited`: a trail that cannot tell a rename from a note
+    // change loses the distinction on the one field editable after sign-off.
+    expect(audits.map((a) => a.action)).toContain('consultation.renamed')
+    expect(audits.map((a) => a.action)).not.toContain('consultation.edited')
+  })
+
+  it('collapses a blank name to null, so cleared and never-named are one state', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS, title: 'Something' })
+
+    const res = await call('PATCH', '/api/consultations/c1', { title: '   ' })
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')).toMatchObject({ title: null })
+  })
+
+  it('rejects a name past the bound rather than storing it', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    const res = await call('PATCH', '/api/consultations/c1', { title: 'x'.repeat(121) })
+
+    expect(res.status).toBe(400)
+  })
+
+  /*
+   * The deliberate exception to the terminal state, and the reason it is safe.
+   *
+   * `approved` freezes the clinical record. A filing name is not part of that
+   * record: it carries no note text, no finding and no disposition. Locking it
+   * would make the archive unsearchable at exactly the point it becomes an
+   * archive, since the consultations somebody needs to find later are the
+   * signed ones.
+   */
+  /*
+   * The rule, stated as a rule rather than as four cases: if a record is
+   * visible in the list, it can be named. A doctor scanning that list is
+   * looking at drafts and analysing rows alongside finished ones, and a name is
+   * how they tell any of them apart, so a state that renders but cannot be
+   * renamed is the state most in need of a name.
+   */
+  it('renames a consultation in every state it can appear in the list', async () => {
+    for (const status of ['draft', 'analyzing', 'awaiting_review', 'approved']) {
+      audits.length = 0
+      seed(status, {
+        analysis: ANALYSIS,
+        ...(status === 'approved' ? { approvedAt: new Date() } : {}),
+      })
+
+      const res = await call('PATCH', '/api/consultations/c1', { title: `Named while ${status}` })
+
+      expect(res.status, status).toBe(200)
+      expect(store.get('c1'), status).toMatchObject({ title: `Named while ${status}` })
+    }
+  })
+
+  it('renames an approved consultation, which is the one edit sign-off allows', async () => {
+    seed('approved', { analysis: ANALYSIS, approvedAt: new Date() })
+
+    const res = await call('PATCH', '/api/consultations/c1', { title: 'Filed under this' })
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')).toMatchObject({ title: 'Filed under this' })
+  })
+
+  it('still refuses clinical content on an approved consultation', async () => {
+    seed('approved', { analysis: ANALYSIS, approvedAt: new Date() })
+
+    expect(
+      (await call('PATCH', '/api/consultations/c1', { editedNote: { plan: 'No' } })).status,
+    ).toBe(409)
+    // And a rename cannot be used to smuggle one through alongside it.
+    expect(
+      (
+        await call('PATCH', '/api/consultations/c1', {
+          title: 'Still no',
+          editedNote: { plan: 'No' },
+        })
+      ).status,
+    ).toBe(409)
   })
 })
 

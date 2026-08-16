@@ -23,6 +23,7 @@ import { GapCard, RedFlagCard, SuggestionCard } from '../review/SafetyCards.js'
 import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
+import { RenameField } from '../ui/RenameField.js'
 
 /** The current decision about a finding, or `undefined` if none was made. */
 function byId(dispositions: Disposition[], id: string): Disposition | undefined {
@@ -114,6 +115,24 @@ export function ConsultationReview() {
     invalidate(next)
     toast.success('Note approved. This record is now final.')
   }
+
+  /** Matches the consultation list's format, so one record reads the same in both. */
+  const formatCreated = (value: Date) =>
+    new Intl.DateTimeFormat('en-MY', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(value)
+
+  const rename = useMutation({
+    mutationFn: (title: string | null) => api.patch(id, { title }),
+    onSuccess: (next) => {
+      invalidate(next)
+      void queryClient.invalidateQueries({ queryKey: ['consultations'] })
+    },
+    onError: () => toast.error('That name could not be saved.'),
+  })
 
   /*
    * Analysis is the one action in this product that takes real time and then
@@ -275,7 +294,32 @@ export function ConsultationReview() {
             </li>
           </ol>
         }
-        subtitle={<span className="font-mono text-xs">{detail.id}</span>}
+        /*
+         * The record's name sits here rather than replacing the page heading.
+         * `PageHeader.title` names the screen, and every other page uses it that
+         * way; swapping in a per-record value on this one page would make the
+         * heading mean something different here than everywhere else.
+         *
+         * Renaming is offered on an approved consultation too. The API allows
+         * it deliberately, because a filing name is not part of the record that
+         * sign-off freezes, and the archive has to stay searchable.
+         */
+        subtitle={
+          isEphemeral ? (
+            <span className="font-mono text-xs">{detail.id}</span>
+          ) : (
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <RenameField
+                value={detail.title}
+                fallback={formatCreated(detail.createdAt)}
+                label="Rename this consultation"
+                textClassName="text-sm font-medium text-ink"
+                onSave={(title) => rename.mutate(title)}
+              />
+              <span className="font-mono text-xs">{detail.id}</span>
+            </span>
+          )
+        }
         art="/art/review.webp"
         actions={
           <>

@@ -120,6 +120,22 @@ model Consultation {
   doctorId String
   doctor   User   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
 
+  /// The record's filing name, shown wherever the consultation is listed.
+  ///
+  /// **A fourth PHI column, and erased with the other three.** It is derived
+  /// from the analysis at first run and freely editable afterwards, so a doctor
+  /// will put a patient's name in it; that is the feature working, not a
+  /// misuse. `eraseConsultation` nulls it alongside `transcript`, `analysis`
+  /// and `editedNote`, and the same rule applies to anything added here later.
+  ///
+  /// Null means never named, and the UI falls back to the created timestamp
+  /// rather than storing one, so an un-analysed draft has no title to erase and
+  /// a title always means somebody or something chose it.
+  ///
+  /// Never reaches a provider. It is composed in-process from assertions that
+  /// already passed the evidence check, and no prompt reads it.
+  title      String?
+
   /// Transcript turns, shape validated by TranscriptSchema in @shared/types.
   transcript Json?
   /// ConsultationAnalysisSchema — regenerated on re-analysis.

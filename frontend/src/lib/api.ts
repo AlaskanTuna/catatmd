@@ -168,6 +168,7 @@ export const api = {
   patch: (
     id: string,
     body: {
+      title?: string | null
       editedNote?: Partial<SoapNote>
       acknowledgedRedFlagIds?: string[]
       reviewedGapIds?: string[]
