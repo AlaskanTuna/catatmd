@@ -11,14 +11,15 @@ const DRAFT: DraftLine[] = [
   { id: 'seg-1', speaker: 'patient', text: 'Yesterday quite hot.', offsetSeconds: 2.1 },
 ]
 
-function setup() {
+function setup(draft: DraftLine[] = DRAFT) {
   const handlers = {
     onToggle: vi.fn(),
+    onReplace: vi.fn(),
     onSwapAll: vi.fn(),
     onApply: vi.fn(),
     onInsertPlain: vi.fn(),
   }
-  render(<SpeakerAssign draft={DRAFT} {...handlers} />)
+  render(<SpeakerAssign draft={draft} {...handlers} />)
   return handlers
 }
 
@@ -46,5 +47,31 @@ describe('SpeakerAssign', () => {
     expect(onSwapAll).toHaveBeenCalledTimes(1)
     expect(onApply).toHaveBeenCalledTimes(1)
     expect(onInsertPlain).toHaveBeenCalledTimes(1)
+  })
+
+  it('hints a measured mishear and reports the corrected line on tap, touching nothing else', () => {
+    const { onReplace, onToggle } = setup([
+      { id: 'seg-0', speaker: 'patient', text: 'Patut sudah empat hari.' },
+    ])
+    fireEvent.click(screen.getByRole('button', { name: 'Replace Patut with Batuk' }))
+    expect(onReplace).toHaveBeenCalledTimes(1)
+    expect(onReplace).toHaveBeenCalledWith('seg-0', 'Batuk sudah empat hari.')
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('renders no correction chip on lines without a lexicon hit', () => {
+    setup()
+    expect(screen.queryByRole('button', { name: /^replace /i })).toBeNull()
+  })
+
+  it('renders an independently tappable chip per occurrence of one mishear', () => {
+    const { onReplace } = setup([
+      { id: 'seg-0', speaker: 'patient', text: 'patut pagi, patut malam' },
+    ])
+    const chips = screen.getAllByRole('button', { name: 'Replace patut with batuk' })
+    expect(chips).toHaveLength(2)
+    fireEvent.click(chips[1] as HTMLElement)
+    expect(onReplace).toHaveBeenCalledTimes(1)
+    expect(onReplace).toHaveBeenCalledWith('seg-0', 'patut pagi, batuk malam')
   })
 })

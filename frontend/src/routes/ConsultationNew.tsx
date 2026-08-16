@@ -243,6 +243,13 @@ export function ConsultationNew() {
                     current ? current.map((line) => (line.id === id ? flip(line) : line)) : current,
                   )
                 }
+                onReplace={(id, nextText) =>
+                  setDraft((current) =>
+                    current
+                      ? current.map((line) => (line.id === id ? { ...line, text: nextText } : line))
+                      : current,
+                  )
+                }
                 onSwapAll={() => setDraft((current) => (current ? current.map(flip) : current))}
                 onApply={() => {
                   if (!draft) return
