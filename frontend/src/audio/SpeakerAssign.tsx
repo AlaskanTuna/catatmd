@@ -86,6 +86,8 @@ export function SpeakerAssign({
    */
   canInsertPlain: boolean
 }) {
+  const undraftedCount = draft.filter((line) => line.undrafted).length
+
   return (
     <div className="mt-4 border-t border-line pt-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -118,24 +120,47 @@ export function SpeakerAssign({
       <p className="mt-1 text-xs text-ink-muted">
         Labels are guessed from what each sentence says, not from the voices, and can be wrong.
       </p>
+      {/*
+        Named rather than left to be discovered by scrolling. These are the
+        lines nothing labelled, and the count is the difference between the
+        doctor knowing to look for them and applying a placeholder unread.
+      */}
+      {undraftedCount > 0 && (
+        <p className="mt-1 text-xs font-medium text-urgent">
+          {undraftedCount} line{undraftedCount === 1 ? '' : 's'} could not be labelled and need
+          {undraftedCount === 1 ? 's' : ''} a speaker.
+        </p>
+      )}
 
       <ul className="mt-3 flex max-h-80 flex-col gap-1 overflow-y-auto pr-1">
         {draft.map((line) => (
           <li key={line.id} className="flex items-start gap-2 text-sm">
+            {/*
+              An undrafted line reads as a question, not as an answer. Nothing
+              labelled this span, so showing it as Doctor or Patient would be
+              the fabricated attribution the server refuses to send: the control
+              says so, and picking either side resolves it.
+            */}
             <button
               type="button"
               onClick={() => onToggle(line.id)}
-              aria-label={`${line.speaker === 'doctor' ? 'Doctor' : 'Patient'}, switch to ${
-                line.speaker === 'doctor' ? 'Patient' : 'Doctor'
-              }`}
+              aria-label={
+                line.undrafted
+                  ? `Needs a label, set to ${line.speaker === 'doctor' ? 'Doctor' : 'Patient'}`
+                  : `${line.speaker === 'doctor' ? 'Doctor' : 'Patient'}, switch to ${
+                      line.speaker === 'doctor' ? 'Patient' : 'Doctor'
+                    }`
+              }
               className={cn(
                 'inline-flex h-8 w-18 shrink-0 items-center justify-center rounded-control border text-xs font-semibold transition-colors',
-                line.speaker === 'doctor'
-                  ? 'border-accent/40 bg-accent-soft text-accent hover:bg-accent-soft-hover'
-                  : 'border-line bg-sunken text-ink-muted hover:bg-line/60',
+                line.undrafted
+                  ? 'border-dashed border-urgent/50 bg-urgent/10 text-urgent hover:bg-urgent/20'
+                  : line.speaker === 'doctor'
+                    ? 'border-accent/40 bg-accent-soft text-accent hover:bg-accent-soft-hover'
+                    : 'border-line bg-sunken text-ink-muted hover:bg-line/60',
               )}
             >
-              {line.speaker === 'doctor' ? 'Doctor' : 'Patient'}
+              {line.undrafted ? 'Set' : line.speaker === 'doctor' ? 'Doctor' : 'Patient'}
             </button>
             <p className="min-w-0 pt-1.5 leading-relaxed">
               {line.offsetSeconds !== undefined && (

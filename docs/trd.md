@@ -1833,7 +1833,16 @@ A real consultation is several thousand characters, so the pass failed on exactl
 
 Measured after, same 2,543-character unpunctuated Malay stream: **11 turns, both speakers, every word verbatim, 37.9 s**, against a 150 s client deadline.
 
-**Open:** partial success is not available. One rejected chunk still costs the transcript its server labels, where per-chunk reporting could keep the rest. That needs a contract field marking a turn as undrafted so the client can render it unlabelled rather than inheriting a guess, and is deliberately not bundled here.
+**A rejected chunk costs its own labels and nothing else.** Failing the whole pass was tried first and did not hold up: measured in production, a 2,543-character transcript still returned `draft_failed` at ~28 s, because all five chunks had to land. Chunking had shrunk the failure rather than removed it.
+
+The span now ships with its text intact and `undrafted` set on the turn:
+
+- **The marker is server-set only.** `reconstructTurns` builds every returned turn from scratch, so a model emitting `undrafted` is ignored; pinned by a test.
+- **`speaker` is a placeholder on those turns**, which is exactly what the marker tells the client not to trust. It is never merged into a labelled neighbour, because hiding it inside one would defeat the point.
+- **The client renders it as needing a label**, not as a drafted one, and names the count above the list. Resolving it is the doctor's tap.
+- **Every chunk failing is still a failure**, so a model outage or a systematically rejected echo surfaces as `draft_failed` rather than as a transcript with no labels.
+
+Verified against the real provider on the same 2,543-character stream, in a run where one chunk was genuinely rejected: **6 turns, both speakers, 1 marked undrafted, every word verbatim, 39.5 s**. The same run under the previous rule returned `draft_failed`.
 
 #### Failure Taxonomy And Fallback
 

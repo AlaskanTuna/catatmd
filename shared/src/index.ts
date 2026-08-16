@@ -101,6 +101,22 @@ export const HostedAsrResultSchema = z.object({
 export const DraftTurnSchema = z.object({
   speaker: SpeakerSchema,
   text: z.string().min(1).max(MAX_TURN_CHARACTERS),
+  /**
+   * Set when no label was drafted for this span and `speaker` is a placeholder.
+   *
+   * The labelling pass runs in chunks, and a chunk whose echo fails the
+   * verbatim reconstruction has no labels to give. The two alternatives were
+   * both wrong: failing the whole request threw away the labels every other
+   * chunk produced, and quietly giving the span its neighbour's speaker
+   * presents unlabelled patient speech as the doctor's with nothing marking it
+   * invented.
+   *
+   * So the span ships with its text intact and its uncertainty declared, and
+   * the client renders it as needing a label rather than as a drafted one.
+   * **Server-set only.** The model may emit this field and it is discarded:
+   * `reconstructTurns` builds each returned turn from scratch.
+   */
+  undrafted: z.boolean().optional(),
 })
 
 /**

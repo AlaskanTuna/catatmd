@@ -52,12 +52,18 @@ const CHUNK_CHARS = 600
  * comes back as two same-speaker turns. Merging keeps the review list showing
  * the speaker changes the doctor is there to check, rather than the places the
  * text happened to be cut.
+ *
+ * An undrafted span never merges into a drafted one, in either direction. The
+ * whole purpose of the marker is that the doctor can see which text nothing
+ * labelled, and folding it into a labelled neighbour would hide exactly that.
  */
 function mergeAdjacent(turns: readonly DraftTurn[]): DraftTurn[] {
   const merged: DraftTurn[] = []
   for (const turn of turns) {
     const last = merged.at(-1)
-    if (last && last.speaker === turn.speaker) last.text = `${last.text} ${turn.text}`
+    const joinable =
+      last !== undefined && last.speaker === turn.speaker && !last.undrafted && !turn.undrafted
+    if (joinable && last !== undefined) last.text = `${last.text} ${turn.text}`
     else merged.push({ ...turn })
   }
   return merged
@@ -71,29 +77,47 @@ export async function draftTurns(content: Deidentified): Promise<DraftTurn[]> {
    * gives this pass 150 s and the adapter allows 60 s plus one retry, so
    * sequential chunks would blow through both on any real consultation.
    *
-   * A rejected chunk keeps its text and loses only its labels, which is the
-   * point of chunking at all. The whole pass still fails if *every* chunk
-   * fails, so a broken model or a blocked egress is never dressed up as a
-   * successful draft.
-   */
-  /*
-   * A rejected chunk fails the whole pass rather than being papered over.
+   * **A rejected chunk costs its own labels and nothing else.** Measured in
+   * production, failing the whole pass on one rejection meant a 2,543-character
+   * transcript still returned `draft_failed` at ~28 s, because five chunks each
+   * had to land: chunking had shrunk the failure, not removed it.
    *
-   * The tempting alternative was to keep the other chunks' labels and give the
-   * rejected one its neighbour's speaker. That fabricates attribution: up to
-   * `CHUNK_CHARS` of patient speech is presented as the doctor's, nothing in
-   * the response marks it as invented, and it flows into the note and the
-   * red-flag engine that way. Doctor review does not redeem it, because what
-   * is being reviewed is an undisclosed guess.
-   *
-   * Failing is safe here precisely because the client's fallback is now a real
-   * one: it drafts labels on the device from the same prose and says on screen
-   * that they are guesses. An honest local guess beats a server guess wearing
-   * the model's authority.
+   * The chunk ships its text with `undrafted` set instead. It is the only
+   * option that neither throws away the labels the other chunks earned nor
+   * invents attribution for the one that failed, and the marker is what makes
+   * the difference: the span arrives declared as unlabelled rather than wearing
+   * a speaker nothing supports.
    */
-  const drafted = await mapWithLimit(chunks, MAX_CONCURRENT_CHUNKS, draftChunk)
+  const failures: DraftTurnsFailureReason[] = []
+  const drafted = await mapWithLimit(chunks, MAX_CONCURRENT_CHUNKS, async (chunk) => {
+    try {
+      return await draftChunk(chunk)
+    } catch (cause) {
+      // The egress guard fired before any provider call, so it is not a
+      // labelling outcome and must not be softened into one.
+      if (cause instanceof DeidentificationError) throw cause
+      failures.push(cause instanceof DraftTurnsError ? cause.reason : 'llm_failed')
+      return null
+    }
+  })
 
-  return mergeAdjacent(drafted.flat())
+  // Every chunk failing is a broken pass, not a draft with no labels: a model
+  // outage or a systematically rejected echo must still surface as a failure
+  // rather than as a transcript the doctor has to label from scratch.
+  if (drafted.every((result) => result === null)) {
+    throw new DraftTurnsError(failures[0] ?? 'llm_failed')
+  }
+
+  const labelled: DraftTurn[] = drafted.flatMap((result, index) => {
+    if (result !== null) return result
+    const text = chunks[index]?.trim()
+    if (text === undefined || text === '') return []
+    // `speaker` is required by the contract and is a placeholder here, which is
+    // precisely what `undrafted` tells the client not to trust.
+    return [{ speaker: 'doctor' as const, text, undrafted: true }]
+  })
+
+  return mergeAdjacent(labelled)
 }
 
 /**
