@@ -514,7 +514,25 @@ export const ConsultationTitleSchema = z
 export const ConsultationSchema = z.object({
   id: z.string(),
   status: ConsultationStatusSchema,
-  title: z.string().nullable(),
+  /*
+   * Absent reads as "no title", rather than failing the parse.
+   *
+   * Vercel and Render deploy from their own triggers on the same merge, so the
+   * new SPA reaches the old API for as long as the slower build takes. This
+   * field is the first thing added to the consultations list since, and the
+   * frontend `safeParse`s every response into `invalid_response`, so requiring
+   * it would black out the list and the detail page for that whole window.
+   *
+   * PR #124 shipped exactly this shape of mismatch and was caught by hand
+   * (`.github/workflows/ci.yml`, "Migration notice"). Tolerating an absent
+   * additive field is what makes the rollout ordering-independent.
+   *
+   * Output stays `string | null`, so nothing downstream handles `undefined`.
+   */
+  title: z
+    .string()
+    .nullish()
+    .transform((value) => value ?? null),
   createdAt: z.coerce.date(),
   updatedAt: z.coerce.date(),
   transcript: TranscriptSchema.nullable(),
