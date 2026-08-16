@@ -2,11 +2,11 @@
 graph TD
   REQ["POST /api/consultations/:id/analyze<br/>requireSession, then assertOwnedConsultation.<br/>A miss returns 404, never 403"]
 
-  subgraph API["Express API - Render, Singapore. Inside the trust boundary"]
+  subgraph API["Express API - Render. Inside the trust boundary"]
     direction TB
     DEID["deid/ - 7 pattern detectors, NRIC structural check, name gazetteer.<br/>Mints [PATIENT_1] and [NRIC_1] into a request-scoped vault"]
     RF["redflags/ - evaluateRedFlags over the RAW transcript.<br/>Pure function, in-process. Never egresses, so it needs no gate"]
-    NOTE["analysis/ - operation note_and_gaps<br/>SOAP scaffold, 29 fixed clinical facts, Malaysian operational block"]
+    NOTE["analysis/ - operations clinical_facts and note_and_gaps<br/>SOAP scaffold, 29 fixed clinical facts, Malaysian operational block"]
     SUGG["suggestions/ - operation suggestions_and_red_flags<br/>Model red-flag candidates and cited suggestions"]
     GL["guidelines/ - 11 chunks, one source per chunk"]
     LLMC["lib/llm/ - LLMClient, the ONLY egress point.<br/>DEID_FAIL_CLOSED re-scans the outbound payload<br/>and refuses to send if a detector fires"]
@@ -18,13 +18,13 @@ graph TD
     AUDIT["audit/ - detector labels, discarded field ids, provider / model / list versions.<br/>Never content"]
   end
 
-  PROV["LLM provider - Qwen on Model Studio, Singapore.<br/>Gemini and DeepSeek both throw at boot in production"]
+  PROV["LLM provider - Qwen on Model Studio, in-region endpoint.<br/>Gemini and DeepSeek both throw at boot in production"]
 
   REQ -->|"raw transcript"| DEID
   REQ -->|"raw transcript"| RF
   DEID -->|"Deidentified branded string"| NOTE
   DEID -->|"Deidentified branded string"| SUGG
-  NOTE -.->|"the two operations run concurrently"| SUGG
+  NOTE -.->|"all three calls run concurrently"| SUGG
   GL -->|"corpus ids narrow guidelineId to a z.enum, so a free-text citation fails decoding"| SUGG
   NOTE --> LLMC
   SUGG --> LLMC
