@@ -112,6 +112,27 @@ Both are committed in this repo, so "it's in the TRD" is a valid answer for impl
 
 `README.md` lives in **`docs/`**, not the repo root. GitHub renders `docs/README.md` as the repository landing page, so it is still the front door — keep links relative to `docs/`.
 
+### README Structure And Density
+
+The README is **scanned, not studied**. A reviewer decides what to read from headings, tables and bold lead-ins, so a section that is correct but dense is a section that does not get read. These rules apply to `docs/README.md` specifically, and are stricter than the general Conciseness rule above.
+
+**Density, in order of how often each is broken:**
+
+- **No prose block over four lines.** If a paragraph runs longer it is a list, a table, or two paragraphs. Split on the seam between the claim and its justification: the claim leads, the reasoning follows.
+- **Three or more consecutive bolded-lead-in paragraphs are a table.** A run of `**Claim.** explanation` blocks reads as a wall. Two columns, claim and how it is enforced, says the same thing and can be skimmed.
+- **An enumeration inside a sentence is a list.** Any sentence naming three or more vendors, fields, states, controls or absences belongs in bullets or a table. Semicolons separating list items are the tell.
+- **One idea per block.** A paragraph that states a rule, justifies it, and then cites a section is three blocks.
+- **Trim before restructuring** when the content is not load-bearing, but **never drop a measured figure, a citation, a section reference, or a limitation** to save space. Reformatting must be lossless; verify by grepping the claims out of the old version and back into the new.
+
+**Navigation, applied to every top-level (`##`) section:**
+
+- **A `---` divider before each section**, so the page reads as blocks rather than a scroll.
+- **A back-to-top link at the foot of each section**, right-aligned, pointing at an `<a id="top"></a>` anchor on the first line of the file:
+  ```html
+  <div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+  ```
+- **Any heading that is linked to needs an explicit `<a id="..."></a>` above it.** GitHub's auto-generated slug drops a leading emoji but keeps the hyphen the space left behind, and an emoji carrying a variation selector makes the result unpredictable. A reviewer clicks a broken anchor once and does not try again.
+
 ---
 
 ## Working Conventions
