@@ -414,20 +414,32 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
      * `analysis` wholesale, so a title that tracked it would change under the
      * doctor for reasons they did not ask for. First run names it; after that
      * the name is theirs.
+     *
+     * **`updateMany` with `title: null` in the where clause, rather than the
+     * `consultation.title` this handler read minutes ago.** A record is
+     * renameable in every state it appears in, `analyzing` included, and
+     * analysis can take a couple of minutes, so a doctor renaming a row while
+     * it analyses is a reachable sequence rather than a theoretical one. Testing
+     * the stale read would let the derived name overwrite the one they just
+     * chose. Postgres evaluates this predicate at write time, so the doctor
+     * wins whenever they got there first.
      */
     const derivedTitle =
-      consultation.title === null && analysis.clinicalFacts !== undefined
-        ? deriveConsultationTitle(analysis.clinicalFacts)
-        : null
+      analysis.clinicalFacts === undefined ? null : deriveConsultationTitle(analysis.clinicalFacts)
 
+    if (derivedTitle !== null) {
+      await prisma.consultation.updateMany({
+        where: { id: consultation.id, title: null },
+        data: { title: derivedTitle },
+      })
+    }
+
+    // Reads back whatever the statement above settled on, so the response
+    // carries the winning title rather than the one this request proposed.
     const updated = await timeStage('persistence', () =>
       prisma.consultation.update({
         where: { id: consultation.id },
-        data: {
-          status: 'awaiting_review',
-          analysis,
-          ...(derivedTitle === null ? {} : { title: derivedTitle }),
-        },
+        data: { status: 'awaiting_review', analysis },
       }),
     )
 
