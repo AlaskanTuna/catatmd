@@ -1,6 +1,8 @@
 import { ArrowLeftRight, Check, Type } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
+import { applyConfusable, findConfusables } from './confusables.js'
 import type { DraftLine } from './draft-turns.js'
 
 /**
@@ -15,15 +17,59 @@ import type { DraftLine } from './draft-turns.js'
 const formatOffset = (seconds: number): string =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
 
+/**
+ * Line text with measured ASR mishears underlined, each followed by a
+ * one-tap correction chip (docs/trd.md §20.3, issue #193). The chip edits
+ * only on an explicit tap, so the doctor stays the author of every
+ * correction, exactly as with the label toggles. Hints derive from the text
+ * on every render: once corrected, the token no longer matches and the
+ * underline disappears with it.
+ */
+function HintedText({
+  line,
+  onReplace,
+}: {
+  line: DraftLine
+  onReplace: (id: string, nextText: string) => void
+}) {
+  const hints = findConfusables(line.text)
+  if (hints.length === 0) return <span className="text-ink">{line.text}</span>
+
+  const parts: ReactNode[] = []
+  let cursor = 0
+  for (const hint of hints) {
+    if (hint.start > cursor) parts.push(line.text.slice(cursor, hint.start))
+    parts.push(
+      <span key={`${hint.start}-word`} className="underline decoration-dotted underline-offset-2">
+        {hint.found}
+      </span>,
+      <button
+        key={`${hint.start}-chip`}
+        type="button"
+        onClick={() => onReplace(line.id, applyConfusable(line.text, hint))}
+        aria-label={`Replace ${hint.found} with ${hint.suggestion}`}
+        className="mx-1 inline-flex items-center rounded-control border border-line bg-sunken px-1.5 text-xs font-medium text-ink-muted transition-colors hover:bg-line/60"
+      >
+        {hint.suggestion}?
+      </button>,
+    )
+    cursor = hint.end
+  }
+  if (cursor < line.text.length) parts.push(line.text.slice(cursor))
+  return <span className="text-ink">{parts}</span>
+}
+
 export function SpeakerAssign({
   draft,
   onToggle,
+  onReplace,
   onSwapAll,
   onApply,
   onInsertPlain,
 }: {
   draft: readonly DraftLine[]
   onToggle: (id: string) => void
+  onReplace: (id: string, nextText: string) => void
   onSwapAll: () => void
   onApply: () => void
   onInsertPlain: () => void
@@ -47,8 +93,10 @@ export function SpeakerAssign({
       </div>
       <p className="mt-1 text-xs text-ink-muted">
         Labels are guessed from what each sentence says, not from the voices, and can be wrong. Tap
-        a label to flip it. A sentence holding both speakers is best fixed in the transcript box
-        after applying. Plain text joins the turn above it until you label it.
+        a label to flip it. A dotted word is a measured mishear of a Malay clinical word; tap the
+        suggestion after it to correct that word only. A sentence holding both speakers is best
+        fixed in the transcript box after applying. Plain text joins the turn above it until you
+        label it.
       </p>
 
       <ul className="mt-3 flex max-h-80 flex-col gap-1 overflow-y-auto pr-1">
@@ -75,7 +123,7 @@ export function SpeakerAssign({
                   {formatOffset(line.offsetSeconds)}
                 </span>
               )}
-              <span className="text-ink">{line.text}</span>
+              <HintedText line={line} onReplace={onReplace} />
             </p>
           </li>
         ))}

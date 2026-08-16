@@ -125,6 +125,21 @@ function MockAudioCapture({
       >
         mock transcribe hosted raw
       </button>
+      {/* A hosted draft carrying a measured Malay mishear (docs/trd.md
+          §20.3), so the tap-to-correct chip can be driven end to end. */}
+      <button
+        type="button"
+        onClick={() =>
+          onTranscript({
+            text: 'Patut sudah empat hari.',
+            segments: [],
+            source: 'asr_hosted',
+            draftTurns: [{ speaker: 'patient', text: 'Patut sudah empat hari.' }],
+          })
+        }
+      >
+        mock transcribe hosted misheard
+      </button>
     </>
   )
 }
@@ -269,6 +284,19 @@ describe('hosted draft-turn labelling', () => {
     expect(screen.queryByRole('button', { name: /apply labels/i })).toBeNull()
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe('Batuk sudah tiga hari.')
+  })
+
+  it('corrects a measured mishear on tap and applies the corrected line', () => {
+    openRecordTab()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted misheard' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Replace Patut with Batuk' }))
+
+    // The correction consumes its own hint: the chip disappears with it.
+    expect(screen.queryByRole('button', { name: 'Replace Patut with Batuk' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
+
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    expect(textarea.value).toBe('Patient: Batuk sudah empat hari.')
   })
 
   it('re-ids a second delivery appended to a pending hosted draft without colliding', () => {
