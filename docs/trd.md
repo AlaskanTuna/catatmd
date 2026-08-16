@@ -1739,6 +1739,8 @@ Tokens: ILMU beats local. Segments: fail (none delivered). **Ship the hosted pat
 
 **Limits, stated plainly.** n=1 reader, one phone microphone, a non-clinical room; one sample per register; token comparison rather than WER, per the 20.1 convention; the local arm ran in Node CPU rather than browser WASM. The devoicing overlap between both models suggests re-measurement with a clinic-grade microphone before treating it as a provider property. If the provider ships working `verbose_json` segments or punctuation later, the draft-labels verdict in finding 5 is the one to re-measure.
 
+**Revised 16/08/26:** the capture-profile suspicion now has a shipped response: §20.6 turns off the browser's voice-call DSP at the microphone. Every figure in this section was captured with that DSP on; §20.6 holds the re-measurement protocol, and this section's verdicts stand until it runs.
+
 **Cost of the whole gate:** about RM 0.20 of the RM 20 early-access credit.
 
 ### 20.4 The Consent Gate (Resolves §19 Row 18)
@@ -1787,7 +1789,7 @@ The disclosure cites the **PDPA as amended in 2024**, under which voice is biome
 | **Failure copy**   | One message for every upstream reason, so the provider's operational state never reaches a consulting-room screen             |
 | **Provenance**     | `asr_hosted` is sticky for the consultation once any hosted recording contributed, and never downgrades on a later local pass |
 
-**Follow-up, named rather than skipped:** `docs/assets/tech-stack.drawio.png` still draws the hosted adapter dashed and pointing at Qwen. Regenerating it is a `docs-maintainer` task, not part of this change.
+**Follow-up, closed 16/08/26:** `docs/assets/tech-stack.drawio.png` and the doctor-journey diagram now draw the hosted adapter as `ilmu-asr-v4.2`, built, with the audio relayed through the API. The dashed outline remains because the provider sits outside the trust boundary.
 
 ### 20.5 Hosted Draft Turns: Server-Side Split And Label
 
@@ -1819,6 +1821,38 @@ The output of this pass sits behind the identical explicit Apply gate as the on-
 
 - **No per-actor spend cap.** Same posture as the relay (§20) and `analyze` (§13): the 5/min limiter bounds request rate, not cumulative cost.
 - **Not tied to a relay having happened.** Any authenticated session can call this endpoint with arbitrary text within the character bounds; it does not verify the text originated from `/api/asr/transcriptions`.
+
+### 20.6 Capture Constraints: Dictation DSP Off (Addendum To §20.3)
+
+**Status: `Built` (#191).** Ships alongside the red-flag devoicing tolerance (#192, `redflag-list-v6`) and the review-time mishear hints (#193); this section records the capture half and the protocol that judges it.
+
+#### What Changed
+
+`AudioCapture` now requests dictation constraints instead of `{ audio: true }`:
+
+| Constraint         | Value   | Why                                                                                                                                                      |
+| ------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `echoCancellation` | `false` | AEC removes a far end that a dictation capture does not have                                                                                             |
+| `noiseSuppression` | `false` | NS attenuates the low-energy consonant bursts separating b/p and d/t, the §20.3 devoicing family ("patut" for "batuk")                                   |
+| `autoGainControl`  | `true`  | Two speakers sit at different distances from one microphone; a quiet far speaker costs more than gain pumping, and AGC changes level, not spectral shape |
+| `channelCount`     | `1`     | The local path downmixes to 16 kHz mono anyway, and mono roughly halves a hosted upload against the relay's 25 MB cap                                    |
+
+`new MediaRecorder(stream)` is deliberately untouched: default Opus is speech-transparent, and raising `audioBitsPerSecond` inflates a long consultation toward the same 25 MB cap for no measured benefit. A test pins the exact constraints object so a refactor cannot drift back to `{ audio: true }`.
+
+#### What This Rests On, And What It Does Not Claim
+
+- The §20.3 limits paragraph already pointed at the phone-mic audio profile: both ASR arms devoiced the same words at the same spots, which a provider property would not explain.
+- **Every §20.1 to §20.3 measurement was captured with the browser's voice-call DSP on.** That makes the DSP a plausible contributor, not a proven one.
+- **No re-measurement has run yet.** The §20.3 verdicts stand until the protocol below does.
+- Constraint values are ideals per the mediacapture spec: a browser may honour none of them without erroring. `track.getSettings()` reports what actually applied, and every future measurement must record that readout beside its figures.
+
+#### Re-Measurement Protocol (Needs A Human Reader)
+
+1. With this change running locally, one reader re-records the 99.2 s rojak script live through the Record tab, plus the §20.2 reference script as the English control arm (checks the on-device English path did not regress with NS off).
+2. Tick the ILMU consent so the exact blob is visible as the relay request body in devtools; save it locally as `rojak-dsp-off.webm` (synthetic scripted audio per the §20.1 provenance rules; never committed). Record the `getSettings()` readout alongside it.
+3. ILMU arm: `evals/asr-ab.ts` against the saved file, three runs, report under the gitignored `evals/reports/`.
+4. Local arm: `evals/asr-ab.ts` posts to ILMU only, so the on-device comparison is the same session's Record-tab transcript, noted in the report.
+5. Compare the §20.3 token-table devoicing rows (batuk, demam, denggi, semput, bengkak, tekak, tonsil) and record the verdict here. If devoicing persists with the DSP off on a decent microphone, it is a provider property, and the review-time hints (#193) stay the primary mitigation.
 
 ---
 

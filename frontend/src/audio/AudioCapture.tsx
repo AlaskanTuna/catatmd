@@ -660,7 +660,25 @@ export function AudioCapture({
     // microphone would otherwise offer Try Again on the previous recording.
     setRetryBlob(null)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      /*
+       * Dictation constraints, not the defaults: the browser's voice-call DSP
+       * attenuates exactly the low-energy consonant bursts that separate b/p
+       * and d/t, the devoicing family docs/trd.md §20.3 measured on both ASR
+       * arms ("patut" for "batuk"), and echo cancellation has no far end to
+       * cancel here. Gain control stays on because two speakers sit at
+       * different distances from one microphone, and a quiet track costs more
+       * than gain pumping. Values are ideals per the mediacapture spec, never
+       * OverconstrainedError; track.getSettings() reports what was actually
+       * applied, which every TRD §20 measurement must record.
+       */
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      })
       const media = new MediaRecorder(stream)
       chunks.current = []
       media.ondataavailable = (event) => chunks.current.push(event.data)
@@ -780,7 +798,9 @@ export function AudioCapture({
         transcription below for this consultation. The result appears below as lines with guessed{' '}
         <code className="text-ink">Doctor</code> / <code className="text-ink">Patient</code> labels,
         drawn from what each sentence says, not from the voices. Check every line, then apply them
-        to the transcript.
+        to the transcript. On-device transcription is tuned for English and Manglish, and a
+        consultation held mainly in Malay can come back rewritten in English rather than
+        transcribed; for Malay-dominant consultations, the hosted option below may work better.
       </p>
 
       {thin && (
@@ -944,13 +964,14 @@ export function AudioCapture({
             <span className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted">
               <code className="text-ink">ilmu-asr-v4.2</code>
               <InfoTip label="About hosted transcription with ILMU">
-                An early-access service. Its accuracy figures are the provider&apos;s claim until
-                our own measurement is recorded in the technical reference (TRD 20.3). The recording
-                travels from this browser, to our server in Singapore, to ILMU in Malaysia.
-                Retention and training follow ILMU&apos;s standard early-access terms, which we have
-                not varied by agreement. Handled under the PDPA as amended in 2024, under which
-                voice is biometric data and therefore sensitive personal data requiring explicit
-                consent.
+                An early-access service. On our scripted Malay consultation it kept code-switched
+                sentences intact, but sometimes hardened the first consonant of a Malay clinical
+                word, hearing batuk as patut and demam as teman, so check those words when you
+                review the draft (TRD 20.3). The recording travels from this browser, to our server
+                in Singapore, to ILMU in Malaysia. Retention and training follow ILMU&apos;s
+                standard early-access terms, which we have not varied by agreement. Handled under
+                the PDPA as amended in 2024, under which voice is biometric data and therefore
+                sensitive personal data requiring explicit consent.
               </InfoTip>
             </span>
           </div>
