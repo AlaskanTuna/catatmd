@@ -214,7 +214,7 @@ const ENGINES = [
     Icon: Server,
     summary: 'The audio leaves this device. Better on Malay-dominant consultations.',
     detail:
-      'An early-access service. On our scripted Malay consultation it kept code-switched sentences intact, but sometimes hardened the first consonant of a Malay clinical word, hearing batuk as patut and demam as teman, so check those words when you review the draft (TRD 20.3). Handled under the PDPA as amended in 2024, under which voice is biometric data and therefore sensitive personal data requiring explicit consent.',
+      'An early-access service. On our scripted Malay consultation it kept code-switched sentences intact, but sometimes hardened the first consonant of a Malay clinical word, hearing batuk as patut and demam as teman, so check those words when you review the draft. We have not agreed separate retention or training terms with ILMU, so their standard early-access terms apply. The returned text is de-identified before the note model drafts the Doctor and Patient labels, which you review line by line before anything enters the transcript, and your choice is recorded in the audit trail. Handled under the PDPA as amended in 2024, under which voice is biometric data and therefore sensitive personal data requiring explicit consent.',
   },
 ] as const
 
@@ -981,21 +981,25 @@ export function AudioCapture({
           moment of frustration is not a freely given one, which is also why the
           local failure copy above never mentions it.
 
-          **The consent facts stay out here rather than inside the disclosure.**
-          The tradeoff has to be stated in the same breath as the choice, so
-          what leaves the device, where it goes, and under whose terms is
-          visible the moment hosted is selected. The tip carries elaboration
-          only.
+          **What the doctor is agreeing to stays visible; the elaboration moved
+          into the tip.** This was six lines of prose sitting under the choice,
+          which is a wall of text at the moment of a decision and reads as terms
+          rather than as a disclosure.
+
+          What remains is the part the tick actually consents to: that the audio
+          leaves the device, where it goes, and that it applies to this
+          consultation only. Retention terms, the de-identification and
+          labelling sequence and the audit record are elaboration, so they sit
+          in the tip beside the option they describe.
+
+          The line is deliberately not collapsed any further. Consent is only
+          informed if what leaves the room is legible without an interaction,
+          and the tip is a button the doctor has to choose to open.
         */}
         {hosted && (
           <p className="mt-2.5 text-xs leading-relaxed text-ink-muted">
             This recording leaves this device. It passes through our server to ILMU and is processed
-            in Malaysia. We have not agreed separate retention or training terms, so ILMU&apos;s
-            standard early-access terms apply. The returned text is de-identified before the note
-            model drafts <code className="text-ink">Doctor</code> /{' '}
-            <code className="text-ink">Patient</code> labels, which you review line by line before
-            anything enters the transcript. This choice applies to this consultation only and is
-            recorded in the audit trail.
+            in Malaysia. This choice applies to this consultation only.
           </p>
         )}
       </fieldset>

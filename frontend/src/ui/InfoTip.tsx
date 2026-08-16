@@ -116,8 +116,16 @@ export function InfoTip({
           style={{ zIndex: 'var(--z-tooltip)' }}
           // Anchored above so a panel this wide cannot push a narrow screen into
           // a horizontal scroll, and edge-aligned so it stays inside its column.
+          //
+          // Bounded in height for the same reason it is bounded in width, and
+          // anchoring upward is what makes it necessary: a panel taller than the
+          // space above its trigger grows off the top of the viewport, where
+          // there is no scrollbar to recover it, so the first line is the one
+          // that disappears. The longest tip in the app is the hosted
+          // transcription disclosure, which is the last one that should be able
+          // to lose its opening sentence.
           className={cn(
-            'absolute bottom-full mb-1.5 w-72 max-w-[80vw] rounded-card border border-line bg-surface p-3 text-xs leading-relaxed font-normal text-ink-muted shadow-lg',
+            'absolute bottom-full mb-1.5 max-h-[min(60vh,22rem)] w-72 max-w-[80vw] overflow-y-auto overscroll-contain rounded-card border border-line bg-surface p-3 text-xs leading-relaxed font-normal text-ink-muted shadow-lg',
             align === 'left' ? 'left-0' : 'right-0',
           )}
         >
