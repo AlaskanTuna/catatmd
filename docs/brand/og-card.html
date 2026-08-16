@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="font.css" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1200px; height: 630px; overflow: hidden; }
+      body {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 72px 80px;
+        background-color: #136a51;
+        background-image: url('og-bg.png');
+        background-size: cover;
+        background-position: center;
+        font-family: 'Outfit', system-ui, sans-serif;
+        color: #ffffff;
+      }
+      .lockup { display: flex; align-items: center; gap: 18px; }
+      .wordmark {
+        display: inline-flex;
+        align-items: center;
+        font-weight: 600;
+        font-size: 46px;
+        line-height: 1;
+        letter-spacing: -0.005em;
+      }
+      .badge { margin-left: 0.15em; height: 0.78em; width: auto; }
+      .claim {
+        max-width: 20ch;
+        font-size: 62px;
+        font-weight: 600;
+        line-height: 1.12;
+        letter-spacing: -0.018em;
+      }
+      .foot {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 22px;
+        line-height: 1;
+        color: rgba(255, 255, 255, 0.82);
+      }
+      .dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,0.45); }
+    </style>
+  </head>
+  <body>
+    <div class="lockup">
+      <svg viewBox="0 0 32 32" fill="none" width="40" height="40" style="color:#fff">
+        <path
+          d="M22.73 7.94A11.2 11.2 0 1 0 22.73 24.06"
+          stroke="currentColor"
+          stroke-width="4.6"
+          stroke-linecap="round"
+        />
+        <circle cx="27.15" cy="16" r="3.4" fill="currentColor" />
+      </svg>
+      <span class="wordmark">
+        Catat<svg class="badge" viewBox="0 0 1372 762">
+          <rect width="1372" height="762" rx="140" fill="#ffffff" />
+          <path
+            d="M170.0 660.6H239.6L217.2 578.2V184.6L375.6 661.4H434.8L596.4 184.6V579.0L573.2 661.4H738.8L716.4 579.0V183.8L738.8 101.4H578.8L573.2 183.8L454.0 535.8L336.4 183.8L331.6 101.4L170.0 100.6L193.2 183.0V578.2Z M799.6 661.4H979.6C1137.2 661.4 1202.0 539.0 1202.0 381.4C1202.0 223.8 1141.2 101.4 970.0 101.4H799.6L822.0 183.8V579.0ZM942.0 119.8H966.0C1081.2 119.8 1081.2 268.6 1081.2 381.4C1081.2 492.6 1070.8 642.2 971.6 642.2H942.0Z"
+            fill="#136a51"
+          />
+        </svg>
+      </span>
+    </div>
+
+    <p class="claim">The consultation is already documented. It just needs you to check it.</p>
+
+    <div class="foot">
+      <span>Structured note, reviewed and approved by the doctor</span>
+      <span class="dot"></span>
+      <span>Evaluation prototype, simulated data</span>
+    </div>
+  </body>
+</html>
