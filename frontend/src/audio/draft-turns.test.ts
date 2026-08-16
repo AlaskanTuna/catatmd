@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type DraftLine, draftToTurns, segmentsToDraft } from './draft-turns.js'
+import { type DraftLine, draftToTurns, proseToDraft, segmentsToDraft } from './draft-turns.js'
 import type { TranscriptSegment } from './protocol.js'
 
 /*
@@ -218,5 +218,50 @@ describe('draftToTurns', () => {
       { speaker: 'doctor', text: 'Morning.', offsetSeconds: 0 },
       { speaker: 'patient', text: 'Morning doctor.' },
     ])
+  })
+})
+
+/*
+ * The hosted path's floor.
+ *
+ * A relay returns prose and no segments, so when the server labelling pass
+ * does not come back, `segmentsToDraft` refuses and the doctor is left with a
+ * block that `parseTranscript` reads as zero turns. Start Consultation is
+ * disabled on exactly that, so the recording was billed and unusable.
+ */
+describe('proseToDraft', () => {
+  const CONSULT =
+    'Good morning, what brings you in today? I have had a cough for four days. Do you have a fever? A little last night.'
+
+  it('drafts a usable transcript from prose with no segments', () => {
+    const draft = proseToDraft(CONSULT)
+    expect(draft.length).toBeGreaterThan(1)
+    expect(draft.every((line) => line.text.trim() !== '')).toBe(true)
+  })
+
+  it('never invents a timestamp, because prose carries no timing', () => {
+    for (const line of proseToDraft(CONSULT)) {
+      expect(line.offsetSeconds).toBeUndefined()
+    }
+  })
+
+  it('keeps every word, so nothing the patient said is dropped', () => {
+    const words = (text: string) => text.split(/\s+/).filter(Boolean)
+    const drafted = proseToDraft(CONSULT).flatMap((line) => words(line.text))
+    expect(drafted).toEqual(words(CONSULT))
+  })
+
+  it('hands a question and its answer to different speakers', () => {
+    const draft = proseToDraft(CONSULT)
+    expect(new Set(draft.map((line) => line.speaker)).size).toBe(2)
+  })
+
+  it('returns nothing for empty or whitespace-only text', () => {
+    expect(proseToDraft('')).toEqual([])
+    expect(proseToDraft('   \n  ')).toEqual([])
+  })
+
+  it('carries an id namespace of its own, so appending cannot collide', () => {
+    expect(proseToDraft(CONSULT).every((line) => line.id.startsWith('prose-'))).toBe(true)
   })
 })

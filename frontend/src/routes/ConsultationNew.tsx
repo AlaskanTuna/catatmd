@@ -4,7 +4,12 @@ import { FileUp, FolderOpen, Mic, Type } from 'lucide-react'
 import { type ChangeEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AudioCapture } from '../audio/AudioCapture.js'
-import { type DraftLine, draftToTurns, segmentsToDraft } from '../audio/draft-turns.js'
+import {
+  type DraftLine,
+  draftToTurns,
+  proseToDraft,
+  segmentsToDraft,
+} from '../audio/draft-turns.js'
 import { SpeakerAssign } from '../audio/SpeakerAssign.js'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
@@ -190,16 +195,29 @@ export function ConsultationNew() {
                 // segments (#189); `hosted-` ids are a namespace disjoint from
                 // the local `seg-` ones, and the turns carry no offsets, so a
                 // wrong timestamp can never be asserted for them.
+                //
+                // The third branch is the one that keeps this from being a
+                // dead end. A hosted recording carries no segments, so when the
+                // labelling pass does not return, the first two produce nothing
+                // and the doctor is left with a block of prose that parses to
+                // zero turns, which is exactly the condition Start Consultation
+                // is disabled on. `proseToDraft` applies the same rules to the
+                // text alone, so the recording stays usable and the labels stay
+                // the doctor's to confirm.
+                const hostedLines = (draftTurns ?? []).map(
+                  (turn, i): DraftLine => ({
+                    id: `hosted-${i}`,
+                    speaker: turn.speaker,
+                    text: turn.text,
+                  }),
+                )
+                const timedLines = segmentsToDraft(segments, transcribed, { withOffsets })
                 const lines =
-                  draftTurns && draftTurns.length > 0
-                    ? draftTurns.map(
-                        (turn, i): DraftLine => ({
-                          id: `hosted-${i}`,
-                          speaker: turn.speaker,
-                          text: turn.text,
-                        }),
-                      )
-                    : segmentsToDraft(segments, transcribed, { withOffsets })
+                  hostedLines.length > 0
+                    ? hostedLines
+                    : timedLines.length > 0
+                      ? timedLines
+                      : proseToDraft(transcribed)
                 if (lines.length > 0) {
                   setDraft((current) =>
                     current

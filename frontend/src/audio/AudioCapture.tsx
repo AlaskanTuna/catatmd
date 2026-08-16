@@ -235,6 +235,18 @@ export function AudioCapture({
   const [overridden, setOverridden] = useState(false)
   const [seconds, setSeconds] = useState(0)
   const [chunkProgress, setChunkProgress] = useState<{ done: number; total: number } | null>(null)
+  /**
+   * Seconds spent in the current hosted phase.
+   *
+   * The relay and the labelling pass are each one request with no progress to
+   * report, so neither can honestly show a percentage. That left both phases as
+   * a static sentence for twenty seconds or more, which is indistinguishable
+   * from a hung screen and was read as one.
+   *
+   * Elapsed time is the honest alternative: a measured number that proves the
+   * run is alive without claiming any fraction of it is done.
+   */
+  const [hostedSeconds, setHostedSeconds] = useState(0)
   /** The audio behind the current or failed run, so Try Again can rerun it. */
   const [retryBlob, setRetryBlob] = useState<Blob | null>(null)
   /**
@@ -495,6 +507,15 @@ export function AudioCapture({
     return () => window.clearInterval(id)
   }, [phase])
 
+  // Restarts per phase, so the labelling pass counts from zero rather than
+  // carrying the upload's total forward and reading as one long stall.
+  useEffect(() => {
+    if (phase !== 'uploading' && phase !== 'labelling') return
+    setHostedSeconds(0)
+    const id = window.setInterval(() => setHostedSeconds((value) => value + 1), 1000)
+    return () => window.clearInterval(id)
+  }, [phase])
+
   const transcribeLocal = useCallback(
     async (blob: Blob) => {
       setError(null)
@@ -721,17 +742,21 @@ export function AudioCapture({
    * download through them is how a healthy load reads as a hang. So 100 gets
    * its own honest sentence, as does the merge tail after the last chunk.
    */
+  const elapsed = `${Math.floor(hostedSeconds / 60)}:${String(hostedSeconds % 60).padStart(2, '0')}`
+
   const status =
     phase === 'uploading'
       ? // Says where the audio is going while it is going there, and does not
         // pretend to a percentage: the relay is one request with no progress
         // to report, and an invented bar here would be the exact dishonesty
-        // the measured one below exists to avoid.
-        'Sending this recording to ILMU for transcription. It is leaving this device.'
+        // the measured one below exists to avoid. The elapsed count is the
+        // honest substitute, and it is what distinguishes a slow relay from a
+        // hung screen.
+        `Sending this recording to ILMU for transcription, ${elapsed} elapsed. It is leaving this device.`
       : phase === 'labelling'
         ? // Progress-free for the same reason as the upload, and honest about
           // the wait and the review gate that follows it.
-          'Drafting Doctor / Patient labels from the transcript. This can take up to two and a half minutes, and you will review every line before anything is applied.'
+          `Drafting Doctor / Patient labels from the transcript, ${elapsed} elapsed. This can take up to two and a half minutes, and you will review every line before anything is applied.`
         : phase === 'loading-model'
           ? progress === null
             ? 'Preparing the speech model. The first run downloads it once and the browser caches it.'
