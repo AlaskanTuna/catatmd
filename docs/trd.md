@@ -2168,6 +2168,8 @@ Measured at **0 of 90** on the shipped prompt. It is exported so the unit pin an
 - `approve` is deliberately absent though the issue's prose names it: it is ordinary vocabulary here, including in hard rule 3, so matching it would flag the model correctly refusing to approve a note.
 - A claim that a card exists, without any of the three verbs, is not caught. This is the v2 failure class above.
 
+**A clean phantom-click count therefore cannot gate a prompt change.** v2 scored 0 of 90 here while asserting three times that a card was waiting for review, because it never used the word "click". Read on this diagnostic alone, the more dangerous of the two revisions looks like the safer one. The count is evidence about one phrasing of one failure, not about whether the model is pointing the doctor at things that are not there.
+
 ### 25.6 Evaluation Durability
 
 Two separate losses during this work, with different causes and only one shared fix:
