@@ -10,6 +10,69 @@ _Catat_ — Malay, "to note down". The product documents; the doctor decides.
 
 ---
 
+## The Problem
+
+A Malaysian private GP sees a **median of 32.3 patients a day**, inside a consultation the regulator prices at **10 minutes or less**. The note is written in the room with the patient still present, because the clinic dispenses the medicine and issues the MC before that patient leaves. The realistic budget for writing it is **30 to 60 seconds**.
+
+Five pressures follow, each measured rather than asserted:
+
+| The Pressure                                             | The Evidence                                                                                                                                             | What It Costs The Clinic                                                    |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **The note is written in seconds, about 32 times a day** | Schedule 7 consultation banding; Sivasampu et al., PLOS One 2017                                                                                         | Every extra minute per patient is roughly half an hour of clinic time a day |
+| **An incomplete note is the realistic baseline**         | 98.0% of records carried documentation problems: history missing or inadequate in 46.5%, examination in 51.2%, diagnosis in 42.5% (Khoo et al., n=1,753) | Completeness, not speed, is where the record actually fails                 |
+| **Nothing systematically checks for danger signs**       | The absence of a control, not a measured failure                                                                                                         | Whether a red flag is caught depends on recall, on the 32nd patient         |
+| **Documentation just acquired commercial value**         | The consultation fee ceiling moved to RM80 (P.U.(A) 150/2026) while panels hold the effective price near RM34                                            | Charging toward the ceiling has to be justifiable on the record             |
+| **The record is externally audited**                     | PMCare panel GP terms, carrying on-site audit rights on 24 hours' notice                                                                                 | A diagnosis inconsistent with the drugs dispensed is a deduction            |
+
+**About 60% of patients arrive through a TPA or corporate panel, and the note those payers read is not SOAP.** The contractually enforced shape is condition, treatment, itemised medication dispensed, MC days, referral. Two of those fields have no home in SOAP at all, because the Malaysian GP dispenses in-house and issues the MC in the room.
+
+## What CatatMD Does About It
+
+| What The Doctor Gets                                                                                                                                                          | Which Pressure It Answers                          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| **A structured note from the consultation**, SOAP scaffold plus the operational block the payer actually reads: diagnosis, medication dispensed, MC days, referral, follow-up | The 30 to 60 second budget, and the TPA audit      |
+| **Missing documentation surfaced as prompts to ask**, each with a rationale                                                                                                   | The 98% incomplete-record baseline                 |
+| **Deterministic red-flag detection** the model can never suppress or downgrade                                                                                                | Nothing systematically checking danger signs       |
+| **Clinical suggestions carrying real, inspectable citations**                                                                                                                 | Justifying decisions on a record that gets audited |
+| **Review, edit, and explicit approval** before anything is final                                                                                                              | The doctor stays the author, and stays responsible |
+
+Every field above is **extraction, not generation**: each carries a verbatim span from the transcript, and anything the consultation never raised resolves to `NOT_ASSESSED` rather than being quietly filled in. Acceptance criteria for each capability live in `docs/prd.md` §9.
+
+**Stated honestly, because a doctor will find out in one clinic session:** for a fast three-minute URTI consult this may well be slower than the handwritten line it replaces. The claim is documentation quality and a safety net that does not depend on memory. It is not a time-saving claim, and no time-saved figure is offered anywhere in this repository.
+
+## How We Tackle It
+
+AI note-taking is already commoditised in this market, bundled into clinic systems at prices no scribe can compete with (Positioning, below, names the incumbents). So this is not positioned as another scribe. What is different is that the safety properties are **architectural rather than promised**, and each is checkable by someone who has no reason to trust us.
+
+| The Promise Every Vendor Makes | What Is Actually Enforced Here                                                                                                         |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| "Patient data is protected"    | De-identification runs on the inference path, per request, at a single egress point that refuses input which has not passed through it |
+| "Our AI catches red flags"     | A deterministic rules engine runs **before** the model, and the model is never shown its output, so it has nothing to suppress         |
+| "Our citations are reliable"   | The model may only cite guideline IDs from a supplied corpus; a free-text reference fails validation before the doctor ever sees it    |
+| "The doctor reviews it"        | Approval is a state transition with an audit event, not a checkbox, and it is terminal                                                 |
+
+## Architecture At A Glance
+
+The two diagrams below are the system as it actually runs. The first is what the doctor experiences; the second is what it is built from.
+
+![CatatMD doctor journey, from consultation to approved note. The doctor consults in-room with the patient still present, then starts a consultation from one of four inputs: a bundled fixture, pasted text, an uploaded .txt or .json file, or live audio transcribed on the doctor's device by default and returned as draft speaker-labelled lines the doctor reviews. The transcript is saved as a draft consultation, passed through the de-identification gate, and sent as safe text to the language model, which returns a structured note, documentation gaps, cited suggestions and red-flag candidates only. Real names are restored before anything is saved or shown. Separately, and before the model call, a deterministic rules engine checks red flags against the original transcript and never shows its results to the model, while a deterministic checklist derives documentation gaps from the note's assertion states. Findings are assembled as a union and never filtered. The doctor reviews, edits, acknowledges red flags without removing them, and approves; the approved note is locked and final, exportable as PDF. The hosted transcription adapter is drawn dashed outside the trust boundary, reachable only by per-consultation consent.](assets/user-journey.drawio.png)
+
+Three claims the journey diagram is drawn to make checkable:
+
+- **The model never sees a patient identifier.** The de-identification gate sits between the stored transcript and the only egress point, and the request-scoped vault restores real names only on the way back.
+- **The model never sees the rules engine's output**, so it cannot suppress a red flag it was never shown.
+- **The model cannot subtract.** Assembly is a union in both directions: deterministic red flags and deterministic gaps stand whether or not the model mentions them (`docs/trd.md` §10, §12).
+
+`approved` is terminal and reachable only through an explicit doctor action. The hosted transcription path is drawn dashed and outside the boundary because it is the one route by which audio can leave the device, entered only by a recorded per-consultation act (`docs/trd.md` §20).
+
+![CatatMD technical stack. Inside the trust boundary: React, TypeScript, Vite and Tailwind on Vercel; Node, Express and Bun on Render, carrying the deid PHI gate, the lib/llm client, and the routes, redflags, guidelines and audit modules; PostgreSQL, Prisma and Supabase. Outside it: the Qwen language model, reachable only through lib/llm, and the hosted ASR provider ILMU, reached only by an API relay under per-consultation consent.](assets/tech-stack.drawio.png)
+
+Two claims the stack diagram is drawn to make checkable. `lib/llm/` is the **only** text egress, and everything crossing that line has already passed `deid/`. Speech-to-text runs on the device by default, so the hosted ASR adapter is the one other path out of the boundary, and it opens only when a doctor ticks the per-consultation consent box. The diagram draws it dashed because it sits outside the boundary, and the audio reaches it only as a relay through the API (`docs/trd.md` §20.4).
+
+Bun workspaces · TypeScript · Zod (shared contracts) · Express 5 · Prisma 6 · better-auth · React 19 + Vite 7 + Tailwind 4 · Supabase Postgres · Vitest · Biome. Hosting: frontend to Vercel, backend to Render, database to Supabase, all three in one region by design.
+
+---
+
 ## Live
 
 | Component    | URL                                                      | Host     |
@@ -24,7 +87,7 @@ All three are on free tiers by design. Render free instances spin down when idle
 
 ## Status
 
-**The backend is built; the review UI is not.** As of 13/08/26 the de-identification gate, the deterministic red-flag engine, the Malaysian guideline corpus, the structured-extraction pipeline with its evidence-bound assertion check, the gaps engine, authentication and the synthetic fixtures are all implemented and tested. The React review UI remains a Vite scaffold. The hosted-ASR path has since been built (#154, #155) and is live in production behind a per-consultation consent gate.
+**Both tiers are built and running.** The de-identification gate, the deterministic red-flag engine, the Malaysian guideline corpus, the structured-extraction pipeline with its evidence-bound assertion check, the gaps engine, authentication and the synthetic fixtures are implemented and tested. The React UI is built too: the consultation list, the four-input capture screen, the review screen carrying gap, red-flag and suggestion cards, the approval control, and on-device audio capture with draft speaker labels the doctor applies. The hosted-ASR path is live in production behind a per-consultation consent gate (#154, #155, #190).
 
 `docs/trd.md` tags every section `Built`, `Specified`, or `Open`, and never describes unwritten code as if it exists. Where implementation contradicted the specification, the TRD records which won and why rather than quietly conforming — see §3 (the assertion schema had to split in two), §5 and §7.
 
@@ -48,29 +111,7 @@ Table stakes are named as table stakes: doctor-approves-everything, "does not di
 
 ---
 
-## What It Does
-
-| Capability                            | Approach                                                                                                        |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **Structured clinical note**          | SOAP scaffold **plus** a Malaysian operational block, schema-validated — every field extraction, not generation |
-| **Missing documentation**             | What the record does not establish, surfaced as prompts to ask, each with a rationale                           |
-| **Red flags & escalation triggers**   | **Deterministic rules engine first**; the model may only add candidates, never suppress a rule hit              |
-| **Clinical suggestions with sources** | The model cites **guideline IDs** from a curated corpus; free-text references fail schema validation            |
-| **Review & approve**                  | `approved` is reachable only through an explicit doctor action, and is terminal                                 |
-
-Acceptance criteria for each live in `docs/prd.md` §9.
-
-![CatatMD doctor journey, from consultation to approved note. The doctor consults in-room with the patient still present, then starts a consultation from one of four inputs: a bundled fixture, pasted text, an uploaded .txt or .json file, or live audio transcribed on the doctor's device by default. The transcript is saved as a draft consultation, passed through the de-identification gate, and sent as safe text to the language model, which returns a structured note, documentation gaps, cited suggestions and red-flag candidates only. Real names are restored before anything is saved or shown. Separately, and before the model call, a deterministic rules engine checks red flags against the original transcript and never shows its results to the model, while a deterministic checklist derives documentation gaps from the note's assertion states. Findings are assembled as a union and never filtered. The doctor reviews, edits, acknowledges red flags without removing them, and approves; the approved note is locked and final, copyable and exportable as PDF. The hosted transcription adapter is drawn dashed outside the trust boundary, reachable only by per-consultation consent.](assets/user-journey.drawio.png)
-
-Three claims the diagram is drawn to make checkable:
-
-- **The model never sees a patient identifier.** The de-identification gate sits between the stored transcript and the only egress point, and the request-scoped vault restores real names only on the way back.
-- **The model never sees the rules engine's output**, so it cannot suppress a red flag it was never shown.
-- **The model cannot subtract.** Assembly is a union in both directions: deterministic red flags and deterministic gaps stand whether or not the model mentions them (`docs/trd.md` §10, §12).
-
-`approved` is terminal and reachable only through an explicit doctor action. The hosted transcription path is drawn dashed and outside the boundary because it is the one route by which audio can leave the device, entered only by a recorded per-consultation act (`docs/trd.md` §20).
-
-### The Note Is Not Just SOAP
+## The Note Is Not Just SOAP
 
 **SOAP is a review scaffold, not a Malaysian norm.** No Malaysian regulation mandates it — MMC Guideline 002/2006 requires contemporaneous, chronological, signed entries and never mentions SOAP. What _is_ enforced is the payer contract: condition → treatment → itemised medication dispensed → MC days → referral. Two of those fields have no home in SOAP at all, because the Malaysian GP dispenses in-house and issues the MC in the room.
 
@@ -161,7 +202,7 @@ Four controls follow from it, ranked by what makes them hold rather than by how 
 | Evidence-bound assertion — every fact needs a verbatim span                | 3 — post-hoc      | Loudly, at the cost of occasional false downgrades             |
 | System-prompt instruction                                                  | 4 — prompt        | **Silently.** No error, no signal — this is how §21.1 happened |
 
-![The CatatMD analyse pipeline. A POST to the analyze route passes an ownership check, then splits: the raw transcript goes to the de-identification gate and, separately, to the deterministic red-flag engine, which runs in-process and never egresses. De-identified text feeds two concurrent LLM operations, note_and_gaps and suggestions_and_red_flags, which reach the provider only through lib/llm, the single egress point, and it re-scans its own outbound payload before sending. Returning output passes the evidence check, deterministic gap derivation, and a union assembly that adds model output to rule output without ever filtering it, then rehydration, persistence, and an audit event carrying labels and ids but never content.](assets/module-detail.png)
+![The CatatMD analyse pipeline. A POST to the analyze route passes an ownership check, then splits: the raw transcript goes to the de-identification gate and, separately, to the deterministic red-flag engine, which runs in-process and never egresses. De-identified text feeds three concurrent LLM operations, clinical_facts, note_and_gaps and suggestions_and_red_flags, which reach the provider only through lib/llm, the single egress point, and it re-scans its own outbound payload before sending. Returning output passes the evidence check, deterministic gap derivation, and a union assembly that adds model output to rule output without ever filtering it, then rehydration, persistence, and an audit event carrying labels and ids but never content.](assets/module-detail.png)
 
 Two properties the diagram is drawn to make checkable. **Rule-sourced red flags and derived gaps reach assembly without passing through the model at all**, so a model response has nothing to suppress: the union is computed in the route handler, after the model has already returned. And **every arrow leaving the boundary passes through one node**, which re-scans its own payload immediately before it sends.
 
@@ -191,7 +232,7 @@ Two properties the diagram is drawn to make checkable. **Rule-sourced red flags 
 
 ## Boundaries
 
-**No EMR write-back — because there is no rail to write back to.** This is a market fact, not MVP triage: the Malaysian private-GP clinic-system market is a fragmented long tail with no published API standard, and the national interoperability layer reaches private **hospitals** from January 2027, not GP clinics. Copy-out is the honest interim.
+**No EMR write-back — because there is no rail to write back to.** This is a market fact, not MVP triage: the Malaysian private-GP clinic-system market is a fragmented long tail with no published API standard, and the national interoperability layer reaches private **hospitals** from January 2027, not GP clinics. PDF export is the honest interim.
 
 Also deliberately absent: diagnosis, triage decisions and prescribing (safety boundaries, not deferred features); red-flag deletion or silent dismissal (flags may be acknowledged, never removed); any edit after approval; any autonomous action; any confidence or uncertainty score; and any billing, MC-duration or fee-code output — the highest-value addition for a real Malaysian GP, and left unbuilt because generating it invites rubber-stamping. `docs/prd.md` §6.
 
@@ -221,10 +262,10 @@ Stated plainly, because an evaluator learns more from these than from the featur
 - **Declaring the wrong language produces fluent nonsense, not an error.** Measured on Malaysian audio (`docs/trd.md` §20.1): told the speech was Malay when it was Manglish, the model emitted a grammatical repetition loop — 238 words for 50 seconds of audio. Confident, well-formed, entirely fabricated. The language parameter is therefore fixed at English and never taken from a locale setting or a patient's recorded language. (An earlier claim here, that the model silently _translates_ code-switched audio, did not reproduce under measurement and has been withdrawn.)
 - **The smallest practical model is not usable in this market.** Measured (`docs/trd.md` §20.1): it rendered "auntie" as "until" and dropped "pasar malam" entirely — a meaning change in well-formed English that no downstream control can flag. The larger model recovers it, at ~240 MB of first-use download and roughly double the compute. That measurement rests on a single 50-second non-clinical clip with no ground-truth transcript: enough to settle a model choice, not a benchmark, and never presented as one.
 - **Audio is withheld on low-end hardware rather than merely discouraged.** The model plus runtime plus browser, on a 4 GB machine already running the clinic's own system, is a plausible out-of-memory kill — a dead tab mid-consultation, from which a half-transcribed consultation is not recoverable. A zero-network capability check decides whether to offer audio at all, and the real verdict is measured on the first transcribed chunk.
-- **Consent quality is the weak point in the hosted-audio design, and it is unresolved.** The doctor on weak hardware is exactly the one offered the hosted path, at the moment of most friction — which is how meaningful consent degrades into clicking past an obstacle. Handled by keeping the hosted option findable but never funnelled; the wording and affordance are open (`docs/trd.md` §19 row 18).
+- **Consent quality is the weak point in the hosted-audio design.** The doctor on weak hardware is exactly the one offered the hosted path, at the moment of most friction, which is how meaningful consent degrades into clicking past an obstacle. Answered structurally rather than by wording: the consent block is always rendered, muted and unhighlighted, in the same place whether the doctor arrived fresh or after a failure, and the on-device failure copy never mentions the hosted option (`docs/trd.md` §20.4, closing §19 row 18). What stays open is the terms behind it, not the affordance: no retention or training carve-out has been negotiated with the provider.
 - **Input language is the real limitation**, not output. Malaysian clinical records run in English regardless of what is spoken in the room, but consultations code-switch between Malay, Manglish and dialect, and no quantified code-switching rate for Malaysian GP consultations exists in the literature.
 - **De-identification recall is best-effort.** Detectors are pattern-based and may miss an identifier, particularly an unmarked name — and an ML NER would miss it too, disproportionately for Malay names. This is why raw transcripts are still treated as sensitive at rest.
-- **No retention, deletion, or access-request path**, and no DPIA. Both are prerequisites before any real patient data, not features.
+- **No retention schedule, and no deletion or access-request path.** Both are prerequisites before any real patient data, not features. An engineering DPIA does exist ([`dpia.md`](./dpia.md)), but it is input for legal review rather than legal sign-off.
 - **No note-to-transcript traceability in the UI.** Evidence spans exist in the data but are not yet surfaced for the doctor to click through. Scoped out for this iteration, not overlooked (`docs/trd.md` §19 row 17).
 - **LLM output is non-deterministic**, and alert-fatigue risk is unmeasured.
 
@@ -232,15 +273,9 @@ Fuller treatment in `docs/prd.md` §12; every unresolved engineering question is
 
 ---
 
-## Stack
+## Repo Layout
 
-Bun workspaces · TypeScript · Zod (shared contracts) · Express 5 · Prisma 6 · better-auth · React 19 + Vite 7 + Tailwind 4 · Supabase Postgres · Vitest · Biome
-
-Hosting: frontend → Vercel · backend → Render · database → Supabase. All three sit in one region by design, and the region is configuration rather than architecture.
-
-![CatatMD technical stack. Inside the trust boundary: React, TypeScript, Vite and Tailwind on Vercel; Node, Express and Bun on Render, carrying the deid PHI gate, the lib/llm client, and the routes, redflags, guidelines and audit modules; PostgreSQL, Prisma and Supabase. Outside it: the Qwen language model, reachable only through lib/llm, and the hosted ASR adapter.](assets/tech-stack.drawio.png)
-
-Two claims the diagram is drawn to make checkable. `lib/llm/` is the **only** text egress, and everything crossing that line has already passed `deid/`. Speech-to-text runs on the device by default, so the hosted ASR adapter is the one other path out of the boundary, and it opens only when a doctor ticks the per-consultation consent box. The diagram still draws it dashed and labelled specified, not built; that is now stale, and regenerating it is a named follow-up (`docs/trd.md` §20.4).
+The stack itself is summarised under [Architecture At A Glance](#architecture-at-a-glance); the region is configuration rather than architecture.
 
 ```
 shared/          @shared/types — Zod schemas, built first, imported by both sides

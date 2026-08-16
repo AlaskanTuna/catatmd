@@ -226,7 +226,7 @@ and the measurement it rested on both retire (settled 15/08/26).
 ## Layout
 
 - **App shell:** floating sidebar island left, content right, no fixed top bar on the review screen because vertical space is the scarce resource there. Below `md` the island is replaced by a bottom dock rather than shrunk, because it is the wrong shape for a thumb and hover does not exist there.
-- **Review screen, three panels** per PRD §14: transcript (280px, sunken) · note (fluid, dominant) · clinical safety rail (360px).
+- **Review screen, three panels**: transcript (280px, sunken) · note (fluid, dominant) · clinical safety rail (360px). Shipped as `lg:grid-cols-[280px_minmax(0,1fr)_360px]` in `ConsultationReview.tsx`.
 - **The safety rail orders by severity, never chronologically.** Emergency first, always, and severity must be visible without scrolling.
 - **Below `lg` (1024px) the safety rail moves _above_ the note, not below it.** On a narrow screen "visible without scrolling" can only mean first in source order. The transcript drops to a toggle at the same breakpoint. The panels never become tabs, because tabs hide safety content.
 - The rail scrolls itself rather than stretching the page. One guest consultation produces four flags and twenty-seven gaps, which made it the tallest column by a wide margin and left the other two beside a long empty gutter.

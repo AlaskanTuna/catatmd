@@ -173,7 +173,7 @@ The commercial signal is external and specific: **DocReport prices exactly this 
 | Input    | Bundled synthetic fixture · pasted transcript text · uploaded transcript file (`.txt` / `.json`) · live audio — transcribed **on the doctor's device by default**, with a hosted in-country (Malaysia) alternative reachable only by an explicit per-consultation act (`docs/trd.md` §20) |
 | Output   | Structured clinical note (SOAP scaffold **plus** the Malaysian operational block — Section 8), information gaps, red flags, cited suggestions                                                                                                                                             |
 | Review   | Edit before approval, acknowledge red flags, explicit approval as a state transition, read-only finalised view                                                                                                                                                                            |
-| Export   | Copy to clipboard and PDF/print export of the approved note                                                                                                                                                                                                                               |
+| Export   | PDF/print export of the approved note                                                                                                                                                                                                                                                     |
 | Accounts | Real login, open self-service sign-up, two seeded doctors demonstrating ownership isolation                                                                                                                                                                                               |
 | Language | English **output**; English input assumed (see Section 12 for the input-side limitation)                                                                                                                                                                                                  |
 
@@ -227,7 +227,7 @@ Steps 1–7 are numbered against `Consultation.status` (`shared/src/index.ts`). 
 3. The transcript is de-identified, analysed by the LLM, and checked against the deterministic red-flag rules engine (rules run regardless of model output; the model may only add candidates). On completion, status transitions to **`awaiting_review`** and the assembled `ConsultationAnalysis` is attached.
 4. Doctor reviews the note, information gaps, red flags, and cited suggestions.
 5. Doctor edits the note and acknowledges red flags as needed (red flags can be acknowledged, never removed — Q3). While still `awaiting_review`, analysis may be re-triggered.
-6. Doctor explicitly approves. Status transitions to **`approved`**, `approvedAt` and an audit event are recorded, and a read-only finalised view with copy-to-clipboard and PDF/print export becomes available (Q4).
+6. Doctor explicitly approves. Status transitions to **`approved`**, `approvedAt` and an audit event are recorded, and a read-only finalised view with PDF/print export becomes available (Q4).
 7. **`approved` is terminal.** No further edits, re-analysis, or status change is possible.
 
 ---
@@ -255,7 +255,7 @@ Every one of these is **extraction, not generation** — each carries a verbatim
 - [ ] Running analysis on any bundled fixture produces a note with all four SOAP fields populated (non-empty strings).
 - [ ] The note is visible on the review screen before any approval action is available.
 - [ ] Every operational-block field is either populated with a doctor-stated value carrying a verbatim transcript span, or `NOT_ASSESSED`. **A fixture in which the doctor never names a condition must produce `diagnosis: NOT_ASSESSED`** — an inferred label fails QA.
-- [ ] Analysis completes within **30 seconds** for a transcript of up to **3,000 words**, measured from the doctor triggering analysis, not from when audio capture began (Q11). This target is not yet reconciled against `docs/trd.md` §12's two sequential LLM calls; see the Open Decisions Register, §19 row 8. Client-side transcription adds further wall-clock time that this figure does not count.
+- [ ] Analysis completes within **30 seconds** for a transcript of up to **3,000 words**, measured from the doctor triggering analysis, not from when audio capture began (Q11). The three analysis calls run concurrently rather than sequentially, and the split was measured at 8 of 8 runs inside budget (`docs/trd.md` §19 rows 8 and 19, both closed). Client-side transcription adds further wall-clock time that this figure does not count.
 - [ ] The note is editable by the doctor prior to approval, and edits persist.
 
 ### CAP-2 — Identify Missing Documentation
@@ -302,7 +302,7 @@ Nothing reaches `approved` without an explicit doctor action.
 
 - [ ] The approve action is a distinct, deliberate control — never a default state or a side effect of another action.
 - [ ] Approval is blocked until the consultation is `awaiting_review` with an attached analysis.
-- [ ] After approval, the note is read-only, copyable to the clipboard, and exportable as a PDF (or printable directly from the browser); no further edits are accepted.
+- [ ] After approval, the note is read-only and exportable as a PDF (printed directly from the browser); no further edits are accepted.
 - [ ] Approval writes an audit event recording the transition (`docs/trd.md` §15).
 
 ---
@@ -415,6 +415,7 @@ The argument is not that this product avoids the question; it is that the design
 - **The TPA constrains the Plan.** Referrals, investigations, medication choices and quantities are subject to TPA validation in Malaysian panel practice — a suggested investigation may be unactionable regardless of clinical merit.
 - **Scope grew late against a short runway.** Transcript upload, PDF export, live audio/ASR, and open sign-up were added after the original scope was drafted. They are not equally mature; audio/ASR carries the open questions in `docs/trd.md` §19 (rows 8, 15) and has no benchmark evidence. Treat these as a delivery risk, not a settled capability set.
 - **PDF/print export is retained against research advice.** Stream 02 argues a printed note has no consumer in a clinic whose claims flow through TPA portals and whose invoices flow through MyInvois, and that it creates an unfiled PHI-bearing artefact. Retained by explicit human decision (13/08/26); the objection is recorded rather than resolved.
+- **Copy-to-clipboard was dropped from scope (16/08/26).** Earlier drafts of Sections 6, 8, 9 and 14 listed clipboard copy alongside PDF export. It was never built: the approved view ships a single export control that prints, from which the browser saves a PDF. The scope was brought down to what runs by explicit human decision, rather than leaving CAP-5 carrying an acceptance criterion the build does not meet.
 - **No note-to-transcript traceability in the UI.** Evidence spans exist in the data (`docs/trd.md` §21.4) but are not surfaced for the doctor to click through, as Abridge's Linked Evidence and Dragon's evidence summary do. Scoped out for this iteration, not overlooked.
 - **De-identification recall is best-effort.** Detectors are pattern-based and may miss an identifier, particularly an unmarked name — and an ML NER would miss it too, disproportionately for Malay names. This is why raw transcripts are still treated as sensitive at rest.
 - **LLM output is non-deterministic.** The same transcript may produce different wording across runs even at low temperature.
@@ -461,7 +462,7 @@ Hard-gated at **90 seconds to first real output**; the acceptance beat is **an a
 7. **Review the red flags**, noting the rule-sourced flag is visually distinct from any model-added candidate — CAP-3.
 8. **Review the clinical suggestions**, opening a citation to see the underlying guideline entry — CAP-4.
 9. **Edit a field** and **acknowledge a red flag** without removing it.
-10. **Approve** — CAP-5 — and confirm the read-only view, copy-to-clipboard, and PDF/print export, and that no further edits are possible.
+10. **Approve** — CAP-5 — and confirm the read-only view and PDF/print export, and that no further edits are possible.
 11. **Log out and log in as the second seeded doctor**; confirm the first doctor's consultation does not appear — ownership isolation (Q2).
 
 ### Guardrail Reel (~60 Seconds)
@@ -490,18 +491,18 @@ Fixtures are **gradeable encounters with a per-case rubric**, not clean showcase
 
 The ten sections required by the external proposal, mapped to where each is drafted from. Two are **Proposal-Only** — they carry commercial framing that must never enter a tracked file (Q12).
 
-| #   | Proposal Section                                                 | Source                                                                                                                                                                                                                      |
-| --- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Understanding of the problem and proposed MVP                    | `docs/prd.md` §1 Domain Background, §2 Problem Statement, §3 Aim & Objectives, §4 Who It Is For, §5 Market Fit, §6 Scope, §8 Primary Flow, §9 Capabilities. `docs/README.md`'s summary gives the one-paragraph version.     |
-| 2   | Team members and responsibilities                                | **Proposal-Only.** No source in this repo (Q12).                                                                                                                                                                            |
-| 3   | Development timeline                                             | **Proposal-Only.** No source in this repo (Q12).                                                                                                                                                                            |
-| 4   | Technology stack and programming languages                       | `docs/README.md` Stack section. `docs/trd.md` §2 for per-module detail.                                                                                                                                                     |
-| 5   | Hosting approach                                                 | `docs/trd.md` §17. `docs/prd.md` §11 for the in-region-versus-residency framing.                                                                                                                                            |
-| 6   | Cybersecurity controls                                           | `docs/trd.md` §16, §5, §14.                                                                                                                                                                                                 |
-| 7   | PDPA compliance approach                                         | `docs/prd.md` §11 Data Protection. `docs/trd.md` §4, §9, §15, §16 for the mechanisms, §19 row 11 for the open retention period.                                                                                             |
-| 8   | How patient data will be prevented from being exposed to the LLM | `docs/README.md` PHI Boundary section and diagram. `docs/trd.md` §5, §6, §9, §20, §21.                                                                                                                                      |
-| 9   | Key technical risks and limitations                              | `docs/prd.md` §12 Known Limitations. `docs/trd.md` §19 for unresolved engineering questions, including the two enforcement gaps (§5 `markDeidentified` export, §7 `DEID_FAIL_CLOSED` unread at egress) and §21.1's finding. |
-| 10  | Clear MVP deliverables and acceptance criteria                   | `docs/prd.md` §9 CAP-1 … CAP-5, §6 Out Of Scope, §14 Demo Script.                                                                                                                                                           |
+| #   | Proposal Section                                                 | Source                                                                                                                                                                                                                  |
+| --- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Understanding of the problem and proposed MVP                    | `docs/prd.md` §1 Domain Background, §2 Problem Statement, §3 Aim & Objectives, §4 Who It Is For, §5 Market Fit, §6 Scope, §8 Primary Flow, §9 Capabilities. `docs/README.md`'s summary gives the one-paragraph version. |
+| 2   | Team members and responsibilities                                | **Proposal-Only.** No source in this repo (Q12).                                                                                                                                                                        |
+| 3   | Development timeline                                             | **Proposal-Only.** No source in this repo (Q12).                                                                                                                                                                        |
+| 4   | Technology stack and programming languages                       | `docs/README.md` Stack section. `docs/trd.md` §2 for per-module detail.                                                                                                                                                 |
+| 5   | Hosting approach                                                 | `docs/trd.md` §17. `docs/prd.md` §11 for the in-region-versus-residency framing.                                                                                                                                        |
+| 6   | Cybersecurity controls                                           | `docs/trd.md` §16, §5, §14.                                                                                                                                                                                             |
+| 7   | PDPA compliance approach                                         | `docs/prd.md` §11 Data Protection. `docs/trd.md` §4, §9, §15, §16 for the mechanisms, §19 row 11 for the open retention period.                                                                                         |
+| 8   | How patient data will be prevented from being exposed to the LLM | `docs/README.md` PHI Boundary section and diagram. `docs/trd.md` §5, §6, §9, §20, §21.                                                                                                                                  |
+| 9   | Key technical risks and limitations                              | `docs/prd.md` §12 Known Limitations. `docs/trd.md` §19 for unresolved engineering questions, and §21.1's finding. The two PHI enforcement gaps it once listed were closed on 13/08/26 (§19 rows 1, 2).                  |
+| 10  | Clear MVP deliverables and acceptance criteria                   | `docs/prd.md` §9 CAP-1 … CAP-5, §6 Out Of Scope, §14 Demo Script.                                                                                                                                                       |
 
 ### Competitive And Regulatory Framing For The Proposal
 

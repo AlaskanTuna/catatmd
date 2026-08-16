@@ -701,7 +701,7 @@ The whole corpus (Q16) — every chunk's `id`, `title`, and `summary` — is ser
 
 ## 12. LLM Prompt & Response Contracts
 
-**Status: `Specified`**
+**Status: `Built`.** The three operations ship in `backend/src/analysis/` and `backend/src/suggestions/`, run concurrently from `analyseNote`, and are measured at 8 of 8 runs inside the CAP-1 budget (§19 rows 8 and 19, both closed).
 
 Two operations per analyse request (Q15 — decomposition by capability, not one call producing the whole `ConsultationAnalysis`). Both run after de-identification (§9) and before the rule engine's output is merged in (§10) — the model never sees the rule engine's hits, so it cannot suppress them by construction, not merely by instruction.
 
@@ -788,11 +788,11 @@ No automatic retry inside `LLMClient` (§6, `Built`) — a failure on either cal
 
 ## 13. API Contracts
 
-**Status: `Specified`**
+**Status: `Built`.** Per-route status is tracked in the route table below, which remains the finer-grained record.
 
-### New Response Schemas Proposed For `@shared/types`
+### Response Schemas In `@shared/types`
 
-None of these exist yet — proposing them is this document's mandate under Q17 ("the TRD proposes, the human ratifies").
+All of these were proposed here first, under this document's Q17 mandate ("the TRD proposes, the human ratifies"), and have since been ratified and built. They now live in `shared/src/index.ts`.
 
 | Schema                       | Shape                                                                                                                                                                                                                                                                                                                                                                                              |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -851,7 +851,7 @@ Matches `docs/prd.md` §8 (Primary Flow) exactly: `draft →(create) draft →(a
 
 ## 15. Audit Logging
 
-**Status: `Specified`**
+**Status: `Built`.** Every action in the taxonomy below is implemented in `backend/src/audit/` and written from the consultation and ASR routes.
 
 ### `AuditEvent.action` Taxonomy
 
@@ -1858,7 +1858,7 @@ The output of this pass sits behind the identical explicit Apply gate as the on-
 
 ## 21. LLM Guardrail Architecture
 
-**Status: `Specified`** — the design below is motivated by a measured finding, recorded first so the controls are traceable to evidence rather than to caution.
+**Status: `Built`** for the controls it describes: the primary one, the evidence-bound assertion check of §21.4, ships as `applyEvidenceCheck` in `backend/src/analysis/evidence.ts`. The design below is motivated by a measured finding, recorded first so the controls are traceable to evidence rather than to caution.
 
 ### 21.1 Measured Finding — Fabricated Clinical Negatives
 
