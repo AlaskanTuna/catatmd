@@ -2213,25 +2213,34 @@ Three arms, `EVAL_REPS=3`, 90 turns per run, one fresh conversation per turn wit
 
 A change is an improvement only if the edit rate rises while the question rate does not. Forcing a tool call every turn would raise the headline number and ruin the product.
 
-### 25.4 Two Prompt Revisions Were Trialled And Both Rejected
+### 25.4 Four Revisions Were Trialled And All Four Rejected
 
-Rule 5 in `buildCopilotSystemPrompt` is entirely defensive: it describes the mechanism once and then polices tense, with worked examples of overclaiming and none of using the tool. The obvious fix is a positive trigger. It does not work, and the measurements say why.
+Rule 5 in `buildCopilotSystemPrompt` is entirely defensive: it describes the mechanism once and then polices tense, with worked examples of overclaiming and none of using the tool. Three prompt revisions and one tool-description revision followed from that reading. None shipped. **`prompt.ts` and `tools.ts` are unchanged.**
 
-| Metric (90 turns each)                    | Shipped prompt | v1 add positive trigger | v2 remove the template |
-| ----------------------------------------- | -------------- | ----------------------- | ---------------------- |
-| Edit requests producing a card            | 22/36          | 21/36                   | 21/36                  |
-| Correct "already present" declines        | 9              | 11                      | 11                     |
-| Replacement wording in prose, no tool     | 4              | 4                       | 3                      |
-| Unsolicited proposals on questions        | **0/36**       | **0/36**                | **0/36**               |
-| False-completion claims                   | **0/90**       | **0/90**                | **0/90**               |
-| Literal `"Proposed for the"` with no card | 2              | **7**                   | **0**                  |
-| Claims a card exists when none does       | **0/90**       | **0/90**                | **3/90**               |
+Denominators differ where a turn errored, so they are given rather than assumed. The v3 and v4 runs bound each turn at 120 s (§25.6); the first three did not, which is why only they show errors.
+
+| Metric                                    | Shipped  | v1 positive trigger | v2 remove template | v3 v2 + card-claim ban | v4 tool description |
+| ----------------------------------------- | -------- | ------------------- | ------------------ | ---------------------- | ------------------- |
+| Edit requests producing a card            | 22/36    | 21/36               | 21/36              | 24/36                  | 26/34               |
+| Correct "already present" declines        | 9        | 11                  | 11                 | 10                     | **5**               |
+| Unsolicited proposals on questions        | **0/36** | **0/36**            | **0/36**           | 1/36                   | 2/35                |
+| False-completion claims                   | **0/90** | **0/90**            | **0/90**           | 2                      | 1                   |
+| Literal `"Proposed for the"` with no card | 2        | **7**               | **0**              | 0                      | 1                   |
+| Claims a card exists when none does       | **0/90** | **0/90**            | **3/90**           | 1                      | **0/90**            |
+| Phantom click instructions                | **0/90** | **0/90**            | **0/90**           | **0/87**               | 1                   |
+| Errored turns                             | 0        | 0                   | 0                  | 3                      | 5                   |
+
+The acceptance table above was **written down before v3 ran**, because at 36 edit prompts the interval on any rate is roughly plus or minus 15 points, and a criterion chosen after seeing the numbers is not a criterion. No rate improvement is claimed from this sample size. What is claimed is the count of specific text patterns, which is directly observable.
 
 **v1 tripled the failure it targeted.** Rule 5 lists `"Proposed for the plan:"` as a _correct_ phrasing for use after a tool call. The model treats it as an output template and reproduces it _instead of_ calling the tool. Emphasising the correct phrasings made the template more salient, not less.
 
-**v2 removed the template and introduced something worse.** The literal phrasing went to zero, but the model began asserting that a card existed: "Proposal sent to update the **objective** section. The card is waiting for your review", with no card. That is the #170 false-completion failure in a form the past-tense wording ban does not cover, and it is more dangerous than unhelpful prose, because it is a false claim about system state rather than a missing affordance.
+**v2 removed the template and introduced something worse.** The literal phrasing went to zero, but the model began asserting that a card existed: "Proposal sent to update the **objective** section. The card is waiting for your review", with no card. That is the #170 false-completion failure in a form the past-tense wording ban does not cover, and a false claim about system state is worse than a missing affordance.
 
-**Neither shipped.** The prompt is unchanged. The finding that matters is the mechanism: worked examples in a prompt act as output templates, and a rule that demonstrates the wording to use after an action will get the wording without the action.
+**v3 added the missing ban and leaked the prompt.** Adding an explicit "never state that a card exists" clause did close the v2 regression to 1, and cost more than it bought: the model began deliberating about the rules in front of the doctor, emitting _"Wait, the prompt says 'Never write replacement wording into your answer...'"_ into the clinical panel. A second explicit prohibition made the instruction itself the subject of the answer.
+
+**v4 raised the headline rate by destroying correct behaviour.** The one lever AC4 leaves open is the tool description, which described the mechanics of `edit_note_section` but never said when to reach for it. Rewriting it to name the trigger produced the best headline figure of any arm, 26/34, and halved the correct "already present" declines from 9 to 5. Per prompt: "the plan needs the MC duration spelled out" went from 1 of 3 correct declines and no cards, to 0 of 3 declines and 2 cards. The model stopped noticing that the content was already in the note and proposed duplicates instead. A rate that rises because the system got worse at declining is not an improvement, and only the per-class breakdown shows it.
+
+**The pattern across all four is the finding.** Each revision suppressed one prose form and produced another: template, then false card claim, then prompt leakage, then duplicate proposals. §21.3 ranks system-prompt instruction as a tier-4 control that fails silently, and four attempts is enough evidence that this defect is not addressable at that tier. The defect rate is about one edit request in nine, it is documented as a known limitation in `docs/README.md`, and the issue stays open rather than being closed with a change that measures worse.
 
 ### 25.5 The Phantom-Click Diagnostic
 
@@ -2256,6 +2265,7 @@ An evaluation that spends real model calls must treat its **raw per-turn outputs
 
 ### 25.7 What Stays Open
 
-- The defect is real but small (about 4 in 36) and no prompt revision has beaten it without introducing a worse one. A tool-description change was out of scope here because #185 fixes the tool surface; that is the untried lever.
+- The defect is real but small, about 4 in 36, and neither the three prompt revisions nor the tool-description revision beat it without introducing something worse. Both levers are now spent; what remains untried is a different tier, for example a post-hoc check that a turn composing replacement wording actually called the tool.
 - One turn in 36 truncated mid-answer, emitting four characters. Cause unknown, not reproduced, not investigated.
+- One statement prompt, "her temperature was 38.2 when the nurse checked", holds the stream open past 120 s and is the cause of most errored turns in v3 and v4. Not diagnosed.
 - The bare-statement arm sits near 78% and is unexplained: the model proposes readily on "she is allergic to penicillin" while declining on explicit imperatives. Whether that is correct is undecided, so it has no target.
