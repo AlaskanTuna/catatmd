@@ -30,12 +30,6 @@ _Catat_ — Malay, "to note down". The product documents; the doctor decides.
 
 </div>
 
-> ### ⚕️ The Doctor Decides
->
-> This system does not diagnose and does not replace clinical judgement. Every output is reviewed, edited, and explicitly approved by the clinician, who remains fully responsible for all medical decisions. All consultation data in this repository is **simulated**.
-
-**Clinical scope:** adult consultations in Malaysian private GP clinics, for acute cough, sore throat, and other upper respiratory symptoms — the modal Malaysian private-clinic presentation at **13.1% of cases** (National Medical Care Survey 2014).
-
 ---
 
 ## ⚡ In Three Numbers
