@@ -2101,3 +2101,86 @@ Restated here only far enough to be findable, with the detail kept in DESIGN.md:
 ### Public Build Inputs
 
 Anything prefixed `VITE_` is inlined into the bundle and is therefore public. The two the app reads are in §7. No secret may ever carry that prefix.
+
+---
+
+## 25. Review Copilot Tool-Call Behaviour
+
+**Status: `Measured`** (GitHub issue #185)
+
+Appended rather than inserted, per the convention §22 records: renumbering would break the `§19, row N` cross-references in both documents.
+
+### 25.1 The Reported Failure And What Was Actually There
+
+The report was that CatatAI answers a doctor's edit request in prose instead of calling `edit_note_section`, at "roughly one call in three". That figure came from three turns captured during a screenshot session, one of which produced a card. It is not a rate.
+
+Measured properly, the headline rate is **22 of 36 (61%)** locally and **26 of 36 (72%)** against production. More usefully, the misses are not one failure:
+
+| Class of miss                                             | Count (of 36) | Is it a defect?                                               |
+| --------------------------------------------------------- | ------------- | ------------------------------------------------------------- |
+| Content is already in the note, and the model says so     | 9             | **No.** A card duplicating existing wording wastes the review |
+| Replacement wording written into the answer, no tool call | 4             | **Yes.** This is the reported bug                             |
+| Stream truncated mid-answer                               | 1             | Separate anomaly, unexplained                                 |
+
+Excluding the correct declines, the tool-call rate is **22 of 27 (81%)**. The defect is roughly one edit request in nine, not one in three.
+
+### 25.2 Why It Was Invisible To The Suite
+
+Every unit test stubs the provider, so the suite fixes what the model returns. No stub can answer whether the real model reaches for a tool when a doctor phrases a request the way doctors phrase them. The measurement lives in `evals/copilot-proposals.ts`, which drives the real route over HTTP, and is deliberately **not** a Vitest: it spends an LLM call per turn and its results move with the provider.
+
+### 25.3 Method
+
+Three arms, `EVAL_REPS=3`, 90 turns per run, one fresh conversation per turn with empty history, serial so the route's 30/min limiter is never approached.
+
+- **Edit Requests (12).** Imperatives about the record that never name a tool, a proposal or a schema section, because the reported reproduction was that the tool fires reliably only when the request names the mechanism.
+- **Questions (12).** Held at parity with the edit arm. Six are near misses on the same clinical subject matter ("does the objective record the throat findings?" against "the objective should say the throat was red").
+- **Bare Statements (6).** Watched, **not scored**. Whether "she is allergic to penicillin" is dictation or context is not decidable from the sentence, so this arm has no target.
+
+A change is an improvement only if the edit rate rises while the question rate does not. Forcing a tool call every turn would raise the headline number and ruin the product.
+
+### 25.4 Two Prompt Revisions Were Trialled And Both Rejected
+
+Rule 5 in `buildCopilotSystemPrompt` is entirely defensive: it describes the mechanism once and then polices tense, with worked examples of overclaiming and none of using the tool. The obvious fix is a positive trigger. It does not work, and the measurements say why.
+
+| Metric (90 turns each)                    | Shipped prompt | v1 add positive trigger | v2 remove the template |
+| ----------------------------------------- | -------------- | ----------------------- | ---------------------- |
+| Edit requests producing a card            | 22/36          | 21/36                   | 21/36                  |
+| Correct "already present" declines        | 9              | 11                      | 11                     |
+| Replacement wording in prose, no tool     | 4              | 4                       | 3                      |
+| Unsolicited proposals on questions        | **0/36**       | **0/36**                | **0/36**               |
+| False-completion claims                   | **0/90**       | **0/90**                | **0/90**               |
+| Literal `"Proposed for the"` with no card | 2              | **7**                   | **0**                  |
+| Claims a card exists when none does       | **0/90**       | **0/90**                | **3/90**               |
+
+**v1 tripled the failure it targeted.** Rule 5 lists `"Proposed for the plan:"` as a _correct_ phrasing for use after a tool call. The model treats it as an output template and reproduces it _instead of_ calling the tool. Emphasising the correct phrasings made the template more salient, not less.
+
+**v2 removed the template and introduced something worse.** The literal phrasing went to zero, but the model began asserting that a card existed: "Proposal sent to update the **objective** section. The card is waiting for your review", with no card. That is the #170 false-completion failure in a form the past-tense wording ban does not cover, and it is more dangerous than unhelpful prose, because it is a false claim about system state rather than a missing affordance.
+
+**Neither shipped.** The prompt is unchanged. The finding that matters is the mechanism: worked examples in a prompt act as output templates, and a rule that demonstrates the wording to use after an action will get the wording without the action.
+
+### 25.5 The Phantom-Click Diagnostic
+
+A turn telling the doctor to click something while rendering no card asserts an affordance that is not on screen. `hasPhantomClickInstruction` in `backend/src/copilot/phantom-click.ts` is a **diagnostic, not a control**: nothing in `runCopilotTurn` calls it, and no answer is suppressed or rewritten. The only thing a runtime guard could do is edit clinical prose to fix a wording problem, and §21 is explicit that the schemas carry safety while the prompt carries register.
+
+Measured at **0 of 90** on the shipped prompt. It is exported so the unit pin and the eval share one definition, which mattered immediately: the first pattern was wrong in both directions, accepting `tapes` while dropping `tapping`, `tapped`, `clicked` and `pressed`. Per-verb inflection fixes it. Accepted limits, all pinned in the test:
+
+- `press` and `pressing` still match palpation. `pressure` and `tapering` are correctly excluded, which is what matters.
+- `approve` is deliberately absent though the issue's prose names it: it is ordinary vocabulary here, including in hard rule 3, so matching it would flag the model correctly refusing to approve a note.
+- A claim that a card exists, without any of the three verbs, is not caught. This is the v2 failure class above.
+
+**A clean phantom-click count therefore cannot gate a prompt change.** v2 scored 0 of 90 here while asserting three times that a card was waiting for review, because it never used the word "click". Read on this diagnostic alone, the more dangerous of the two revisions looks like the safer one. The count is evidence about one phrasing of one failure, not about whether the model is pointing the doctor at things that are not there.
+
+### 25.6 Evaluation Durability
+
+Two separate losses during this work, with different causes and only one shared fix:
+
+- **The scoring rule changed.** The phantom-click pattern was corrected mid-measurement, and the completed production run recorded only counts, so it could not be rescored and its phantom figure was withdrawn rather than reported.
+- **The run did not finish.** Three attempts were killed around ten minutes by the harness running them, and an end-of-run write recorded nothing at all.
+
+An evaluation that spends real model calls must treat its **raw per-turn outputs as the artefact and the summary as derived**, because the scoring rule will change and the run will be interrupted, and neither is unusual enough to plan around separately. `evals/copilot-proposals.ts` therefore writes every turn to `reports/copilot-proposals-<label>.json` as it completes, resumes from that transcript, and bounds each turn with `EVAL_TURN_TIMEOUT_MS` after one turn held a stream open past ten minutes and stalled an entire invocation.
+
+### 25.7 What Stays Open
+
+- The defect is real but small (about 4 in 36) and no prompt revision has beaten it without introducing a worse one. A tool-description change was out of scope here because #185 fixes the tool surface; that is the untried lever.
+- One turn in 36 truncated mid-answer, emitting four characters. Cause unknown, not reproduced, not investigated.
+- The bare-statement arm sits near 78% and is unexplained: the model proposes readily on "she is allergic to penicillin" while declining on explicit imperatives. Whether that is correct is undecided, so it has no target.
