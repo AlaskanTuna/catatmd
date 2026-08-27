@@ -177,3 +177,24 @@ export const draftTurnsRateLimit = rateLimit({
     },
   },
 })
+
+/**
+ * Per-IP limiter for `PATCH /api/settings/retention` (#80).
+ *
+ * Not a cost control and not a destructive one: the route writes a single
+ * integer on the caller's own account row. It is here because security.md
+ * requires every new write route to register its own limiter, and because a
+ * write is a write, and an unbounded one is a free way to keep a database
+ * connection busy. Twenty a minute is far above a doctor adjusting a setting
+ * and far below anything worth doing in a loop.
+ */
+export const settingsWriteRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: { code: 'rate_limited', message: 'Too many settings updates. Please retry shortly.' },
+  },
+})

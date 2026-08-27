@@ -98,7 +98,10 @@ OWASP A01:2025 Broken Access Control is still the number one risk, and object-le
 - PHI lives in `Consultation.transcript`, `Consultation.analysis`, and `Consultation.editedNote` (all `Json?`). Select only what a caller needs; do not widen a response to the whole row for convenience.
 - Erasure is a tombstone: `eraseConsultation()` (`backend/src/audit/erasure.ts`) nulls the three PHI columns and sets `erasedAt`. The `AuditEvent.consultationId` relation is `onDelete: Restrict` **because `consultationId` is a hash-chain input**; a cascading delete would break tamper evidence. Do not change it to `Cascade`.
 - Every new migration that adds a PHI-bearing column must state which of the three erasure targets it joins, and update `eraseConsultation` if it is a fourth.
-- **Not built today:** no retention job, no TTL, no deletion or access-request endpoint. `eraseConsultation` exists but no router calls it. **Never invent a retention period**; it is an owner-assigned decision that is deliberately open (`docs/dpia.md`, "Open Retention Decision").
+- **Built:** tombstone erasure through two routes. `POST /api/consultations/erase` batch-erases the caller's own consultations via `eraseConsultation`, and `POST /api/patients/:id/erase` erases a patient record and cascades to that patient's consultations via `erasePatient` (PR #212). Both null PHI columns and stamp `erasedAt`; neither deletes a row.
+- **Built:** the retention period is recorded, per doctor, on `User.retentionYears` and edited through `GET`/`PATCH /api/settings/retention` (#80). `null` means the controller has not adopted a period and **must never be read as the default**: substituting one turns a convention into a decision nobody made.
+- **Not built today:** no retention job, no TTL, no backup expiry, and no identity-verified access-request workflow. **Nothing enforces `retentionYears`**; storing the decision and acting on it are separate work.
+- **Never invent a retention period** beyond the configurable default the owner has authorised, and **never state a legal position**: the default is a convention the clinic data controller must review, not a statutory requirement, and no code, comment, or doc may cite legislation for it (`docs/dpia.md`, "Open Retention Decision").
 
 ## Secrets, Logging, Audit
 
@@ -155,7 +158,7 @@ Document the reason in the PR and ask before merging:
 - Turning `assertOwnedConsultation` into a 403, or adding a route with `:id` that skips it.
 - Widening `CORS_ORIGIN` beyond a single origin, or adding an origin to `trustedOrigins`.
 - Adding a logger field, log level, or debug branch that widens what may be written.
-- Committing a retention period, or any doc wording that calls de-identified data anonymous.
+- Changing the configurable retention default, making anything enforce it, or any doc wording that states a legal position for it or calls de-identified data anonymous.
 
 ## See Also
 
