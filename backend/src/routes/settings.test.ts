@@ -11,6 +11,16 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  */
 let stored: number | null = null
 
+/** Captured rather than written, so the route's audit call is observable here. */
+const trail = vi.hoisted(() => ({ events: [] as { action: string; metadata?: unknown }[] }))
+
+vi.mock('../audit/index.js', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  recordAuditEvent: vi.fn(async (event: { action: string; metadata?: unknown }) => {
+    trail.events.push(event)
+  }),
+}))
+
 vi.mock('../middleware/require-session.js', () => ({
   requireSession: (req: { doctorId?: string }, _res: unknown, next: () => void) => {
     req.doctorId = 'doctor-1'
@@ -46,6 +56,7 @@ afterAll(() => server.close())
 
 beforeEach(() => {
   stored = null
+  trail.events.length = 0
 })
 
 const read = async () => {
@@ -137,6 +148,43 @@ describe('route protection', () => {
     const app = readFileSync(new URL('../app.ts', import.meta.url), 'utf8')
 
     expect(app).toContain("app.patch('/api/settings/retention', settingsWriteRateLimit)")
+  })
+})
+
+/**
+ * The column records a governance decision, and a bare mutable integer cannot
+ * answer "what was the policy on this date, and who set it". These pin the
+ * trail that can.
+ */
+describe('the decision leaves a trail', () => {
+  it('records the adopted value, not merely that something changed', async () => {
+    await write({ adoptedYears: RETENTION_DEFAULT_YEARS })
+
+    expect(trail.events).toEqual([
+      {
+        action: 'settings.retention_adopted',
+        actorId: 'doctor-1',
+        metadata: { adoptedYears: RETENTION_DEFAULT_YEARS },
+      },
+    ])
+  })
+
+  // Withdrawing is as much a decision as adopting, so one action carries both
+  // rather than a second action nobody would think to look for.
+  it('records a withdrawal as the same action carrying null', async () => {
+    await write({ adoptedYears: 10 })
+    await write({ adoptedYears: null })
+
+    expect(trail.events.map((event) => event.metadata)).toEqual([
+      { adoptedYears: 10 },
+      { adoptedYears: null },
+    ])
+  })
+
+  it('writes nothing when the value was refused', async () => {
+    expect((await write({ adoptedYears: 7.5 })).status).toBe(400)
+
+    expect(trail.events).toHaveLength(0)
   })
 })
 
