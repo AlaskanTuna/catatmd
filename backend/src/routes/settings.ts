@@ -1,6 +1,7 @@
 import { RetentionPolicySchema } from '@shared/types'
 import { Router } from 'express'
 import { z } from 'zod'
+import { recordAuditEvent } from '../audit/index.js'
 import { HttpError } from '../lib/http-error.js'
 import { prisma } from '../lib/prisma.js'
 import { doctorId } from './consultations.js'
@@ -39,10 +40,22 @@ settingsRouter.patch('/retention', async (req, res) => {
     throw new HttpError(400, 'invalid_body', 'Retention must be a whole number of years, or none.')
   }
 
+  const actor = doctorId(req)
   const updated = await prisma.user.update({
-    where: { id: doctorId(req) },
+    where: { id: actor },
     data: { retentionYears: parsed.data.adoptedYears },
     select: { retentionYears: true },
+  })
+
+  /*
+   * Written before the response and unguarded, so a decision the trail did not
+   * record is never observable by a client. The same ordering the erase paths
+   * use, and for the same reason.
+   */
+  await recordAuditEvent({
+    action: 'settings.retention_adopted',
+    actorId: actor,
+    metadata: { adoptedYears: updated.retentionYears },
   })
 
   res.json(RetentionEnvelope.parse({ retention: { adoptedYears: updated.retentionYears } }))
