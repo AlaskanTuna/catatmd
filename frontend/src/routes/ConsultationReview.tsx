@@ -7,7 +7,7 @@ import type {
   SoapNote,
 } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Printer, Sparkles } from 'lucide-react'
+import { Copy, Printer, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, Navigate, useParams } from 'react-router-dom'
@@ -24,6 +24,15 @@ import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
 import { RenameField } from '../ui/RenameField.js'
+
+export function formatSoapNoteForClipboard(note: SoapNote) {
+  return [
+    `Subjective\n${note.subjective}`,
+    `Objective\n${note.objective}`,
+    `Assessment\n${note.assessment}`,
+    `Plan\n${note.plan}`,
+  ].join('\n\n')
+}
 
 /** The current decision about a finding, or `undefined` if none was made. */
 function byId(dispositions: Disposition[], id: string): Disposition | undefined {
@@ -260,6 +269,16 @@ export function ConsultationReview() {
   const approved = detail.status === 'approved'
   const note = detail.editedNote ?? analysis?.note ?? null
 
+  const copyNote = async () => {
+    if (!note) return
+    try {
+      await navigator.clipboard.writeText(formatSoapNoteForClipboard(note))
+      toast.success('Note copied.')
+    } catch {
+      toast.error('Note could not be copied.')
+    }
+  }
+
   const flags = [...(analysis?.redFlags ?? [])].sort(
     (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
   )
@@ -330,8 +349,16 @@ export function ConsultationReview() {
             >
               {showTranscript ? 'Hide Transcript' : 'Transcript'}
             </Button>
+            {approved && note && (
+              <Button icon={<Copy aria-hidden className="size-4" />} onClick={copyNote}>
+                Copy Note
+              </Button>
+            )}
             {approved && (
-              <Button icon={<Printer className="size-4" />} onClick={() => window.print()}>
+              <Button
+                icon={<Printer aria-hidden className="size-4" />}
+                onClick={() => window.print()}
+              >
                 Export
               </Button>
             )}

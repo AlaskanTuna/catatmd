@@ -5,6 +5,7 @@ import {
   ConsultationDetailSchema,
   type ConsultationListItem,
   ConsultationListItemSchema,
+  type CreatePatientInput,
   type DispositionInput,
   type DraftTurn,
   DraftTurnsResponseSchema,
@@ -19,8 +20,15 @@ import {
   HostedAsrResultSchema,
   type NotificationItem,
   NotificationItemSchema,
+  type Patient,
+  type PatientDetail,
+  PatientDetailSchema,
+  type PatientListItem,
+  PatientListItemSchema,
+  PatientSchema,
   type SoapNote,
   type Transcript,
+  type UpdatePatientInput,
 } from '@shared/types'
 import { z } from 'zod'
 
@@ -75,6 +83,9 @@ async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit
 
 const ConsultationEnvelope = z.object({ consultation: ConsultationDetailSchema })
 const ListEnvelope = z.object({ consultations: z.array(ConsultationListItemSchema) })
+const PatientListEnvelope = z.object({ patients: z.array(PatientListItemSchema) })
+const PatientEnvelope = z.object({ patient: PatientSchema })
+const PatientDetailEnvelope = z.object({ patient: PatientDetailSchema })
 const FixturesEnvelope = z.object({ fixtures: z.array(FixtureSchema) })
 const GuidelinesEnvelope = z.object({ guidelines: z.array(GuidelineChunkSchema) })
 const NotificationsEnvelope = z.object({ notifications: z.array(NotificationItemSchema) })
@@ -119,16 +130,34 @@ export const api = {
 
   signOut: () => request('/auth/sign-out', z.unknown(), { method: 'POST' }),
 
+  listPatients: (): Promise<PatientListItem[]> =>
+    request('/patients', PatientListEnvelope).then((r) => r.patients),
+
+  createPatient: (body: CreatePatientInput): Promise<Patient> =>
+    request('/patients', PatientEnvelope, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }).then((r) => r.patient),
+
+  getPatient: (id: string): Promise<PatientDetail> =>
+    request(`/patients/${id}`, PatientDetailEnvelope).then((r) => r.patient),
+
+  patchPatient: (id: string, body: UpdatePatientInput): Promise<Patient> =>
+    request(`/patients/${id}`, PatientEnvelope, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }).then((r) => r.patient),
+
   listConsultations: (): Promise<ConsultationListItem[]> =>
     request('/consultations', ListEnvelope).then((r) => r.consultations),
 
   getConsultation: (id: string): Promise<ConsultationDetail> =>
     request(`/consultations/${id}`, ConsultationEnvelope).then((r) => r.consultation),
 
-  createConsultation: (transcript: Transcript): Promise<ConsultationDetail> =>
+  createConsultation: (transcript: Transcript, patientId?: string): Promise<ConsultationDetail> =>
     request('/consultations', ConsultationEnvelope, {
       method: 'POST',
-      body: JSON.stringify({ transcript }),
+      body: JSON.stringify(patientId ? { transcript, patientId } : { transcript }),
     }).then((r) => r.consultation),
 
   analyze: (id: string): Promise<ConsultationDetail> =>

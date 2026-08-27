@@ -1,4 +1,4 @@
-import { BookMarked, FileText, PanelLeft, Plus, Settings } from 'lucide-react'
+import { BookMarked, FileText, PanelLeft, Plus, Settings, Users } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
@@ -17,6 +17,7 @@ interface Item {
 
 const ITEMS: Item[] = [
   { to: '/consultations/new', label: 'New Consultation', icon: Plus, tour: 'nav-new' },
+  { to: '/patients', label: 'Patients', icon: Users },
   { to: '/consultations', label: 'Consultations', icon: FileText, tour: 'nav-consultations' },
   { to: '/guidelines', label: 'Guidelines', icon: BookMarked, tour: 'nav-guidelines' },
 ]

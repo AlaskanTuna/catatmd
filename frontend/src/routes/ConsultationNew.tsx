@@ -2,7 +2,7 @@ import type { Transcript, TranscriptSource, TranscriptTurn } from '@shared/types
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { FileUp, FolderOpen, Mic, Type } from 'lucide-react'
 import { type ChangeEvent, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AudioCapture } from '../audio/AudioCapture.js'
 import {
   type DraftLine,
@@ -34,6 +34,8 @@ const TABS = [
 
 export function ConsultationNew() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const patientId = searchParams.get('patientId') ?? undefined
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>(TABS[0].id)
   const [text, setText] = useState('')
   const [source, setSource] = useState<TranscriptSource>('fixture')
@@ -53,7 +55,7 @@ export function ConsultationNew() {
   const create = useMutation({
     mutationFn: () => {
       const transcript: Transcript = { source, turns }
-      return api.createConsultation(transcript)
+      return api.createConsultation(transcript, patientId)
     },
     onSuccess: (consultation) => navigate(`/consultations/${consultation.id}`),
   })
