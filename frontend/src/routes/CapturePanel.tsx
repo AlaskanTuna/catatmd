@@ -1,8 +1,8 @@
 import type { Transcript, TranscriptSource, TranscriptTurn } from '@shared/types'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { FileUp, FolderOpen, Mic, Settings2, Type, UserRound } from 'lucide-react'
 import { type ChangeEvent, useRef, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { AudioCapture } from '../audio/AudioCapture.js'
 import { AudioSettingsDialog } from '../audio/AudioSettingsDialog.js'
 import { type AudioSettings, loadAudioSettings } from '../audio/audio-settings.js'
@@ -13,12 +13,11 @@ import {
   segmentsToDraft,
 } from '../audio/draft-turns.js'
 import { SpeakerAssign } from '../audio/SpeakerAssign.js'
-import { ApiError, api } from '../lib/api.js'
+import { api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
 import { parseTranscript, serialiseTurns } from '../lib/transcript.js'
 import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
-import { PageHeader } from '../ui/PageHeader.js'
 
 /*
  * Ordered by how central each path is to the product, not by how it was built,
@@ -34,10 +33,31 @@ const TABS = [
   { id: 'fixture', label: 'Bundled Case', Icon: FolderOpen },
 ] as const
 
-export function ConsultationNew() {
-  const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const patientId = searchParams.get('patientId') ?? undefined
+/**
+ * Capture, mounted inside the consultation it writes into.
+ *
+ * This was a page of its own — `/consultations/new` — which assembled a
+ * transcript first and created the record only once it was complete. That
+ * ordering is what made a consultation something you finished before it
+ * existed, and it is why the record could not be filed to a patient until the
+ * very end. The record now comes first and this writes into it.
+ *
+ * Everything here is unchanged from that page except its edges: no routing, no
+ * create mutation, and a callback where the navigation used to be. The draft
+ * speaker-label gate in particular is carried over intact, because it is a
+ * safety control rather than UX polish (issue #70).
+ */
+export function CapturePanel({
+  patientId,
+  onCapture,
+  saving,
+  error,
+}: {
+  patientId?: string
+  onCapture: (transcript: Transcript) => void
+  saving: boolean
+  error: string | null
+}) {
   /*
    * Named on screen, not merely carried in the query string. A doctor who
    * arrived here from a patient profile has to be able to confirm the
@@ -82,13 +102,7 @@ export function ConsultationNew() {
 
   const turns = parseTranscript(text)
 
-  const create = useMutation({
-    mutationFn: () => {
-      const transcript: Transcript = { source, turns }
-      return api.createConsultation(transcript, patientId)
-    },
-    onSuccess: (consultation) => navigate(`/consultations/${consultation.id}`),
-  })
+  const submit = () => onCapture({ source, turns })
 
   const appendText = (addition: string) =>
     setText((current) => (current ? `${current.trimEnd()}\n${addition}` : addition))
@@ -148,13 +162,7 @@ export function ConsultationNew() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      <PageHeader
-        title="New Consultation"
-        subtitle="Every bundled case is synthetic. No real patient data enters this system."
-        art="/art/new-consultation.webp"
-      />
-
+    <div>
       {patientId && (
         <div className="mt-4 flex flex-wrap items-center gap-2 rounded-card bg-accent-soft px-4 py-3 text-sm">
           <UserRound aria-hidden className="size-4 text-accent" />
@@ -168,12 +176,7 @@ export function ConsultationNew() {
         </div>
       )}
 
-      <div
-        role="tablist"
-        aria-label="Transcript source"
-        data-tour="intake"
-        className="mt-6 flex flex-wrap gap-1"
-      >
+      <div role="tablist" aria-label="Transcript source" className="mt-6 flex flex-wrap gap-1">
         {TABS.map(({ id, label, Icon }) => (
           <button
             key={id}
@@ -431,11 +434,9 @@ export function ConsultationNew() {
         </Card>
       )}
 
-      {create.error && (
+      {error && (
         <p role="alert" className="mt-4 text-sm text-emergency">
-          {create.error instanceof ApiError
-            ? create.error.message
-            : 'Could not start consultation.'}
+          {error}
         </p>
       )}
 
@@ -444,10 +445,10 @@ export function ConsultationNew() {
         size="lg"
         className="mt-6"
         disabled={turns.length === 0 || draft !== null}
-        loading={create.isPending}
-        onClick={() => create.mutate()}
+        loading={saving}
+        onClick={submit}
       >
-        Start Consultation
+        Use This Transcript
       </Button>
     </div>
   )

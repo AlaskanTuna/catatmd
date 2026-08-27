@@ -652,6 +652,71 @@ describe('state machine — patch', () => {
 })
 
 /**
+ * Capture arrives by PATCH now that the record exists before the transcript
+ * does. It has the opposite gate to every other patchable field, so it is
+ * pinned separately rather than folded into the block above.
+ */
+describe('capturing a transcript into an existing draft', () => {
+  const CAPTURED = {
+    source: 'paste',
+    turns: [{ speaker: 'doctor', text: 'What brings you in today?' }],
+  }
+
+  it('writes the transcript into a draft and audits the edit', async () => {
+    seed('draft', { transcript: null })
+
+    const res = await call('PATCH', '/api/consultations/c1', { transcript: CAPTURED })
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')?.transcript).toEqual(CAPTURED)
+    expect(audits.map((a) => a.action)).toContain('consultation.edited')
+  })
+
+  /*
+   * The invariant worth protecting: every finding, gap and evidence span is a
+   * span of the transcript, so a transcript replaced after analysis would leave
+   * an analysis attributed to words nobody said.
+   */
+  it.each(['analyzing', 'awaiting_review', 'approved'])(
+    'refuses capture from %s with 409',
+    async (status) => {
+      seed(status, { analysis: ANALYSIS })
+
+      const res = await call('PATCH', '/api/consultations/c1', { transcript: CAPTURED })
+
+      expect(res.status).toBe(409)
+      expect(store.get('c1')?.transcript).toEqual(TRANSCRIPT)
+    },
+  )
+
+  it('records the hosted relay on this path too, not only on create', async () => {
+    seed('draft', { transcript: null })
+
+    await call('PATCH', '/api/consultations/c1', {
+      transcript: { ...CAPTURED, source: 'asr_hosted' },
+    })
+
+    expect(audits.map((a) => a.action)).toContain('consultation.asr_hosted_used')
+  })
+
+  /*
+   * Capture returns early, so a mixed patch would apply the transcript and
+   * silently drop the rest. Refusing it is the honest outcome.
+   */
+  it('refuses a transcript sent alongside another field', async () => {
+    seed('draft', { transcript: null })
+
+    const res = await call('PATCH', '/api/consultations/c1', {
+      transcript: CAPTURED,
+      title: 'Renamed',
+    })
+
+    expect(res.status).toBe(400)
+    expect(store.get('c1')?.transcript).toBeNull()
+  })
+})
+
+/**
  * Issue #10 AC4. The three-way disposition is the one review control that can
  * set a safety signal aside, so these pin the properties that make that safe
  * rather than merely the happy path.

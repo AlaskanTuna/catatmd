@@ -241,7 +241,7 @@ observer and no JavaScript: nothing animates, the occluder just moves.
 
 - `--footer-h` is **one variable** serving both the footer's height and the reserve below the page. As two literals they drift the first time either changes, and the failure is silent and one-directional: too small a reserve hides the footer's top row behind the page, which nobody sees unless they scroll to the bottom at the width that broke it. Measure the footer and set the variable from that.
 - Below `48rem` the reveal is switched off rather than resized. Stacking the content roughly doubles the footer, so holding the effect on a phone would reserve most of a viewport as dead scroll to uncover what a normal footer shows for free.
-- **`/consultations/:id` has no footer at all.** It is a working surface with a sticky approve bar, and the reserve is dropped with it so the page ends at its content. `/consultations/new` keeps its footer, so the route match is guarded on the id.
+- **`/consultations/:id` has no footer at all.** It is a working surface with a sticky approve bar, and the reserve is dropped with it so the page ends at its content.
 - Footer content is right-aligned against the header's `max-w-6xl px-6` column, not the viewport. Past about 1400px a viewport-flush footer drifts away from everything else on the page and stops reading as part of the same grid.
 
 ## Motion

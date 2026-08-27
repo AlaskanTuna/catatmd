@@ -29,11 +29,8 @@ export function AppShell() {
   const onExpandedChange = useCallback((expanded: boolean) => setDimmed(expanded), [])
 
   // The review screen is a working surface with a sticky approve bar, not a
-  // page that ends: the reveal footer is wrong there. `/consultations/new`
-  // matches the same pattern, so it is excluded explicitly rather than
-  // caught by the param shape.
-  const reviewMatch = useMatch('/consultations/:id')
-  const suppressFooter = reviewMatch != null && reviewMatch.params.id !== 'new'
+  // page that ends: the reveal footer is wrong there.
+  const suppressFooter = useMatch('/consultations/:id') != null
 
   return (
     // The tour provider wraps the shell rather than the app, so it sits inside

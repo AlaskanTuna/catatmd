@@ -3,8 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api } from '../lib/api.js'
-import { ConsultationNew } from './ConsultationNew.js'
+import { CapturePanel } from './CapturePanel.js'
 
 /*
  * The submit gate is a safety control, not UX polish: while drafted labels
@@ -168,7 +167,7 @@ function setup() {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <ConsultationNew />
+        <CapturePanel onCapture={vi.fn()} saving={false} error={null} />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -176,10 +175,10 @@ function setup() {
   fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
 }
 
-describe('ConsultationNew record flow', () => {
+describe('CapturePanel record flow', () => {
   it('keeps Start disabled while a draft is pending, and enables it after Apply', () => {
     setup()
-    const start = screen.getByRole('button', { name: /start consultation/i })
+    const start = screen.getByRole('button', { name: /use this transcript/i })
     expect((start as HTMLButtonElement).disabled).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
@@ -225,7 +224,7 @@ describe('ConsultationNew record flow', () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter>
-          <ConsultationNew />
+          <CapturePanel onCapture={vi.fn()} saving={false} error={null} />
         </MemoryRouter>
       </QueryClientProvider>,
     )
@@ -267,7 +266,7 @@ describe('hosted draft-turn labelling', () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter>
-          <ConsultationNew />
+          <CapturePanel onCapture={vi.fn()} saving={false} error={null} />
         </MemoryRouter>
       </QueryClientProvider>,
     )
@@ -280,7 +279,7 @@ describe('hosted draft-turn labelling', () => {
 
     expect(screen.getByText('Any fever?')).toBeTruthy()
     expect(screen.getByText('Yesterday quite hot.')).toBeTruthy()
-    const start = screen.getByRole('button', { name: /start consultation/i }) as HTMLButtonElement
+    const start = screen.getByRole('button', { name: /use this transcript/i }) as HTMLButtonElement
     expect(start.disabled).toBe(true)
   })
 
@@ -320,7 +319,7 @@ describe('hosted draft-turn labelling', () => {
     expect(textarea.value).toMatch(/Batuk sudah tiga hari\./)
     // The point of the fix: the transcript now parses to turns, so the button
     // that was permanently disabled is reachable.
-    expect(screen.getByRole('button', { name: /start consultation/i })).not.toHaveProperty(
+    expect(screen.getByRole('button', { name: /use this transcript/i })).not.toHaveProperty(
       'disabled',
       true,
     )
@@ -403,52 +402,34 @@ describe('hosted draft-turn labelling', () => {
  * consultation's audio leave the device", so understating it is the one
  * direction that must be impossible.
  */
-describe('patient filing', () => {
-  beforeEach(() => {
-    vi.mocked(api.createConsultation).mockClear()
-    vi.mocked(api.createConsultation).mockResolvedValue({
-      id: 'consultation-1',
-    } as Awaited<ReturnType<typeof api.createConsultation>>)
-  })
-
-  it('passes the patient search parameter through when starting', async () => {
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <MemoryRouter initialEntries={['/consultations/new?patientId=patient-1']}>
-          <ConsultationNew />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
-    fireEvent.click(screen.getByRole('button', { name: /start consultation/i }))
-
-    await waitFor(() =>
-      expect(api.createConsultation).toHaveBeenCalledWith(expect.any(Object), 'patient-1'),
-    )
-  })
-})
 
 describe('recording provenance', () => {
   /**
    * The transcript the route actually submits. Awaited, because `mutate()`
    * runs the mutation in a microtask rather than on the click.
    */
+  /*
+   * Reads the capture callback rather than the create request. The panel no
+   * longer creates the consultation — the record exists before capture begins
+   * — but the property these pin is unchanged: a transcript whose audio
+   * reached a hosted relay must never report as having stayed on the device.
+   */
+  const captured = vi.fn()
+
   async function submit() {
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
-    fireEvent.click(screen.getByRole('button', { name: /start consultation/i }))
-    await waitFor(() => expect(api.createConsultation).toHaveBeenCalled())
-    const call = vi.mocked(api.createConsultation).mock.calls.at(-1)
-    if (!call) throw new Error('expected a consultation to have been created')
-    return call[0]
+    fireEvent.click(screen.getByRole('button', { name: /use this transcript/i }))
+    await waitFor(() => expect(captured).toHaveBeenCalled())
+    const call = captured.mock.calls.at(-1)
+    if (!call) throw new Error('expected a transcript to have been captured')
+    return call[0] as { source: string }
   }
 
   function open() {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter>
-          <ConsultationNew />
+          <CapturePanel onCapture={captured} saving={false} error={null} />
         </MemoryRouter>
       </QueryClientProvider>,
     )
@@ -458,10 +439,7 @@ describe('recording provenance', () => {
   beforeEach(() => {
     // Cleared, not just re-stubbed: these read the most recent call, and a
     // previous test's submission would otherwise answer for this one.
-    vi.mocked(api.createConsultation).mockClear()
-    vi.mocked(api.createConsultation).mockResolvedValue({
-      id: 'c1',
-    } as Awaited<ReturnType<typeof api.createConsultation>>)
+    captured.mockClear()
   })
 
   it('reports asr_local for an on-device recording', async () => {
@@ -510,7 +488,7 @@ function renderRoute() {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <ConsultationNew />
+        <CapturePanel onCapture={vi.fn()} saving={false} error={null} />
       </MemoryRouter>
     </QueryClientProvider>,
   )
