@@ -25,7 +25,11 @@ const LABELS: Record<AssertionState, string> = {
 const STYLES: Record<AssertionState, string> = {
   PRESENT: 'bg-accent-soft text-accent border-accent/25',
   DENIED: 'bg-sunken text-ink border-line',
-  CLINICIAN_OBSERVED: 'bg-advisory/12 text-advisory border-advisory/25',
+  // Solid fill, not `bg-advisory/12`: partial-alpha fills are banned and no
+  // advisory-soft token exists. Neutral rather than `bg-accent-soft`, which
+  // would put advisory text on the accent's own tint and read as two states at
+  // once. Identity rides on the word, the text colour and the border.
+  CLINICIAN_OBSERVED: 'bg-sunken text-advisory border-advisory/25',
   // Deliberately legible rather than faint. A doctor scanning for what was
   // never covered must be able to find it at a glance.
   NOT_ASSESSED: 'bg-transparent text-ink-muted border-ink-muted/40 border-dashed',

@@ -951,7 +951,11 @@ export function AudioCapture({
       <fieldset className="mt-1 border-t border-line pt-4">
         <legend className="text-sm font-medium text-ink">Transcription engine</legend>
 
-        <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+        {/* Stacked, not side by side. Capture lives in the review screen's
+            transcript column now, and two engine cards sharing ~380px clipped
+            both of them. Each card carries a sentence about where the audio
+            goes, which is the one thing here a doctor has to be able to read. */}
+        <div className="mt-2.5 grid gap-2">
           {ENGINES.map((engine) => {
             const selected = hosted === engine.hosted
             return (

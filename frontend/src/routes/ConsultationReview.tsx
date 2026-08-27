@@ -320,7 +320,9 @@ export function ConsultationReview() {
   }))
 
   return (
-    <div className="mx-auto max-w-7xl">
+    // The bottom padding clears the sticky bar, which is in flow and would
+    // otherwise sit on top of the last thing in the tallest column.
+    <div className="mx-auto max-w-7xl pb-20">
       <PageHeader
         data-print="hide"
         title="Consultation Review"
@@ -411,80 +413,37 @@ export function ConsultationReview() {
         }
       />
 
-      {/*
-       * A consultation now exists before it is captured, so this screen has
-       * two "not analysed yet" states rather than one. Without a transcript
-       * there is nothing to analyse and the capture panel takes the space;
-       * with one, the analyse gate does. Collapsing them would have put an
-       * Analyse button in front of a doctor who has not recorded anything.
-       */}
-      {!analysis && !detail.transcript && (
-        <Card className="mt-6 p-6" data-print="hide">
-          <CapturePanel
-            patientId={detail.patient?.id}
-            saving={capture.isPending}
-            error={
-              capture.error instanceof ApiError
-                ? capture.error.message
-                : capture.error
-                  ? 'Could not save the transcript.'
-                  : null
-            }
-            onCapture={(transcript) => capture.mutate(transcript)}
-          />
-        </Card>
-      )}
+      {/* Three panels on wide screens, in every state rather than only the
+          analysed one. Below lg the safety rail moves ABOVE the note rather
+          than below it: docs/DESIGN.md requires severity to be visible without
+          scrolling, and on a narrow screen that can only mean first in source
+          order. The panels never become tabs, because tabs hide safety content.
 
-      {!analysis && detail.transcript && (
-        <Card className="mt-6 p-6" data-print="hide">
-          <h2 className="text-lg font-semibold">Ready to Analyse</h2>
-          <p className="mt-2 max-w-prose text-sm text-ink-muted">
-            The transcript is de-identified before any part of it leaves this server. Identifiers
-            are replaced with pseudonymous tokens and restored only after the response returns.
-          </p>
-          {analyze.error && (
-            <p role="alert" className="mt-3 text-sm text-emergency">
-              {analyze.error instanceof ApiError
-                ? analyze.error.message
-                : 'Analysis could not be completed.'}
-            </p>
+          Capture used to replace this whole arrangement with a single card,
+          which meant the doctor captured a consultation with no sight of where
+          any of it would land. The columns are the explanation: the note fills
+          the middle, the checks fill the rail, and both say so while they are
+          still empty. */}
+      <div className="mt-6 grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)_340px]">
+        <section
+          ref={transcriptRef}
+          className={cn(
+            // `scroll-mt-20` clears the fixed chrome cluster, which is out of
+            // flow and would otherwise cover the heading this scrolls to.
+            'order-3 scroll-mt-20 lg:sticky lg:top-6 lg:order-1 lg:self-start',
+            // The mobile show/hide belongs to a transcript that already
+            // exists. Capture is the one thing on this screen a doctor has
+            // come here to do, so it is never behind a toggle.
+            detail.transcript && !showTranscript ? 'hidden lg:block' : 'block',
           )}
-          <Button
-            variant="primary"
-            size="lg"
-            className="mt-4"
-            icon={<Sparkles className="size-4" />}
-            loading={analyze.isPending || detail.status === 'analyzing'}
-            onClick={() => analyze.mutate()}
-            data-tour="analyse"
-          >
-            {analyze.isPending ? 'Analysing' : 'Analyse Consultation'}
-          </Button>
-        </Card>
-      )}
-
-      {analysis && note && (
-        /* Three panels on wide screens. Below lg the safety rail moves ABOVE
-           the note rather than below it: docs/DESIGN.md requires severity to
-           be visible without scrolling, and on a narrow screen that can only
-           mean first in source order. The panels never become tabs, because
-           tabs hide safety content. */
-        <div className="mt-6 grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)_360px]">
-          <section
-            ref={transcriptRef}
-            className={cn(
-              // `scroll-mt-20` clears the fixed chrome cluster, which is out of
-              // flow and would otherwise cover the heading this scrolls to.
-              'order-3 scroll-mt-20 lg:sticky lg:top-6 lg:order-1 lg:self-start',
-              showTranscript ? 'block' : 'hidden lg:block',
-            )}
-            aria-labelledby="transcript-heading"
-            data-tour="transcript"
-            data-print="hide"
-          >
-            <h2 id="transcript-heading" className="mb-2 text-sm font-semibold">
-              Transcript
-            </h2>
+          aria-labelledby="transcript-heading"
+          data-tour="transcript"
+          data-print="hide"
+        >
+          <h2 id="transcript-heading" className="mb-2 text-sm font-semibold">
+            Transcript
+          </h2>
+          {detail.transcript ? (
             <div className="max-h-[70vh] overflow-y-auto rounded-card bg-sunken p-3">
               {keyedTurns.map((turn) => (
                 <p key={turn.key} className="mb-2 text-xs leading-relaxed">
@@ -500,27 +459,49 @@ export function ConsultationReview() {
                 </p>
               ))}
             </div>
-          </section>
+          ) : (
+            <Card className="p-4">
+              <CapturePanel
+                patientId={detail.patient?.id}
+                saving={capture.isPending}
+                error={
+                  capture.error instanceof ApiError
+                    ? capture.error.message
+                    : capture.error
+                      ? 'Could not save the transcript.'
+                      : null
+                }
+                onCapture={(transcript) => capture.mutate(transcript)}
+              />
+            </Card>
+          )}
+        </section>
 
-          <section className="order-2 min-w-0" aria-labelledby="note-heading">
-            <h2 id="note-heading" className="mb-2 text-sm font-semibold" data-print="hide">
-              Clinical Note
-            </h2>
-            <NoteEditor
-              note={note}
-              aiNote={analysis.note}
-              readOnly={approved}
-              saving={patch.isPending}
-              onSave={(editedNote: Partial<SoapNote>) => patch.mutate({ editedNote })}
-            />
-            <ChecklistPanel
-              clinicalFacts={analysis.clinicalFacts}
-              operational={analysis.operational}
-              evidenceLinks={analysis.evidenceLinks}
-            />
-          </section>
+        <section className="order-2 min-w-0" aria-labelledby="note-heading">
+          <h2 id="note-heading" className="mb-2 text-sm font-semibold" data-print="hide">
+            Clinical Note
+          </h2>
+          {analysis && note ? (
+            <>
+              <NoteEditor
+                note={note}
+                aiNote={analysis.note}
+                readOnly={approved}
+                saving={patch.isPending}
+                onSave={(editedNote: Partial<SoapNote>) => patch.mutate({ editedNote })}
+              />
+              <ChecklistPanel
+                clinicalFacts={analysis.clinicalFacts}
+                operational={analysis.operational}
+                evidenceLinks={analysis.evidenceLinks}
+              />
+            </>
+          ) : (
+            <NotePlaceholder captured={detail.transcript != null} />
+          )}
+        </section>
 
-          {/* The rail scrolls itself instead of stretching the page.
+        {/* The rail scrolls itself instead of stretching the page.
               Previously it was the tallest column by a wide margin (one guest
               consultation produced four flags and twenty-seven gaps), so it set
               the height of the whole screen and left the other two columns
@@ -530,89 +511,155 @@ export function ConsultationReview() {
 
               The bottom stop clears the approve bar, which is `sticky bottom-4`
               in flow and would otherwise sit on top of the last card. */}
-          <aside
-            className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto lg:pr-1"
-            aria-label="Clinical safety"
-            data-print="expand"
-          >
-            <Panel title="Red Flags" count={flags.length}>
-              {flags.length === 0 ? (
+        <aside
+          className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto lg:pr-1"
+          aria-label="Clinical safety"
+          data-print="expand"
+        >
+          {!analysis && (
+            <>
+              <Panel title="Red Flags">
                 <p className="text-sm text-ink-muted">
-                  No escalation triggers fired for this consultation.
+                  Deterministic escalation triggers run on the transcript before the model sees it,
+                  and a rule that fires cannot be suppressed by one.
                 </p>
-              ) : (
-                flags.map((flag) => (
-                  <RedFlagCard
-                    key={flag.id}
-                    flag={flag}
-                    disposition={byId(detail.redFlagDispositions, flag.id)}
-                    onDecide={(decision) => patch.mutate({ redFlagDispositions: [decision] })}
-                  />
-                ))
-              )}
-            </Panel>
+              </Panel>
+              <Panel title="Missing Information">
+                <p className="text-sm text-ink-muted">
+                  What the consultation did not record appears here, as prompts to ask rather than
+                  instructions to follow.
+                </p>
+              </Panel>
+              <Panel title="Suggestions">
+                <p className="text-sm text-ink-muted">
+                  Cited against the guideline corpus. Every citation is an id from that corpus, so a
+                  reference the model invented cannot reach this panel.
+                </p>
+              </Panel>
+            </>
+          )}
 
-            {/* Gaps are the one list that gets long enough to bury the panels
+          {analysis && (
+            <>
+              <Panel title="Red Flags" count={flags.length}>
+                {flags.length === 0 ? (
+                  <p className="text-sm text-ink-muted">
+                    No escalation triggers fired for this consultation.
+                  </p>
+                ) : (
+                  flags.map((flag) => (
+                    <RedFlagCard
+                      key={flag.id}
+                      flag={flag}
+                      disposition={byId(detail.redFlagDispositions, flag.id)}
+                      onDecide={(decision) => patch.mutate({ redFlagDispositions: [decision] })}
+                    />
+                  ))
+                )}
+              </Panel>
+
+              {/* Gaps are the one list that gets long enough to bury the panels
                 under it, so it opens at a readable length with the full count
                 still on the heading. Red flags are never collapsed: hiding a
                 fired escalation trigger behind a disclosure is the failure
                 this product exists to prevent. */}
-            <Panel title="Missing Information" count={analysis.gaps.length}>
-              {/* Every gap is rendered and the extras are hidden in CSS rather
+              <Panel title="Missing Information" count={analysis.gaps.length}>
+                {/* Every gap is rendered and the extras are hidden in CSS rather
                   than sliced out of the array, so `print:block` brings them all
                   back. Slicing would put a truncated list on paper with nothing
                   to say it had been truncated. */}
-              {gaps.map((gap, position) => (
-                <div
-                  key={gap.id}
-                  className={cn(!showAllGaps && position >= GAP_PREVIEW && 'hidden print:block')}
-                >
-                  <GapCard
-                    gap={gap}
-                    disposition={byId(detail.gapDispositions, gap.id)}
-                    onDecide={(decision) => patch.mutate({ gapDispositions: [decision] })}
-                  />
-                </div>
-              ))}
-              {analysis.gaps.length > GAP_PREVIEW && (
-                <button
-                  type="button"
-                  data-print="hide"
-                  onClick={() => setShowAllGaps((value) => !value)}
-                  aria-expanded={showAllGaps}
-                  className="mt-1 self-start rounded-control px-2 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-sunken"
-                >
-                  {showAllGaps ? 'Show Fewer' : `Show All ${analysis.gaps.length} Missing Items`}
-                </button>
-              )}
-            </Panel>
+                {gaps.map((gap, position) => (
+                  <div
+                    key={gap.id}
+                    className={cn(!showAllGaps && position >= GAP_PREVIEW && 'hidden print:block')}
+                  >
+                    <GapCard
+                      gap={gap}
+                      disposition={byId(detail.gapDispositions, gap.id)}
+                      onDecide={(decision) => patch.mutate({ gapDispositions: [decision] })}
+                    />
+                  </div>
+                ))}
+                {analysis.gaps.length > GAP_PREVIEW && (
+                  <button
+                    type="button"
+                    data-print="hide"
+                    onClick={() => setShowAllGaps((value) => !value)}
+                    aria-expanded={showAllGaps}
+                    className="mt-1 self-start rounded-control px-2 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-sunken"
+                  >
+                    {showAllGaps ? 'Show Fewer' : `Show All ${analysis.gaps.length} Missing Items`}
+                  </button>
+                )}
+              </Panel>
 
-            <Panel title="Suggestions" count={analysis.suggestions.length}>
-              {analysis.suggestions.length === 0 ? (
-                /* Three readings, not two, because the system distinguishes
+              <Panel title="Suggestions" count={analysis.suggestions.length}>
+                {analysis.suggestions.length === 0 ? (
+                  /* Three readings, not two, because the system distinguishes
                    them and the reader deserves the same distinction. Absence is
                    its own case: consultations analysed before `outOfScope`
                    shipped have no value, and reading that as `false` would
                    assert the corpus was consulted when nobody knows. */
-                <p className="text-sm text-ink-muted">
-                  {analysis.outOfScope === true &&
-                    'Outside the guideline corpus’s scope, so no suggestions were offered.'}
-                  {analysis.outOfScope === false &&
-                    'Within the guideline corpus’s scope, with nothing to suggest for this consultation.'}
-                  {analysis.outOfScope === undefined &&
-                    'No cited suggestions. This consultation was analysed before scope was recorded, so whether the corpus applied is not known.'}
-                </p>
-              ) : (
-                analysis.suggestions.map((suggestion) => (
-                  <SuggestionCard
-                    key={suggestion.id}
-                    suggestion={suggestion}
-                    guidelines={guidelines.data ?? []}
-                  />
-                ))
-              )}
-            </Panel>
-          </aside>
+                  <p className="text-sm text-ink-muted">
+                    {analysis.outOfScope === true &&
+                      'Outside the guideline corpus’s scope, so no suggestions were offered.'}
+                    {analysis.outOfScope === false &&
+                      'Within the guideline corpus’s scope, with nothing to suggest for this consultation.'}
+                    {analysis.outOfScope === undefined &&
+                      'No cited suggestions. This consultation was analysed before scope was recorded, so whether the corpus applied is not known.'}
+                  </p>
+                ) : (
+                  analysis.suggestions.map((suggestion) => (
+                    <SuggestionCard
+                      key={suggestion.id}
+                      suggestion={suggestion}
+                      guidelines={guidelines.data ?? []}
+                    />
+                  ))
+                )}
+              </Panel>
+            </>
+          )}
+        </aside>
+      </div>
+
+      {/* The same bar the approved state gets, carrying the gate that comes
+          before it. A doctor who has captured nothing sees the action and why
+          it is not available yet, rather than an Analyse button that fails. */}
+      {!analysis && (
+        /*
+         * Not sticky, unlike the approve bar it will become. Approve is pinned
+         * because a doctor scrolls a long note and needs it reachable
+         * throughout; Analyse is pressed once, at the end, and a bar floating
+         * over the capture form covered the very controls it was waiting on.
+         */
+        <div
+          className="glass mt-6 flex flex-wrap items-center justify-between gap-3 rounded-float p-3 md:mr-16"
+          data-print="hide"
+        >
+          <p className="px-1 text-sm text-ink-muted">
+            {analyze.error ? (
+              <span role="alert" className="text-emergency">
+                {analyze.error instanceof ApiError
+                  ? analyze.error.message
+                  : 'Analysis could not be completed.'}
+              </span>
+            ) : detail.transcript ? (
+              'De-identified before any part of it leaves this server, and restored only after the response returns.'
+            ) : (
+              'Choose how to capture this consultation.'
+            )}
+          </p>
+          <Button
+            variant="primary"
+            icon={<Sparkles className="size-4" />}
+            disabled={!detail.transcript}
+            loading={analyze.isPending || detail.status === 'analyzing'}
+            onClick={() => analyze.mutate()}
+            data-tour="analyse"
+          >
+            {analyze.isPending ? 'Analysing' : 'Analyse Consultation'}
+          </Button>
         </div>
       )}
 
@@ -667,22 +714,54 @@ export function ConsultationReview() {
   )
 }
 
+/**
+ * What the note will become, shown while it is still empty.
+ *
+ * The four headings are the SOAP sections in the order they will fill, so the
+ * shape of the output is legible before there is any. Ruled lines rather than
+ * pulsing skeletons: nothing is loading here, and a shimmer would promise work
+ * in progress when the doctor has not started any.
+ */
+function NotePlaceholder({ captured }: { captured: boolean }) {
+  return (
+    <Card className="overflow-hidden p-0" data-print="hide">
+      {['Subjective', 'Objective', 'Assessment', 'Plan'].map((section) => (
+        <div key={section} className="border-b border-line/60 px-5 py-4">
+          <h3 className="text-2xs font-semibold tracking-wider text-ink-muted uppercase">
+            {section}
+          </h3>
+          <div className="mt-2 h-2 w-full rounded-pill bg-sunken" />
+          <div className="mt-1.5 h-2 w-3/5 rounded-pill bg-sunken" />
+        </div>
+      ))}
+      <p className="px-5 py-5 text-sm text-ink-muted">
+        {captured
+          ? 'The transcript is ready. Analyse it to draft the note, and every finding stays yours to edit and approve.'
+          : 'The note fills in from the consultation. Capture it on the left to begin.'}
+      </p>
+    </Card>
+  )
+}
+
 function Panel({
   title,
   count,
   children,
 }: {
   title: string
-  count: number
+  /** Absent while there is nothing counted yet, which is not the same as none. */
+  count?: number
   children: React.ReactNode
 }) {
   return (
     <section>
       <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
         {title}
-        <span className="rounded-full bg-sunken px-1.5 py-0.5 text-2xs text-ink-muted">
-          {count}
-        </span>
+        {count !== undefined && (
+          <span className="rounded-full bg-sunken px-1.5 py-0.5 text-2xs text-ink-muted">
+            {count}
+          </span>
+        )}
       </h2>
       <div className="flex flex-col gap-2">{children}</div>
     </section>
