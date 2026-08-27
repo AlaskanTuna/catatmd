@@ -88,16 +88,38 @@ jobs:
         run: bun run test
 
       - name: Confidentiality check
-        # Engagement terms must never reach a tracked file. The submission URL
-        # is the one authorised exception and is filtered out.
+        # Engagement terms must never reach a tracked file. Two tiers, because
+        # they do not carry the same risk.
+        #
+        #   Commercial terms — the fee figure and the engagement length — are
+        #   banned in every tracked file with no exception, docs/source/
+        #   included. Nothing legitimately needs them.
+        #
+        #   Client names are banned everywhere except docs/source/, which holds
+        #   verbatim meeting records where redacting the counterparty would
+        #   destroy the document being kept. Committing those was a deliberate
+        #   decision taken with the repository private, and it is recorded in
+        #   each file's header. Making this repository public again requires
+        #   revisiting that decision first, because history keeps the file
+        #   whether or not the working tree does.
+        #
+        # The submission URL is the one authorised name match outside it.
         run: |
-          if git ls-files -z | xargs -0 grep -sInIiE "kabel|RM ?3,?000|8-week" \
+          fail=0
+          if git ls-files -z | xargs -0 grep -sInIiE "RM ?3,?000|8-week" \
+            | grep -v "\.github/workflows/ci\.yml"; then
+            echo "::error::Commercial engagement terms found in tracked files"
+            fail=1
+          fi
+          if git ls-files -z | xargs -0 grep -sInIiE "kabel" \
             | grep -v "dxp\.kabel\.my/candidate/projects" \
             | grep -v "kickoff-.*-session\.md" \
+            | grep -v "^docs/source/" \
             | grep -v "\.github/workflows/ci\.yml"; then
-            echo "::error::Confidential engagement details found in tracked files"
-            exit 1
+            echo "::error::Client name found in a tracked file outside docs/source/"
+            fail=1
           fi
+          [ "$fail" -eq 0 ] || exit 1
           echo "CLEAN"
 
   # ── Deploy ──────────────────────────────────────────────────────────────────
