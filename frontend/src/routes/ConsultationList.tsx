@@ -1,29 +1,22 @@
 import type { ConsultationListItem, ConsultationStatus } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { useId, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import { ApiError, api } from '../lib/api.js'
-import { cn } from '../lib/cn.js'
 import { count } from '../lib/plural.js'
 import { Button } from '../ui/Button.js'
 import { EmptyState, Skeleton } from '../ui/Card.js'
 import { Checkbox } from '../ui/Checkbox.js'
 import { PageHeader } from '../ui/PageHeader.js'
-import { RenameField } from '../ui/RenameField.js'
+import { Select } from '../ui/Select.js'
+import { ConsultationRow } from './ConsultationRow.js'
 
-/**
- * Status is carried by colour, shape and a word together, never colour alone
- * (issue #30). `approved` is the only one that earns the accent, because
- * approval is the only state a human deliberately caused.
- */
-const STATUS: Record<ConsultationStatus, { label: string; className: string }> = {
-  draft: { label: 'Draft', className: 'border-line text-ink-muted' },
-  analyzing: { label: 'Analysing', className: 'border-advisory/40 text-advisory' },
-  awaiting_review: { label: 'Awaiting Review', className: 'border-urgent/40 text-urgent' },
-  approved: { label: 'Approved', className: 'border-accent/40 text-accent' },
-}
+const VIEW_OPTIONS = [
+  { value: 'attention', label: 'Needs Attention' },
+  { value: 'all', label: 'All Consultations' },
+]
 
 /**
  * How each status is named when counted in the erase confirmation.
@@ -39,14 +32,6 @@ const ERASE_NOUN: Record<ConsultationStatus, { one: string; many: string }> = {
   approved: { one: 'approved note', many: 'approved notes' },
 }
 
-const formatDate = (value: Date) =>
-  new Intl.DateTimeFormat('en-MY', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(value)
-
 export function ConsultationList() {
   const queryClient = useQueryClient()
   const { data, isPending } = useQuery({
@@ -54,6 +39,7 @@ export function ConsultationList() {
     queryFn: api.listConsultations,
   })
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
+  const [view, setView] = useState<'attention' | 'all'>('attention')
   /**
    * Which row is open for renaming, owned here rather than inside the field.
    *
@@ -68,7 +54,13 @@ export function ConsultationList() {
   // `Checkbox` component, so a wrapping label reads as having no control in it.
   const selectAllId = useId()
 
-  const consultations = data ?? []
+  const consultations =
+    view === 'all'
+      ? (data ?? [])
+      : (data ?? []).filter(
+          (consultation) =>
+            consultation.status === 'draft' || consultation.status === 'awaiting_review',
+        )
 
   // Derived from the rows rather than read straight out of state, so a
   // selection cannot outlive the consultation it points at. Without this, a
@@ -129,49 +121,61 @@ export function ConsultationList() {
         }
       />
 
-      {consultations.length > 0 && (
-        <div data-print="hide" className="mt-8 flex min-h-9 items-center justify-between gap-4">
-          <label
-            htmlFor={selectAllId}
-            className="flex cursor-pointer items-center gap-3 text-sm text-ink-muted"
-          >
-            <Checkbox
-              id={selectAllId}
-              checked={allSelected}
-              // A DOM property rather than an attribute: there is no
-              // `indeterminate` in HTML, only on the element.
-              ref={(el) => {
-                if (el) el.indeterminate = selected.length > 0 && !allSelected
-              }}
-              onChange={() =>
-                setPicked(allSelected ? new Set() : new Set(consultations.map((c) => c.id)))
-              }
-            />
-            <span aria-live="polite">
-              {selected.length === 0 ? 'Select all' : `${selected.length} selected`}
-            </span>
-          </label>
+      <div data-print="hide" className="mt-8 flex flex-wrap items-center justify-between gap-4">
+        <Select
+          label="Consultation View"
+          value={view}
+          options={VIEW_OPTIONS}
+          className="w-52"
+          onChange={(value) => {
+            if (value !== 'attention' && value !== 'all') return
+            setView(value)
+            setPicked(new Set())
+          }}
+        />
 
-          {selected.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="neutral" onClick={() => setPicked(new Set())}>
-                Clear
-              </Button>
-              <Button
-                size="sm"
-                variant="danger"
-                icon={<Trash2 aria-hidden className="size-3.5" />}
-                onClick={() => {
-                  erase.reset()
-                  dialog.current?.showModal()
+        {consultations.length > 0 && (
+          <div className="flex min-h-9 flex-1 items-center justify-end gap-4">
+            <label
+              htmlFor={selectAllId}
+              className="flex cursor-pointer items-center gap-3 text-sm text-ink-muted"
+            >
+              <Checkbox
+                id={selectAllId}
+                checked={allSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = selected.length > 0 && !allSelected
                 }}
-              >
-                Erase {selected.length}
-              </Button>
-            </div>
-          )}
-        </div>
-      )}
+                onChange={() =>
+                  setPicked(allSelected ? new Set() : new Set(consultations.map((c) => c.id)))
+                }
+              />
+              <span aria-live="polite">
+                {selected.length === 0 ? 'Select all' : `${selected.length} selected`}
+              </span>
+            </label>
+
+            {selected.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="neutral" onClick={() => setPicked(new Set())}>
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  icon={<Trash2 aria-hidden className="size-3.5" />}
+                  onClick={() => {
+                    erase.reset()
+                    dialog.current?.showModal()
+                  }}
+                >
+                  Erase {selected.length}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <div data-tour="consultation-list" className="mt-4 flex flex-col gap-2">
         {isPending &&
@@ -192,86 +196,25 @@ export function ConsultationList() {
           />
         )}
 
-        {consultations.map((consultation) => {
-          const status = STATUS[consultation.status]
-          const when = formatDate(consultation.createdAt)
-          return (
-            <div
-              key={consultation.id}
-              className={cn(
-                'group/row flex items-center gap-3 rounded-card border bg-surface pl-4 transition-colors',
-                // The tint is a layer over the surface, not a replacement for
-                // it: as a `background-color` it won the cascade and left the
-                // row translucent over the page's dot grid.
-                picked.has(consultation.id)
-                  ? 'border-accent/50 bg-linear-to-r from-accent/8 to-accent/8'
-                  : 'border-line hover:border-ink-muted/50',
-              )}
-            >
-              {/* A sibling of the link, never a child of it: a control nested
-                  inside an anchor is not reachable as its own target. */}
-              <Checkbox
-                data-print="hide"
-                checked={picked.has(consultation.id)}
-                onChange={() => toggle(consultation.id)}
-                aria-label={`Select consultation from ${when}`}
-              />
-              {renaming === consultation.id ? (
-                <RenameField
-                  defaultEditing
-                  value={consultation.title}
-                  fallback={when}
-                  label={`Rename the consultation from ${when}`}
-                  className="min-w-0 flex-1 py-3 pr-4"
-                  onDone={() => setRenaming(null)}
-                  onSave={(title) => rename.mutate({ id: consultation.id, title })}
-                />
-              ) : (
-                <Link
-                  to={`/consultations/${consultation.id}`}
-                  className="flex min-w-0 flex-1 items-center justify-between gap-4 py-4 pr-4"
-                >
-                  <div className="min-w-0">
-                    {/*
-                    The name is the row's identity now, and the timestamp moves
-                    down beside the id rather than being dropped: when a record
-                    was created is still real bookkeeping, it just stops being
-                    the only thing distinguishing one row from the next.
-                  */}
-                    <p className="truncate text-sm font-medium">{consultation.title ?? when}</p>
-                    <p className="mt-0.5 truncate text-2xs text-ink-muted">
-                      <span className="font-mono">{consultation.id.slice(0, 8)}</span>
-                      {consultation.title === null ? null : ` · ${when}`}
-                    </p>
-                  </div>
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-full border px-2.5 py-1 text-2xs font-medium',
-                      status.className,
-                    )}
-                  >
-                    {status.label}
-                  </span>
-                </Link>
-              )}
+        {data && data.length > 0 && consultations.length === 0 && (
+          <EmptyState
+            title="No Consultations Need Attention"
+            body="Approved filing belongs on patient profiles. Show all consultations to view the complete record."
+          />
+        )}
 
-              {/* A sibling of the link for the same reason the checkbox is: a
-                  button inside an anchor is not reachable as its own target,
-                  and pressing it would navigate instead of renaming. */}
-              {renaming === consultation.id ? null : (
-                <button
-                  type="button"
-                  data-print="hide"
-                  aria-label={`Rename the consultation from ${when}`}
-                  onClick={() => setRenaming(consultation.id)}
-                  className="mr-3 flex size-8 shrink-0 items-center justify-center rounded-control text-ink-muted opacity-0 transition-opacity hover:bg-sunken hover:text-ink focus-visible:opacity-100 group-hover/row:opacity-100 pointer-coarse:opacity-100"
-                >
-                  <Pencil aria-hidden className="size-3.5" />
-                </button>
-              )}
-            </div>
-          )
-        })}
+        {consultations.map((consultation) => (
+          <ConsultationRow
+            key={consultation.id}
+            consultation={consultation}
+            selected={picked.has(consultation.id)}
+            renaming={renaming === consultation.id}
+            onSelect={() => toggle(consultation.id)}
+            onBeginRename={() => setRenaming(consultation.id)}
+            onRename={(title) => rename.mutate({ id: consultation.id, title })}
+            onRenameDone={() => setRenaming(null)}
+          />
+        ))}
       </div>
 
       <EraseDialog
@@ -320,8 +263,7 @@ function EraseDialog({
   error: unknown
   onConfirm: () => void
 }) {
-  // Ordered by `STATUS`, so the heaviest line lands last.
-  const breakdown = (Object.keys(STATUS) as ConsultationStatus[])
+  const breakdown = (Object.keys(ERASE_NOUN) as ConsultationStatus[])
     .map((status) => ({ status, n: selected.filter((c) => c.status === status).length }))
     .filter(({ n }) => n > 0)
 

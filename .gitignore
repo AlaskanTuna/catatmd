@@ -85,3 +85,6 @@ docs/assets/*.drawio.svg
 
 # Eval reports are generated output, one per run
 evals/reports/
+
+# Screenshots are captured artefacts, regenerated rather than reviewed
+docs/screenshots/

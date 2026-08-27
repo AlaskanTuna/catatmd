@@ -21,6 +21,7 @@ import { consultationsRouter } from './routes/consultations.js'
 import { copilotRouter } from './routes/copilot.js'
 import { healthRouter } from './routes/health.js'
 import { notificationsRouter } from './routes/notifications.js'
+import { patientsRouter } from './routes/patients.js'
 import { referenceRouter } from './routes/reference.js'
 
 /** Routes that carry clinical data. Everything here requires a session. */
@@ -30,6 +31,7 @@ const PROTECTED_PREFIXES = [
   '/api/fixtures',
   '/api/guidelines',
   '/api/notifications',
+  '/api/patients',
 ]
 
 export function createApp() {
@@ -101,6 +103,7 @@ export function createApp() {
   // otherwise answer this path first. It inherits the session guard from the
   // `/api/consultations` prefix above and carries its own limiter (#169).
   app.use('/api/consultations/:id/copilot', copilotRouter)
+  app.use('/api/patients', patientsRouter)
   app.use('/api/consultations', consultationsRouter)
 
   app.use(errorHandler)
