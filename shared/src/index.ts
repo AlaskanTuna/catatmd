@@ -749,6 +749,16 @@ export const PatientListItemSchema = PatientSchema.pick({
   updatedAt: true,
 }).extend({
   consultationCount: z.number().int().min(0),
+  /**
+   * When this patient was last seen, derived from their newest unerased
+   * consultation — **not** from `updatedAt`, which moves whenever the card is
+   * edited and would report a corrected phone number as a visit.
+   *
+   * Null means never seen, which is a real state: reception registers a patient
+   * before the doctor has met them, so a card with no visit is the normal case
+   * for the length of a waiting room.
+   */
+  lastSeenAt: z.string().datetime().nullable(),
 })
 
 /**

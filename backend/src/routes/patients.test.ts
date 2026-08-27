@@ -90,6 +90,12 @@ vi.mock('../lib/prisma.js', () => ({
                       (c) => c.patientId === p.id && c.erasedAt === null,
                     ).length,
                   }
+                } else if (key === 'consultations') {
+                  out.consultations = consultations
+                    .filter((c) => c.patientId === p.id && c.erasedAt === null)
+                    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+                    .slice(0, 1)
+                    .map((c) => ({ createdAt: c.createdAt }))
                 } else {
                   out[key] = p[key as keyof PatientRow]
                 }
@@ -282,7 +288,86 @@ describe('GET /api/patients', () => {
     const res = await fetch(`${origin}/api/patients`)
     const body = (await res.json()) as { patients: { consultationCount: number }[] }
 
-    expect(body.patients[0].consultationCount).toBe(1)
+    expect(body.patients).toHaveLength(1)
+    expect(body.patients[0]?.consultationCount).toBe(1)
+  })
+
+  it('reports lastSeenAt from the newest visit, not from the record edit', async () => {
+    const p = seed()
+    // `updatedAt` is deliberately far newer than either visit: editing the card
+    // must not read as having seen the patient.
+    p.updatedAt = new Date('2026-08-27T10:00:00.000Z')
+    const older = new Date('2026-08-01T09:00:00.000Z')
+    const newer = new Date('2026-08-20T09:00:00.000Z')
+    consultations.push(
+      {
+        id: 'c1',
+        patientId: p.id,
+        doctorId: 'doctor-1',
+        status: 'approved',
+        title: null,
+        erasedAt: null,
+        createdAt: older,
+        updatedAt: older,
+      },
+      {
+        id: 'c2',
+        patientId: p.id,
+        doctorId: 'doctor-1',
+        status: 'approved',
+        title: null,
+        erasedAt: null,
+        createdAt: newer,
+        updatedAt: newer,
+      },
+    )
+
+    const res = await fetch(`${origin}/api/patients`)
+    const body = (await res.json()) as { patients: { lastSeenAt: string | null }[] }
+
+    expect(body.patients[0]?.lastSeenAt).toBe(newer.toISOString())
+  })
+
+  it('reports lastSeenAt as null for a registered patient with no visit', async () => {
+    seed()
+
+    const res = await fetch(`${origin}/api/patients`)
+    const body = (await res.json()) as { patients: { lastSeenAt: string | null }[] }
+
+    expect(body.patients[0]?.lastSeenAt).toBeNull()
+  })
+
+  it('ignores an erased visit when deriving lastSeenAt', async () => {
+    const p = seed()
+    const kept = new Date('2026-08-01T09:00:00.000Z')
+    const erased = new Date('2026-08-25T09:00:00.000Z')
+    consultations.push(
+      {
+        id: 'c1',
+        patientId: p.id,
+        doctorId: 'doctor-1',
+        status: 'approved',
+        title: null,
+        erasedAt: null,
+        createdAt: kept,
+        updatedAt: kept,
+      },
+      {
+        id: 'c2',
+        patientId: p.id,
+        doctorId: 'doctor-1',
+        status: 'approved',
+        title: null,
+        erasedAt: new Date(),
+        createdAt: erased,
+        updatedAt: erased,
+      },
+    )
+
+    const res = await fetch(`${origin}/api/patients`)
+    const body = (await res.json()) as { patients: { lastSeenAt: string | null }[] }
+
+    expect(body.patients[0]?.lastSeenAt).toBe(kept.toISOString())
   })
 })
 

@@ -61,6 +61,17 @@ patientsRouter.get('/', async (req, res) => {
        * leaked by a later change to the serialiser.
        */
       _count: { select: { consultations: { where: { erasedAt: null } } } },
+      /*
+       * Newest unerased visit, for `lastSeenAt`. Taken as a bounded relation
+       * read rather than a second round trip, and `take: 1` is what keeps a
+       * patient with forty visits from loading forty rows to read one date.
+       */
+      consultations: {
+        where: { erasedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { createdAt: true },
+      },
     },
   })
 
@@ -75,6 +86,7 @@ patientsRouter.get('/', async (req, res) => {
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
         consultationCount: row._count.consultations,
+        lastSeenAt: row.consultations[0]?.createdAt.toISOString() ?? null,
       }),
     ),
   })
