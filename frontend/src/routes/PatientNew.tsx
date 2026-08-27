@@ -165,6 +165,24 @@ export function PatientNew() {
           </div>
         </form>
       </Card>
+
+      {/*
+        The wrong-turn exit. Registering and finding are the two halves of the
+        same question, and someone who arrived here for a patient who already
+        exists would otherwise have to guess at the navigation. Quiet, and
+        below the card rather than inside it, so it never competes with the
+        submit it sits under.
+      */}
+      <p className="mt-4 text-center text-sm text-ink-muted">
+        Looking for an existing patient?{' '}
+        <Link
+          to="/patients"
+          className="rounded-control font-medium text-accent underline-offset-4 transition-colors hover:underline"
+        >
+          Head to the patient records
+        </Link>
+        .
+      </p>
     </div>
   )
 }
