@@ -11,6 +11,11 @@ vi.mock('../lib/api.js', () => ({
     listConsultations: vi.fn(),
     eraseConsultations: vi.fn(),
     patch: vi.fn(),
+    // Reached through the start dialog this page now mounts. Its query stays
+    // disabled until the dialog is opened and asked for an existing patient,
+    // but the hook still wants a function to exist.
+    listPatients: vi.fn(),
+    createConsultation: vi.fn(),
   },
 }))
 

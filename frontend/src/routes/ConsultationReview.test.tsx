@@ -34,7 +34,9 @@ vi.mock('../review/NoteEditor.js', () => ({
   NoteEditor: ({ note }: { note: { subjective: string } }) => <p>{note.subjective}</p>,
 }))
 vi.mock('../review/SafetyCards.js', () => ({
-  GapCard: () => null,
+  // Renders its question so a test can read the order gaps come out in. The
+  // real card is covered by SafetyCards.test.tsx; what matters here is sequence.
+  GapCard: ({ gap }: { gap: { question: string } }) => <div data-testid="gap">{gap.question}</div>,
   RedFlagCard: () => null,
   SuggestionCard: () => null,
 }))
@@ -118,5 +120,62 @@ describe('approved note copy', () => {
     )
     expect(screen.getByRole('button', { name: 'Export' })).toBeTruthy()
     expect(toastSuccess).toHaveBeenCalledWith('Note copied.')
+  })
+})
+
+/**
+ * Issue #211. `priority` is documented as a volume and ordering signal with no
+ * safety meaning, so this pins the one thing it is used for and nothing more:
+ * the list is ordered, never filtered, and the heading keeps the true total.
+ */
+describe('missing information order', () => {
+  const gap = (id: string, priority: 'high' | 'medium' | 'low') => ({
+    id,
+    question: `Q-${id}`,
+    rationale: 'Because',
+    priority,
+  })
+
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      analysis: {
+        ...APPROVED.analysis,
+        // Deliberately worst-case: the API order is the exact reverse of the
+        // order a doctor should read them in.
+        gaps: [gap('low-1', 'low'), gap('med-1', 'medium'), gap('high-1', 'high')],
+      },
+    } as never)
+  })
+
+  it('shows high-priority gaps first, whatever order the API returned', async () => {
+    setup()
+
+    const rendered = await screen.findAllByTestId('gap')
+    expect(rendered.map((node) => node.textContent)).toEqual(['Q-high-1', 'Q-med-1', 'Q-low-1'])
+  })
+
+  it('keeps the API order inside a priority band', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      analysis: {
+        ...APPROVED.analysis,
+        gaps: [gap('b', 'medium'), gap('a', 'medium'), gap('c', 'high')],
+      },
+    } as never)
+    setup()
+
+    const rendered = await screen.findAllByTestId('gap')
+    expect(rendered.map((node) => node.textContent)).toEqual(['Q-c', 'Q-b', 'Q-a'])
+  })
+
+  it('counts every gap on the heading, not just the ones above the fold', async () => {
+    setup()
+
+    expect(await screen.findByText('Missing Information')).toBeTruthy()
+    // Three gaps in, three gaps out — sorting must never drop one.
+    expect(screen.getAllByTestId('gap')).toHaveLength(3)
   })
 })

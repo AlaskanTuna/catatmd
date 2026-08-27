@@ -57,6 +57,18 @@ function mergeDispositions(current: Disposition[], incoming: DispositionInput[])
 
 const SEVERITY_ORDER = { emergency: 0, urgent: 1, advisory: 2 } as const
 
+/**
+ * Ordering only, which is the whole of what `priority` means.
+ *
+ * The checklist that produces gaps documents `priority` as a volume and
+ * ordering signal carrying no safety meaning on its own, so this sorts the list
+ * and nothing more: nothing is filtered, no count changes, and no copy anywhere
+ * calls a `high` gap urgent. Without it the six shown before the disclosure
+ * were whichever six sat first in the checklist source file, which is an
+ * ordering the reader has no way to interpret.
+ */
+const GAP_PRIORITY_ORDER = { high: 0, medium: 1, low: 2 } as const
+
 /** Enough gaps to show the shape of the list without it swallowing the rail. */
 const GAP_PREVIEW = 6
 
@@ -288,6 +300,11 @@ export function ConsultationReview() {
 
   const flags = [...(analysis?.redFlags ?? [])].sort(
     (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
+  )
+  // Stable, so the checklist's own order survives inside each band and a
+  // model-proposed gap stays beside the deterministic entries it arrived with.
+  const gaps = [...(analysis?.gaps ?? [])].sort(
+    (a, b) => GAP_PRIORITY_ORDER[a.priority] - GAP_PRIORITY_ORDER[b.priority],
   )
   // A flag counts as handled once any decision has been recorded about it,
   // whichever of the three it was. The approve bar surfaces the count of
@@ -545,7 +562,7 @@ export function ConsultationReview() {
                   than sliced out of the array, so `print:block` brings them all
                   back. Slicing would put a truncated list on paper with nothing
                   to say it had been truncated. */}
-              {analysis.gaps.map((gap, position) => (
+              {gaps.map((gap, position) => (
                 <div
                   key={gap.id}
                   className={cn(!showAllGaps && position >= GAP_PREVIEW && 'hidden print:block')}
