@@ -74,6 +74,18 @@ export interface TourStep {
 
 export const TOUR_STEPS: TourStep[] = [
   {
+    /*
+     * First, because registration is where the clinic workflow actually starts:
+     * reception writes a card before the doctor sees anyone, and the visit is
+     * filed against it. A tour that opened on the consultation list described
+     * the second half of a process and left the first half invisible.
+     */
+    label: 'Patients',
+    route: '/patients',
+    target: '[data-tour="patients"]',
+    hint: 'Reception registers the patient first, as they would on paper. Once a name and identity number are on file, de-identification matches them exactly rather than having to detect them.',
+  },
+  {
     label: 'Consultations',
     route: '/consultations',
     target: '[data-tour="consultation-list"]',
@@ -83,7 +95,7 @@ export const TOUR_STEPS: TourStep[] = [
     label: 'Intake',
     route: '/consultations/new',
     target: '[data-tour="intake"]',
-    hint: 'A consultation starts as a transcript. Record it, upload or paste one, or load a bundled case. All four feed one parser.',
+    hint: 'A consultation starts as a transcript. Record it, upload one, or paste it. Every source feeds the same parser, and the audio settings decide how the microphone behaves.',
   },
   {
     label: 'Transcript',
