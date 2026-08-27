@@ -1,4 +1,4 @@
-import { BookMarked, FileText, Plus } from 'lucide-react'
+import { BookMarked, FileText, Plus, Users } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
 
@@ -14,6 +14,7 @@ import { cn } from '../lib/cn.js'
  */
 const ITEMS = [
   { to: '/consultations/new', label: 'New', icon: Plus, end: false },
+  { to: '/patients', label: 'Patients', icon: Users, end: false },
   { to: '/consultations', label: 'Consultations', icon: FileText, end: true },
   { to: '/guidelines', label: 'Guidelines', icon: BookMarked, end: false },
 ]

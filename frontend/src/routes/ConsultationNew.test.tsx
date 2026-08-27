@@ -403,6 +403,33 @@ describe('hosted draft-turn labelling', () => {
  * consultation's audio leave the device", so understating it is the one
  * direction that must be impossible.
  */
+describe('patient filing', () => {
+  beforeEach(() => {
+    vi.mocked(api.createConsultation).mockClear()
+    vi.mocked(api.createConsultation).mockResolvedValue({
+      id: 'consultation-1',
+    } as Awaited<ReturnType<typeof api.createConsultation>>)
+  })
+
+  it('passes the patient search parameter through when starting', async () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={['/consultations/new?patientId=patient-1']}>
+          <ConsultationNew />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
+    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
+    fireEvent.click(screen.getByRole('button', { name: /start consultation/i }))
+
+    await waitFor(() =>
+      expect(api.createConsultation).toHaveBeenCalledWith(expect.any(Object), 'patient-1'),
+    )
+  })
+})
+
 describe('recording provenance', () => {
   /**
    * The transcript the route actually submits. Awaited, because `mutate()`

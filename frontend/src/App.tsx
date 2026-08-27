@@ -8,6 +8,9 @@ import { ConsultationReview } from './routes/ConsultationReview.js'
 import { Guidelines } from './routes/Guidelines.js'
 import { Landing } from './routes/Landing.js'
 import { Login } from './routes/Login.js'
+import { PatientDetail } from './routes/PatientDetail.js'
+import { PatientList } from './routes/PatientList.js'
+import { PatientNew } from './routes/PatientNew.js'
 import { Privacy } from './routes/Privacy.js'
 import { Settings } from './routes/Settings.js'
 import { AppShell } from './shell/AppShell.js'
@@ -51,6 +54,9 @@ export function App() {
             </RequireSession>
           }
         >
+          <Route path="/patients" element={<PatientList />} />
+          <Route path="/patients/new" element={<PatientNew />} />
+          <Route path="/patients/:id" element={<PatientDetail />} />
           <Route path="/consultations" element={<ConsultationList />} />
           <Route path="/consultations/new" element={<ConsultationNew />} />
           <Route path="/consultations/:id" element={<ConsultationReview />} />

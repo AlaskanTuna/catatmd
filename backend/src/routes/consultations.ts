@@ -31,7 +31,7 @@ import {
 import { getActiveClinicalVersions } from '../clinical-versions/index.js'
 import { DeidentificationError, deidentifyTranscript } from '../deid/index.js'
 import { deriveGaps } from '../gaps/index.js'
-import { assertOwnedConsultation } from '../lib/authz.js'
+import { assertOwnedConsultation, assertOwnedPatient } from '../lib/authz.js'
 import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
 import { logger, timeStage } from '../lib/logger.js'
@@ -191,7 +191,16 @@ consultationsRouter.get('/', async (req, res) => {
   res.json({ consultations: rows.map((row) => ConsultationListItemSchema.parse(row)) })
 })
 
-const CreateBodySchema = z.object({ transcript: TranscriptSchema })
+/*
+ * `patientId` is optional and stays optional. Four of the five capture modes —
+ * paste, upload, fixture, and an ad-hoc recording — begin without a registered
+ * patient, and requiring one would push that work outside the system rather
+ * than into it. Only the queue path carries an id.
+ */
+const CreateBodySchema = z.object({
+  transcript: TranscriptSchema,
+  patientId: z.string().nullish(),
+})
 
 consultationsRouter.post('/', async (req, res) => {
   const parsed = CreateBodySchema.safeParse(req.body)
@@ -200,8 +209,24 @@ consultationsRouter.post('/', async (req, res) => {
   }
 
   const actor = doctorId(req)
+
+  /*
+   * Filed against a patient only after that patient is proven to be this
+   * doctor's. Writing the id straight through would let a caller attach a
+   * consultation to someone else's patient row, which is the ownership boundary
+   * failing in the one direction a read-side check never catches.
+   */
+  if (parsed.data.patientId) {
+    await assertOwnedPatient(parsed.data.patientId, actor)
+  }
+
   const created = await prisma.consultation.create({
-    data: { doctorId: actor, status: 'draft', transcript: parsed.data.transcript },
+    data: {
+      doctorId: actor,
+      status: 'draft',
+      transcript: parsed.data.transcript,
+      patientId: parsed.data.patientId ?? null,
+    },
   })
 
   await recordAuditEvent({
