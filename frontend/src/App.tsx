@@ -3,7 +3,6 @@ import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { api } from './lib/api.js'
 import { ConsultationList } from './routes/ConsultationList.js'
-import { ConsultationNew } from './routes/ConsultationNew.js'
 import { ConsultationReview } from './routes/ConsultationReview.js'
 import { Guidelines } from './routes/Guidelines.js'
 import { Landing } from './routes/Landing.js'
@@ -58,7 +57,6 @@ export function App() {
           <Route path="/patients/new" element={<PatientNew />} />
           <Route path="/patients/:id" element={<PatientDetail />} />
           <Route path="/consultations" element={<ConsultationList />} />
-          <Route path="/consultations/new" element={<ConsultationNew />} />
           <Route path="/consultations/:id" element={<ConsultationReview />} />
           <Route path="/guidelines" element={<Guidelines />} />
           <Route path="/settings" element={<Settings />} />

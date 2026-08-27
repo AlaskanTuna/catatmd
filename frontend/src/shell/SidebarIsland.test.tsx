@@ -6,7 +6,7 @@ import { SidebarIsland } from './SidebarIsland.js'
 afterEach(cleanup)
 
 describe('SidebarIsland patient navigation', () => {
-  it('places Patients above Consultations without removing New Consultation', () => {
+  it('leads with registration and offers no unfiled consultation shortcut', () => {
     render(
       <MemoryRouter>
         <SidebarIsland onExpandedChange={vi.fn()} />
@@ -18,6 +18,13 @@ describe('SidebarIsland patient navigation', () => {
     expect(patients.compareDocumentPosition(consultations) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     )
-    expect(screen.getByRole('link', { name: 'New Consultation' })).toBeTruthy()
+    /*
+     * A consultation started from the navigation belongs to nobody: it cannot
+     * be filed and cannot be found again by patient. The shortcut existed
+     * because there was no other way to create one; keeping it after patient
+     * records shipped would offer the orphan path beside the correct one.
+     */
+    expect(screen.queryByRole('link', { name: 'New Consultation' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Register Patient' })).toBeTruthy()
   })
 })

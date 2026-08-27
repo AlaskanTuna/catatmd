@@ -6,7 +6,7 @@ import { MobileDock } from './MobileDock.js'
 afterEach(cleanup)
 
 describe('MobileDock patient navigation', () => {
-  it('keeps New and adds Patients before Consultations', () => {
+  it('leads with registration rather than an unfiled consultation', () => {
     render(
       <MemoryRouter>
         <MobileDock />
@@ -14,6 +14,6 @@ describe('MobileDock patient navigation', () => {
     )
 
     const links = screen.getAllByRole('link').map((link) => link.textContent?.trim())
-    expect(links).toEqual(['New', 'Patients', 'Consultations', 'Guidelines'])
+    expect(links).toEqual(['Register', 'Patients', 'Consultations', 'Guidelines'])
   })
 })

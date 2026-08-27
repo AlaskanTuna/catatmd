@@ -13,7 +13,7 @@ import { cn } from '../lib/cn.js'
  * it to show four navigation targets would be theatre.
  */
 const ITEMS = [
-  { to: '/consultations/new', label: 'New', icon: Plus, end: false },
+  { to: '/patients/new', label: 'Register', icon: Plus, end: false },
   { to: '/patients', label: 'Patients', icon: Users, end: false },
   { to: '/consultations', label: 'Consultations', icon: FileText, end: true },
   { to: '/guidelines', label: 'Guidelines', icon: BookMarked, end: false },
