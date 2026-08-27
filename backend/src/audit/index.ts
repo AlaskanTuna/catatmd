@@ -108,6 +108,33 @@ export type ConsultationAuditEvent =
 export type AuthAuditEvent = { action: 'auth.session.created' }
 
 /**
+ * Adopting a retention period, and withdrawing one (#80).
+ *
+ * Audited for the reason the column exists at all: it records a governance
+ * decision rather than a preference, and a bare mutable integer cannot answer
+ * "what was the policy on this date, and who set it". `docs/dpia.md` requires
+ * the decision to name its rationale and accountable owner; without a trail the
+ * accountable owner is only ever whoever set it last.
+ *
+ * One action rather than two, with the value carried, so withdrawing a period
+ * is as legible as adopting one. `adoptedYears: null` is the withdrawal.
+ *
+ * The value is in `metadata` deliberately. The labels-only rule exists to keep
+ * patient data out of the audit trail, and a configured number of years is
+ * configuration, not content; `EphemeralAuditEvent` already carries profile ids
+ * and versions on the same basis. Without the value the row would say something
+ * changed and answer nothing.
+ *
+ * Nothing enforces the period, so this records a decision that currently has no
+ * effect. That is the point: when enforcement does land, a trail that started
+ * on the day it shipped would be retroactively useless for everything before it.
+ */
+export type SettingsAuditEvent = {
+  action: 'settings.retention_adopted'
+  metadata: { adoptedYears: number | null }
+}
+
+/**
  * Registration events belong to a patient rather than a consultation, so they
  * follow the `AuthAuditEvent` precedent and carry no `consultationId` — the
  * alternative would be loosening that field to optional across the whole
@@ -196,6 +223,7 @@ export type AuditEventInput =
   | ConsultationAuditEvent
   | AuthAuditEvent
   | PatientAuditEvent
+  | SettingsAuditEvent
   | EphemeralAuditEvent
   | AsrAuditEvent
 
@@ -242,6 +270,7 @@ export async function recordAuditEvent(
     | (ConsultationAuditEvent & { actorId: string; consultationId: string })
     | (AuthAuditEvent & { actorId: string })
     | (PatientAuditEvent & { actorId: string })
+    | (SettingsAuditEvent & { actorId: string })
     | (EphemeralAuditEvent & { actorId: string })
     | (AsrAuditEvent & { actorId: string }),
 ): Promise<void> {

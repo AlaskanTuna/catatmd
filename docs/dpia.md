@@ -120,6 +120,8 @@ Recording the decision and acting on it are separate pieces of work. Only the fi
 
 The decision must separately cover consultation data, patient records, account and session data, audit events, database backups, platform logs, and consent or request records. It must name the legal or operational rationale, the deletion trigger, and the accountable owner.
 
+Adoption and withdrawal are both audited (`settings.retention_adopted`, carrying the value), so the period in force on a given date, and the actor who set it, are answerable from the trail rather than from the current column value alone.
+
 ### Required Deletion Mechanism
 
 **What Exists Today**
