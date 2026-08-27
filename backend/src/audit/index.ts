@@ -108,6 +108,23 @@ export type ConsultationAuditEvent =
 export type AuthAuditEvent = { action: 'auth.session.created' }
 
 /**
+ * Registration events belong to a patient rather than a consultation, so they
+ * follow the `AuthAuditEvent` precedent and carry no `consultationId` — the
+ * alternative would be loosening that field to optional across the whole
+ * consultation taxonomy, which is the one thing keeping a clinical event from
+ * being recorded without the record it describes.
+ *
+ * No metadata on any of them. A patient row is entered by a human and every
+ * column on it is an identifier, so there is nothing here that could be
+ * recorded without putting identity into the table whose purpose is to be
+ * widely readable. The row says a registration happened, by whom, and when.
+ */
+export type PatientAuditEvent =
+  | { action: 'patient.created' }
+  | { action: 'patient.updated' }
+  | { action: 'patient.erased' }
+
+/**
  * Demo Mode's ephemeral analysis (#80). It spends a real LLM call and writes no
  * `Consultation`, so it belongs to an actor and to no consultation for the same
  * structural reason auth events do.
@@ -178,6 +195,7 @@ export type DraftTurnsFailureReason = 'llm_failed' | 'not_reconstructed'
 export type AuditEventInput =
   | ConsultationAuditEvent
   | AuthAuditEvent
+  | PatientAuditEvent
   | EphemeralAuditEvent
   | AsrAuditEvent
 
@@ -223,6 +241,7 @@ export async function recordAuditEvent(
   event:
     | (ConsultationAuditEvent & { actorId: string; consultationId: string })
     | (AuthAuditEvent & { actorId: string })
+    | (PatientAuditEvent & { actorId: string })
     | (EphemeralAuditEvent & { actorId: string })
     | (AsrAuditEvent & { actorId: string }),
 ): Promise<void> {

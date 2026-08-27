@@ -13,13 +13,13 @@ datasource db {
 // ─── Auth (better-auth Prisma adapter) ───────────────────────────────────────
 
 model User {
-  id            String    @id
+  id            String   @id
   name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
+  email         String   @unique
+  emailVerified Boolean  @default(false)
   image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   /// When this doctor last cleared their notification feed (issue #123).
   ///
@@ -33,6 +33,7 @@ model User {
   sessions      Session[]
   accounts      Account[]
   consultations Consultation[]
+  patients      Patient[]
   auditEvents   AuditEvent[]
 
   @@map("user")
@@ -111,14 +112,85 @@ enum ConsultationStatus {
 
 /// A single simulated GP consultation. `approved` is only reachable through an
 /// explicit doctor action — nothing auto-approves.
+/// A registered patient, created at reception before the consultation begins.
+///
+/// **The first longitudinal PHI store in this system.** `Consultation` holds
+/// four PHI columns, but every one of them is *derived* from a transcript. The
+/// columns here are entered by a human and are the identity itself, which is a
+/// stricter class and is why all four are erasable.
+///
+/// It exists because the clinic workflow it models is real: reception writes a
+/// card, the card goes to the doctor, the consultation is filed against it.
+/// Modelling that also makes de-identification exact rather than probabilistic
+/// — a registered patient supplies a known identifier list, so the request
+/// vault can be seeded with real values and `deid/`'s pattern detection is
+/// demoted to a backstop for whatever was never registered.
+model Patient {
+  id String @id @default(cuid())
+
+  /// Owning doctor. Every read path scopes on this, exactly as `Consultation`
+  /// does, and for the same reason: ownership is the only authorisation
+  /// boundary in the system and a second entity must not introduce a second
+  /// rule. `Restrict` rather than `Cascade` because deleting a doctor must not
+  /// silently destroy patient records that consultations still chain audit
+  /// events against.
+  doctorId String
+  doctor   User   @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+
+  /// All four are PHI and all four are nulled by erasure.
+  ///
+  /// `nric` is the strongest identifier the system holds and is the reason this
+  /// table is treated as a higher class than `Consultation`. `age` is stored
+  /// rather than a date of birth deliberately: `deid/` detects DOB as a direct
+  /// identifier while treating age as a clinical attribute the model needs, and
+  /// storing the weaker of the two is that same line drawn one layer earlier.
+  name   String?
+  nric   String?
+  age    Int?
+  gender PatientGender?
+
+  /// Tombstone, with the same semantics as `Consultation.erasedAt`.
+  ///
+  /// The row survives erasure because `AuditEvent` chains on ids and deleting
+  /// it would break tamper evidence — the constraint that made #64 a tombstone
+  /// rather than a delete. Erasing a patient must also erase their
+  /// consultations, since the transcripts carry the same identity; nothing
+  /// wires that to a retention policy yet, because the retention period is an
+  /// owner decision (#80) and inventing one here would be inventing a legal
+  /// position.
+  erasedAt DateTime?
+
+  consultations Consultation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([doctorId, createdAt])
+  @@map("patient")
+}
+
 model Consultation {
-  id     String             @id @default(cuid())
-  status ConsultationStatus @default(draft)
+  id       String             @id @default(cuid())
+  status   ConsultationStatus @default(draft)
   erasedAt DateTime?
 
   /// Owning doctor. Every read path scopes on this; see the authz helper.
   doctorId String
   doctor   User   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  /// The registered patient this visit belongs to, when one exists.
+  ///
+  /// Nullable, and staying nullable. Every consultation created before
+  /// registration shipped has no patient, and backfilling them would mean
+  /// inventing an identity for a record whose transcript is the only evidence
+  /// of who it concerned. The four capture modes that do not start from the
+  /// queue — paste, upload, fixture, and an ad-hoc recording — also have no
+  /// patient by design, and refusing them would push work outside the system.
+  ///
+  /// `Restrict`, so a patient holding visits cannot be hard-deleted out from
+  /// under them. Erasure is the tombstone path, not this one.
+  patientId String?
+  patient   Patient? @relation(fields: [patientId], references: [id], onDelete: Restrict)
 
   /// The record's filing name, shown wherever the consultation is listed.
   ///
@@ -134,7 +206,7 @@ model Consultation {
   ///
   /// Never reaches a provider. It is composed in-process from assertions that
   /// already passed the evidence check, and no prompt reads it.
-  title      String?
+  title String?
 
   /// Transcript turns, shape validated by TranscriptSchema in @shared/types.
   transcript Json?
@@ -163,9 +235,9 @@ model Consultation {
   /// never-removed-or-downgraded invariant above true even though a doctor can
   /// now dismiss one. `AuditEvent` remains the authority for how a decision
   /// changed over time; this column holds only the current state.
-  redFlagDispositions    Json?
+  redFlagDispositions Json?
   /// The same, per `InformationGap.id`.
-  gapDispositions        Json?
+  gapDispositions     Json?
 
   approvedAt DateTime?
   createdAt  DateTime  @default(now())
@@ -208,4 +280,15 @@ model AuditEvent {
   @@index([consultationId, createdAt])
   @@index([actorId, createdAt])
   @@map("audit_event")
+}
+
+/// Recorded sex, as stated at registration.
+///
+/// Kept because suggestion and red-flag reasoning differ by it, so a note
+/// generated without it is wrong rather than merely vague. Mirrors
+/// `PatientGenderSchema` in `@shared/types`.
+enum PatientGender {
+  male
+  female
+  other
 }
