@@ -5,6 +5,7 @@ import type {
   Disposition,
   DispositionInput,
   SoapNote,
+  Transcript,
 } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Printer, Sparkles } from 'lucide-react'
@@ -24,6 +25,7 @@ import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
 import { RenameField } from '../ui/RenameField.js'
+import { CapturePanel } from './CapturePanel.js'
 
 export function formatSoapNoteForClipboard(note: SoapNote) {
   return [
@@ -155,6 +157,11 @@ export function ConsultationReview() {
    * to look at first. Nothing clinical goes in it: counts only, never a finding
    * or its text (`ui/Toaster.tsx`).
    */
+  const capture = useMutation({
+    mutationFn: (transcript: Transcript) => api.setTranscript(id, transcript),
+    onSuccess: (consultation) => queryClient.setQueryData(['consultation', id], consultation),
+  })
+
   const analyze = useMutation({
     mutationFn: () => api.analyze(id),
     onSuccess: (next) => {
@@ -387,7 +394,31 @@ export function ConsultationReview() {
         }
       />
 
-      {!analysis && (
+      {/*
+       * A consultation now exists before it is captured, so this screen has
+       * two "not analysed yet" states rather than one. Without a transcript
+       * there is nothing to analyse and the capture panel takes the space;
+       * with one, the analyse gate does. Collapsing them would have put an
+       * Analyse button in front of a doctor who has not recorded anything.
+       */}
+      {!analysis && !detail.transcript && (
+        <Card className="mt-6 p-6" data-print="hide">
+          <CapturePanel
+            patientId={detail.patient?.id}
+            saving={capture.isPending}
+            error={
+              capture.error instanceof ApiError
+                ? capture.error.message
+                : capture.error
+                  ? 'Could not save the transcript.'
+                  : null
+            }
+            onCapture={(transcript) => capture.mutate(transcript)}
+          />
+        </Card>
+      )}
+
+      {!analysis && detail.transcript && (
         <Card className="mt-6 p-6" data-print="hide">
           <h2 className="text-lg font-semibold">Ready to Analyse</h2>
           <p className="mt-2 max-w-prose text-sm text-ink-muted">

@@ -154,10 +154,27 @@ export const api = {
   getConsultation: (id: string): Promise<ConsultationDetail> =>
     request(`/consultations/${id}`, ConsultationEnvelope).then((r) => r.consultation),
 
-  createConsultation: (transcript: Transcript, patientId?: string): Promise<ConsultationDetail> =>
+  /**
+   * Creates the record, optionally with a transcript already in hand.
+   *
+   * Both halves are used: a consultation is normally opened empty from a
+   * patient profile and captured into afterwards, but the demo tour and any
+   * caller holding a complete transcript can still supply one up front.
+   */
+  createConsultation: (transcript?: Transcript, patientId?: string): Promise<ConsultationDetail> =>
     request('/consultations', ConsultationEnvelope, {
       method: 'POST',
-      body: JSON.stringify(patientId ? { transcript, patientId } : { transcript }),
+      body: JSON.stringify({
+        ...(transcript ? { transcript } : {}),
+        ...(patientId ? { patientId } : {}),
+      }),
+    }).then((r) => r.consultation),
+
+  /** Captures into a record that already exists. Only valid while it is `draft`. */
+  setTranscript: (id: string, transcript: Transcript): Promise<ConsultationDetail> =>
+    request(`/consultations/${id}`, ConsultationEnvelope, {
+      method: 'PATCH',
+      body: JSON.stringify({ transcript }),
     }).then((r) => r.consultation),
 
   analyze: (id: string): Promise<ConsultationDetail> =>

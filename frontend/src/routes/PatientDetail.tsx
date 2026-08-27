@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import { Card, EmptyState, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
@@ -13,6 +13,17 @@ const formatGender = (gender: 'male' | 'female' | 'other' | null) => {
 
 export function PatientDetail() {
   const { id = '' } = useParams()
+  const navigate = useNavigate()
+  /*
+   * The record is created empty and the doctor is taken straight into it,
+   * where capture happens. Assembling a transcript first and creating the
+   * consultation afterwards is what the removed /consultations/new page did,
+   * and it is why a visit could not be filed to a patient until the very end.
+   */
+  const start = useMutation({
+    mutationFn: () => api.createConsultation(undefined, id),
+    onSuccess: (consultation) => navigate(`/consultations/${consultation.id}`),
+  })
   const patient = useQuery({
     queryKey: ['patient', id],
     queryFn: () => api.getPatient(id),
@@ -61,13 +72,14 @@ export function PatientDetail() {
         }
         art="/art/consultations.webp"
         actions={
-          <Link
-            to={`/consultations/new?patientId=${detail.id}`}
+          <button
+            type="button"
+            onClick={() => start.mutate()}
             className="inline-flex h-10 items-center gap-2 rounded-control bg-accent px-5 text-sm font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97]"
           >
             <Plus aria-hidden className="size-4" />
             Start Consultation
-          </Link>
+          </button>
         }
       />
 
@@ -118,12 +130,13 @@ export function PatientDetail() {
               title="No Consultations Yet"
               body="Start a consultation from this profile to file it to the patient record."
               action={
-                <Link
-                  to={`/consultations/new?patientId=${detail.id}`}
+                <button
+                  type="button"
+                  onClick={() => start.mutate()}
                   className="mt-2 inline-flex h-10 items-center rounded-control bg-accent px-4 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover"
                 >
                   Start Consultation
-                </Link>
+                </button>
               }
             />
           ) : (

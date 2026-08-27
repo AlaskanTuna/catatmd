@@ -219,8 +219,18 @@ consultationsRouter.get('/', async (req, res) => {
  * patient, and requiring one would push that work outside the system rather
  * than into it. Only the queue path carries an id.
  */
+/*
+ * The transcript is optional, because a consultation is now created *before*
+ * it is captured: the doctor opens the patient, the record exists, and the
+ * capture panel writes into it. Requiring one here forced the old two-screen
+ * flow, where a transcript was assembled somewhere else and the record only
+ * came into being once it was complete.
+ *
+ * A consultation with no transcript is a real, reachable state and is exactly
+ * what the capture panel renders against — not an incomplete row.
+ */
 const CreateBodySchema = z.object({
-  transcript: TranscriptSchema,
+  transcript: TranscriptSchema.optional(),
   patientId: z.string().nullish(),
 })
 
@@ -246,7 +256,7 @@ consultationsRouter.post('/', async (req, res) => {
     data: {
       doctorId: actor,
       status: 'draft',
-      transcript: parsed.data.transcript,
+      transcript: parsed.data.transcript ?? undefined,
       patientId: parsed.data.patientId ?? null,
     },
   })
@@ -259,7 +269,7 @@ consultationsRouter.post('/', async (req, res) => {
 
   // A client-asserted fact, recorded at the first point the transcript source
   // and a consultation id coexist (docs/trd.md §15).
-  if (parsed.data.transcript.source === 'asr_hosted') {
+  if (parsed.data.transcript?.source === 'asr_hosted') {
     await recordAuditEvent({
       action: 'consultation.asr_hosted_used',
       actorId: actor,
@@ -646,6 +656,18 @@ const PatchBodySchema = z
      * the change is attributable.
      */
     title: ConsultationTitleSchema.optional(),
+    /*
+     * Captured into the record after it exists, which is what lets the capture
+     * panel live on the consultation screen rather than on a page of its own.
+     *
+     * Gated to `draft` below, and deliberately not folded into the
+     * `awaiting_review` gate the clinical fields use: those two states protect
+     * opposite things. A transcript may only be set *before* anything has been
+     * derived from it, because every finding, gap and evidence span is anchored
+     * to it — replacing it afterwards would leave an analysis attributed to
+     * words nobody said.
+     */
+    transcript: TranscriptSchema.optional(),
     editedNote: SoapNoteSchema.partial().optional(),
     acknowledgedRedFlagIds: z.array(z.string()).optional(),
     reviewedGapIds: z.array(z.string()).optional(),
@@ -653,6 +675,14 @@ const PatchBodySchema = z
     gapDispositions: z.array(DispositionInputSchema).optional(),
   })
   .refine((body) => Object.keys(body).length > 0, { message: 'empty patch' })
+  /*
+   * Capture is patched on its own, because it returns early below. Accepting a
+   * transcript alongside a clinical field would take the capture branch and
+   * silently drop the rest, which is worse than refusing the request.
+   */
+  .refine((body) => body.transcript === undefined || Object.keys(body).length === 1, {
+    message: 'transcript must be patched on its own',
+  })
 
 /**
  * Applies decisions onto the stored set, last decision per id winning.
@@ -699,6 +729,48 @@ consultationsRouter.patch('/:id', async (req, res) => {
    * clinical half rather than excused by the title.
    */
   const titleOnly = patch.title !== undefined && Object.keys(patch).length === 1
+
+  /*
+   * Capture has the opposite gate to every other field: a transcript may only
+   * be set while the record is still `draft`, because everything downstream is
+   * anchored to it. It is checked before the clinical gate rather than beside
+   * it, so a transcript patch is never excused by a state that exists to
+   * protect derived content.
+   */
+  if (patch.transcript !== undefined) {
+    if (consultation.status !== 'draft') {
+      throw new HttpError(
+        409,
+        'invalid_state',
+        'The transcript can only be set before the consultation is analysed.',
+      )
+    }
+    const captured = await prisma.consultation.update({
+      where: { id: consultation.id },
+      data: { transcript: patch.transcript },
+    })
+    await recordAuditEvent({
+      action: 'consultation.edited',
+      actorId: actor,
+      consultationId: consultation.id,
+    })
+    /*
+     * Recorded here as well as on create, because capture moved: a hosted
+     * transcript now usually arrives by this route rather than with the row.
+     * Losing the fact on the path that became the common one would have made
+     * the audit trail quietly stop answering which consultations used a hosted
+     * relay (docs/trd.md §15).
+     */
+    if (patch.transcript.source === 'asr_hosted') {
+      await recordAuditEvent({
+        action: 'consultation.asr_hosted_used',
+        actorId: actor,
+        consultationId: consultation.id,
+      })
+    }
+    res.json({ consultation: await toDetailWithApprover(captured) })
+    return
+  }
 
   if (!titleOnly && consultation.status !== 'awaiting_review') {
     throw new HttpError(

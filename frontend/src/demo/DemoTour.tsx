@@ -92,12 +92,6 @@ export const TOUR_STEPS: TourStep[] = [
     hint: 'Five simulated consultations, each left at a different stage: draft, awaiting review, and approved.',
   },
   {
-    label: 'Intake',
-    route: '/consultations/new',
-    target: '[data-tour="intake"]',
-    hint: 'A consultation starts as a transcript. Record it, upload one, or paste it. Every source feeds the same parser, and the audio settings decide how the microphone behaves.',
-  },
-  {
     label: 'Transcript',
     route: '/consultations/:id',
     subject: 'flagged',
@@ -566,7 +560,8 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
      */
     if (currentStep >= TOUR_STEPS.length - 1) {
       stop()
-      navigate('/consultations/new')
+      // Ends where the workflow starts: the patient the visit will be filed to.
+      navigate('/patients')
       return
     }
     void goTo(currentStep + 1)
