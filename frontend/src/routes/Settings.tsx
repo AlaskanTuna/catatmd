@@ -1,14 +1,49 @@
-import { DEMO_PLAN, ERASE_BATCH_LIMIT, type Fixture } from '@shared/types'
+import {
+  DEMO_PLAN,
+  ERASE_BATCH_LIMIT,
+  type Fixture,
+  RETENTION_DEFAULT_YEARS,
+  type RetentionPolicy,
+  RetentionPolicySchema,
+  RetentionYearsSchema,
+} from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
+import { z } from 'zod'
 import { ApiError, api } from '../lib/api.js'
 import { useTheme } from '../lib/theme.js'
 import { Button } from '../ui/Button.js'
 import { PageHeader } from '../ui/PageHeader.js'
 
 const GUEST_EMAIL = 'guest@catatmd.demo'
+
+const BASE = import.meta.env.VITE_API_URL ?? ''
+const RetentionEnvelope = z.object({ retention: RetentionPolicySchema })
+
+/**
+ * Retention is read and written here rather than through `lib/api.ts`, which is
+ * owned by concurrent work on another branch. Same contract as every other call:
+ * cookie credentials, and the response parsed before anything renders it. Worth
+ * folding back into the shared client once that branch lands.
+ */
+async function requestRetention(init?: RequestInit): Promise<RetentionPolicy> {
+  const response = await fetch(`${BASE}/api/settings/retention`, {
+    ...init,
+    credentials: 'include',
+    headers: { ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers },
+  })
+
+  const payload: unknown = await response.json().catch(() => null)
+  if (!response.ok) throw new ApiError(response.status, 'unknown', 'The period was not saved.')
+
+  const parsed = RetentionEnvelope.safeParse(payload)
+  if (!parsed.success) {
+    throw new ApiError(response.status, 'invalid_response', 'The API returned unexpected data.')
+  }
+  return parsed.data.retention
+}
 
 /**
  * Account settings (PR #124).
@@ -96,6 +131,8 @@ export function Settings() {
         </div>
       </section>
 
+      <RetentionSection />
+
       <section className="mt-5 rounded-card border border-emergency/30 bg-surface p-5">
         <h2 className="text-base font-semibold">Delete My Data</h2>
         <p className="mt-1 max-w-prose text-sm leading-relaxed text-ink-muted">
@@ -168,6 +205,134 @@ export function Settings() {
         </div>
       </dialog>
     </div>
+  )
+}
+
+/**
+ * The adopted clinical-records retention period (#80).
+ *
+ * **Two states, shown as two states.** "Not yet adopted" and "adopted at N
+ * years" are different answers, and the whole reason the column is nullable is
+ * that collapsing them would report a decision nobody made. The default is
+ * offered here as a starting value for review, never as the current setting.
+ *
+ * **Nothing enforces what is saved here**, and the copy says so rather than
+ * leaving a reader to assume otherwise. Recording the decision and acting on it
+ * are separate pieces of work; only the first exists.
+ */
+function RetentionSection() {
+  const queryClient = useQueryClient()
+  const policy = useQuery({ queryKey: ['retention'], queryFn: () => requestRetention() })
+  const [years, setYears] = useState(String(RETENTION_DEFAULT_YEARS))
+
+  const adopted = policy.data?.adoptedYears ?? null
+
+  // Seeds the field from whatever the server holds, and falls back to the
+  // default so an unreviewed account opens on the value it is being asked to
+  // review rather than on an empty box.
+  useEffect(() => {
+    setYears(String(adopted ?? RETENTION_DEFAULT_YEARS))
+  }, [adopted])
+
+  const save = useMutation({
+    mutationFn: (adoptedYears: number | null) =>
+      requestRetention({ method: 'PATCH', body: JSON.stringify({ adoptedYears }) }),
+    onSuccess: (next) => {
+      queryClient.setQueryData(['retention'], next)
+      toast.success(
+        next.adoptedYears === null
+          ? 'Marked as not yet adopted.'
+          : `Retention period set to ${next.adoptedYears} years.`,
+      )
+    },
+  })
+
+  // Parsed against the shared schema, so the field accepts exactly what the API
+  // does and the button is disabled rather than the request refused.
+  const candidate = RetentionYearsSchema.safeParse(Number(years))
+
+  return (
+    <section className="mt-5 rounded-card border border-line bg-surface p-5">
+      <h2 className="text-base font-semibold">Data Retention</h2>
+
+      <p role="status" className="mt-1 text-sm">
+        {policy.isPending ? (
+          <span className="text-ink-muted">Loading the current period.</span>
+        ) : adopted === null ? (
+          <span className="text-ink-muted">
+            <span className="font-medium text-ink">Not yet adopted.</span> The default below is a
+            starting point awaiting review, not the current policy.
+          </span>
+        ) : (
+          <span className="text-ink-muted">
+            <span className="font-medium text-ink">Adopted:</span> records are kept for {adopted}{' '}
+            {adopted === 1 ? 'year' : 'years'}.
+          </span>
+        )}
+      </p>
+
+      <p className="mt-3 max-w-prose text-sm leading-relaxed text-ink-muted">
+        How long clinical records are kept, in whole years. The default of {RETENTION_DEFAULT_YEARS}{' '}
+        years reflects the common clinical-records retention convention. It is a configurable
+        starting point, not a legal determination.
+      </p>
+      <p className="mt-2 max-w-prose text-sm leading-relaxed text-ink-muted">
+        The clinic data controller must review it against Malaysian legal and professional
+        recordkeeping advice, then adopt it or set a different period.
+      </p>
+      <p className="mt-2 max-w-prose text-sm leading-relaxed text-ink-muted">
+        Nothing enforces this yet. There is no retention job, no automatic expiry, and no deletion
+        sweep, so saving a period records the decision and changes nothing about what is stored.
+        Erasing data is still the manual action below.
+      </p>
+
+      <div className="mt-4 flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1.5">
+          <span className="text-sm font-medium">Retention period, in years</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={50}
+            step={1}
+            value={years}
+            onChange={(event) => setYears(event.target.value)}
+            className="h-11 w-32 rounded-control border border-line bg-surface px-3.5 text-sm transition-colors hover:border-accent focus:border-accent"
+          />
+        </label>
+        <Button
+          variant="primary"
+          size="sm"
+          className="h-11"
+          loading={save.isPending}
+          disabled={!candidate.success}
+          onClick={() => candidate.success && save.mutate(candidate.data)}
+        >
+          {adopted === null ? 'Adopt Period' : 'Save Period'}
+        </Button>
+        {adopted !== null && (
+          <Button
+            size="sm"
+            className="h-11"
+            disabled={save.isPending}
+            onClick={() => save.mutate(null)}
+          >
+            Mark As Not Adopted
+          </Button>
+        )}
+      </div>
+
+      {!candidate.success && (
+        <p role="alert" className="mt-2 text-sm text-emergency">
+          Enter a whole number of years between 1 and 50.
+        </p>
+      )}
+      {save.error != null && (
+        <p role="alert" className="mt-2 text-sm text-emergency">
+          {save.error instanceof ApiError ? save.error.message : 'The period was not saved.'}
+        </p>
+      )}
+    </section>
   )
 }
 

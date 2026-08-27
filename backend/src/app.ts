@@ -12,6 +12,7 @@ import {
   eraseRateLimit,
   guestSignInRateLimit,
   hostedAsrRateLimit,
+  settingsWriteRateLimit,
 } from './middleware/rate-limit.js'
 import { requestContext } from './middleware/request-context.js'
 import { requireSession } from './middleware/require-session.js'
@@ -23,6 +24,7 @@ import { healthRouter } from './routes/health.js'
 import { notificationsRouter } from './routes/notifications.js'
 import { patientsRouter } from './routes/patients.js'
 import { referenceRouter } from './routes/reference.js'
+import { settingsRouter } from './routes/settings.js'
 
 /** Routes that carry clinical data. Everything here requires a session. */
 const PROTECTED_PREFIXES = [
@@ -32,6 +34,7 @@ const PROTECTED_PREFIXES = [
   '/api/guidelines',
   '/api/notifications',
   '/api/patients',
+  '/api/settings',
 ]
 
 export function createApp() {
@@ -88,6 +91,9 @@ export function createApp() {
   // bucket rather than a fresh one: both spend irreversible tombstones, and
   // neither should be funded by an unspent analysis budget.
   app.post('/api/patients/:id/erase', eraseRateLimit)
+  // A write, so it registers its own limiter like every other one. Neither
+  // expensive nor destructive, hence the loosest bucket here (#80).
+  app.patch('/api/settings/retention', settingsWriteRateLimit)
   // Buffers up to 25 MB per request and spends provider credit, so its own
   // bucket too; runs after the session guard above and before the route-level
   // body parser, so a limited request is refused before any audio is read (#154).
@@ -108,6 +114,7 @@ export function createApp() {
   // `/api/consultations` prefix above and carries its own limiter (#169).
   app.use('/api/consultations/:id/copilot', copilotRouter)
   app.use('/api/patients', patientsRouter)
+  app.use('/api/settings', settingsRouter)
   app.use('/api/consultations', consultationsRouter)
 
   app.use(errorHandler)

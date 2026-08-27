@@ -30,6 +30,19 @@ model User {
   /// log they are derived from.
   notificationsClearedAt DateTime?
 
+  /// Adopted clinical-records retention period, in whole years (#80).
+  ///
+  /// Null means the data controller has not reviewed and adopted a period yet.
+  /// That is a real state and must not silently read as `RETENTION_DEFAULT_YEARS`
+  /// from `@shared/types`: the default is a convention offered for review, not a
+  /// legal determination, and collapsing the two would record a decision nobody
+  /// made.
+  ///
+  /// **Nothing enforces this column.** There is no retention job, no TTL, and no
+  /// deletion sweep; erasure stays the doctor-initiated tombstone it already was.
+  /// This stores the decision only.
+  retentionYears Int?
+
   sessions      Session[]
   accounts      Account[]
   consultations Consultation[]
