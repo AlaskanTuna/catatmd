@@ -28,3 +28,43 @@ describe('SidebarIsland patient navigation', () => {
     expect(screen.getByRole('link', { name: 'Register Patient' })).toBeTruthy()
   })
 })
+
+/**
+ * The sidebar reported the doctor as being in two places at once: `/patients/new`
+ * is a child of `/patients`, so a prefix match lit Register Patient and Patients
+ * together. Exact-only would have fixed that and broken the detail pages, which
+ * should keep their section lit. Most specific wins does both.
+ */
+describe('which sidebar item a path lights up', () => {
+  const current = (at: string) => {
+    cleanup()
+    render(
+      <MemoryRouter initialEntries={[at]}>
+        <SidebarIsland onExpandedChange={vi.fn()} />
+      </MemoryRouter>,
+    )
+    return screen
+      .getAllByRole('link')
+      .filter((node) => node.getAttribute('aria-current') === 'page')
+      .map((node) => node.textContent?.trim())
+  }
+
+  it('lights only the more specific item on a child route', () => {
+    expect(current('/patients/new')).toEqual(['Register Patient'])
+  })
+
+  it.each([
+    ['/patients', 'Patients'],
+    ['/consultations', 'Consultations'],
+    ['/guidelines', 'Guidelines'],
+  ])('lights %s as %s', (at, label) => {
+    expect(current(at)).toEqual([label])
+  })
+
+  it.each([
+    ['/patients/abc123', 'Patients'],
+    ['/consultations/abc123', 'Consultations'],
+  ])('keeps the section lit on %s', (at, label) => {
+    expect(current(at)).toEqual([label])
+  })
+})

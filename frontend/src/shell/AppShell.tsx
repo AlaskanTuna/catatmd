@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react'
-import { Outlet, useMatch } from 'react-router-dom'
+import { useCallback, useEffect, useState } from 'react'
+import { Outlet, useLocation, useMatch } from 'react-router-dom'
 import { DemoStepBar } from '../demo/DemoStepBar.js'
 import { DemoTourProvider } from '../demo/DemoTour.js'
 import { HelpButton } from '../demo/HelpButton.js'
@@ -31,6 +31,24 @@ export function AppShell() {
   // The review screen is a working surface with a sticky approve bar, not a
   // page that ends: the reveal footer is wrong there.
   const suppressFooter = useMatch('/consultations/:id') != null
+
+  /*
+   * Every navigation starts at the top of the new page.
+   *
+   * The browser preserves scroll offset across a client-side route change, so
+   * opening a consultation from halfway down a long list landed the doctor
+   * halfway down the consultation. Keyed on `pathname` alone: a hash is an
+   * in-page anchor and moving to the top would defeat it, and a query change
+   * filters the page you are already reading rather than replacing it.
+   */
+  const { pathname } = useLocation()
+  // `pathname` is the trigger rather than a value the body reads, and Biome's
+  // exhaustive-deps rule cannot tell those apart. Dropping it would scroll once
+  // on mount and never again, which is the bug this exists to fix.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname is the trigger, not a read
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
 
   return (
     // The tour provider wraps the shell rather than the app, so it sits inside

@@ -25,8 +25,13 @@ const VISIT_FILTERS = [
  */
 const LIST_HEIGHT = 'max-h-[15rem]'
 
+/**
+ * Labelled, because an unlabelled number under a name is a riddle. A row that
+ * read "56" left the doctor to guess whether that was an age, a visit count or
+ * part of an identifier, and "67 · Other" read as nothing at all.
+ */
 const formatMeta = (patient: PatientListItem) => {
-  const age = patient.age === null ? null : `${patient.age}`
+  const age = patient.age === null ? null : `Age ${patient.age}`
   const gender =
     patient.gender === null
       ? null

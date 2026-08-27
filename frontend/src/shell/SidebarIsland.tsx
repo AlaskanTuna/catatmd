@@ -1,6 +1,6 @@
 import { BookMarked, FileText, PanelLeft, Plus, Settings, Users } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { cn } from '../lib/cn.js'
 import { Mark } from '../ui/Mark.js'
 import { Wordmark } from '../ui/Wordmark.js'
@@ -26,6 +26,24 @@ interface Item {
  * visit now starts from the patient it belongs to, which is also how it starts
  * on paper.
  */
+/**
+ * Which item a path lights up: the most specific match, and only that one.
+ *
+ * `/patients/new` is a child of `/patients`, so a plain prefix match lit both
+ * Register Patient and Patients at once and the sidebar reported the doctor as
+ * being in two places. Exact-only would fix that and break the other case,
+ * where `/patients/:id` and `/consultations/:id` should keep their section lit.
+ * Longest wins resolves both without either item having to know about the other.
+ */
+function activePath(pathname: string, items: readonly Item[]) {
+  return items
+    .filter((item) => pathname === item.to || pathname.startsWith(`${item.to}/`))
+    .reduce<string | null>(
+      (best, item) => (best && best.length >= item.to.length ? best : item.to),
+      null,
+    )
+}
+
 const ITEMS: Item[] = [
   { to: '/patients/new', label: 'Register Patient', icon: Plus, tour: 'nav-new' },
   { to: '/patients', label: 'Patients', icon: Users },
@@ -57,6 +75,7 @@ export function SidebarIsland({
   const [focused, setFocused] = useState(false)
   const [pinned, setPinned] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const active = activePath(useLocation().pathname, ITEMS)
 
   const expanded = pinned || hovered || focused
 
@@ -119,24 +138,22 @@ export function SidebarIsland({
       <ul className="mt-2 flex flex-1 flex-col gap-1">
         {ITEMS.map(({ to, label, icon: Icon, tour }) => (
           <li key={to}>
-            <NavLink
+            <Link
               to={to}
-              end={to === '/consultations'}
               data-tour={tour}
+              aria-current={active === to ? 'page' : undefined}
               // The active tint is /16 where every other active state in the app
               // is /12. This is the only one painted on glass with the scrim
               // behind it, and at the lowered glass alpha the /12 tint measured
               // 4.05:1 with the island expanded. The extra 4% buys back AA
               // without the accent reading as a filled chip.
-              className={({ isActive }) =>
-                cn(
-                  'flex h-11 items-center gap-3 rounded-control px-3',
-                  'text-sm font-medium transition-colors duration-150',
-                  isActive
-                    ? 'bg-accent-soft text-accent'
-                    : 'text-ink-muted hover:bg-sunken-soft hover:text-ink',
-                )
-              }
+              className={cn(
+                'flex h-11 items-center gap-3 rounded-control px-3',
+                'text-sm font-medium transition-colors duration-150',
+                active === to
+                  ? 'bg-accent-soft text-accent'
+                  : 'text-ink-muted hover:bg-sunken-soft hover:text-ink',
+              )}
             >
               <Icon aria-hidden className="size-5 shrink-0" />
               <span
@@ -147,7 +164,7 @@ export function SidebarIsland({
               >
                 {label}
               </span>
-            </NavLink>
+            </Link>
           </li>
         ))}
       </ul>
