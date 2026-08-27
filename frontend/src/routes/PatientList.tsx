@@ -148,7 +148,7 @@ export function PatientList() {
             )}
           </div>
 
-          <Card className="mt-2 overflow-hidden">
+          <Card data-tour="patients" className="mt-2 overflow-hidden">
             <div className="max-w-full overflow-x-auto">
               <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
                 <thead className="bg-sunken-soft text-xs text-ink-muted">
@@ -204,10 +204,43 @@ export function PatientList() {
                       </tr>
                     )
                   })}
+                  {/*
+                   * Two different empties, told apart deliberately. "Nobody is
+                   * registered" and "your filter excluded everyone" look
+                   * identical if they share a string, and they call for
+                   * opposite actions — register someone, or clear the filter.
+                   * Left-aligned and carrying that action, because an empty
+                   * state that only reports absence teaches nothing.
+                   */}
                   {filtered.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-ink-muted">
-                        No patients match this search and filter.
+                      <td colSpan={6} className="px-6 py-10 text-ink-muted">
+                        {(patients.data ?? []).length === 0 ? (
+                          <div className="flex flex-col items-start gap-3">
+                            <span>No patients registered yet.</span>
+                            <Link
+                              to="/patients/new"
+                              className="inline-flex min-h-9 items-center gap-1.5 rounded-control bg-accent px-3 font-medium text-sm text-surface transition-colors hover:bg-accent-hover"
+                            >
+                              <Plus aria-hidden className="size-4" />
+                              Register A Patient
+                            </Link>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-start gap-3">
+                            <span>No patients match this search and filter.</span>
+                            <Button
+                              size="sm"
+                              variant="neutral"
+                              onClick={() => {
+                                setQuery('')
+                                setVisitFilter('all')
+                              }}
+                            >
+                              Clear Filters
+                            </Button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}

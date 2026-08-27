@@ -931,6 +931,24 @@ export const ConsultationDetailSchema = ConsultationSchema.extend({
    * registration number, which the schema does not carry today.
    */
   approvedBy: z.string().nullable(),
+  /**
+   * The patient this visit is filed to, or `null` when it was captured without
+   * one — a pasted, uploaded or ad-hoc consultation.
+   *
+   * Carried on the detail payload rather than left to a second request,
+   * because a doctor reading a note has to be able to see whose note it is
+   * without leaving the screen. Only `id` and `name`: the profile holds the
+   * rest, and a review screen has no use for an identity number.
+   *
+   * Absent reads as "no patient", rather than failing the parse, for the same
+   * rollout reason `title` documents above — Vercel and Render deploy from
+   * their own triggers on one merge, so a new SPA reaches the old API for as
+   * long as the slower build takes.
+   */
+  patient: z
+    .object({ id: z.string(), name: PatientNameSchema.nullable() })
+    .nullish()
+    .transform((value) => value ?? null),
   acknowledgedRedFlagIds: z.array(z.string()),
   reviewedGapIds: z.array(z.string()),
   /**
