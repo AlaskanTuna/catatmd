@@ -15,8 +15,22 @@ interface Item {
   tour?: string
 }
 
+/*
+ * Registration leads, and there is deliberately no standalone "New
+ * Consultation" entry any more.
+ *
+ * A consultation started from the navigation belongs to nobody: it cannot be
+ * filed, and it cannot be found again by patient. That was the only way to
+ * create one until patient records shipped, and leaving the shortcut in place
+ * afterwards would keep offering the orphan path beside the correct one. A
+ * visit now starts from the patient it belongs to, which is also how it starts
+ * on paper.
+ *
+ * `/consultations/new` remains a route — it is where "Start Consultation"
+ * lands, carrying the patient — it is simply no longer reachable without one.
+ */
 const ITEMS: Item[] = [
-  { to: '/consultations/new', label: 'New Consultation', icon: Plus, tour: 'nav-new' },
+  { to: '/patients/new', label: 'Register Patient', icon: Plus, tour: 'nav-new' },
   { to: '/patients', label: 'Patients', icon: Users },
   { to: '/consultations', label: 'Consultations', icon: FileText, tour: 'nav-consultations' },
   { to: '/guidelines', label: 'Guidelines', icon: BookMarked, tour: 'nav-guidelines' },

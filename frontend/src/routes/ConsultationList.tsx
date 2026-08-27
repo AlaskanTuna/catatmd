@@ -110,9 +110,13 @@ export function ConsultationList() {
         title="Consultations"
         subtitle="Simulated consultations, scoped to you."
         art="/art/consultations.webp"
+        /*
+         * Points at the patient, because a visit is filed to one. Starting
+         * from this list produced a consultation belonging to nobody.
+         */
         actions={
           <Link
-            to="/consultations/new"
+            to="/patients"
             className="inline-flex h-10 items-center gap-2 rounded-control bg-accent px-5 text-sm font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97]"
           >
             <Plus aria-hidden className="size-4" />
@@ -184,13 +188,13 @@ export function ConsultationList() {
         {data?.length === 0 && (
           <EmptyState
             title="No Consultations Yet"
-            body="Start one from a bundled synthetic case, or paste a transcript you already have."
+            body="Consultations are filed to a patient. Register one, then start the visit from their profile."
             action={
               <Link
-                to="/consultations/new"
+                to="/patients"
                 className="mt-2 inline-flex h-10 items-center rounded-control bg-accent px-4 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover"
               >
-                Start a Consultation
+                Go To Patients
               </Link>
             }
           />
