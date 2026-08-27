@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { useId, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Link } from 'react-router-dom'
 import { ApiError, api } from '../lib/api.js'
 import { count } from '../lib/plural.js'
 import { Button } from '../ui/Button.js'
@@ -12,6 +11,7 @@ import { Checkbox } from '../ui/Checkbox.js'
 import { PageHeader } from '../ui/PageHeader.js'
 import { Select } from '../ui/Select.js'
 import { ConsultationRow } from './ConsultationRow.js'
+import { StartConsultationDialog } from './StartConsultationDialog.js'
 
 const VIEW_OPTIONS = [
   { value: 'attention', label: 'Needs Attention' },
@@ -50,6 +50,7 @@ export function ConsultationList() {
    */
   const [renaming, setRenaming] = useState<string | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
+  const startDialog = useRef<HTMLDialogElement>(null)
   // Associated explicitly rather than by wrapping. The input lives inside the
   // `Checkbox` component, so a wrapping label reads as having no control in it.
   const selectAllId = useId()
@@ -111,17 +112,20 @@ export function ConsultationList() {
         subtitle="Simulated consultations, scoped to you."
         art="/art/consultations.webp"
         /*
-         * Points at the patient, because a visit is filed to one. Starting
-         * from this list produced a consultation belonging to nobody.
+         * Asks who the visit is for rather than navigating to the file room and
+         * leaving the doctor to work that out. Starting from this list used to
+         * produce a consultation belonging to nobody; linking to `/patients`
+         * fixed the ownership but cost two more steps to get back here.
          */
         actions={
-          <Link
-            to="/patients"
+          <button
+            type="button"
+            onClick={() => startDialog.current?.showModal()}
             className="inline-flex h-10 items-center gap-2 rounded-control bg-accent px-5 text-sm font-medium text-accent-ink shadow-raised transition-[background-color,transform] duration-150 ease-out-quart hover:bg-accent-hover active:scale-[0.97]"
           >
             <Plus aria-hidden className="size-4" />
             New Consultation
-          </Link>
+          </button>
         }
       />
 
@@ -188,14 +192,15 @@ export function ConsultationList() {
         {data?.length === 0 && (
           <EmptyState
             title="No Consultations Yet"
-            body="Consultations are filed to a patient. Register one, then start the visit from their profile."
+            body="Consultations are filed to a patient. Start one and pick who it is for, or register them first."
             action={
-              <Link
-                to="/patients"
+              <button
+                type="button"
+                onClick={() => startDialog.current?.showModal()}
                 className="mt-2 inline-flex h-10 items-center rounded-control bg-accent px-4 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover"
               >
-                Go To Patients
-              </Link>
+                Start A Consultation
+              </button>
             }
           />
         )}
@@ -220,6 +225,8 @@ export function ConsultationList() {
           />
         ))}
       </div>
+
+      <StartConsultationDialog ref={startDialog} />
 
       <EraseDialog
         ref={dialog}
