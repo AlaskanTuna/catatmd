@@ -335,6 +335,27 @@ export function ConsultationReview() {
                 textClassName="text-sm font-medium text-ink"
                 onSave={(title) => rename.mutate(title)}
               />
+              {/*
+               * Whose note this is, above the record id.
+               *
+               * A doctor reading a note has to be able to see the patient
+               * without leaving the screen, and until this was added the
+               * review screen showed a date and a cuid and nothing else —
+               * so a consultation filed to the wrong patient was
+               * undetectable from the screen where it mattered. Observed in
+               * production on 27/08/26.
+               *
+               * Absent for a consultation captured without a patient, which
+               * is the normal case for paste, upload and ad-hoc recording.
+               */}
+              {detail.patient && (
+                <Link
+                  to={`/patients/${detail.patient.id}`}
+                  className="w-fit text-accent text-sm transition-colors hover:text-accent-hover"
+                >
+                  {detail.patient.name ?? 'Unnamed patient'}
+                </Link>
+              )}
               <span className="font-mono text-xs">{detail.id}</span>
             </span>
           )

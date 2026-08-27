@@ -496,3 +496,60 @@ describe('recording provenance', () => {
     expect((await submit()).source).toBe('asr_hosted')
   })
 })
+
+/**
+ * Ambient mode and the Record tab are mutually exclusive by design: ambient
+ * already listens to the room for the whole session, so pressing record would
+ * start a second capture of the same consultation.
+ *
+ * The properties worth pinning are the ones a doctor would experience as a bug
+ * if they broke — the tab is visibly blocked rather than missing, the reason is
+ * on screen, and switching modes never strands anyone on a dead panel.
+ */
+function renderRoute() {
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>
+        <ConsultationNew />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
+describe('ambient capture mode', () => {
+  beforeEach(() => localStorage.clear())
+
+  it('leaves Record usable in the default press-to-record mode', async () => {
+    renderRoute()
+
+    const record = await screen.findByRole('tab', { name: /record/i })
+    expect(record.getAttribute('aria-disabled')).not.toBe('true')
+  })
+
+  it('blocks Record when ambient mode is on, and says why', async () => {
+    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
+    renderRoute()
+
+    const record = await screen.findByRole('tab', { name: /record/i })
+    expect(record.getAttribute('aria-disabled')).toBe('true')
+    expect(await screen.findByText(/ambient mode is on/i)).toBeTruthy()
+  })
+
+  it('does not open the Record panel when the blocked tab is clicked', async () => {
+    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
+    renderRoute()
+
+    const record = await screen.findByRole('tab', { name: /record/i })
+    fireEvent.click(record)
+
+    // Selection never moves to the blocked tab, so the recorder never mounts.
+    expect(record.getAttribute('aria-selected')).toBe('false')
+    expect(await screen.findByText(/ambient mode is on/i)).toBeTruthy()
+  })
+
+  it('offers the audio dialog from the capture screen', async () => {
+    renderRoute()
+
+    expect(await screen.findByRole('button', { name: /audio settings/i })).toBeTruthy()
+  })
+})

@@ -77,7 +77,11 @@ function dispositionsFor(
   }))
 }
 
-function toDetail(row: Consultation, approvedBy: string | null = null) {
+function toDetail(
+  row: Consultation,
+  approvedBy: string | null = null,
+  patient: { id: string; name: string | null } | null = null,
+) {
   return ConsultationDetailSchema.parse({
     id: row.id,
     status: row.status,
@@ -93,6 +97,7 @@ function toDetail(row: Consultation, approvedBy: string | null = null) {
     editedNote: row.editedNote ?? null,
     approvedAt: row.approvedAt,
     approvedBy,
+    patient,
     acknowledgedRedFlagIds: row.acknowledgedRedFlagIds ?? [],
     reviewedGapIds: row.reviewedGapIds ?? [],
     redFlagDispositions: dispositionsFor(
@@ -119,12 +124,29 @@ function toDetail(row: Consultation, approvedBy: string | null = null) {
  */
 /** Exported so the copilot route projects a consultation exactly as GET does. */
 export async function toDetailWithApprover(row: Consultation) {
-  if (row.approvedAt === null) return toDetail(row)
+  /*
+   * Resolved on every read, not only after approval, because a doctor reading
+   * an unapproved note needs to know whose note it is just as much — arguably
+   * more, since that is the point at which they can still act on it.
+   *
+   * An erased patient resolves to null rather than to a tombstoned name: the
+   * filing link survives for the audit chain, but nothing identifying should
+   * come back through a screen after erasure.
+   */
+  const patient = row.patientId
+    ? await prisma.patient.findFirst({
+        where: { id: row.patientId, erasedAt: null },
+        select: { id: true, name: true },
+      })
+    : null
+
+  if (row.approvedAt === null) return toDetail(row, null, patient)
+
   const doctor = await prisma.user.findUnique({
     where: { id: row.doctorId },
     select: { name: true },
   })
-  return toDetail(row, doctor?.name ?? null)
+  return toDetail(row, doctor?.name ?? null, patient)
 }
 
 /**

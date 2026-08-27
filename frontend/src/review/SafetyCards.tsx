@@ -124,32 +124,86 @@ function DispositionControl({
     )
   }
 
+  /*
+   * Two controls at rest, not three.
+   *
+   * All three decisions are equally available, but they are not equally
+   * frequent: acknowledging is the common one and the other two are
+   * exceptions. Three peer buttons on every card read as a wall once a
+   * consultation raises six findings, and a wall is scanned rather than read —
+   * which is the failure mode a safety rail can least afford. The alternatives
+   * expand in place rather than hiding behind a menu, so nothing is more than
+   * one press away and none of it moves.
+   */
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button
-        size="sm"
-        onClick={() => {
-          onDecide({ id: findingId, state: 'acknowledged' })
-          setMode('settled')
-        }}
-      >
-        {acknowledgeLabel}
-      </Button>
-      <Button size="sm" variant="neutral" onClick={() => setMode('reason')}>
-        Dismiss
-      </Button>
-      <Button
-        size="sm"
-        variant="neutral"
-        onClick={() => {
-          onDecide({ id: findingId, state: 'not_applicable' })
-          setMode('settled')
-        }}
-      >
-        Not Applicable
-      </Button>
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          onClick={() => {
+            onDecide({ id: findingId, state: 'acknowledged' })
+            setMode('settled')
+          }}
+        >
+          {acknowledgeLabel}
+        </Button>
+        <Button
+          size="sm"
+          variant="neutral"
+          aria-expanded={mode === 'choosing'}
+          onClick={() => setMode(mode === 'choosing' ? 'settled' : 'choosing')}
+        >
+          {mode === 'choosing' ? 'Fewer Options' : 'More Options'}
+        </Button>
+      </div>
+
+      {mode === 'choosing' && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="neutral" onClick={() => setMode('reason')}>
+            Dismiss
+          </Button>
+          <Button
+            size="sm"
+            variant="neutral"
+            onClick={() => {
+              onDecide({ id: findingId, state: 'not_applicable' })
+              setMode('settled')
+            }}
+          >
+            Not Applicable
+          </Button>
+        </div>
+      )}
     </div>
   )
+}
+
+/**
+ * Strips quotation marks the model wrapped around its own evidence span.
+ *
+ * The card quotes the phrase itself, so a model that also quoted it rendered
+ * as ""sesak bila naik tangga"" on screen. Handled here rather than in the
+ * parser because the stored value should stay byte-identical to what the model
+ * returned — the audit trail and the evidence check both read it, and quietly
+ * rewriting model output on the way into the database is a worse habit than
+ * tidying it on the way onto a screen.
+ *
+ * Only matched pairs are removed, and only at the ends, so a phrase containing
+ * a quote in the middle is left alone.
+ */
+function unquote(evidence: string): string {
+  let text = evidence.trim()
+  while (text.length >= 2) {
+    const first = text[0]
+    const last = text[text.length - 1]
+    const paired =
+      (first === '"' && last === '"') ||
+      (first === '\u201c' && last === '\u201d') ||
+      (first === "'" && last === "'")
+    if (!paired) break
+    text = text.slice(1, -1).trim()
+  }
+  return text
 }
 
 export function RedFlagCard({
@@ -190,7 +244,8 @@ export function RedFlagCard({
             </div>
             <h3 className="mt-1 text-sm font-semibold text-ink">{flag.label}</h3>
             <p className="mt-1 text-sm text-ink-muted">
-              <span className="font-medium text-ink">Heard:</span> &ldquo;{flag.evidence}&rdquo;
+              <span className="font-medium text-ink">Heard:</span> &ldquo;{unquote(flag.evidence)}
+              &rdquo;
             </p>
           </div>
         </div>

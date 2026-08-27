@@ -38,7 +38,14 @@ export function PatientDetail() {
     <div className="mx-auto max-w-4xl">
       <PageHeader
         title="Patient Profile"
-        subtitle={<span className="font-mono text-xs">{detail.id}</span>}
+        /*
+         * No subtitle. It carried the raw cuid, which is meaningless to the
+         * doctor reading it and looks like debug output on a clinical screen
+         * (observed in production on 27/08/26). The patient card sits
+         * immediately below and already names the patient, so repeating the
+         * name here would trade one redundancy for another; the id stays in
+         * the URL for anyone who needs it.
+         */
         breadcrumb={
           <ol className="flex items-center gap-1.5">
             <li>
