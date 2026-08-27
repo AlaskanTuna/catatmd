@@ -99,3 +99,50 @@ describe('RedFlagCard disposition control', () => {
     expect(screen.queryByRole('button', { name: /more options/i })).toBeNull()
   })
 })
+
+/**
+ * The card supplies the quotation marks, so a model that also quoted its
+ * evidence rendered as doubled quotes on screen. Observed in production on
+ * 27/08/26: `Heard: ""sesak bila naik tangga""`.
+ *
+ * Stripped on render rather than on ingest, deliberately. The stored value has
+ * to stay byte-identical to what the model returned, because the audit trail
+ * and the evidence check both read it.
+ */
+describe('evidence quoting', () => {
+  it('does not double the quotation marks the model supplied', () => {
+    render(
+      <RedFlagCard
+        flag={{ ...FLAG, evidence: '"sesak bila naik tangga"' }}
+        disposition={undefined}
+        onDecide={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText(/sesak bila naik tangga/).textContent).not.toContain('""')
+  })
+
+  it('strips curly quotes as well as straight ones', () => {
+    render(
+      <RedFlagCard
+        flag={{ ...FLAG, evidence: '“rasa sesak”' }}
+        disposition={undefined}
+        onDecide={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText(/rasa sesak/).textContent).not.toContain('““')
+  })
+
+  it('leaves a quote inside the phrase alone', () => {
+    render(
+      <RedFlagCard
+        flag={{ ...FLAG, evidence: 'he said "sesak" twice' }}
+        disposition={undefined}
+        onDecide={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText(/twice/).textContent).toContain('"sesak"')
+  })
+})

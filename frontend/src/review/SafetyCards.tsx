@@ -178,6 +178,34 @@ function DispositionControl({
   )
 }
 
+/**
+ * Strips quotation marks the model wrapped around its own evidence span.
+ *
+ * The card quotes the phrase itself, so a model that also quoted it rendered
+ * as ""sesak bila naik tangga"" on screen. Handled here rather than in the
+ * parser because the stored value should stay byte-identical to what the model
+ * returned — the audit trail and the evidence check both read it, and quietly
+ * rewriting model output on the way into the database is a worse habit than
+ * tidying it on the way onto a screen.
+ *
+ * Only matched pairs are removed, and only at the ends, so a phrase containing
+ * a quote in the middle is left alone.
+ */
+function unquote(evidence: string): string {
+  let text = evidence.trim()
+  while (text.length >= 2) {
+    const first = text[0]
+    const last = text[text.length - 1]
+    const paired =
+      (first === '"' && last === '"') ||
+      (first === '\u201c' && last === '\u201d') ||
+      (first === "'" && last === "'")
+    if (!paired) break
+    text = text.slice(1, -1).trim()
+  }
+  return text
+}
+
 export function RedFlagCard({
   flag,
   disposition,
@@ -216,7 +244,8 @@ export function RedFlagCard({
             </div>
             <h3 className="mt-1 text-sm font-semibold text-ink">{flag.label}</h3>
             <p className="mt-1 text-sm text-ink-muted">
-              <span className="font-medium text-ink">Heard:</span> &ldquo;{flag.evidence}&rdquo;
+              <span className="font-medium text-ink">Heard:</span> &ldquo;{unquote(flag.evidence)}
+              &rdquo;
             </p>
           </div>
         </div>

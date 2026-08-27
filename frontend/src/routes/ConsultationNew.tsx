@@ -1,8 +1,8 @@
 import type { Transcript, TranscriptSource, TranscriptTurn } from '@shared/types'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { FileUp, FolderOpen, Mic, Settings2, Type } from 'lucide-react'
+import { FileUp, FolderOpen, Mic, Settings2, Type, UserRound } from 'lucide-react'
 import { type ChangeEvent, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AudioCapture } from '../audio/AudioCapture.js'
 import { AudioSettingsDialog } from '../audio/AudioSettingsDialog.js'
 import { type AudioSettings, loadAudioSettings } from '../audio/audio-settings.js'
@@ -38,6 +38,18 @@ export function ConsultationNew() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const patientId = searchParams.get('patientId') ?? undefined
+  /*
+   * Named on screen, not merely carried in the query string. A doctor who
+   * arrived here from a patient profile has to be able to confirm the
+   * consultation will be filed to the right person before capturing it, and
+   * filing to the wrong patient is not something the review screen could catch
+   * afterwards. Observed in production on 27/08/26.
+   */
+  const filedTo = useQuery({
+    queryKey: ['patient', patientId],
+    queryFn: () => api.getPatient(patientId ?? ''),
+    enabled: patientId !== undefined,
+  })
   const [audio, setAudio] = useState<AudioSettings>(loadAudioSettings)
   /*
    * Record is the default tab, except when ambient mode has already taken the
@@ -142,6 +154,19 @@ export function ConsultationNew() {
         subtitle="Every bundled case is synthetic. No real patient data enters this system."
         art="/art/new-consultation.webp"
       />
+
+      {patientId && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-card bg-accent-soft px-4 py-3 text-sm">
+          <UserRound aria-hidden className="size-4 text-accent" />
+          <span className="text-ink-muted">Filing to</span>
+          <Link
+            to={`/patients/${patientId}`}
+            className="font-medium text-accent transition-colors hover:text-accent-hover"
+          >
+            {filedTo.data?.name ?? 'this patient'}
+          </Link>
+        </div>
+      )}
 
       <div
         role="tablist"
