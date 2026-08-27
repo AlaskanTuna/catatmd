@@ -55,3 +55,33 @@ Both were rejected on legibility, not taste.
 - **`mark-a-stethoscope-tail.png`**: a C whose tail became a stethoscope tube.
   It read as a question mark, which is a bad thing for a clinical tool to imply.
 - **`mark-c-checked-note.png`**: it read as a generic task-list icon.
+
+## The Share Card
+
+`frontend/public/og.jpg` is what a link to the app unfurls into, referenced from
+the `og:image` and `twitter:image` tags in `frontend/index.html`.
+
+**The type is composited, not generated.** `og-bg.png` is the generated ground
+only: a woven teal canvas carrying no text at all. Image models mangle
+lettering, and an approximated wordmark on a share card is the one place the
+brand is seen by people who have not opened the product. `og-card.html` lays the
+real lockup over that ground, using the same Outfit face as the interface and
+the same Mafins `MD` outlines as `Wordmark.tsx`, so the card and the app are
+provably the same artwork.
+
+To regenerate after a copy or brand change:
+
+```bash
+# 1. Render the card at exactly the card size.
+cd docs/brand
+cp ../../frontend/dist/assets/outfit-latin-wght-normal-*.woff2 outfit.woff2
+google-chrome --headless --disable-gpu --hide-scrollbars \
+  --force-device-scale-factor=1 --window-size=1200,630 \
+  --screenshot=og.png "file://$PWD/og-card.html"
+
+# 2. JPEG, because the ground is a photographic weave: 1.4 MB as PNG, 300 KB here.
+python3 -c "from PIL import Image; Image.open('og.png').convert('RGB').save('../../frontend/public/og.jpg','JPEG',quality=88,optimize=True,progressive=True,subsampling=0)"
+```
+
+`og-card.html` expects `outfit.woff2` and `og-bg.png` beside it. Neither the
+card nor the ground ships in the bundle; only the flattened `og.jpg` does.

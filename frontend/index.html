@@ -10,6 +10,61 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f9f8f5" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#101412" />
+
+    <!--
+      The share card.
+
+      Static in this file rather than rendered by the app, because a crawler
+      reads the HTML the server sends and never runs the bundle: tags injected
+      by React would leave every share a bare link, which is what this was.
+
+      **The description says prototype and simulated, deliberately.** A card for
+      a clinical tool travels without its context, and someone who sees only
+      this should not come away thinking it is in use on real patients. The same
+      sentence is on the landing page for the same reason.
+
+      `og:image` is absolute because relative URLs are not resolved by most
+      crawlers, and JPEG rather than the WebP used elsewhere in `art/` because
+      WebP support across the card renderers is still uneven. JPEG rather than
+      PNG because the ground is a photographic weave: the same image is 1.4 MB
+      as a PNG and 300 KB here, and an unfurl that has to pull a megabyte is an
+      unfurl that sometimes does not appear.
+    -->
+    <meta
+      name="description"
+      content="A GP consultation becomes a structured note the doctor reviews and approves. Deterministic red flags, guideline-cited suggestions, and a de-identification gate before any model call."
+    />
+    <link rel="canonical" href="https://catatmd.vercel.app/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="CatatMD" />
+    <meta property="og:url" content="https://catatmd.vercel.app/" />
+    <meta property="og:title" content="CatatMD" />
+    <meta
+      property="og:description"
+      content="A GP consultation becomes a structured note the doctor reviews and approves. Deterministic red flags, guideline-cited suggestions, and a de-identification gate before any model call. Evaluation prototype, simulated data only."
+    />
+    <meta property="og:image" content="https://catatmd.vercel.app/og.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="CatatMD on a dark teal woven canvas, above the line: the consultation is already documented, it just needs you to check it."
+    />
+    <meta property="og:locale" content="en_MY" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="CatatMD" />
+    <meta
+      name="twitter:description"
+      content="A GP consultation becomes a structured note the doctor reviews and approves. Evaluation prototype, simulated data only."
+    />
+    <meta name="twitter:image" content="https://catatmd.vercel.app/og.jpg" />
+    <meta
+      name="twitter:image:alt"
+      content="CatatMD on a dark teal woven canvas, above the line: the consultation is already documented, it just needs you to check it."
+    />
   </head>
   <body>
     <div id="root"></div>
