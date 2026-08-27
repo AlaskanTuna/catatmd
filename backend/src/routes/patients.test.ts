@@ -31,6 +31,10 @@ type ConsultationRow = {
   patientId: string | null
   doctorId: string
   status: string
+  /** The three Json PHI columns, present once the erase route's cascade runs. */
+  transcript?: unknown
+  analysis?: unknown
+  editedNote?: unknown
   title: string | null
   erasedAt: Date | null
   createdAt: Date
@@ -63,83 +67,108 @@ function matches(row: PatientRow, where: Record<string, unknown>): boolean {
   return true
 }
 
-vi.mock('../lib/prisma.js', () => ({
-  prisma: {
-    patient: {
-      findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
-        return patients.find((p) => matches(p, where)) ?? null
-      }),
-      findMany: vi.fn(
-        async ({
-          where,
-          select,
-        }: {
-          where: Record<string, unknown>
-          select: Record<string, unknown>
-        }) => {
-          return patients
-            .filter((p) => matches(p, where))
-            .map((p) => {
-              // Mirrors Prisma's `select`, so a column the route never asked
-              // for cannot reach the assertion through a too-generous stub.
-              const out: Record<string, unknown> = {}
-              for (const key of Object.keys(select)) {
-                if (key === '_count') {
-                  out._count = {
-                    consultations: consultations.filter(
-                      (c) => c.patientId === p.id && c.erasedAt === null,
-                    ).length,
+vi.mock('../lib/prisma.js', () => {
+  const databaseNull = (value: unknown) =>
+    typeof value === 'object' && value !== null && String(value) === 'Prisma.DbNull' ? null : value
+
+  return {
+    prisma: {
+      patient: {
+        findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+          return patients.find((p) => matches(p, where)) ?? null
+        }),
+        findMany: vi.fn(
+          async ({
+            where,
+            select,
+          }: {
+            where: Record<string, unknown>
+            select: Record<string, unknown>
+          }) => {
+            return patients
+              .filter((p) => matches(p, where))
+              .map((p) => {
+                // Mirrors Prisma's `select`, so a column the route never asked
+                // for cannot reach the assertion through a too-generous stub.
+                const out: Record<string, unknown> = {}
+                for (const key of Object.keys(select)) {
+                  if (key === '_count') {
+                    out._count = {
+                      consultations: consultations.filter(
+                        (c) => c.patientId === p.id && c.erasedAt === null,
+                      ).length,
+                    }
+                  } else if (key === 'consultations') {
+                    out.consultations = consultations
+                      .filter((c) => c.patientId === p.id && c.erasedAt === null)
+                      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+                      .slice(0, 1)
+                      .map((c) => ({ createdAt: c.createdAt }))
+                  } else {
+                    out[key] = p[key as keyof PatientRow]
                   }
-                } else if (key === 'consultations') {
-                  out.consultations = consultations
-                    .filter((c) => c.patientId === p.id && c.erasedAt === null)
-                    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-                    .slice(0, 1)
-                    .map((c) => ({ createdAt: c.createdAt }))
-                } else {
-                  out[key] = p[key as keyof PatientRow]
                 }
-              }
-              return out
-            })
-        },
-      ),
-      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
-        const now = new Date()
-        const row: PatientRow = {
-          id: `patient-${patients.length + 1}`,
-          doctorId: data.doctorId as string,
-          name: (data.name ?? null) as string | null,
-          nric: (data.nric ?? null) as string | null,
-          age: (data.age ?? null) as number | null,
-          gender: (data.gender ?? null) as PatientRow['gender'],
-          erasedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        }
-        patients.push(row)
-        created = data
-        return row
-      }),
-      update: vi.fn(
-        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
-          const row = patients.find((p) => p.id === where.id)
-          if (!row) throw new Error('missing')
-          Object.assign(row, data, { updatedAt: new Date() })
-          return row
-        },
-      ),
-    },
-    consultation: {
-      findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
-        consultations.filter(
-          (c) =>
-            c.patientId === where.patientId && c.doctorId === where.doctorId && c.erasedAt === null,
+                return out
+              })
+          },
         ),
-      ),
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          const now = new Date()
+          const row: PatientRow = {
+            id: `patient-${patients.length + 1}`,
+            doctorId: data.doctorId as string,
+            name: (data.name ?? null) as string | null,
+            nric: (data.nric ?? null) as string | null,
+            age: (data.age ?? null) as number | null,
+            gender: (data.gender ?? null) as PatientRow['gender'],
+            erasedAt: null,
+            createdAt: now,
+            updatedAt: now,
+          }
+          patients.push(row)
+          created = data
+          return row
+        }),
+        update: vi.fn(
+          async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+            const row = patients.find((p) => p.id === where.id)
+            if (!row) throw new Error('missing')
+            Object.assign(row, data, { updatedAt: new Date() })
+            return row
+          },
+        ),
+      },
+      consultation: {
+        findFirst: vi.fn(
+          async ({ where }: { where: Record<string, unknown> }) =>
+            consultations.find(
+              (c) =>
+                c.id === where.id && c.doctorId === where.doctorId && c.erasedAt === where.erasedAt,
+            ) ?? null,
+        ),
+        findMany: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+          consultations.filter(
+            (c) =>
+              c.patientId === where.patientId &&
+              c.doctorId === where.doctorId &&
+              c.erasedAt === null,
+          ),
+        ),
+        update: vi.fn(
+          async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
+            const row = consultations.find((c) => c.id === where.id)
+            if (!row) throw new Error('missing')
+            Object.assign(row, data, { updatedAt: new Date() })
+            if ('transcript' in data) row.transcript = databaseNull(data.transcript)
+            if ('analysis' in data) row.analysis = databaseNull(data.analysis)
+            if ('editedNote' in data) row.editedNote = databaseNull(data.editedNote)
+            return row
+          },
+        ),
+      },
     },
-  },
-}))
+  }
+})
 
 let server: Server
 let origin: string
@@ -177,6 +206,26 @@ function seed(over: Partial<PatientRow> = {}): PatientRow {
     ...over,
   }
   patients.push(row)
+  return row
+}
+
+function seedConsultation(patientId: string, over: Partial<ConsultationRow> = {}): ConsultationRow {
+  const now = new Date()
+  const row: ConsultationRow = {
+    id: `c-${consultations.length + 1}`,
+    patientId,
+    doctorId: 'doctor-1',
+    status: 'draft',
+    title: null,
+    transcript: { turns: [{ speaker: 'patient', text: 'I am Rahman bin Abdullah with a cough' }] },
+    analysis: { note: { subjective: 'Rahman reports cough' } },
+    editedNote: { subjective: 'Doctor note about Rahman' },
+    erasedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...over,
+  }
+  consultations.push(row)
   return row
 }
 
@@ -451,5 +500,100 @@ describe('PATCH /api/patients/:id', () => {
 
     expect(res.status).toBe(404)
     expect(patients.find((x) => x.id === p.id)?.name).toBe('Rahman bin Abdullah')
+  })
+})
+
+describe('POST /api/patients/:id/erase', () => {
+  it('tombstones the patient and returns ids only, never identity', async () => {
+    const p = seed()
+
+    const res = await fetch(`${origin}/api/patients/${p.id}/erase`, { method: 'POST' })
+    const body = await res.text()
+    const parsed = JSON.parse(body) as {
+      erasure: { patientId: string; erasedConsultationIds: string[] }
+    }
+
+    expect(res.status).toBe(200)
+    expect(parsed.erasure.patientId).toBe(p.id)
+    expect(parsed.erasure.erasedConsultationIds).toEqual([])
+    expect(body).not.toContain('Rahman')
+    expect(body).not.toContain('850312')
+    expect(patients.find((x) => x.id === p.id)).toMatchObject({
+      name: null,
+      nric: null,
+      age: null,
+      gender: null,
+      erasedAt: expect.any(Date),
+    })
+  })
+
+  it('erases every consultation filed under the patient, content included', async () => {
+    const p = seed()
+    const first = seedConsultation(p.id)
+    const second = seedConsultation(p.id, { title: 'Rahman, recurrent cough' })
+
+    const res = await fetch(`${origin}/api/patients/${p.id}/erase`, { method: 'POST' })
+    const body = (await res.json()) as { erasure: { erasedConsultationIds: string[] } }
+
+    expect(res.status).toBe(200)
+    expect(body.erasure.erasedConsultationIds).toEqual([first.id, second.id])
+    for (const id of [first.id, second.id]) {
+      expect(consultations.find((c) => c.id === id)).toMatchObject({
+        transcript: null,
+        analysis: null,
+        editedNote: null,
+        title: null,
+        erasedAt: expect.any(Date),
+      })
+    }
+    expect(JSON.stringify(consultations.find((c) => c.id === second.id))).not.toMatch(/Rahman/)
+  })
+
+  it('records one consultation.erased per visit followed by one patient.erased', async () => {
+    const p = seed()
+    seedConsultation(p.id)
+    seedConsultation(p.id)
+
+    await fetch(`${origin}/api/patients/${p.id}/erase`, { method: 'POST' })
+
+    expect(auditActions).toEqual(['consultation.erased', 'consultation.erased', 'patient.erased'])
+  })
+
+  it('is 404 for another doctor s patient and erases nothing', async () => {
+    const p = seed({ doctorId: 'doctor-2' })
+    seedConsultation(p.id)
+
+    const res = await fetch(`${origin}/api/patients/${p.id}/erase`, { method: 'POST' })
+
+    expect(res.status).toBe(404)
+    expect(patients.find((x) => x.id === p.id)?.name).toBe('Rahman bin Abdullah')
+    expect(consultations[0]?.erasedAt).toBeNull()
+    expect(auditActions).toEqual([])
+  })
+
+  it('is 404 for an already-erased patient', async () => {
+    const p = seed({ erasedAt: new Date() })
+    seedConsultation(p.id)
+
+    const res = await fetch(`${origin}/api/patients/${p.id}/erase`, { method: 'POST' })
+
+    expect(res.status).toBe(404)
+    expect(consultations[0]?.erasedAt).toBeNull()
+    expect(auditActions).toEqual([])
+  })
+
+  it('leaves a sibling patient s visits untouched', async () => {
+    const mine = seed()
+    seed({ name: 'Siti binti Hassan', nric: null })
+    const theirsVisit = seedConsultation('patient-2', { title: 'Siti, kept on file' })
+    seedConsultation(mine.id)
+
+    const res = await fetch(`${origin}/api/patients/${mine.id}/erase`, { method: 'POST' })
+
+    expect(res.status).toBe(200)
+    expect(theirsVisit.erasedAt).toBeNull()
+    expect(theirsVisit.transcript).not.toBeNull()
+    expect(theirsVisit.title).toBe('Siti, kept on file')
+    expect(auditActions).toEqual(['consultation.erased', 'patient.erased'])
   })
 })

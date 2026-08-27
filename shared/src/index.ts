@@ -860,6 +860,17 @@ export const EraseConsultationsResultSchema = z.object({
 })
 
 /**
+ * One patient per request, deliberately. An erasure here cascades to every
+ * consultation filed under the patient, which makes a single one heavier than
+ * any direct consultation erase, so there is no batch shape to widen into.
+ * Ids only, like every result above — never a name or an NRIC.
+ */
+export const ErasePatientResultSchema = z.object({
+  patientId: z.string(),
+  erasedConsultationIds: z.array(z.string()),
+})
+
+/**
  * What a doctor decided about a red flag or a gap.
  *
  * Three states rather than a boolean, because "I have seen this and it is
@@ -1175,6 +1186,7 @@ export type NotificationAction = z.infer<typeof NotificationActionSchema>
 export type NotificationItem = z.infer<typeof NotificationItemSchema>
 export type EraseConsultationsInput = z.infer<typeof EraseConsultationsInputSchema>
 export type EraseConsultationsResult = z.infer<typeof EraseConsultationsResultSchema>
+export type ErasePatientResult = z.infer<typeof ErasePatientResultSchema>
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelopeSchema>
 export type Fixture = z.infer<typeof FixtureSchema>
 export type GuidelineChunk = z.infer<typeof GuidelineChunkSchema>
