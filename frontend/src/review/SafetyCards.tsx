@@ -124,30 +124,56 @@ function DispositionControl({
     )
   }
 
+  /*
+   * Two controls at rest, not three.
+   *
+   * All three decisions are equally available, but they are not equally
+   * frequent: acknowledging is the common one and the other two are
+   * exceptions. Three peer buttons on every card read as a wall once a
+   * consultation raises six findings, and a wall is scanned rather than read —
+   * which is the failure mode a safety rail can least afford. The alternatives
+   * expand in place rather than hiding behind a menu, so nothing is more than
+   * one press away and none of it moves.
+   */
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button
-        size="sm"
-        onClick={() => {
-          onDecide({ id: findingId, state: 'acknowledged' })
-          setMode('settled')
-        }}
-      >
-        {acknowledgeLabel}
-      </Button>
-      <Button size="sm" variant="neutral" onClick={() => setMode('reason')}>
-        Dismiss
-      </Button>
-      <Button
-        size="sm"
-        variant="neutral"
-        onClick={() => {
-          onDecide({ id: findingId, state: 'not_applicable' })
-          setMode('settled')
-        }}
-      >
-        Not Applicable
-      </Button>
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          onClick={() => {
+            onDecide({ id: findingId, state: 'acknowledged' })
+            setMode('settled')
+          }}
+        >
+          {acknowledgeLabel}
+        </Button>
+        <Button
+          size="sm"
+          variant="neutral"
+          aria-expanded={mode === 'choosing'}
+          onClick={() => setMode(mode === 'choosing' ? 'settled' : 'choosing')}
+        >
+          {mode === 'choosing' ? 'Fewer Options' : 'More Options'}
+        </Button>
+      </div>
+
+      {mode === 'choosing' && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="neutral" onClick={() => setMode('reason')}>
+            Dismiss
+          </Button>
+          <Button
+            size="sm"
+            variant="neutral"
+            onClick={() => {
+              onDecide({ id: findingId, state: 'not_applicable' })
+              setMode('settled')
+            }}
+          >
+            Not Applicable
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
