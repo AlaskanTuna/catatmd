@@ -31,7 +31,7 @@ import {
 import { getActiveClinicalVersions } from '../clinical-versions/index.js'
 import { DeidentificationError, deidentifyTranscript } from '../deid/index.js'
 import { deriveGaps } from '../gaps/index.js'
-import { assertOwnedConsultation } from '../lib/authz.js'
+import { assertOwnedConsultation, assertOwnedPatient } from '../lib/authz.js'
 import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
 import { logger, timeStage } from '../lib/logger.js'
@@ -77,7 +77,11 @@ function dispositionsFor(
   }))
 }
 
-function toDetail(row: Consultation, approvedBy: string | null = null) {
+function toDetail(
+  row: Consultation,
+  approvedBy: string | null = null,
+  patient: { id: string; name: string | null } | null = null,
+) {
   return ConsultationDetailSchema.parse({
     id: row.id,
     status: row.status,
@@ -93,6 +97,7 @@ function toDetail(row: Consultation, approvedBy: string | null = null) {
     editedNote: row.editedNote ?? null,
     approvedAt: row.approvedAt,
     approvedBy,
+    patient,
     acknowledgedRedFlagIds: row.acknowledgedRedFlagIds ?? [],
     reviewedGapIds: row.reviewedGapIds ?? [],
     redFlagDispositions: dispositionsFor(
@@ -119,12 +124,29 @@ function toDetail(row: Consultation, approvedBy: string | null = null) {
  */
 /** Exported so the copilot route projects a consultation exactly as GET does. */
 export async function toDetailWithApprover(row: Consultation) {
-  if (row.approvedAt === null) return toDetail(row)
+  /*
+   * Resolved on every read, not only after approval, because a doctor reading
+   * an unapproved note needs to know whose note it is just as much — arguably
+   * more, since that is the point at which they can still act on it.
+   *
+   * An erased patient resolves to null rather than to a tombstoned name: the
+   * filing link survives for the audit chain, but nothing identifying should
+   * come back through a screen after erasure.
+   */
+  const patient = row.patientId
+    ? await prisma.patient.findFirst({
+        where: { id: row.patientId, erasedAt: null },
+        select: { id: true, name: true },
+      })
+    : null
+
+  if (row.approvedAt === null) return toDetail(row, null, patient)
+
   const doctor = await prisma.user.findUnique({
     where: { id: row.doctorId },
     select: { name: true },
   })
-  return toDetail(row, doctor?.name ?? null)
+  return toDetail(row, doctor?.name ?? null, patient)
 }
 
 /**
@@ -191,7 +213,16 @@ consultationsRouter.get('/', async (req, res) => {
   res.json({ consultations: rows.map((row) => ConsultationListItemSchema.parse(row)) })
 })
 
-const CreateBodySchema = z.object({ transcript: TranscriptSchema })
+/*
+ * `patientId` is optional and stays optional. Four of the five capture modes —
+ * paste, upload, fixture, and an ad-hoc recording — begin without a registered
+ * patient, and requiring one would push that work outside the system rather
+ * than into it. Only the queue path carries an id.
+ */
+const CreateBodySchema = z.object({
+  transcript: TranscriptSchema,
+  patientId: z.string().nullish(),
+})
 
 consultationsRouter.post('/', async (req, res) => {
   const parsed = CreateBodySchema.safeParse(req.body)
@@ -200,8 +231,24 @@ consultationsRouter.post('/', async (req, res) => {
   }
 
   const actor = doctorId(req)
+
+  /*
+   * Filed against a patient only after that patient is proven to be this
+   * doctor's. Writing the id straight through would let a caller attach a
+   * consultation to someone else's patient row, which is the ownership boundary
+   * failing in the one direction a read-side check never catches.
+   */
+  if (parsed.data.patientId) {
+    await assertOwnedPatient(parsed.data.patientId, actor)
+  }
+
   const created = await prisma.consultation.create({
-    data: { doctorId: actor, status: 'draft', transcript: parsed.data.transcript },
+    data: {
+      doctorId: actor,
+      status: 'draft',
+      transcript: parsed.data.transcript,
+      patientId: parsed.data.patientId ?? null,
+    },
   })
 
   await recordAuditEvent({

@@ -1,9 +1,11 @@
 import type { Transcript, TranscriptSource, TranscriptTurn } from '@shared/types'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { FileUp, FolderOpen, Mic, Type } from 'lucide-react'
-import { type ChangeEvent, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { FileUp, FolderOpen, Mic, Settings2, Type, UserRound } from 'lucide-react'
+import { type ChangeEvent, useRef, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AudioCapture } from '../audio/AudioCapture.js'
+import { AudioSettingsDialog } from '../audio/AudioSettingsDialog.js'
+import { type AudioSettings, loadAudioSettings } from '../audio/audio-settings.js'
 import {
   type DraftLine,
   draftToTurns,
@@ -34,7 +36,37 @@ const TABS = [
 
 export function ConsultationNew() {
   const navigate = useNavigate()
-  const [tab, setTab] = useState<(typeof TABS)[number]['id']>(TABS[0].id)
+  const [searchParams] = useSearchParams()
+  const patientId = searchParams.get('patientId') ?? undefined
+  /*
+   * Named on screen, not merely carried in the query string. A doctor who
+   * arrived here from a patient profile has to be able to confirm the
+   * consultation will be filed to the right person before capturing it, and
+   * filing to the wrong patient is not something the review screen could catch
+   * afterwards. Observed in production on 27/08/26.
+   */
+  const filedTo = useQuery({
+    queryKey: ['patient', patientId],
+    queryFn: () => api.getPatient(patientId ?? ''),
+    enabled: patientId !== undefined,
+  })
+  const [audio, setAudio] = useState<AudioSettings>(loadAudioSettings)
+  /*
+   * Record is the default tab, except when ambient mode has already taken the
+   * microphone. Opening on a tab the doctor cannot use is the same dead end as
+   * blocking one without saying why.
+   */
+  const [tab, setTab] = useState<(typeof TABS)[number]['id']>(() =>
+    loadAudioSettings().mode === 'ambient' ? 'paste' : TABS[0].id,
+  )
+  const audioDialog = useRef<HTMLDialogElement>(null)
+  /*
+   * Ambient mode already listens to the room for the whole session, so pressing
+   * record here would start a second capture of the same consultation. The tab
+   * is blocked rather than hidden: a control that vanishes reads as a bug, and
+   * the doctor needs to know the mode is on, not merely that recording is gone.
+   */
+  const recordBlocked = audio.mode === 'ambient'
   const [text, setText] = useState('')
   const [source, setSource] = useState<TranscriptSource>('fixture')
   /*
@@ -53,7 +85,7 @@ export function ConsultationNew() {
   const create = useMutation({
     mutationFn: () => {
       const transcript: Transcript = { source, turns }
-      return api.createConsultation(transcript)
+      return api.createConsultation(transcript, patientId)
     },
     onSuccess: (consultation) => navigate(`/consultations/${consultation.id}`),
   })
@@ -123,6 +155,19 @@ export function ConsultationNew() {
         art="/art/new-consultation.webp"
       />
 
+      {patientId && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-card bg-accent-soft px-4 py-3 text-sm">
+          <UserRound aria-hidden className="size-4 text-accent" />
+          <span className="text-ink-muted">Filing to</span>
+          <Link
+            to={`/patients/${patientId}`}
+            className="font-medium text-accent transition-colors hover:text-accent-hover"
+          >
+            {filedTo.data?.name ?? 'this patient'}
+          </Link>
+        </div>
+      )}
+
       <div
         role="tablist"
         aria-label="Transcript source"
@@ -135,17 +180,52 @@ export function ConsultationNew() {
             type="button"
             role="tab"
             aria-selected={tab === id}
-            onClick={() => setTab(id)}
+            aria-disabled={id === 'record' && recordBlocked}
+            onClick={() => {
+              if (id === 'record' && recordBlocked) return
+              setTab(id)
+            }}
             className={cn(
               'inline-flex min-h-10 items-center gap-2 rounded-control px-3 text-sm font-medium transition-colors',
               tab === id ? 'bg-accent-soft text-accent' : 'text-ink-muted hover:bg-sunken',
+              id === 'record' &&
+                recordBlocked &&
+                'cursor-not-allowed opacity-50 hover:bg-transparent',
             )}
           >
             <Icon aria-hidden className="size-4" />
             {label}
           </button>
         ))}
+
+        <button
+          type="button"
+          onClick={() => audioDialog.current?.showModal()}
+          aria-label="Audio settings"
+          className="ml-auto inline-flex min-h-10 items-center gap-2 rounded-control px-3 text-ink-muted text-sm transition-colors hover:bg-sunken"
+        >
+          <Settings2 aria-hidden className="size-4" />
+          {audio.mode === 'ambient' ? 'Ambient' : 'Audio'}
+        </button>
       </div>
+
+      {recordBlocked && (
+        <p className="mt-2 text-ink-muted text-xs">
+          Ambient mode is on, so the room is already being listened to. Turn it off in Audio to
+          record a single consultation by hand.
+        </p>
+      )}
+
+      <AudioSettingsDialog
+        ref={audioDialog}
+        settings={audio}
+        onApply={(next) => {
+          setAudio(next)
+          // Leaving the doctor on a tab they can no longer use would strand
+          // them on a dead panel with no way to tell why it stopped working.
+          if (next.mode === 'ambient' && tab === 'record') setTab('paste')
+        }}
+      />
 
       <div className="mt-4">
         {tab === 'fixture' && (

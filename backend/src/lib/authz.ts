@@ -1,4 +1,4 @@
-import type { Consultation } from '@prisma/client'
+import type { Consultation, Patient as PatientRow } from '@prisma/client'
 import { HttpError } from './http-error.js'
 import { prisma } from './prisma.js'
 
@@ -22,4 +22,26 @@ export async function assertOwnedConsultation(id: string, doctorId: string): Pro
   }
 
   return consultation
+}
+
+/**
+ * The ownership gate for `Patient`, deliberately identical in shape to the one
+ * above rather than a variation on it.
+ *
+ * A second entity introducing a second authorisation rule is how an existence
+ * oracle gets reintroduced by accident: the reasoning that makes 404-never-403
+ * correct for consultations applies with more force here, because a patient row
+ * is identity itself rather than a record derived from one. Confirming that an
+ * id is real would confirm that a person is registered.
+ */
+export async function assertOwnedPatient(id: string, doctorId: string): Promise<PatientRow> {
+  const patient = await prisma.patient.findFirst({
+    where: { id, doctorId, erasedAt: null },
+  })
+
+  if (!patient) {
+    throw new HttpError(404, 'not_found', 'Patient not found.')
+  }
+
+  return patient
 }
