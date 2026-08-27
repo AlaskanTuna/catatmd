@@ -2,12 +2,14 @@ import type { Patient as PatientRow } from '@prisma/client'
 import {
   ConsultationListItemSchema,
   CreatePatientInputSchema,
+  ErasePatientResultSchema,
   PatientDetailSchema,
   PatientListItemSchema,
   PatientSchema,
   UpdatePatientInputSchema,
 } from '@shared/types'
 import { Router } from 'express'
+import { erasePatient } from '../audit/erasure.js'
 import { recordAuditEvent } from '../audit/index.js'
 import { assertOwnedPatient } from '../lib/authz.js'
 import { HttpError } from '../lib/http-error.js'
@@ -157,4 +159,25 @@ patientsRouter.patch('/:id', async (req, res) => {
   await recordAuditEvent({ action: 'patient.updated', actorId: actor })
 
   res.json({ patient: toPatient(updated) })
+})
+
+/*
+ * Single patient, never a batch. The erasure cascades to every consultation
+ * filed under the patient, so one request already spans many records — there
+ * is no selection here to widen into a bulk endpoint.
+ */
+patientsRouter.post('/:id/erase', async (req, res) => {
+  /*
+   * `assertOwnedPatient` inside `erasePatient` is the whole gate, shared with
+   * GET /:id: another doctor's id and an already-erased id are both 404, so
+   * this route introduces no existence oracle of its own.
+   */
+  const erasedConsultationIds = await erasePatient(req.params.id, doctorId(req))
+
+  res.json({
+    erasure: ErasePatientResultSchema.parse({
+      patientId: req.params.id,
+      erasedConsultationIds,
+    }),
+  })
 })

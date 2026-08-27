@@ -84,6 +84,10 @@ export function createApp() {
   // Destructive and irreversible rather than expensive, so its own bucket: an
   // erase sweep must not be funded by an unspent analysis budget (#114).
   app.post('/api/consultations/erase', eraseRateLimit)
+  // Same destructive class as the consultation batch above, so it shares that
+  // bucket rather than a fresh one: both spend irreversible tombstones, and
+  // neither should be funded by an unspent analysis budget.
+  app.post('/api/patients/:id/erase', eraseRateLimit)
   // Buffers up to 25 MB per request and spends provider credit, so its own
   // bucket too; runs after the session guard above and before the route-level
   // body parser, so a limited request is refused before any audio is read (#154).
