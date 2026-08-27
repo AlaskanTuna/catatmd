@@ -25,9 +25,6 @@ interface Item {
  * afterwards would keep offering the orphan path beside the correct one. A
  * visit now starts from the patient it belongs to, which is also how it starts
  * on paper.
- *
- * `/consultations/new` remains a route — it is where "Start Consultation"
- * lands, carrying the patient — it is simply no longer reachable without one.
  */
 const ITEMS: Item[] = [
   { to: '/patients/new', label: 'Register Patient', icon: Plus, tour: 'nav-new' },
