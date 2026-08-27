@@ -1,10 +1,15 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Plus, Trash2 } from 'lucide-react'
+import { useRef, useState } from 'react'
+import toast from 'react-hot-toast'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../lib/api.js'
+import { count } from '../lib/plural.js'
+import { Button } from '../ui/Button.js'
 import { Card, EmptyState, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
 import { ConsultationRow } from './ConsultationRow.js'
+import { ErasePatientDialog } from './PatientList.js'
 
 const formatGender = (gender: 'male' | 'female' | 'other' | null) => {
   if (gender === null) return 'Not recorded'
@@ -14,6 +19,9 @@ const formatGender = (gender: 'male' | 'female' | 'other' | null) => {
 export function PatientDetail() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const dialog = useRef<HTMLDialogElement>(null)
+  const [progress, setProgress] = useState<string | null>(null)
   /*
    * The record is created empty and the doctor is taken straight into it,
    * where capture happens. Assembling a transcript first and creating the
@@ -27,6 +35,30 @@ export function PatientDetail() {
   const patient = useQuery({
     queryKey: ['patient', id],
     queryFn: () => api.getPatient(id),
+  })
+
+  /*
+   * One record, so this is a plain call rather than the list's sequential run.
+   * The navigation away on success is deliberate: the profile it was launched
+   * from now describes an erased record, and leaving the doctor looking at a
+   * page of blanked fields reads as a bug rather than as the erasure working.
+   */
+  const erase = useMutation({
+    mutationFn: async () => {
+      setProgress('Erasing the record and its consultations')
+      return api.erasePatient(id)
+    },
+    onSuccess: ({ erasedConsultationIds }) => {
+      dialog.current?.close()
+      toast.success(
+        `Patient record erased, with ${count(erasedConsultationIds.length, 'consultation')}.`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      void queryClient.invalidateQueries({ queryKey: ['consultations'] })
+      void queryClient.invalidateQueries({ queryKey: ['patients'] })
+      navigate('/patients')
+    },
+    onSettled: () => setProgress(null),
   })
 
   if (patient.isPending) {
@@ -146,6 +178,50 @@ export function PatientDetail() {
           )}
         </div>
       </section>
+
+      {/*
+       * At the foot, below the history, and away from Start Consultation at
+       * the top. The two most consequential controls on this page point in
+       * opposite directions, and a destructive one within reach of a routine
+       * one is how a record gets erased by muscle memory.
+       */}
+      <section
+        data-print="hide"
+        className="mt-8 rounded-card border border-emergency/30 bg-surface p-5"
+        aria-labelledby="erase-patient-heading"
+      >
+        <h2 id="erase-patient-heading" className="text-base font-semibold">
+          Erase This Patient Record
+        </h2>
+        <p className="mt-1 max-w-prose text-sm leading-relaxed text-ink-muted">
+          Erases the identifying details on this record, and every consultation filed to it,
+          currently {count(detail.consultations.length, 'consultation')}. A tamper-evident audit
+          record that the patient existed and was erased is kept, and cannot be removed.
+        </p>
+        <Button
+          variant="danger"
+          size="sm"
+          className="mt-4"
+          icon={<Trash2 aria-hidden className="size-3.5" />}
+          onClick={() => {
+            erase.reset()
+            dialog.current?.showModal()
+          }}
+        >
+          Erase Patient Record
+        </Button>
+      </section>
+
+      <ErasePatientDialog
+        ref={dialog}
+        patients={[
+          { id: detail.id, name: detail.name, consultationCount: detail.consultations.length },
+        ]}
+        pending={erase.isPending}
+        progress={progress}
+        error={erase.error}
+        onConfirm={() => erase.mutate()}
+      />
     </div>
   )
 }

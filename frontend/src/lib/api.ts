@@ -11,6 +11,8 @@ import {
   DraftTurnsResponseSchema,
   type EraseConsultationsResult,
   EraseConsultationsResultSchema,
+  type ErasePatientResult,
+  ErasePatientResultSchema,
   ErrorEnvelopeSchema,
   type Fixture,
   FixtureSchema,
@@ -86,6 +88,7 @@ const ListEnvelope = z.object({ consultations: z.array(ConsultationListItemSchem
 const PatientListEnvelope = z.object({ patients: z.array(PatientListItemSchema) })
 const PatientEnvelope = z.object({ patient: PatientSchema })
 const PatientDetailEnvelope = z.object({ patient: PatientDetailSchema })
+const ErasePatientEnvelope = z.object({ erasure: ErasePatientResultSchema })
 const FixturesEnvelope = z.object({ fixtures: z.array(FixtureSchema) })
 const GuidelinesEnvelope = z.object({ guidelines: z.array(GuidelineChunkSchema) })
 const NotificationsEnvelope = z.object({ notifications: z.array(NotificationItemSchema) })
@@ -147,6 +150,21 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }).then((r) => r.patient),
+
+  /**
+   * Erases one patient record and every consultation filed under it.
+   *
+   * One id per call, matching the route: the cascade makes a single erasure
+   * heavier than a consultation batch, and the server appends to the audit hash
+   * chain per record, so a caller erasing several sends them one at a time.
+   *
+   * Resolves with the consultation ids that went with the patient, which is the
+   * only way a caller can report the real blast radius after the fact.
+   */
+  erasePatient: (id: string): Promise<ErasePatientResult> =>
+    request(`/patients/${id}/erase`, ErasePatientEnvelope, { method: 'POST' }).then(
+      (r) => r.erasure,
+    ),
 
   listConsultations: (): Promise<ConsultationListItem[]> =>
     request('/consultations', ListEnvelope).then((r) => r.consultations),
