@@ -29,8 +29,15 @@ import {
   ProfileIdSchema,
 } from '../clinical-profiles/index.js'
 import { getActiveClinicalVersions } from '../clinical-versions/index.js'
+import { deriveConsiderations } from '../considerations/index.js'
+import {
+  filterConsiderationsForCorpus,
+  mergeSuggestions,
+  toClinicalSuggestions,
+} from '../considerations/merge.js'
 import { DeidentificationError, deidentifyTranscript } from '../deid/index.js'
 import { deriveGaps } from '../gaps/index.js'
+import { corpusIdsFor } from '../guidelines/index.js'
 import { assertOwnedConsultation, assertOwnedPatient } from '../lib/authz.js'
 import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
@@ -397,7 +404,19 @@ async function runAnalysis(
     // (Demo Script step 5).
     clinicalFacts: rehydrateAssertions(noteResult.clinicalFacts, rehydrate),
     operational: rehydrateAssertions(noteResult.operational, rehydrate),
-    suggestions: suggestionResult.suggestions.map((suggestion) => ({
+    // Deterministic CPG considerations over evidence-checked facts, filtered
+    // to the active profile corpus, then unioned with model suggestions.
+    // Same zero-suppression posture as `mergeRedFlags`: rules first, model
+    // additive — a colliding model id cannot drop a rule hit.
+    suggestions: mergeSuggestions(
+      toClinicalSuggestions(
+        filterConsiderationsForCorpus(
+          deriveConsiderations(noteResult.clinicalFacts),
+          new Set(corpusIdsFor(profile.guidelineCorpus)),
+        ),
+      ),
+      suggestionResult.suggestions,
+    ).map((suggestion) => ({
       ...suggestion,
       text: rehydrate(suggestion.text),
     })),

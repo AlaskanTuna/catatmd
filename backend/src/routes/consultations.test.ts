@@ -380,6 +380,35 @@ describe('state machine — analyze', () => {
 describe('analyse output', () => {
   beforeEach(() => seed('draft'))
 
+  /** Default analyseNote mock return — typed as zero-arg because the stub ignores inputs. */
+  async function defaultNoteResult() {
+    const { analyseNote } = await import('../analysis/index.js')
+    const impl = vi.mocked(analyseNote).getMockImplementation() as
+      | (() => Promise<Awaited<ReturnType<typeof analyseNote>>>)
+      | undefined
+    if (impl === undefined) throw new Error('analyseNote mock has no implementation')
+    return impl()
+  }
+
+  function withSoreThroatPresent<T extends Awaited<ReturnType<typeof defaultNoteResult>>>(
+    base: T,
+  ): T {
+    return {
+      ...base,
+      clinicalFacts: {
+        ...base.clinicalFacts,
+        symptoms: {
+          ...base.clinicalFacts.symptoms,
+          soreThroat: {
+            state: 'PRESENT',
+            value: 'sore throat',
+            evidence: '[PATIENT_1] has a sore throat',
+          },
+        },
+      },
+    }
+  }
+
   async function analysed() {
     type Assertion = { state: string; value?: string; evidence?: string }
     const body = (await (await call('POST', '/api/consultations/c1/analyze')).json()) as {
@@ -407,6 +436,79 @@ describe('analyse output', () => {
 
     expect(ids).toContain('derived-gap')
     expect(ids).toContain('model-gap')
+  })
+
+  it('keeps the model suggestion pathway when no consideration rule fires', async () => {
+    type Suggestion = { id: string; text: string }
+    const body = (await (await call('POST', '/api/consultations/c1/analyze')).json()) as {
+      consultation: { analysis: { suggestions: Suggestion[] } }
+    }
+    const ids = body.consultation.analysis.suggestions.map((s) => s.id)
+
+    // Default analyseNote mock has no soreThroat PRESENT → rule stays silent.
+    expect(ids).toEqual(['s1'])
+    expect(body.consultation.analysis.suggestions[0]?.text).toContain('Ahmad')
+  })
+
+  it('places deterministic CPG suggestions before model suggestions', async () => {
+    const { analyseNote } = await import('../analysis/index.js')
+    vi.mocked(analyseNote).mockResolvedValueOnce(withSoreThroatPresent(await defaultNoteResult()))
+
+    type Suggestion = { id: string }
+    const body = (await (await call('POST', '/api/consultations/c1/analyze')).json()) as {
+      consultation: { analysis: { suggestions: Suggestion[] } }
+    }
+    const ids = body.consultation.analysis.suggestions.map((s) => s.id)
+
+    expect(ids[0]).toBe('cpg-sore-throat-safety-netting')
+    expect(ids).toContain('s1')
+  })
+
+  it('never drops a deterministic suggestion when the model reuses its id', async () => {
+    const { analyseNote } = await import('../analysis/index.js')
+    const { generateSuggestions } = await import('../suggestions/index.js')
+    vi.mocked(analyseNote).mockResolvedValueOnce(withSoreThroatPresent(await defaultNoteResult()))
+    vi.mocked(generateSuggestions).mockResolvedValueOnce({
+      outOfScope: false,
+      redFlags: [],
+      suggestions: [
+        {
+          id: 'cpg-sore-throat-safety-netting',
+          text: 'Model tries to replace the rule',
+          citations: [{ guidelineId: 'abdullah-2024-safety-netting' }],
+        },
+      ],
+    })
+
+    type Suggestion = { id: string; text: string }
+    const body = (await (await call('POST', '/api/consultations/c1/analyze')).json()) as {
+      consultation: { analysis: { suggestions: Suggestion[] } }
+    }
+    const matched = body.consultation.analysis.suggestions.filter(
+      (s) => s.id === 'cpg-sore-throat-safety-netting',
+    )
+
+    expect(matched).toHaveLength(2)
+    expect(matched[0]?.text).toMatch(/safety-netting/i)
+    expect(matched[1]?.text).toBe('Model tries to replace the rule')
+  })
+
+  it('does not emit URTI safety-netting under the UTI profile corpus', async () => {
+    const { analyseNote } = await import('../analysis/index.js')
+    vi.mocked(analyseNote).mockResolvedValueOnce(withSoreThroatPresent(await defaultNoteResult()))
+
+    type Suggestion = { id: string }
+    const body = (await (
+      await call('POST', '/api/consultations/c1/analyze', {
+        profileId: 'adult-acute-uncomplicated-uti',
+      })
+    ).json()) as {
+      consultation: { analysis: { suggestions: Suggestion[] } }
+    }
+    const ids = body.consultation.analysis.suggestions.map((s) => s.id)
+
+    expect(ids).not.toContain('cpg-sore-throat-safety-netting')
+    expect(ids).toContain('s1')
   })
 
   it('rehydrates every string field, leaving no vault token in the response', async () => {
