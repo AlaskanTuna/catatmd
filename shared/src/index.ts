@@ -430,6 +430,20 @@ export const EvidenceLinkSchema = z.object({
 })
 export type EvidenceLink = z.infer<typeof EvidenceLinkSchema>
 
+// ─── Clinical workflow profiles ──────────────────────────────────────────────
+
+/** Selectable adult acute primary-care workflow profiles (docs/trd.md §21.3). */
+export const PROFILE_IDS = ['adult-acute-urti', 'adult-acute-uncomplicated-uti'] as const
+
+export const ProfileIdSchema = z.enum(PROFILE_IDS)
+
+/** Summary returned by `GET /api/profiles` for guideline switching. */
+export const ClinicalProfileSummarySchema = z.object({
+  id: ProfileIdSchema,
+  scope: z.string(),
+  versionId: z.string(),
+})
+
 // ─── Analysis envelope ───────────────────────────────────────────────────────
 
 export const ConsultationAnalysisSchema = z.object({
@@ -437,6 +451,13 @@ export const ConsultationAnalysisSchema = z.object({
   gaps: z.array(InformationGapSchema),
   redFlags: z.array(RedFlagSchema),
   suggestions: z.array(ClinicalSuggestionSchema),
+  /**
+   * The clinical workflow profile active when this analysis ran. Selects the
+   * red-flag rules, gap checklist, and guideline corpus for the pipeline
+   * (docs/trd.md §21.3). Optional because consultations analysed before
+   * profile selection shipped have none persisted.
+   */
+  profileId: ProfileIdSchema.optional(),
   /**
    * The reviewed checklist, surfaced rather than discarded.
    *
@@ -1198,6 +1219,8 @@ export type InformationGap = z.infer<typeof InformationGapSchema>
 export type RedFlag = z.infer<typeof RedFlagSchema>
 export type Citation = z.infer<typeof CitationSchema>
 export type ClinicalSuggestion = z.infer<typeof ClinicalSuggestionSchema>
+export type ProfileId = z.infer<typeof ProfileIdSchema>
+export type ClinicalProfileSummary = z.infer<typeof ClinicalProfileSummarySchema>
 export type ConsultationAnalysis = z.infer<typeof ConsultationAnalysisSchema>
 export type ConsultationStatus = z.infer<typeof ConsultationStatusSchema>
 export type Consultation = z.infer<typeof ConsultationSchema>

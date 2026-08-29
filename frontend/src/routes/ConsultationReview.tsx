@@ -4,6 +4,7 @@ import type {
   CopilotProposal,
   Disposition,
   DispositionInput,
+  ProfileId,
   SoapNote,
   Transcript,
 } from '@shared/types'
@@ -25,6 +26,7 @@ import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
 import { RenameField } from '../ui/RenameField.js'
+import { Select } from '../ui/Select.js'
 import { CapturePanel } from './CapturePanel.js'
 
 export function formatSoapNoteForClipboard(note: SoapNote) {
@@ -104,6 +106,7 @@ export function ConsultationReview() {
     })
   }, [showTranscript])
   const [showAllGaps, setShowAllGaps] = useState(false)
+  const [profileId, setProfileId] = useState<ProfileId>('adult-acute-urti')
 
   /*
    * Demo Mode's consultation is not stored, so there is nothing to fetch for it
@@ -120,6 +123,7 @@ export function ConsultationReview() {
     enabled: !isEphemeral,
   })
   const guidelines = useQuery({ queryKey: ['guidelines'], queryFn: api.guidelines })
+  const profiles = useQuery({ queryKey: ['profiles'], queryFn: api.profiles })
 
   const invalidate = (next: ConsultationDetail) => {
     queryClient.setQueryData(['consultation', id], next)
@@ -175,7 +179,7 @@ export function ConsultationReview() {
   })
 
   const analyze = useMutation({
-    mutationFn: () => api.analyze(id),
+    mutationFn: () => api.analyze(id, profileId),
     onSuccess: (next) => {
       invalidate(next)
       const flags = next.analysis?.redFlags.length ?? 0
@@ -634,32 +638,48 @@ export function ConsultationReview() {
          * over the capture form covered the very controls it was waiting on.
          */
         <div
-          className="glass mt-6 flex flex-wrap items-center justify-between gap-3 rounded-float p-3 md:mr-16"
+          className="glass mt-6 flex flex-col gap-3 rounded-float p-3 md:mr-16"
           data-print="hide"
         >
-          <p className="px-1 text-sm text-ink-muted">
-            {analyze.error ? (
-              <span role="alert" className="text-emergency">
-                {analyze.error instanceof ApiError
-                  ? analyze.error.message
-                  : 'Analysis could not be completed.'}
-              </span>
-            ) : detail.transcript ? (
-              'De-identified before any part of it leaves this server, and restored only after the response returns.'
-            ) : (
-              'Choose how to capture this consultation.'
-            )}
-          </p>
-          <Button
-            variant="primary"
-            icon={<Sparkles className="size-4" />}
-            disabled={!detail.transcript}
-            loading={analyze.isPending || detail.status === 'analyzing'}
-            onClick={() => analyze.mutate()}
-            data-tour="analyse"
-          >
-            {analyze.isPending ? 'Analysing' : 'Analyse Consultation'}
-          </Button>
+          {profiles.data && profiles.data.length > 1 && (
+            <div className="flex flex-col gap-1.5 sm:max-w-md">
+              <span className="text-sm font-medium">Clinical Workflow</span>
+              <Select
+                label="Clinical workflow profile"
+                value={profileId}
+                options={profiles.data.map((profile) => ({
+                  value: profile.id,
+                  label: profile.scope,
+                }))}
+                onChange={(next) => setProfileId(next as ProfileId)}
+              />
+            </div>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="px-1 text-sm text-ink-muted">
+              {analyze.error ? (
+                <span role="alert" className="text-emergency">
+                  {analyze.error instanceof ApiError
+                    ? analyze.error.message
+                    : 'Analysis could not be completed.'}
+                </span>
+              ) : detail.transcript ? (
+                'De-identified before any part of it leaves this server, and restored only after the response returns.'
+              ) : (
+                'Choose how to capture this consultation.'
+              )}
+            </p>
+            <Button
+              variant="primary"
+              icon={<Sparkles className="size-4" />}
+              disabled={!detail.transcript}
+              loading={analyze.isPending || detail.status === 'analyzing'}
+              onClick={() => analyze.mutate()}
+              data-tour="analyse"
+            >
+              {analyze.isPending ? 'Analysing' : 'Analyse Consultation'}
+            </Button>
+          </div>
         </div>
       )}
 

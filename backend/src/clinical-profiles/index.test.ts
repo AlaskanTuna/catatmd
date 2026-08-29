@@ -4,9 +4,23 @@ import { ACTIVE_CLINICAL_VERSIONS, getActiveClinicalVersions } from '../clinical
 import { GAP_CHECKLIST } from '../gaps/index.js'
 import { GUIDELINE_CORPUS } from '../guidelines/index.js'
 import { evaluateRedFlags, REDFLAG_TRIGGERS } from '../redflags/index.js'
-import { getClinicalProfile } from './index.js'
+import { getClinicalProfile, listClinicalProfileSummaries } from './index.js'
 
 describe('clinical profiles', () => {
+  it('lists every selectable profile for guideline switching', () => {
+    const summaries = listClinicalProfileSummaries()
+
+    expect(summaries).toHaveLength(2)
+    expect(summaries.map((entry) => entry.id)).toEqual([
+      'adult-acute-urti',
+      'adult-acute-uncomplicated-uti',
+    ])
+    for (const summary of summaries) {
+      expect(summary.scope.length).toBeGreaterThan(0)
+      expect(summary.versionId.length).toBeGreaterThan(0)
+    }
+  })
+
   it('selects only membership-tagged content for adult acute uncomplicated urinary presentations', () => {
     const profile = getClinicalProfile('adult-acute-uncomplicated-uti')
 

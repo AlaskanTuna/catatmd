@@ -1,4 +1,6 @@
 import {
+  type ClinicalProfileSummary,
+  ClinicalProfileSummarySchema,
   type ConsultationAnalysis,
   ConsultationAnalysisSchema,
   type ConsultationDetail,
@@ -28,6 +30,7 @@ import {
   type PatientListItem,
   PatientListItemSchema,
   PatientSchema,
+  type ProfileId,
   type SoapNote,
   type Transcript,
   type UpdatePatientInput,
@@ -91,6 +94,7 @@ const PatientDetailEnvelope = z.object({ patient: PatientDetailSchema })
 const ErasePatientEnvelope = z.object({ erasure: ErasePatientResultSchema })
 const FixturesEnvelope = z.object({ fixtures: z.array(FixtureSchema) })
 const GuidelinesEnvelope = z.object({ guidelines: z.array(GuidelineChunkSchema) })
+const ProfilesEnvelope = z.object({ profiles: z.array(ClinicalProfileSummarySchema) })
 const NotificationsEnvelope = z.object({ notifications: z.array(NotificationItemSchema) })
 
 /**
@@ -195,10 +199,11 @@ export const api = {
       body: JSON.stringify({ transcript }),
     }).then((r) => r.consultation),
 
-  analyze: (id: string): Promise<ConsultationDetail> =>
-    request(`/consultations/${id}/analyze`, ConsultationEnvelope, { method: 'POST' }).then(
-      (r) => r.consultation,
-    ),
+  analyze: (id: string, profileId?: ProfileId): Promise<ConsultationDetail> =>
+    request(`/consultations/${id}/analyze`, ConsultationEnvelope, {
+      method: 'POST',
+      body: JSON.stringify(profileId ? { profileId } : {}),
+    }).then((r) => r.consultation),
 
   /**
    * Runs the real pipeline and persists nothing (issue #80).
@@ -327,6 +332,9 @@ export const api = {
 
   guidelines: (): Promise<GuidelineChunk[]> =>
     request('/guidelines', GuidelinesEnvelope).then((r) => r.guidelines),
+
+  profiles: (): Promise<ClinicalProfileSummary[]> =>
+    request('/profiles', ProfilesEnvelope).then((r) => r.profiles),
 
   /**
    * `database` is absent in production by design, so a missing field must be

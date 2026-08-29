@@ -1,8 +1,8 @@
 import type { ConsultationDetail, CopilotProposal, CopilotTurn } from '@shared/types'
+import { DEFAULT_PROFILE_ID, getClinicalProfile } from '../clinical-profiles/index.js'
 import { deidentify } from '../deid/index.js'
 import type { TokenVault } from '../deid/types.js'
 import { RequestTokenVault } from '../deid/vault.js'
-import { GUIDELINE_CORPUS } from '../guidelines/index.js'
 import { getLLMClient } from '../lib/llm/index.js'
 import type { StreamTurn } from '../lib/llm/types.js'
 import { renderDigest } from './digest.js'
@@ -57,9 +57,10 @@ export async function* runCopilotTurn(options: {
    * consultation the route loaded, never from anything the client sends.
    */
   const signed = consultation.status === 'approved'
+  const profile = getClinicalProfile(consultation.analysis?.profileId ?? DEFAULT_PROFILE_ID)
 
   const system = deidentify(
-    buildCopilotSystemPrompt(digestResult.text, GUIDELINE_CORPUS, { signed }),
+    buildCopilotSystemPrompt(digestResult.text, profile.guidelineCorpus, { signed }),
     vault,
   ).text
 

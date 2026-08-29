@@ -4,6 +4,7 @@ import {
   ClinicalAssertionSchema,
   ClinicalFactsResponseSchema,
   ClinicalFactsSchema,
+  ConsultationAnalysisSchema,
   ConsultationDetailSchema,
   ConsultationListItemSchema,
   DraftTurnsRequestSchema,
@@ -488,5 +489,30 @@ describe('ConsultationListItemSchema title tolerance', () => {
   it('still carries a title through when the API sends one', () => {
     const result = ConsultationListItemSchema.parse({ ...row, title: 'Cough, sore throat' })
     expect(result.title).toBe('Cough, sore throat')
+  })
+})
+
+describe('ConsultationAnalysisSchema profileId', () => {
+  const base = {
+    note: { subjective: '', objective: '', assessment: '', plan: '' },
+    gaps: [],
+    redFlags: [],
+    suggestions: [],
+  }
+
+  it('accepts a known clinical workflow profile id', () => {
+    const result = ConsultationAnalysisSchema.safeParse({
+      ...base,
+      profileId: 'adult-acute-uncomplicated-uti',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects an unknown profile id', () => {
+    const result = ConsultationAnalysisSchema.safeParse({
+      ...base,
+      profileId: 'not-a-profile',
+    })
+    expect(result.success).toBe(false)
   })
 })
