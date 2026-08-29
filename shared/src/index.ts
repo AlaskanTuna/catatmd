@@ -439,6 +439,39 @@ export const ClinicalSuggestionSchema = z.object({
 })
 
 /**
+ * One criterion inside a guideline-based calculator (Task #8).
+ *
+ * `not_assessed` covers NOT_ASSESSED / UNKNOWN / missing age — never scored as
+ * absence. Points are null whenever the criterion is not resolved.
+ */
+export const ClinicalScoreCriterionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  status: z.enum(['met', 'not_met', 'not_assessed']),
+  points: z.number().nullable(),
+  factPath: z.string().optional(),
+})
+
+/**
+ * Deterministic guideline-based scoring snapshot for doctor review.
+ * Completeness is incomplete whenever any required criterion is unresolved;
+ * totalScore / category are then null rather than guessed.
+ */
+export const ClinicalScoreResultSchema = z.object({
+  id: z.string(),
+  systemId: z.string(),
+  title: z.string(),
+  guidelineId: z.string(),
+  completeness: z.enum(['complete', 'incomplete']),
+  totalScore: z.number().nullable(),
+  maxScore: z.number(),
+  category: z.string().nullable(),
+  categoryLabel: z.string().nullable(),
+  criteria: z.array(ClinicalScoreCriterionSchema),
+  citations: z.array(CitationSchema).min(1),
+})
+
+/**
  * One established checklist field and the transcript span that evidenced it.
  *
  * `speaker` and `offsetSeconds` are optional and are resolved by locating the
@@ -479,6 +512,13 @@ export const ConsultationAnalysisSchema = z.object({
   gaps: z.array(InformationGapSchema),
   redFlags: z.array(RedFlagSchema),
   suggestions: z.array(ClinicalSuggestionSchema),
+  /**
+   * Deterministic guideline-based scoring snapshots (Task #8), derived from
+   * validated ClinicalFacts after the evidence check. Optional because
+   * consultations analysed before scoring shipped have none; absence means
+   * "not recorded by this version", never "score zero".
+   */
+  clinicalScores: z.array(ClinicalScoreResultSchema).optional(),
   /**
    * The clinical workflow profile active when this analysis ran. Selects the
    * red-flag rules, gap checklist, and guideline corpus for the pipeline
@@ -1247,6 +1287,8 @@ export type InformationGap = z.infer<typeof InformationGapSchema>
 export type RedFlag = z.infer<typeof RedFlagSchema>
 export type Citation = z.infer<typeof CitationSchema>
 export type ClinicalSuggestion = z.infer<typeof ClinicalSuggestionSchema>
+export type ClinicalScoreCriterion = z.infer<typeof ClinicalScoreCriterionSchema>
+export type ClinicalScoreResult = z.infer<typeof ClinicalScoreResultSchema>
 export type ProfileId = z.infer<typeof ProfileIdSchema>
 export type ClinicalProfileSummary = z.infer<typeof ClinicalProfileSummarySchema>
 export type ConsultationAnalysis = z.infer<typeof ConsultationAnalysisSchema>

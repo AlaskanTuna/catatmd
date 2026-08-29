@@ -35,6 +35,7 @@ const VERSIONED_DATA_FILES = [
   'backend/src/redflags/triggers.ts',
   'backend/src/gaps/checklist.ts',
   'backend/src/guidelines/corpus.ts',
+  'backend/src/scoring/definitions.ts',
 ]
 
 const SCANNED_TREES = [
