@@ -409,6 +409,35 @@ describe('analyse output', () => {
     }
   }
 
+  function withCompleteMohThresholdScoreFacts<
+    T extends Awaited<ReturnType<typeof defaultNoteResult>>,
+  >(base: T): T {
+    return {
+      ...base,
+      clinicalFacts: {
+        ...base.clinicalFacts,
+        symptoms: {
+          ...base.clinicalFacts.symptoms,
+          cough: { state: 'DENIED', value: 'no cough', evidence: 'no cough' },
+          fever: { state: 'PRESENT', value: 'fever', evidence: 'had fever last night' },
+        },
+        examination: {
+          ...base.clinicalFacts.examination,
+          tonsillar: {
+            state: 'PRESENT',
+            value: 'tonsillar exudate',
+            evidence: 'tonsillar exudate seen',
+          },
+          cervicalLymphNodes: {
+            state: 'PRESENT',
+            value: 'tender anterior cervical nodes',
+            evidence: 'tender anterior cervical nodes',
+          },
+        },
+      },
+    }
+  }
+
   async function analysed() {
     type Assertion = { state: string; value?: string; evidence?: string }
     const body = (await (await call('POST', '/api/consultations/c1/analyze')).json()) as {
@@ -438,16 +467,17 @@ describe('analyse output', () => {
     expect(ids).toContain('model-gap')
   })
 
-  it('keeps the model suggestion pathway when no consideration rule fires', async () => {
+  it('keeps the model suggestion pathway additive alongside deterministic considerations', async () => {
     type Suggestion = { id: string; text: string }
     const body = (await (await call('POST', '/api/consultations/c1/analyze')).json()) as {
       consultation: { analysis: { suggestions: Suggestion[] } }
     }
     const ids = body.consultation.analysis.suggestions.map((s) => s.id)
 
-    // Default analyseNote mock has no soreThroat PRESENT → rule stays silent.
-    expect(ids).toEqual(['s1'])
-    expect(body.consultation.analysis.suggestions[0]?.text).toContain('Ahmad')
+    expect(ids).toContain('s1')
+    expect(body.consultation.analysis.suggestions.find((s) => s.id === 's1')?.text).toContain(
+      'Ahmad',
+    )
   })
 
   it('places deterministic CPG suggestions before model suggestions', async () => {
@@ -460,8 +490,28 @@ describe('analyse output', () => {
     }
     const ids = body.consultation.analysis.suggestions.map((s) => s.id)
 
-    expect(ids[0]).toBe('cpg-sore-throat-safety-netting')
+    expect(ids[0]).not.toBe('s1')
+    expect(ids.indexOf('cpg-sore-throat-safety-netting')).toBeLessThan(ids.indexOf('s1'))
     expect(ids).toContain('s1')
+  })
+
+  it('passes Task #8 score snapshots into deterministic clinical considerations', async () => {
+    const { analyseNote } = await import('../analysis/index.js')
+    vi.mocked(analyseNote).mockResolvedValueOnce(
+      withCompleteMohThresholdScoreFacts(await defaultNoteResult()),
+    )
+
+    type Suggestion = { id: string; citations: { guidelineId: string }[] }
+    const body = (await (await call('POST', '/api/consultations/c1/analyze')).json()) as {
+      consultation: { analysis: { suggestions: Suggestion[] } }
+    }
+
+    const scoreConsideration = body.consultation.analysis.suggestions.find(
+      (s) => s.id === 'cpg-score-antibiotic-consideration',
+    )
+    expect(scoreConsideration?.citations).toEqual([
+      { guidelineId: 'moh-nag-2024-a10-modified-centor' },
+    ])
   })
 
   it('never drops a deterministic suggestion when the model reuses its id', async () => {

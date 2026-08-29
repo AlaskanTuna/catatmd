@@ -15,6 +15,9 @@ export const SCORING_DEFINITIONS_VERSION: ClinicalArtefactVersion = {
   effectiveDate: '2026-08-29',
 }
 
+export const MODIFIED_CENTOR_ANTIBIOTIC_CONSIDERATION_CATEGORY_ID =
+  'at_or_above_antibiotic_consideration_threshold'
+
 export type CriterionPolarity = 'present_scores' | 'denied_scores'
 
 export type ScoreCriterionDef = {
@@ -109,7 +112,7 @@ const MODIFIED_CENTOR: ScoringSystemDef = {
   criteria: SHARED_FOUR,
   categories: [
     {
-      id: 'at_or_above_antibiotic_consideration_threshold',
+      id: MODIFIED_CENTOR_ANTIBIOTIC_CONSIDERATION_CATEGORY_ID,
       label:
         'Score at or above the MOH NAG antibiotic-consideration threshold (≥3). ' +
         'For clinician review only — the treating doctor decides next steps.',

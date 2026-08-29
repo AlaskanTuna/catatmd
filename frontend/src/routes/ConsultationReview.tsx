@@ -584,10 +584,11 @@ export function ConsultationReview() {
                   instructions to follow.
                 </p>
               </Panel>
-              <Panel title="Suggestions">
+              <Panel title="Clinical Considerations">
                 <p className="text-sm text-ink-muted">
-                  Cited against the guideline corpus. Every citation is an id from that corpus, so a
-                  reference the model invented cannot reach this panel.
+                  AI-assisted differential and management considerations for doctor review. Every
+                  citation is an id from the guideline corpus, so a reference the model invented
+                  cannot reach this panel.
                 </p>
               </Panel>
             </>
@@ -647,7 +648,7 @@ export function ConsultationReview() {
                 )}
               </Panel>
 
-              <Panel title="Suggestions" count={analysis.suggestions.length}>
+              <Panel title="Clinical Considerations" count={analysis.suggestions.length}>
                 {analysis.suggestions.length === 0 ? (
                   /* Three readings, not two, because the system distinguishes
                    them and the reader deserves the same distinction. Absence is
@@ -656,20 +657,25 @@ export function ConsultationReview() {
                    assert the corpus was consulted when nobody knows. */
                   <p className="text-sm text-ink-muted">
                     {analysis.outOfScope === true &&
-                      'Outside the guideline corpus’s scope, so no suggestions were offered.'}
+                      'Outside the guideline corpus’s scope, so no clinical considerations were offered.'}
                     {analysis.outOfScope === false &&
-                      'Within the guideline corpus’s scope, with nothing to suggest for this consultation.'}
+                      'Within the guideline corpus’s scope, with no clinical considerations to surface for this consultation.'}
                     {analysis.outOfScope === undefined &&
-                      'No cited suggestions. This consultation was analysed before scope was recorded, so whether the corpus applied is not known.'}
+                      'No cited clinical considerations. This consultation was analysed before scope was recorded, so whether the corpus applied is not known.'}
                   </p>
                 ) : (
-                  analysis.suggestions.map((suggestion) => (
-                    <SuggestionCard
-                      key={suggestion.id}
-                      suggestion={suggestion}
-                      guidelines={guidelines.data ?? []}
-                    />
-                  ))
+                  <>
+                    <p className="text-sm font-medium text-ink-muted">
+                      AI-assisted clinical considerations - doctor review required.
+                    </p>
+                    {analysis.suggestions.map((suggestion) => (
+                      <SuggestionCard
+                        key={suggestion.id}
+                        suggestion={suggestion}
+                        guidelines={guidelines.data ?? []}
+                      />
+                    ))}
+                  </>
                 )}
               </Panel>
             </>

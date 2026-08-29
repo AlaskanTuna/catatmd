@@ -22,6 +22,8 @@ vi.mock('../lib/api.js', () => ({
   api: {
     getConsultation: vi.fn(),
     guidelines: vi.fn(),
+    profiles: vi.fn(),
+    fixtures: vi.fn(),
     patch: vi.fn(),
     analyze: vi.fn(),
     approve: vi.fn(),
@@ -95,6 +97,8 @@ describe('approved note copy', () => {
     vi.mocked(api.getConsultation).mockReset()
     vi.mocked(api.getConsultation).mockResolvedValue(APPROVED as never)
     vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.profiles).mockResolvedValue([])
+    vi.mocked(api.fixtures).mockResolvedValue([])
     toastSuccess.mockReset()
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -155,6 +159,8 @@ describe('missing information order', () => {
   beforeEach(() => {
     vi.mocked(api.getConsultation).mockReset()
     vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.profiles).mockResolvedValue([])
+    vi.mocked(api.fixtures).mockResolvedValue([])
     vi.mocked(api.getConsultation).mockResolvedValue({
       ...APPROVED,
       analysis: {
@@ -193,5 +199,55 @@ describe('missing information order', () => {
     expect(await screen.findByText('Missing Information')).toBeTruthy()
     // Three gaps in, three gaps out — sorting must never drop one.
     expect(screen.getAllByTestId('gap')).toHaveLength(3)
+  })
+})
+
+describe('clinical considerations rail', () => {
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.profiles).mockResolvedValue([])
+    vi.mocked(api.fixtures).mockResolvedValue([])
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      analysis: {
+        ...APPROVED.analysis,
+        outOfScope: false,
+        suggestions: [
+          {
+            id: 'cpg-differential-acute-pharyngitis',
+            text: 'Differential consideration: Consider acute pharyngitis.',
+            citations: [{ guidelineId: 'moh-nag-2024-c1-acute-pharyngitis' }],
+          },
+        ],
+      },
+    } as never)
+  })
+
+  it('labels guideline-cited items as clinical considerations requiring doctor review', async () => {
+    setup()
+
+    expect(await screen.findByText('Clinical Considerations')).toBeTruthy()
+    expect(
+      screen.getByText('AI-assisted clinical considerations - doctor review required.'),
+    ).toBeTruthy()
+    expect(screen.queryByText('Suggestions')).toBeNull()
+  })
+
+  it('does not ask for doctor review when no clinical considerations are shown', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      analysis: {
+        ...APPROVED.analysis,
+        outOfScope: false,
+        suggestions: [],
+      },
+    } as never)
+    setup()
+
+    expect(await screen.findByText('Clinical Considerations')).toBeTruthy()
+    expect(
+      screen.queryByText('AI-assisted clinical considerations - doctor review required.'),
+    ).toBeNull()
   })
 })

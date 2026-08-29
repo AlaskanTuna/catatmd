@@ -380,6 +380,14 @@ async function runAnalysis(
     }
   }
 
+  // Deterministic guideline calculators over evidence-checked facts. Filtered
+  // to the active profile corpus so a UTI analysis cannot surface URTI-only
+  // score citations. Age (when known) comes from the patient record, never
+  // from transcript inference.
+  const clinicalScores = deriveScores(noteResult.clinicalFacts, scoringContext).filter((score) =>
+    score.citations.every((citation) => allowedGuidelineIds.has(citation.guidelineId)),
+  )
+
   const analysis = {
     note: {
       subjective: rehydrate(noteResult.note.subjective),
@@ -407,13 +415,7 @@ async function runAnalysis(
     // (Demo Script step 5).
     clinicalFacts: rehydrateAssertions(noteResult.clinicalFacts, rehydrate),
     operational: rehydrateAssertions(noteResult.operational, rehydrate),
-    // Deterministic guideline calculators over evidence-checked facts. Filtered
-    // to the active profile corpus so a UTI analysis cannot surface URTI-only
-    // score citations. Age (when known) comes from the patient record, never
-    // from transcript inference.
-    clinicalScores: deriveScores(noteResult.clinicalFacts, scoringContext).filter((score) =>
-      score.citations.every((citation) => allowedGuidelineIds.has(citation.guidelineId)),
-    ),
+    clinicalScores,
     // Deterministic CPG considerations over evidence-checked facts, filtered
     // to the active profile corpus, then unioned with model suggestions.
     // Same zero-suppression posture as `mergeRedFlags`: rules first, model
@@ -421,7 +423,7 @@ async function runAnalysis(
     suggestions: mergeSuggestions(
       toClinicalSuggestions(
         filterConsiderationsForCorpus(
-          deriveConsiderations(noteResult.clinicalFacts),
+          deriveConsiderations(noteResult.clinicalFacts, clinicalScores),
           allowedGuidelineIds,
         ),
       ),

@@ -22,7 +22,7 @@ describe('filterConsiderationsForCorpus', () => {
     const facts = emptyFacts()
     facts.symptoms.soreThroat = present('my throat is sore')
     const considerations = deriveConsiderations(facts)
-    const allowed = new Set([SAFETY_NETTING_GUIDELINE_ID])
+    const allowed = new Set(corpusIdsFor(getClinicalProfile('adult-acute-urti').guidelineCorpus))
 
     expect(filterConsiderationsForCorpus(considerations, allowed)).toEqual(considerations)
   })
@@ -108,9 +108,16 @@ describe('evidence-checked facts -> suggestions (integration of derive + filter 
       filterConsiderationsForCorpus(deriveConsiderations(facts), urtiAllowed),
     )
 
-    expect(suggestions).toHaveLength(1)
-    expect(suggestions[0]?.id).toBe(SAFETY_NETTING_RULE_ID)
-    expect(suggestions[0]?.citations.every((c) => urtiAllowed.has(c.guidelineId))).toBe(true)
+    expect(suggestions.map((s) => s.id)).toEqual(
+      expect.arrayContaining([
+        'cpg-differential-acute-pharyngitis',
+        'cpg-management-sore-throat-symptomatic-relief',
+        SAFETY_NETTING_RULE_ID,
+      ]),
+    )
+    expect(suggestions.every((s) => s.citations.every((c) => urtiAllowed.has(c.guidelineId)))).toBe(
+      true,
+    )
   })
 
   it('does not emit positive considerations when soreThroat is NOT_ASSESSED', () => {
