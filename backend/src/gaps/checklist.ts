@@ -8,7 +8,7 @@ import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
  * set of gaps can be traced back to the checklist that produced it.
  */
 export const GAP_CHECKLIST_VERSION: ClinicalArtefactVersion = {
-  id: 'gap-checklist-v3',
+  id: 'gap-checklist-v4',
   effectiveDate: '2026-08-29',
 }
 

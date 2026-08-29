@@ -1,5 +1,6 @@
 import type { AssertionState, ClinicalFacts, InformationGap, OperationalBlock } from '@shared/types'
 import { GAP_CHECKLIST, type GapChecklistEntry } from './checklist.js'
+import { gapRecordSection } from './sections.js'
 
 /**
  * A field the transcript never touched is the same fact seen from two sides
@@ -32,6 +33,7 @@ export function deriveGaps(
       question: entry.question,
       rationale: entry.rationale,
       priority: entry.priority,
+      section: gapRecordSection(entry.id),
     })
   }
 

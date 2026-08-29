@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { RecordSectionSchema } from './record-sections.js'
 
 /**
  * Contracts shared by backend and frontend. Zod schemas are the source of
@@ -362,6 +363,16 @@ export const LlmOperationalBlockSchema = buildOperationalBlock(
   LlmClinicalAssertionSchema.default({ state: 'NOT_ASSESSED', value: '', evidence: '' }),
 )
 
+// ─── Malaysian record sections (Task #10) ────────────────────────────────────
+
+export {
+  RECORD_SECTION_LABELS,
+  RECORD_SECTION_ORDER,
+  type RecordSection,
+  RecordSectionSchema,
+  recordSectionForFieldId,
+} from './record-sections.js'
+
 // ─── Missing clinical information ────────────────────────────────────────────
 
 export const InformationGapSchema = z.object({
@@ -371,6 +382,12 @@ export const InformationGapSchema = z.object({
   /** Why it matters for this presentation — shown to justify the prompt. */
   rationale: z.string(),
   priority: z.enum(['high', 'medium', 'low']),
+  /**
+   * Malaysian GP record section this gap belongs under (Task #10). Optional
+   * because consultations analysed before section tagging shipped have none
+   * persisted.
+   */
+  section: RecordSectionSchema.optional(),
 })
 
 // ─── Red flags / escalation triggers ─────────────────────────────────────────

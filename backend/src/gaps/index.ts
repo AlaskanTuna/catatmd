@@ -6,3 +6,4 @@ export {
   UTI_GAP_CHECKLIST,
 } from './checklist.js'
 export { deriveGaps } from './derive.js'
+export { GAP_SECTION_BY_ID, gapRecordSection } from './sections.js'
