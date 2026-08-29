@@ -47,6 +47,7 @@ describe('deriveGaps — assertion-state gating', () => {
     const gap = gaps.find((g) => g.id === 'haemoptysis')
 
     expect(gap).toBeDefined()
+    expect(gap?.section).toBe('HPC')
     expect(gap?.question).toMatch(/\?$/)
     expect(gap?.question).not.toMatch(/record does not/i)
     const accusatoryPhrasing = /\b(you (should|did not|must)|consider|please)\b/i
@@ -121,6 +122,22 @@ describe('gap text never implies a diagnosis', () => {
       expect(entry.rationale).not.toMatch(diagnosticPhrasing)
     })
   }
+})
+
+describe('PC/HPC/PMH record sections (Task #10)', () => {
+  it('tags every derived gap with a Malaysian record section', () => {
+    const gaps = deriveGaps(emptyFacts(), emptyOperational())
+    expect(gaps.length).toBeGreaterThan(0)
+    for (const gap of gaps) {
+      expect(gap.section).toBeDefined()
+    }
+  })
+
+  it('maps PMH history gaps to PMH and SH smoking to SH', () => {
+    const gaps = deriveGaps(emptyFacts(), emptyOperational())
+    expect(gaps.find((g) => g.id === 'asthma')?.section).toBe('PMH')
+    expect(gaps.find((g) => g.id === 'smoking')?.section).toBe('SH')
+  })
 })
 
 describe('next-question prompt phrasing (Task #7)', () => {
