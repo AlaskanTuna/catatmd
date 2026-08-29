@@ -44,6 +44,7 @@ import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
 import { logger, timeStage } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
 import { evaluateRedFlags, mergeRedFlags } from '../redflags/index.js'
+import { deriveScores } from '../scoring/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
 
 export const consultationsRouter = Router()
@@ -325,6 +326,7 @@ async function runAnalysis(
   transcript: Transcript,
   profile: ClinicalProfile,
   consultationId?: string,
+  scoringContext: { ageYears?: number | null } = {},
 ): Promise<{
   analysis: ConsultationAnalysis
   detected: readonly string[]
@@ -353,6 +355,7 @@ async function runAnalysis(
   ])
 
   const rehydrate = (value: string) => vault.rehydrate(value)
+  const allowedGuidelineIds = new Set(corpusIdsFor(profile.guidelineCorpus))
 
   /**
    * Attributes a span to the turn it came from, for the evidence trace (#10).
@@ -404,6 +407,13 @@ async function runAnalysis(
     // (Demo Script step 5).
     clinicalFacts: rehydrateAssertions(noteResult.clinicalFacts, rehydrate),
     operational: rehydrateAssertions(noteResult.operational, rehydrate),
+    // Deterministic guideline calculators over evidence-checked facts. Filtered
+    // to the active profile corpus so a UTI analysis cannot surface URTI-only
+    // score citations. Age (when known) comes from the patient record, never
+    // from transcript inference.
+    clinicalScores: deriveScores(noteResult.clinicalFacts, scoringContext).filter((score) =>
+      score.citations.every((citation) => allowedGuidelineIds.has(citation.guidelineId)),
+    ),
     // Deterministic CPG considerations over evidence-checked facts, filtered
     // to the active profile corpus, then unioned with model suggestions.
     // Same zero-suppression posture as `mergeRedFlags`: rules first, model
@@ -412,7 +422,7 @@ async function runAnalysis(
       toClinicalSuggestions(
         filterConsiderationsForCorpus(
           deriveConsiderations(noteResult.clinicalFacts),
-          new Set(corpusIdsFor(profile.guidelineCorpus)),
+          allowedGuidelineIds,
         ),
       ),
       suggestionResult.suggestions,
@@ -476,10 +486,20 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
   })
 
   try {
+    let ageYears: number | null = null
+    if (consultation.patientId) {
+      const patient = await prisma.patient.findFirst({
+        where: { id: consultation.patientId, erasedAt: null },
+        select: { age: true },
+      })
+      ageYears = patient?.age ?? null
+    }
+
     const { analysis, detected, discardedFieldIds } = await runAnalysis(
       transcript.data,
       profile,
       consultation.id,
+      { ageYears },
     )
 
     /*
