@@ -5,6 +5,11 @@ import type { InformationGap, SoapNote } from '@shared/types'
  * and gap text must never state or imply a diagnosis. The structured
  * `operational.diagnosis` field is the only place a diagnosis may appear,
  * and it is bound by the evidence check (§21.4), not by this pattern match.
+ *
+ * This guard deliberately covers note and gap text only. Doctor-review
+ * clinical considerations may use "Differential consideration" on the
+ * suggestions rail when a deterministic rule is citation-grounded; that
+ * exception is documented in docs/trd.md §3 and does not relax this guard.
  */
 const DIAGNOSTIC_PHRASING: readonly RegExp[] = [
   /\bdiagnos(is|ed|es|ing)\b/i,

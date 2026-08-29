@@ -138,12 +138,12 @@ export const TOUR_STEPS: TourStep[] = [
   },
   {
     // A different consultation on purpose: the one with red flags has no cited
-    // suggestions, and this stop needs a real citation to point at.
-    label: 'Citations',
+    // clinical considerations, and this stop needs a real citation to point at.
+    label: 'Considerations',
     route: '/consultations/:id',
     subject: 'cited',
     target: '[data-tour="suggestion"]',
-    hint: 'Suggestions cite guideline IDs from a closed corpus. Free text fails schema validation, so a hallucinated reference cannot reach this card.',
+    hint: 'Clinical considerations cite guideline IDs from a closed corpus. Free text fails schema validation, so a hallucinated reference cannot reach this card.',
   },
   {
     label: 'Corpus',

@@ -152,6 +152,8 @@ Separately: `.refine()` is **silently dropped** by `z.toJSONSchema()`, so a refi
 - The `note_and_gaps` prompt (§12) must never request a diagnosis, differential, or impression. It requests **the diagnosis the doctor stated, if any** — and the schema's `NOT_ASSESSED` state must be the cheapest path for the model, not an error condition.
 - The evidence check for `diagnosis` runs at Tier 3 like every other field, but its failure mode is not merely a noisy gap: an inferred label surviving into `diagnosis` is a **CAP-1 acceptance-criteria failure and a `docs/prd.md` §10 safety-constraint breach**, and must be covered by an explicit test using a fixture in which the doctor examines and prescribes but never names a condition.
 
+**Explicit diagnostic-guard exception.** Deterministic clinical considerations are not SOAP assessment text or information-gap text. The suggestions rail may use the label "Differential consideration:" for citation-grounded, doctor-review prompts, while `backend/src/analysis/diagnostic-guard.ts` continues to suppress "differential" in generated note and gap content.
+
 ### Ratification Conditions (Research-Imposed)
 
 The schema is ratified **as a hypothesis to be tested, not as a mitigation to be assumed.** The one published study that imposed a template on LLM note generation (Asgari et al., _npj Digital Medicine_ 2025) measured an **increase** in major hallucinations. Three conditions attach:
@@ -888,13 +890,14 @@ The `User → Consultation` relation still uses `onDelete: Cascade`. With the au
 
 ### Clinical Content Versioning
 
-**Status: `Built`** (issue #16). Clinical content changes on a different cadence from code, so it is versioned data rather than conditionals spread through the application. Three artefacts carry a version, each defined in the file it describes:
+**Status: `Built`** (issue #16). Clinical content changes on a different cadence from code, so it is versioned data rather than conditionals spread through the application. Four artefacts carry a version, each defined in the file it describes:
 
-| Artefact          | Version Constant           | Defined In                         |
-| ----------------- | -------------------------- | ---------------------------------- |
-| Red-flag rule set | `RED_FLAG_LIST_VERSION`    | `backend/src/redflags/triggers.ts` |
-| Gap checklist     | `GAP_CHECKLIST_VERSION`    | `backend/src/gaps/checklist.ts`    |
-| Guideline corpus  | `GUIDELINE_CORPUS_VERSION` | `backend/src/guidelines/corpus.ts` |
+| Artefact                | Version Constant              | Defined In                            |
+| ----------------------- | ----------------------------- | ------------------------------------- |
+| Red-flag rule set       | `RED_FLAG_LIST_VERSION`       | `backend/src/redflags/triggers.ts`    |
+| Gap checklist           | `GAP_CHECKLIST_VERSION`       | `backend/src/gaps/checklist.ts`       |
+| Guideline corpus        | `GUIDELINE_CORPUS_VERSION`    | `backend/src/guidelines/corpus.ts`    |
+| Consideration rule list | `CONSIDERATION_RULES_VERSION` | `backend/src/considerations/index.ts` |
 
 Each is a `ClinicalArtefactVersion` (`backend/src/clinical-versions/types.ts`):
 
@@ -907,7 +910,7 @@ interface ClinicalArtefactVersion {
 
 `id` and `effectiveDate` are separate because they answer different questions. `id` must stay stable once a run has recorded it; `effectiveDate` is editorial and may be set ahead of the authoring date.
 
-**One stamping path.** `backend/src/clinical-versions/index.ts` collects the three into `ACTIVE_CLINICAL_VERSIONS`, which is what the analyse route writes. The metadata on `consultation.analysis_completed` as built:
+**One stamping path.** `backend/src/clinical-versions/index.ts` collects the four into `ACTIVE_CLINICAL_VERSIONS`, which is what the analyse route writes. The metadata on `consultation.analysis_completed` as built:
 
 ```
 {
@@ -917,14 +920,14 @@ interface ClinicalArtefactVersion {
   versions: {
     provider: string,            // LLM provider and model (§6)
     model: string,
-    clinicalContent: { redFlagList, gapChecklist, guidelineCorpus, clinicalProfile },
+    clinicalContent: { redFlagList, gapChecklist, guidelineCorpus, considerationRules, clinicalProfile },
   },
 }
 ```
 
 Because `AuditEvent` is append-only, a past analysis keeps the versions it ran under even after the artefacts are revised. That is what makes "which rules were active when this note was approved?" answerable, and it is why the stamp lives here rather than on `Consultation.analysis`, which is overwritten on re-analysis.
 
-**Enforcement.** `backend/src/clinical-versions/no-stray-clinical-constants.test.ts` scans `backend/src` and `frontend/src` and fails the build on either a whole single-quoted literal equal to a trigger or checklist id, or a guideline scoring-system name, outside the three data files. Tests and `backend/src/fixtures/` are exempt. The id set is read from the data at runtime, never listed in the test, so it cannot go stale. The second check exists because the scoring systems carry the thresholds the two Malaysian sources disagree on (§11): a hard-coded one is a manufactured consensus with nothing citing it.
+**Enforcement.** `backend/src/clinical-versions/no-stray-clinical-constants.test.ts` scans `backend/src` and `frontend/src` and fails the build on either a whole single-quoted literal equal to a trigger, checklist, or consideration id, or a guideline scoring-system name, outside the versioned data files. Tests and `backend/src/fixtures/` are exempt. The id set is read from the data at runtime, never listed in the test, so it cannot go stale. The second check exists because the scoring systems carry the thresholds the two Malaysian sources disagree on (§11): a hard-coded one is a manufactured consensus with nothing citing it.
 
 **Not versioned data, deliberately.** Per-chunk source versions are not modelled. `GuidelineChunk` (§11) carries `year`, and the edition sits inside `title` ("4th Edition"). Adding a structured `sourceVersion` would change a `@shared/types` schema and is raised on issue #31 rather than assumed.
 

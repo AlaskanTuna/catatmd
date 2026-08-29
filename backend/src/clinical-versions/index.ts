@@ -4,6 +4,7 @@ import {
   DEFAULT_PROFILE_ID,
   type ProfileId,
 } from '../clinical-profiles/index.js'
+import { CONSIDERATION_RULES_VERSION } from '../considerations/index.js'
 import { GAP_CHECKLIST_VERSION } from '../gaps/index.js'
 import { GUIDELINE_CORPUS_VERSION } from '../guidelines/index.js'
 import { RED_FLAG_LIST_VERSION } from '../redflags/index.js'
@@ -25,6 +26,7 @@ export const ACTIVE_CLINICAL_VERSIONS = {
   redFlagList: RED_FLAG_LIST_VERSION,
   gapChecklist: GAP_CHECKLIST_VERSION,
   guidelineCorpus: GUIDELINE_CORPUS_VERSION,
+  considerationRules: CONSIDERATION_RULES_VERSION,
   clinicalProfile: CLINICAL_PROFILES[DEFAULT_PROFILE_ID].version,
 } as const satisfies Record<string, ClinicalArtefactVersion>
 

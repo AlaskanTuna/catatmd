@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { CONSIDERATION_RULES, CONSIDERATION_RULES_VERSION } from '../considerations/index.js'
 import { GAP_CHECKLIST } from '../gaps/index.js'
 import { GUIDELINE_CORPUS } from '../guidelines/index.js'
 import { ALL_REDFLAG_TRIGGERS, RED_FLAG_LIST_VERSION, REDFLAG_TRIGGERS } from '../redflags/index.js'
@@ -7,9 +8,10 @@ import { ACTIVE_CLINICAL_VERSIONS, ACTIVE_PROFILE_VERSIONS } from './index.js'
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 describe('clinical content versions (issue #16)', () => {
-  it('covers the three versioned artefacts and the default clinical profile', () => {
+  it('covers the four versioned artefacts and the default clinical profile', () => {
     expect(Object.keys(ACTIVE_CLINICAL_VERSIONS).sort()).toEqual([
       'clinicalProfile',
+      'considerationRules',
       'gapChecklist',
       'guidelineCorpus',
       'redFlagList',
@@ -44,10 +46,16 @@ describe('clinical content versions (issue #16)', () => {
     expect(ACTIVE_CLINICAL_VERSIONS.redFlagList).toBe(RED_FLAG_LIST_VERSION)
   })
 
+  it('stamps the consideration rule-list version used by deriveConsiderations', () => {
+    expect(CONSIDERATION_RULES.length).toBeGreaterThan(0)
+    expect(ACTIVE_CLINICAL_VERSIONS.considerationRules).toBe(CONSIDERATION_RULES_VERSION)
+  })
+
   it('versions artefacts that are actually populated', () => {
     expect(REDFLAG_TRIGGERS.length).toBeGreaterThan(0)
     expect(GAP_CHECKLIST.length).toBeGreaterThan(0)
     expect(GUIDELINE_CORPUS.length).toBeGreaterThan(0)
+    expect(CONSIDERATION_RULES.length).toBeGreaterThan(0)
   })
 
   it('includes a version for every selectable clinical profile', () => {

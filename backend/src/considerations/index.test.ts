@@ -1,4 +1,4 @@
-import type { ClinicalAssertion, ClinicalFacts } from '@shared/types'
+import type { ClinicalAssertion, ClinicalFacts, ClinicalScoreResult } from '@shared/types'
 import { ClinicalFactsSchema } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import { corpusIds } from '../guidelines/index.js'
@@ -24,6 +24,30 @@ const emptyFacts = (): ClinicalFacts =>
 
 const SAFETY_NETTING_RULE_ID = 'cpg-sore-throat-safety-netting'
 const SAFETY_NETTING_GUIDELINE_ID = 'abdullah-2024-safety-netting'
+const SORE_THROAT_DIFFERENTIAL_RULE_ID = 'cpg-differential-acute-pharyngitis'
+const SORE_THROAT_MANAGEMENT_RULE_ID = 'cpg-management-sore-throat-symptomatic-relief'
+const BRONCHITIS_DIFFERENTIAL_RULE_ID = 'cpg-differential-acute-bronchitis'
+const BRONCHITIS_MANAGEMENT_RULE_ID = 'cpg-management-acute-bronchitis-antibiotic-stewardship'
+const URTI_MANAGEMENT_RULE_ID = 'cpg-management-uncomplicated-urti-symptomatic'
+const SCORE_ANTIBIOTIC_CONSIDERATION_RULE_ID = 'cpg-score-antibiotic-consideration'
+const MOH_PHARYNGITIS_ID = 'moh-nag-2024-c1-acute-pharyngitis'
+const MOH_MODIFIED_CENTOR_ID = 'moh-nag-2024-a10-modified-centor'
+const VIRAL_VS_BACTERIAL_ID = 'moh-nag-2024-c1-viral-vs-bacterial'
+
+const scoreResult = (overrides: Partial<ClinicalScoreResult> = {}): ClinicalScoreResult => ({
+  id: 'score-from-task-8',
+  systemId: 'supplied-guideline-score',
+  title: 'Supplied guideline score',
+  guidelineId: MOH_MODIFIED_CENTOR_ID,
+  completeness: 'complete',
+  totalScore: 3,
+  maxScore: 4,
+  category: 'at_or_above_antibiotic_consideration_threshold',
+  categoryLabel: 'At or above an antibiotic-consideration threshold.',
+  criteria: [],
+  citations: [{ guidelineId: MOH_MODIFIED_CENTOR_ID }],
+  ...overrides,
+})
 
 describe('deriveConsiderations - purity', () => {
   it('is a pure function: identical input produces identical output', () => {
@@ -42,21 +66,24 @@ describe('deriveConsiderations - purity', () => {
 })
 
 describe('deriveConsiderations - cpg-sore-throat-safety-netting', () => {
-  it('emits a cited safety-netting consideration when soreThroat is PRESENT', () => {
+  it('keeps the cited safety-netting consideration when soreThroat is PRESENT', () => {
     const facts = emptyFacts()
     facts.symptoms.soreThroat = present('my throat is sore')
 
     const result = deriveConsiderations(facts)
 
-    expect(result).toHaveLength(1)
-    expect(result[0]).toMatchObject({
+    const safetyNetting = result.find((item) => item.ruleId === SAFETY_NETTING_RULE_ID)
+    expect(safetyNetting).toMatchObject({
       id: SAFETY_NETTING_RULE_ID,
       ruleId: SAFETY_NETTING_RULE_ID,
+      kind: 'management',
       source: 'rule',
       citations: [{ guidelineId: SAFETY_NETTING_GUIDELINE_ID }],
     })
-    expect(result[0]?.text).toMatch(/safety-netting/i)
-    expect(result[0]?.citations.length).toBeGreaterThanOrEqual(1)
+    expect(safetyNetting?.text).toMatch(/consider/i)
+    expect(safetyNetting?.text).toMatch(/safety-netting/i)
+    expect(safetyNetting?.text).not.toMatch(/\bmust\b|\bprescribe\b/i)
+    expect(safetyNetting?.citations.length).toBeGreaterThanOrEqual(1)
   })
 
   it('does not fire when soreThroat is explicitly DENIED', () => {
@@ -107,8 +134,120 @@ describe('deriveConsiderations - negative evidence does not unlock positive path
 
     expect(ruleIds).not.toContain('cpg-viral-pattern-sore-throat')
     expect(guidelineIds).not.toContain('moh-nag-2024-c1-viral-vs-bacterial')
-    // Safety-netting still fires from soreThroat PRESENT alone — that is expected.
-    expect(ruleIds).toEqual([SAFETY_NETTING_RULE_ID])
+    // Sore-throat considerations still fire from soreThroat PRESENT alone — that is expected.
+    expect(ruleIds).toContain(SAFETY_NETTING_RULE_ID)
+    expect(ruleIds).toContain(SORE_THROAT_DIFFERENTIAL_RULE_ID)
+  })
+})
+
+describe('deriveConsiderations - differential considerations', () => {
+  it('emits a guideline-cited differential consideration for documented sore throat', () => {
+    const facts = emptyFacts()
+    facts.symptoms.soreThroat = present('my throat is sore')
+
+    const result = deriveConsiderations(facts)
+    const differential = result.find((item) => item.ruleId === SORE_THROAT_DIFFERENTIAL_RULE_ID)
+
+    expect(differential).toMatchObject({
+      kind: 'differential',
+      citations: [{ guidelineId: MOH_PHARYNGITIS_ID }],
+    })
+    expect(differential?.text).toMatch(/^Differential consideration: Consider/i)
+    expect(differential?.text).not.toMatch(/the patient has|diagnosed with|final diagnosis/i)
+  })
+
+  it('does not infer acute bronchitis from documented cough alone', () => {
+    const facts = emptyFacts()
+    facts.symptoms.cough = present('cough for three days')
+
+    const result = deriveConsiderations(facts)
+    const ruleIds = result.map((item) => item.ruleId)
+
+    expect(ruleIds).not.toContain(BRONCHITIS_DIFFERENTIAL_RULE_ID)
+    expect(ruleIds).not.toContain(BRONCHITIS_MANAGEMENT_RULE_ID)
+    expect(ruleIds).not.toContain(URTI_MANAGEMENT_RULE_ID)
+    expect(result).toEqual([])
+  })
+})
+
+describe('deriveConsiderations - management considerations', () => {
+  it('uses MOH NAG 2024 for sore-throat symptomatic management where evidence supports it', () => {
+    const facts = emptyFacts()
+    facts.symptoms.soreThroat = present('sore throat')
+
+    const result = deriveConsiderations(facts)
+    const management = result.find((item) => item.ruleId === SORE_THROAT_MANAGEMENT_RULE_ID)
+
+    expect(management).toMatchObject({
+      kind: 'management',
+      citations: [{ guidelineId: MOH_PHARYNGITIS_ID }],
+    })
+    expect(management?.text).toMatch(/^Management consideration: Consider/i)
+    expect(management?.text).toMatch(/symptomatic relief/i)
+    expect(management?.text).not.toMatch(/\bstart\b|\bprescribe\b|\bdose\b|\bduration\b/i)
+  })
+
+  it('does not infer acute bronchitis antibiotic-stewardship from documented cough alone', () => {
+    const facts = emptyFacts()
+    facts.symptoms.cough = present('cough')
+
+    const result = deriveConsiderations(facts)
+    const ruleIds = result.map((item) => item.ruleId)
+
+    expect(ruleIds).not.toContain(BRONCHITIS_MANAGEMENT_RULE_ID)
+    expect(result).toEqual([])
+  })
+
+  it('does not infer uncomplicated URTI care from documented cough alone', () => {
+    const facts = emptyFacts()
+    facts.symptoms.cough = present('cough')
+
+    const result = deriveConsiderations(facts)
+    const ruleIds = result.map((item) => item.ruleId)
+
+    expect(ruleIds).not.toContain(URTI_MANAGEMENT_RULE_ID)
+    expect(result).toEqual([])
+  })
+
+  it('does not infer uncomplicated URTI care from documented sore throat alone', () => {
+    const facts = emptyFacts()
+    facts.symptoms.soreThroat = present('sore throat')
+
+    const result = deriveConsiderations(facts)
+    const ruleIds = result.map((item) => item.ruleId)
+
+    expect(ruleIds).toContain(SORE_THROAT_MANAGEMENT_RULE_ID)
+    expect(ruleIds).not.toContain(URTI_MANAGEMENT_RULE_ID)
+  })
+})
+
+describe('deriveConsiderations - Task #8 scoring input', () => {
+  it('consumes an existing score snapshot without requiring the scoring criteria in ClinicalFacts', () => {
+    const result = deriveConsiderations(emptyFacts(), [scoreResult()])
+    const scoreConsideration = result.find(
+      (item) => item.ruleId === SCORE_ANTIBIOTIC_CONSIDERATION_RULE_ID,
+    )
+
+    expect(scoreConsideration).toMatchObject({
+      kind: 'management',
+      citations: [{ guidelineId: MOH_MODIFIED_CENTOR_ID }],
+    })
+    expect(scoreConsideration?.text).toMatch(/existing guideline score/i)
+    expect(scoreConsideration?.text).toMatch(/antibiotic-consideration threshold/i)
+    expect(scoreConsideration?.text).not.toMatch(/\brecalculate\b|\bprescribe\b/i)
+  })
+
+  it('does not emit score-based management when a supplied score is incomplete', () => {
+    const result = deriveConsiderations(emptyFacts(), [
+      scoreResult({
+        completeness: 'incomplete',
+        totalScore: null,
+        category: null,
+        categoryLabel: null,
+      }),
+    ])
+
+    expect(result.map((item) => item.ruleId)).not.toContain(SCORE_ANTIBIOTIC_CONSIDERATION_RULE_ID)
   })
 })
 
@@ -144,7 +283,7 @@ describe('deriveConsiderations - guideline citation validity', () => {
     expect(ids).not.toContain('NICE-NG84')
   })
 
-  it('does not merge conflicting Centor and McIsaac antibiotic thresholds', () => {
+  it('does not merge conflicting throat-score antibiotic thresholds', () => {
     const facts = emptyFacts()
     facts.symptoms.soreThroat = present('sore throat')
     facts.symptoms.fever = present('fever last night')
@@ -156,8 +295,23 @@ describe('deriveConsiderations - guideline citation validity', () => {
       item.citations.map((citation) => citation.guidelineId),
     )
 
-    expect(guidelineIds).not.toContain('moh-nag-2024-a10-modified-centor')
     expect(guidelineIds).not.toContain('abdullah-2024-mcisaac-threshold')
     expect(guidelineIds).not.toContain('abdullah-2024-mcisaac-criteria')
+  })
+
+  it('does not infer coryza or isolated sore throat from the current ClinicalFacts shape', () => {
+    const facts = emptyFacts()
+    facts.symptoms.soreThroat = present('sore throat')
+    facts.symptoms.cough = denied('no cough')
+    facts.symptoms.fever = denied('no fever')
+
+    const result = deriveConsiderations(facts)
+    const text = result.map((item) => item.text).join(' ')
+    const guidelineIds = result.flatMap((item) =>
+      item.citations.map((citation) => citation.guidelineId),
+    )
+
+    expect(guidelineIds).not.toContain(VIRAL_VS_BACTERIAL_ID)
+    expect(text).not.toMatch(/coryza|isolated sore throat|viral pattern|bacterial cause/i)
   })
 })

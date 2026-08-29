@@ -265,7 +265,7 @@ describe('deriveScores - Task #4 considerations remain unchanged', () => {
     facts.symptoms.soreThroat = present('my throat is sore')
 
     const considerations = deriveConsiderations(facts)
-    expect(considerations.map((c) => c.ruleId)).toEqual(['cpg-sore-throat-safety-netting'])
+    expect(considerations.map((c) => c.ruleId)).toContain('cpg-sore-throat-safety-netting')
 
     const scores = deriveScores(facts)
     expect(scores.every((s) => s.completeness === 'incomplete')).toBe(true)
