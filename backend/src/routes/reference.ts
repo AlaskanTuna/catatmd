@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { listClinicalProfileSummaries } from '../clinical-profiles/index.js'
 import { FIXTURES } from '../fixtures/index.js'
 import { GUIDELINE_CORPUS } from '../guidelines/index.js'
 
@@ -22,4 +23,8 @@ referenceRouter.get('/guidelines', (_req, res) => {
   // needs it to explain a licence-restricted chunk's absent quote rather than
   // letting it look like missing data (docs/trd.md §13).
   res.json({ guidelines: GUIDELINE_CORPUS })
+})
+
+referenceRouter.get('/profiles', (_req, res) => {
+  res.json({ profiles: listClinicalProfileSummaries() })
 })

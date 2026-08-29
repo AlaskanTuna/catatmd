@@ -285,6 +285,29 @@ describe('a signed note', () => {
   })
 })
 
+describe('copilot corpus scoping', () => {
+  it('uses the UTI profile corpus when the consultation was analysed under that profile', async () => {
+    chunks = [{ type: 'text', text: 'The plan mentions follow-up.' }]
+
+    const detail = consultation()
+    const baseAnalysis = detail.analysis ?? {
+      note: { subjective: '', objective: '', assessment: '', plan: '' },
+      gaps: [],
+      redFlags: [],
+      suggestions: [],
+    }
+    detail.analysis = {
+      ...baseAnalysis,
+      profileId: 'adult-acute-uncomplicated-uti',
+    }
+
+    await drain('What guidelines apply?', detail)
+
+    expect(captured?.system).toContain('moh-nag-2024-acute-uti-scope')
+    expect(captured?.system).not.toContain('abdullah-2024-safety-netting')
+  })
+})
+
 /**
  * The phantom-click pin from GitHub issue #185, driven through the real turn
  * rather than against a string, so it holds over what the doctor actually

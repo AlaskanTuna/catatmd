@@ -63,6 +63,7 @@ describe('route protection (issue #14)', () => {
     ['POST', '/api/consultations/some-id/approve'],
     ['GET', '/api/fixtures'],
     ['GET', '/api/guidelines'],
+    ['GET', '/api/profiles'],
     ['POST', '/api/asr/transcriptions'],
   ] as const
 

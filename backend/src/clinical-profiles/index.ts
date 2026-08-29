@@ -65,3 +65,15 @@ export const DEFAULT_PROFILE_ID: ProfileId = 'adult-acute-urti'
 export function getClinicalProfile(profileId: ProfileId = DEFAULT_PROFILE_ID): ClinicalProfile {
   return CLINICAL_PROFILES[profileId]
 }
+
+/** Summaries for the profile picker and `GET /api/profiles`. */
+export function listClinicalProfileSummaries(): ReadonlyArray<{
+  readonly id: ProfileId
+  readonly scope: string
+  readonly versionId: string
+}> {
+  return PROFILE_IDS.map((id) => {
+    const profile = CLINICAL_PROFILES[id]
+    return { id: profile.id, scope: profile.scope, versionId: profile.version.id }
+  })
+}
