@@ -8,8 +8,8 @@ import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
  * set of gaps can be traced back to the checklist that produced it.
  */
 export const GAP_CHECKLIST_VERSION: ClinicalArtefactVersion = {
-  id: 'gap-checklist-v2',
-  effectiveDate: '2026-08-14',
+  id: 'gap-checklist-v3',
+  effectiveDate: '2026-08-29',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -49,7 +49,7 @@ const UTI_PROFILES: readonly ProfileId[] = ['adult-acute-uncomplicated-uti']
 export interface GapChecklistEntry {
   id: string
   priority: 'high' | 'medium' | 'low'
-  /** What the record does not contain. Never phrased as a prompt to ask. */
+  /** Neutral next-question prompt the doctor may ask. Never accusatory. */
   question: string
   /** Why this field is tracked for this presentation. Never a clinical instruction. */
   rationale: string
@@ -62,7 +62,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'cough-duration',
     priority: 'medium',
-    question: 'The record does not state how long the cough has been present.',
+    question: 'How long has the cough been present?',
     rationale:
       'Cough duration is a standard field tracked for adult cough and URTI presentations and ' +
       'is not documented in this consultation.',
@@ -72,7 +72,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'sputum-production',
     priority: 'medium',
-    question: 'The record does not indicate whether the cough is productive of sputum.',
+    question: 'Is the cough productive of sputum?',
     rationale:
       'Sputum production is a standard field tracked for adult cough and URTI presentations ' +
       'and is not documented in this consultation.',
@@ -82,7 +82,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'haemoptysis',
     priority: 'high',
-    question: 'The record does not indicate whether haemoptysis was assessed.',
+    question: 'Has the patient reported any blood in their sputum (haemoptysis)?',
     rationale:
       'Haemoptysis status is a standard field tracked for adult cough presentations and is ' +
       'not documented in this consultation.',
@@ -92,7 +92,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'fever',
     priority: 'medium',
-    question: 'The record does not indicate whether fever was assessed.',
+    question: 'Has the patient had a fever?',
     rationale:
       'Fever status is a standard field tracked for adult URTI presentations and is not ' +
       'documented in this consultation.',
@@ -102,7 +102,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'dyspnoea',
     priority: 'high',
-    question: 'The record does not indicate whether breathlessness (dyspnoea) was assessed.',
+    question: 'Has the patient reported breathlessness (dyspnoea)?',
     rationale:
       'Breathlessness status is a standard field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
@@ -112,7 +112,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'chest-pain',
     priority: 'high',
-    question: 'The record does not indicate whether chest pain was assessed.',
+    question: 'Has the patient reported chest pain?',
     rationale:
       'Chest pain status is a standard field tracked for adult cough and URTI presentations ' +
       'and is not documented in this consultation.',
@@ -122,7 +122,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'swallowing-difficulty',
     priority: 'high',
-    question: 'The record does not indicate whether difficulty swallowing was assessed.',
+    question: 'Has the patient reported difficulty swallowing?',
     rationale:
       'Swallowing difficulty is a standard field tracked for adult sore-throat presentations ' +
       'and is not documented in this consultation.',
@@ -132,7 +132,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'oral-intake',
     priority: 'high',
-    question: 'The record does not indicate whether oral intake was assessed.',
+    question: "What is the patient's oral intake like?",
     rationale:
       'Oral intake status is a standard field tracked for adult sore-throat presentations and ' +
       'is not documented in this consultation.',
@@ -144,7 +144,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'asthma',
     priority: 'medium',
-    question: 'The record does not indicate whether a history of asthma was assessed.',
+    question: 'Does the patient have a history of asthma?',
     rationale:
       'Asthma history is a standard field tracked for adult cough and URTI presentations and ' +
       'is not documented in this consultation.',
@@ -154,7 +154,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'copd',
     priority: 'medium',
-    question: 'The record does not indicate whether a history of COPD was assessed.',
+    question: 'Does the patient have a history of COPD?',
     rationale:
       'COPD history is a standard field tracked for adult cough and URTI presentations and is ' +
       'not documented in this consultation.',
@@ -164,7 +164,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'cardiac-disease',
     priority: 'low',
-    question: 'The record does not indicate whether a history of cardiac disease was assessed.',
+    question: 'Does the patient have a history of cardiac disease?',
     rationale:
       'Cardiac disease history is a standard field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
@@ -174,7 +174,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'immunosuppression',
     priority: 'low',
-    question: 'The record does not indicate whether immunosuppression was assessed.',
+    question: 'Is the patient immunosuppressed?',
     rationale:
       'Immunosuppression status is a standard field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
@@ -184,7 +184,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'smoking',
     priority: 'low',
-    question: 'The record does not indicate whether smoking status was assessed.',
+    question: "What is the patient's smoking status?",
     rationale:
       'Smoking status is a standard field tracked for adult cough and URTI presentations and ' +
       'is not documented in this consultation.',
@@ -194,7 +194,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'current-medications',
     priority: 'medium',
-    question: 'The record does not indicate whether current medications were reviewed.',
+    question: 'What medications is the patient currently taking?',
     rationale:
       'Current medications are a standard field tracked for adult cough and URTI ' +
       'presentations and are not documented in this consultation.',
@@ -204,7 +204,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'drug-allergies',
     priority: 'medium',
-    question: 'The record does not indicate whether drug allergies were reviewed.',
+    question: 'Does the patient have any drug allergies?',
     rationale:
       'Drug allergy status is a standard field tracked whenever medication may be dispensed, ' +
       'and is not documented in this consultation.',
@@ -216,7 +216,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'temperature',
     priority: 'medium',
-    question: 'The record does not contain a temperature reading.',
+    question: "What is the patient's temperature?",
     rationale:
       'Temperature is a standard vital-sign field tracked for adult URTI presentations and is ' +
       'not documented in this consultation.',
@@ -226,7 +226,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'heart-rate',
     priority: 'medium',
-    question: 'The record does not contain a heart-rate reading.',
+    question: "What is the patient's heart rate?",
     rationale:
       'Heart rate is a standard vital-sign field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
@@ -236,7 +236,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'respiratory-rate',
     priority: 'high',
-    question: 'The record does not contain a respiratory-rate reading.',
+    question: "What is the patient's respiratory rate?",
     rationale:
       'Respiratory rate is a standard vital-sign field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
@@ -246,7 +246,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'blood-pressure',
     priority: 'medium',
-    question: 'The record does not contain a blood-pressure reading.',
+    question: "What is the patient's blood pressure?",
     rationale:
       'Blood pressure is a standard vital-sign field tracked for adult URTI presentations and ' +
       'is not documented in this consultation.',
@@ -256,7 +256,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'oxygen-saturation',
     priority: 'high',
-    question: 'The record does not contain an oxygen-saturation reading.',
+    question: "What is the patient's oxygen saturation (SpO₂)?",
     rationale:
       'Oxygen saturation is a standard vital-sign field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
@@ -268,7 +268,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'throat-examination',
     priority: 'medium',
-    question: 'The record does not contain throat examination findings.',
+    question: 'What are the throat examination findings?',
     rationale:
       'Throat examination findings are a standard field tracked for adult sore-throat ' +
       'presentations and are not documented in this consultation.',
@@ -278,7 +278,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'tonsillar-examination',
     priority: 'medium',
-    question: 'The record does not contain tonsillar examination findings.',
+    question: 'What are the tonsillar examination findings?',
     rationale:
       'Tonsillar examination findings are a standard field tracked for adult sore-throat ' +
       'presentations and are not documented in this consultation.',
@@ -288,7 +288,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'cervical-lymph-nodes',
     priority: 'medium',
-    question: 'The record does not contain cervical lymph node examination findings.',
+    question: 'What are the cervical lymph node examination findings?',
     rationale:
       'Cervical lymph node findings are a standard field tracked for adult sore-throat ' +
       'presentations and are not documented in this consultation.',
@@ -298,7 +298,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'chest-examination',
     priority: 'medium',
-    question: 'The record does not contain chest examination findings.',
+    question: 'What are the chest examination findings?',
     rationale:
       'Chest examination findings are a standard field tracked for adult cough presentations ' +
       'and are not documented in this consultation.',
@@ -310,7 +310,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'diagnosis',
     priority: 'low',
-    question: 'The record does not contain a diagnosis stated by the doctor.',
+    question: 'What diagnosis did the doctor state?',
     rationale:
       'Diagnosis is one of the fields in the Malaysian payer-enforced consultation record ' +
       '(condition, treatment, medication dispensed, MC days, referral) and is not documented ' +
@@ -321,7 +321,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'mc-days',
     priority: 'low',
-    question: 'The record does not contain medical-certificate days.',
+    question: 'How many medical-certificate days were given?',
     rationale:
       'MC days are one of the fields in the Malaysian payer-enforced consultation record and ' +
       'are not documented in this consultation.',
@@ -331,7 +331,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'referral',
     priority: 'low',
-    question: 'The record does not contain a referral.',
+    question: 'Was a referral made?',
     rationale:
       'Referral is one of the fields in the Malaysian payer-enforced consultation record and ' +
       'is not documented in this consultation.',
@@ -341,7 +341,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'follow-up',
     priority: 'low',
-    question: 'The record does not contain a follow-up interval.',
+    question: 'What follow-up interval was arranged?',
     rationale:
       'Follow-up interval is one of the fields in the Malaysian payer-enforced consultation ' +
       'record and is not documented in this consultation.',
@@ -354,7 +354,7 @@ export const UTI_GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'uti-temperature',
     priority: 'high',
-    question: 'The record does not contain a temperature reading.',
+    question: "What is the patient's temperature?",
     rationale:
       'Temperature is a safety-relevant observation for adult acute urinary presentations and ' +
       'is not documented in this consultation.',
@@ -364,7 +364,7 @@ export const UTI_GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'uti-heart-rate',
     priority: 'high',
-    question: 'The record does not contain a heart-rate reading.',
+    question: "What is the patient's heart rate?",
     rationale:
       'Heart rate is a safety-relevant observation for adult acute urinary presentations and ' +
       'is not documented in this consultation.',
@@ -374,7 +374,7 @@ export const UTI_GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'uti-respiratory-rate',
     priority: 'high',
-    question: 'The record does not contain a respiratory-rate reading.',
+    question: "What is the patient's respiratory rate?",
     rationale:
       'Respiratory rate is a safety-relevant observation for adult acute urinary presentations ' +
       'and is not documented in this consultation.',
@@ -384,7 +384,7 @@ export const UTI_GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'uti-blood-pressure',
     priority: 'high',
-    question: 'The record does not contain a blood-pressure reading.',
+    question: "What is the patient's blood pressure?",
     rationale:
       'Blood pressure is a safety-relevant observation for adult acute urinary presentations ' +
       'and is not documented in this consultation.',
@@ -394,7 +394,7 @@ export const UTI_GAP_CHECKLIST: readonly GapChecklistEntry[] = [
   {
     id: 'uti-drug-allergies',
     priority: 'medium',
-    question: 'The record does not indicate whether drug allergies were reviewed.',
+    question: 'Does the patient have any drug allergies?',
     rationale:
       'Drug allergy status is relevant whenever medication may be dispensed and is not ' +
       'documented in this consultation.',

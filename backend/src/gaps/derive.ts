@@ -10,7 +10,8 @@ const GAP_STATES: ReadonlySet<AssertionState> = new Set(['NOT_ASSESSED', 'UNKNOW
 
 /**
  * Tier-2 deterministic control (docs/trd.md §21.3): gap derivation from
- * assertion states, not a prompt. Pure function — no I/O, no LLM call, no
+ * assertion states, not a prompt. Each gap carries a neutral next-question
+ * prompt (Task #7) plus a documentation-completeness rationale. Pure function
  * database, no clock, no randomness — over the fixed 29-key `ClinicalFacts`
  * set plus the Malaysian operational block. See `checklist.ts` for the
  * materiality rule deciding which fields are eligible to raise a gap.
