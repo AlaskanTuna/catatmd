@@ -373,6 +373,17 @@ export {
   recordSectionForFieldId,
 } from './record-sections.js'
 
+// ─── Note export for clinic CMS paste (Task #12) ────────────────────────────
+
+export {
+  formatEncounterSummary,
+  formatSoapNoteForClipboard,
+  formatSoapSectionForClipboard,
+  SOAP_SECTION_LABELS,
+  SOAP_SECTIONS,
+  type SoapSection,
+} from './note-export.js'
+
 // ─── Missing clinical information ────────────────────────────────────────────
 
 export const InformationGapSchema = z.object({

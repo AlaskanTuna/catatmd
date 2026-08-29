@@ -1,3 +1,4 @@
+import { formatSoapSectionForClipboard } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -110,17 +111,32 @@ describe('approved note copy', () => {
     )
   })
 
-  it('copies the final approved note and keeps Export available', async () => {
+  it('copies an individual SOAP section for clinic CMS paste', async () => {
     setup()
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Copy Note' }))
+    await screen.findByRole('heading', { name: 'Consultation Review' })
+    fireEvent.click(screen.getByRole('button', { name: 'Copy subjective' }))
+
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        formatSoapSectionForClipboard('subjective', NOTE),
+      ),
+    )
+    expect(toastSuccess).toHaveBeenCalledWith('S copied.')
+  }, 15_000)
+
+  it('copies the full approved note via the All control', async () => {
+    setup()
+
+    await screen.findByRole('heading', { name: 'Consultation Review' })
+    fireEvent.click(screen.getByRole('button', { name: 'All' }))
 
     await waitFor(() =>
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(formatSoapNoteForClipboard(NOTE)),
     )
     expect(screen.getByRole('button', { name: 'Export' })).toBeTruthy()
     expect(toastSuccess).toHaveBeenCalledWith('Note copied.')
-  })
+  }, 15_000)
 })
 
 /**

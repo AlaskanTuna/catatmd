@@ -6,7 +6,14 @@ import type {
   DispositionInput,
   ProfileId,
   SoapNote,
+  SoapSection,
   Transcript,
+} from '@shared/types'
+import {
+  formatEncounterSummary,
+  formatSoapNoteForClipboard,
+  formatSoapSectionForClipboard,
+  SOAP_SECTIONS,
 } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Printer, Sparkles } from 'lucide-react'
@@ -29,13 +36,26 @@ import { RenameField } from '../ui/RenameField.js'
 import { Select } from '../ui/Select.js'
 import { CapturePanel } from './CapturePanel.js'
 
-export function formatSoapNoteForClipboard(note: SoapNote) {
-  return [
-    `Subjective\n${note.subjective}`,
-    `Objective\n${note.objective}`,
-    `Assessment\n${note.assessment}`,
-    `Plan\n${note.plan}`,
-  ].join('\n\n')
+export { formatSoapNoteForClipboard } from '@shared/types'
+
+const SOAP_SECTION_SHORT: Readonly<Record<SoapSection, string>> = {
+  subjective: 'S',
+  objective: 'O',
+  assessment: 'A',
+  plan: 'P',
+}
+
+async function copyText(label: string, text: string) {
+  if (!text) {
+    toast.error(`${label} is empty.`)
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success(`${label} copied.`)
+  } catch {
+    toast.error(`${label} could not be copied.`)
+  }
 }
 
 /** The current decision about a finding, or `undefined` if none was made. */
@@ -292,14 +312,21 @@ export function ConsultationReview() {
   const approved = detail.status === 'approved'
   const note = detail.editedNote ?? analysis?.note ?? null
 
-  const copyNote = async () => {
+  const operational = analysis?.operational
+
+  const copySoapSection = async (section: SoapSection) => {
     if (!note) return
-    try {
-      await navigator.clipboard.writeText(formatSoapNoteForClipboard(note))
-      toast.success('Note copied.')
-    } catch {
-      toast.error('Note could not be copied.')
-    }
+    await copyText(SOAP_SECTION_SHORT[section], formatSoapSectionForClipboard(section, note))
+  }
+
+  const copyFullNote = async () => {
+    if (!note) return
+    await copyText('Note', formatSoapNoteForClipboard(note))
+  }
+
+  const copyEncounterSummary = async () => {
+    if (!operational) return
+    await copyText('Summary', formatEncounterSummary(operational))
   }
 
   const flags = [...(analysis?.redFlags ?? [])].sort(
@@ -401,9 +428,32 @@ export function ConsultationReview() {
               {showTranscript ? 'Hide Transcript' : 'Transcript'}
             </Button>
             {approved && note && (
-              <Button icon={<Copy aria-hidden className="size-4" />} onClick={copyNote}>
-                Copy Note
-              </Button>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {SOAP_SECTIONS.map((section) => (
+                  <Button
+                    key={section}
+                    size="sm"
+                    variant="neutral"
+                    aria-label={`Copy ${section}`}
+                    onClick={() => copySoapSection(section)}
+                  >
+                    {SOAP_SECTION_SHORT[section]}
+                  </Button>
+                ))}
+                {operational && (
+                  <Button size="sm" variant="neutral" onClick={copyEncounterSummary}>
+                    Summary
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon={<Copy aria-hidden className="size-3.5" />}
+                  onClick={copyFullNote}
+                >
+                  All
+                </Button>
+              </div>
             )}
             {approved && (
               <Button
