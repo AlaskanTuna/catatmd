@@ -222,8 +222,11 @@ describe('deriveConsiderations - management considerations', () => {
 })
 
 describe('deriveConsiderations - Task #8 scoring input', () => {
-  it('consumes an existing score snapshot without requiring the scoring criteria in ClinicalFacts', () => {
-    const result = deriveConsiderations(emptyFacts(), [scoreResult()])
+  it('emits the MOH score consideration when the threshold score and sore throat are both documented', () => {
+    const facts = emptyFacts()
+    facts.symptoms.soreThroat = present('sore throat')
+
+    const result = deriveConsiderations(facts, [scoreResult()])
     const scoreConsideration = result.find(
       (item) => item.ruleId === SCORE_ANTIBIOTIC_CONSIDERATION_RULE_ID,
     )
@@ -237,8 +240,38 @@ describe('deriveConsiderations - Task #8 scoring input', () => {
     expect(scoreConsideration?.text).not.toMatch(/\brecalculate\b|\bprescribe\b/i)
   })
 
+  it('does not emit the MOH score consideration when soreThroat is NOT_ASSESSED', () => {
+    const facts = emptyFacts()
+    facts.symptoms.soreThroat = notAssessed()
+
+    const result = deriveConsiderations(facts, [scoreResult()])
+
+    expect(result.map((item) => item.ruleId)).not.toContain(SCORE_ANTIBIOTIC_CONSIDERATION_RULE_ID)
+  })
+
+  it('does not emit the MOH score consideration when soreThroat is UNKNOWN', () => {
+    const facts = emptyFacts()
+    facts.symptoms.soreThroat = unknown()
+
+    const result = deriveConsiderations(facts, [scoreResult()])
+
+    expect(result.map((item) => item.ruleId)).not.toContain(SCORE_ANTIBIOTIC_CONSIDERATION_RULE_ID)
+  })
+
+  it('does not emit the MOH score consideration when soreThroat is DENIED', () => {
+    const facts = emptyFacts()
+    facts.symptoms.soreThroat = denied('no sore throat')
+
+    const result = deriveConsiderations(facts, [scoreResult()])
+
+    expect(result.map((item) => item.ruleId)).not.toContain(SCORE_ANTIBIOTIC_CONSIDERATION_RULE_ID)
+  })
+
   it('does not emit score-based management when a supplied score is incomplete', () => {
-    const result = deriveConsiderations(emptyFacts(), [
+    const facts = emptyFacts()
+    facts.symptoms.soreThroat = present('sore throat')
+
+    const result = deriveConsiderations(facts, [
       scoreResult({
         completeness: 'incomplete',
         totalScore: null,

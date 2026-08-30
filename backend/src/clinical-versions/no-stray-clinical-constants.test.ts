@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { CONSIDERATION_RULES } from '../considerations/index.js'
 import { GAP_CHECKLIST } from '../gaps/index.js'
 import { ALL_REDFLAG_TRIGGERS } from '../redflags/index.js'
 
@@ -16,7 +17,8 @@ import { ALL_REDFLAG_TRIGGERS } from '../redflags/index.js'
  *
  * Scope is deliberately narrow, because a guard that cries wolf gets deleted:
  *
- * 1. **Whole single-quoted literals** equal to a trigger or checklist id.
+ * 1. **Whole single-quoted literals** equal to a trigger, checklist, or
+ *    consideration id.
  *    Biome pins `quoteStyle: 'single'` (biome.json), so a string in code is
  *    always single-quoted, while the same word in a comment or inside prompt
  *    prose is not. That one distinction is what keeps `analysis/prompt.ts`,
@@ -34,8 +36,12 @@ const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const VERSIONED_DATA_FILES = [
   'backend/src/redflags/triggers.ts',
   'backend/src/gaps/checklist.ts',
+  // Declarative id -> record-section table, checked against the checklist at
+  // module load. Data, not a rule branch.
+  'backend/src/gaps/sections.ts',
   'backend/src/guidelines/corpus.ts',
   'backend/src/scoring/definitions.ts',
+  'backend/src/considerations/index.ts',
 ]
 
 const SCANNED_TREES = [
@@ -50,6 +56,7 @@ const SCORING_SYSTEMS = /\b(centor|mcisaac)\b/i
 const CLINICAL_IDS = [
   ...ALL_REDFLAG_TRIGGERS.map((trigger) => trigger.id),
   ...GAP_CHECKLIST.map((entry) => entry.id),
+  ...CONSIDERATION_RULES.map((rule) => rule.ruleId),
 ]
 
 /**
@@ -109,13 +116,14 @@ describe('clinical constants live only in the versioned data files (issue #16)',
     expect(CLINICAL_IDS.length).toBeGreaterThan(0)
   })
 
-  it('defines no red-flag trigger or checklist id outside its data file', () => {
+  it('defines no red-flag trigger, checklist, or consideration id outside its data file', () => {
     const literals = CLINICAL_IDS.map((id) => `'${id}'`)
 
     expect(
       violations((line) => literals.some((literal) => line.includes(literal))),
-      'A clinical rule is written down outside the versioned data. Branch on data read ' +
-        'from ALL_REDFLAG_TRIGGERS or GAP_CHECKLIST, or move the behaviour into the entry itself.',
+      'A clinical rule is written down outside its owning data file. Branch on data read ' +
+        'from ALL_REDFLAG_TRIGGERS, GAP_CHECKLIST, or CONSIDERATION_RULES, or move the ' +
+        'behaviour into the entry itself.',
     ).toEqual([])
   })
 

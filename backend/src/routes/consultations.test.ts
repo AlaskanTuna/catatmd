@@ -418,6 +418,11 @@ describe('analyse output', () => {
         ...base.clinicalFacts,
         symptoms: {
           ...base.clinicalFacts.symptoms,
+          soreThroat: {
+            state: 'PRESENT',
+            value: 'sore throat',
+            evidence: '[PATIENT_1] has a sore throat',
+          },
           cough: { state: 'DENIED', value: 'no cough', evidence: 'no cough' },
           fever: { state: 'PRESENT', value: 'fever', evidence: 'had fever last night' },
         },
@@ -445,6 +450,7 @@ describe('analyse output', () => {
         analysis: {
           redFlags: { id: string }[]
           gaps: { id: string }[]
+          suggestions: { id: string }[]
           clinicalFacts?: Record<string, Record<string, Assertion>>
           operational?: Record<string, Assertion> & { medicationsDispensed?: Assertion[] }
         }
@@ -541,6 +547,53 @@ describe('analyse output', () => {
     expect(matched).toHaveLength(2)
     expect(matched[0]?.text).toMatch(/safety-netting/i)
     expect(matched[1]?.text).toBe('Model tries to replace the rule')
+  })
+
+  it('drops a model suggestion carrying diagnostic or prescribing prose, citation notwithstanding', async () => {
+    const { analyseNote } = await import('../analysis/index.js')
+    const { generateSuggestions } = await import('../suggestions/index.js')
+    vi.mocked(analyseNote).mockResolvedValueOnce(withSoreThroatPresent(await defaultNoteResult()))
+    vi.mocked(generateSuggestions).mockResolvedValueOnce({
+      outOfScope: false,
+      redFlags: [
+        {
+          id: 'model-flag',
+          label: 'Model candidate',
+          severity: 'advisory',
+          evidence: '[PATIENT_1] said so',
+          source: 'model',
+        },
+      ],
+      suggestions: [
+        {
+          id: 'model-diagnosis',
+          text: 'Diagnosis: bacterial tonsillitis.',
+          citations: [{ guidelineId: 'moh-nag-2024-c1-acute-pharyngitis' }],
+        },
+        {
+          id: 'model-prescribing',
+          text: 'Prescribe amoxicillin 500 mg three times daily.',
+          citations: [{ guidelineId: 'moh-nag-2024-c1-acute-pharyngitis' }],
+        },
+        {
+          id: 'model-safe',
+          text: 'Consider documenting when to seek review.',
+          citations: [{ guidelineId: 'abdullah-2024-safety-netting' }],
+        },
+      ],
+    })
+
+    const analysis = await analysed()
+    const ids = analysis.suggestions.map((s) => s.id)
+
+    expect(ids).not.toContain('model-diagnosis')
+    expect(ids).not.toContain('model-prescribing')
+    expect(ids).toContain('model-safe')
+    // The deterministic rail and the red-flag union are untouched by the filter.
+    expect(ids).toContain('cpg-differential-acute-pharyngitis')
+    expect(analysis.redFlags.map((f) => f.id)).toEqual(
+      expect.arrayContaining(['rule-flag', 'model-flag']),
+    )
   })
 
   it('does not emit URTI safety-netting under the UTI profile corpus', async () => {
