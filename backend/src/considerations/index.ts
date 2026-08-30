@@ -84,15 +84,17 @@ export const CONSIDERATION_RULES: readonly ConsiderationRule[] = [
     ruleId: 'cpg-score-antibiotic-consideration',
     kind: 'management',
     // Trigger mapping: consumes only the imported MOH threshold category from
-    // an already-complete score snapshot. The other Malaysian score's distinct
-    // threshold category is not folded into this MOH NAG consideration.
+    // an already-complete score snapshot, and only inside a documented
+    // sore-throat presentation. The other Malaysian score's distinct threshold
+    // category is not folded into this MOH NAG consideration.
     text:
       'Management consideration: The existing guideline score is at an antibiotic-consideration ' +
       'threshold; use this as a clinician-review prompt against the cited guideline, not as an ' +
       'automatic antibiotic decision.',
     citations: (scores) =>
       scoreCitationsForCategory(scores, MODIFIED_CENTOR_ANTIBIOTIC_CONSIDERATION_CATEGORY_ID),
-    matches: (_facts, scores) =>
+    matches: (facts, scores) =>
+      isDocumentedPresent(facts.symptoms.soreThroat) &&
       scoreCitationsForCategory(scores, MODIFIED_CENTOR_ANTIBIOTIC_CONSIDERATION_CATEGORY_ID)
         .length > 0,
   },

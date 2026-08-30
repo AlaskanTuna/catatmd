@@ -94,6 +94,83 @@ describe('mergeSuggestions', () => {
   it('keeps model suggestions additive', () => {
     expect(mergeSuggestions([rule], [model])).toEqual([rule, model])
   })
+
+  it('keeps a safe model suggestion additive', () => {
+    const safeModel: ClinicalSuggestion = {
+      id: 'model-safe',
+      text: 'Consider documenting return precautions for worsening symptoms.',
+      citations: [{ guidelineId: 'ooi-2022-urti-epidemiology' }],
+    }
+
+    expect(mergeSuggestions([rule], [safeModel])).toEqual([rule, safeModel])
+  })
+
+  it('suppresses model suggestions that state autonomous diagnostic language', () => {
+    const diagnosticModel: ClinicalSuggestion = {
+      id: 'model-diagnosis',
+      text: 'Diagnostic impression: acute bacterial tonsillitis.',
+      citations: [{ guidelineId: 'moh-nag-2024-c1-acute-pharyngitis' }],
+    }
+
+    expect(mergeSuggestions([rule], [diagnosticModel])).toEqual([rule])
+  })
+
+  it('suppresses model suggestions that state prescribing or medication orders', () => {
+    const prescribingModel: ClinicalSuggestion = {
+      id: 'model-prescribing',
+      text: 'Prescribe amoxicillin 500 mg three times daily.',
+      citations: [{ guidelineId: 'moh-nag-2024-a10-modified-centor' }],
+    }
+
+    expect(mergeSuggestions([rule], [prescribingModel])).toEqual([rule])
+  })
+
+  it('suppresses a bare medication regimen carrying no directive verb', () => {
+    const regimenModel: ClinicalSuggestion = {
+      id: 'model-regimen',
+      text: 'Penicillin V 500 mg four times daily for 10 days.',
+      citations: [{ guidelineId: 'moh-nag-2024-c1-acute-pharyngitis' }],
+    }
+
+    expect(mergeSuggestions([rule], [regimenModel])).toEqual([rule])
+  })
+
+  it('checks the model-authored citation quote, not the suggestion text alone', () => {
+    const quotedModel: ClinicalSuggestion = {
+      id: 'model-quote',
+      text: 'Consider reviewing the cited guidance.',
+      citations: [
+        {
+          guidelineId: 'moh-nag-2024-c1-acute-pharyngitis',
+          quote: 'Prescribe amoxicillin for this diagnosis.',
+        },
+      ],
+    }
+
+    expect(mergeSuggestions([rule], [quotedModel])).toEqual([rule])
+  })
+
+  it('does not apply model-suggestion safety filtering to deterministic considerations', () => {
+    const deterministicDifferential: ClinicalSuggestion = {
+      id: 'cpg-differential-acute-pharyngitis',
+      text:
+        'Differential consideration: Consider acute pharyngitis/tonsillitis as part of the ' +
+        'differential for a documented sore-throat presentation.',
+      citations: [{ guidelineId: 'moh-nag-2024-c1-acute-pharyngitis' }],
+    }
+
+    expect(mergeSuggestions([deterministicDifferential], [])).toEqual([deterministicDifferential])
+  })
+
+  it('keeps deterministic suggestions when an unsafe model suggestion reuses their id', () => {
+    const unsafeReplacement: ClinicalSuggestion = {
+      id: SAFETY_NETTING_RULE_ID,
+      text: 'Diagnosis: acute bacterial pharyngitis. Start antibiotics.',
+      citations: [{ guidelineId: SAFETY_NETTING_GUIDELINE_ID }],
+    }
+
+    expect(mergeSuggestions([rule], [unsafeReplacement])).toEqual([rule])
+  })
 })
 
 describe('evidence-checked facts -> suggestions (integration of derive + filter + map)', () => {
