@@ -462,7 +462,6 @@ export function ConsultationReview() {
           ) : (
             <Card className="p-4">
               <CapturePanel
-                patientId={detail.patient?.id}
                 saving={capture.isPending}
                 error={
                   capture.error instanceof ApiError
@@ -518,23 +517,31 @@ export function ConsultationReview() {
         >
           {!analysis && (
             <>
+              {/*
+                Ruled bars, not pulsing skeletons, for the same reason
+                `NotePlaceholder` gives: nothing is loading here. Analysis has
+                not been asked for yet, and a shimmer would promise work in
+                progress that the doctor has not started. The bars show where
+                each panel's findings will land, which is the empty-state claim
+                the prose these replaced was making at three times the length.
+              */}
               <Panel title="Red Flags">
-                <p className="text-sm text-ink-muted">
-                  Deterministic escalation triggers run on the transcript before the model sees it,
-                  and a rule that fires cannot be suppressed by one.
-                </p>
+                <Card className="p-4">
+                  <div className="h-2 w-full rounded-pill bg-sunken" />
+                  <div className="mt-1.5 h-2 w-3/5 rounded-pill bg-sunken" />
+                </Card>
               </Panel>
               <Panel title="Missing Information">
-                <p className="text-sm text-ink-muted">
-                  What the consultation did not record appears here, as prompts to ask rather than
-                  instructions to follow.
-                </p>
+                <Card className="p-4">
+                  <div className="h-2 w-full rounded-pill bg-sunken" />
+                  <div className="mt-1.5 h-2 w-3/5 rounded-pill bg-sunken" />
+                </Card>
               </Panel>
               <Panel title="Suggestions">
-                <p className="text-sm text-ink-muted">
-                  Cited against the guideline corpus. Every citation is an id from that corpus, so a
-                  reference the model invented cannot reach this panel.
-                </p>
+                <Card className="p-4">
+                  <div className="h-2 w-full rounded-pill bg-sunken" />
+                  <div className="mt-1.5 h-2 w-3/5 rounded-pill bg-sunken" />
+                </Card>
               </Panel>
             </>
           )}

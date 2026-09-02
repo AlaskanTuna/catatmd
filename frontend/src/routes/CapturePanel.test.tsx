@@ -188,6 +188,7 @@ describe('CapturePanel record flow', () => {
   it('applies drafted labels as parseable lines with timestamps', () => {
     setup()
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe('Doctor [0:00]: Any fever?\nPatient [0:02]: Yesterday quite hot.')
   })
@@ -196,6 +197,7 @@ describe('CapturePanel record flow', () => {
     setup()
     fireEvent.click(screen.getByRole('button', { name: 'Patient, switch to Doctor' }))
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe('Doctor [0:00]: Any fever?\nDoctor [0:02]: Yesterday quite hot.')
   })
@@ -211,6 +213,7 @@ describe('CapturePanel record flow', () => {
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
     fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe(
       'Doctor [0:00]: Any fever?\nPatient [0:02]: Yesterday quite hot.\n' +
@@ -237,6 +240,7 @@ describe('CapturePanel record flow', () => {
     fireEvent.click(doctorToggles[1] as HTMLElement)
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
 
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe(
       'Doctor [0:00]: Any fever?\nPatient [0:03]: Yesterday quite hot.\n' +
@@ -248,6 +252,7 @@ describe('CapturePanel record flow', () => {
     setup()
     fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe(
       'Doctor [0:00]: Any fever?\nPatient [0:02]: Yesterday quite hot.\n' +
@@ -288,6 +293,7 @@ describe('hosted draft-turn labelling', () => {
     fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted labelled' }))
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
 
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe('Doctor: Any fever?\nPatient: Yesterday quite hot.')
   })
@@ -315,6 +321,7 @@ describe('hosted draft-turn labelling', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
 
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toMatch(/Batuk sudah tiga hari\./)
     // The point of the fix: the transcript now parses to turns, so the button
@@ -334,6 +341,7 @@ describe('hosted draft-turn labelling', () => {
     expect(screen.queryByRole('button', { name: 'Replace Patut with Batuk' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
 
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe('Patient: Batuk sudah empat hari.')
   })
@@ -351,6 +359,7 @@ describe('hosted draft-turn labelling', () => {
     fireEvent.click(doctorToggles[1] as HTMLElement)
     fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
 
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe(
       'Doctor: Any fever?\nPatient: Yesterday quite hot.\n' +
@@ -386,6 +395,7 @@ describe('hosted draft-turn labelling', () => {
       fireEvent.click(screen.getByRole('button', { name: /needs a label/i }))
       fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
 
+      fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
       const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
       expect(textarea.value).toMatch(/batuk sudah tiga hari/)
       expect(textarea.value).not.toMatch(/undrafted/)

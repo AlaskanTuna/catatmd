@@ -16,12 +16,23 @@
 
 export type CaptureMode = 'ambient' | 'manual'
 
+/** Which transcription engine a recording uses. Hosted is the ILMU relay. */
+export type TranscriptionEngine = 'local' | 'hosted'
+
 export type AudioSettings = {
   mode: CaptureMode
   /** `deviceId` of the chosen input, or null for the system default. */
   deviceId: string | null
   suppressNoise: boolean
   boostQuietSpeech: boolean
+  /**
+   * A standing preference set in the Audio dialog, on the owner's decision
+   * (2026-09-02, consulting decision log). Deliberately a preference here
+   * rather than a per-consultation tick: choosing the hosted engine names
+   * where the audio goes, and the choice is stated again on the Record tab
+   * while a hosted transcription runs.
+   */
+  engine: TranscriptionEngine
 }
 
 export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
@@ -40,6 +51,9 @@ export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
    * not because it is generally better.
    */
   boostQuietSpeech: false,
+  // On-device is the floor: audio never leaves the machine unless the doctor
+  // has gone out of their way to move the engine to ILMU.
+  engine: 'local',
 }
 
 const KEY = 'catatmd.audio'
@@ -56,6 +70,7 @@ export function loadAudioSettings(): AudioSettings {
       deviceId: typeof value.deviceId === 'string' ? value.deviceId : null,
       suppressNoise: value.suppressNoise !== false,
       boostQuietSpeech: value.boostQuietSpeech === true,
+      engine: value.engine === 'hosted' ? 'hosted' : 'local',
     }
   } catch {
     /*
