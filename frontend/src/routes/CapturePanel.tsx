@@ -1,8 +1,6 @@
 import type { Transcript, TranscriptSource, TranscriptTurn } from '@shared/types'
-import { useQuery } from '@tanstack/react-query'
-import { FileUp, FolderOpen, Mic, Settings2, Type, UserRound } from 'lucide-react'
+import { FileUp, Mic, Settings2, Type } from 'lucide-react'
 import { type ChangeEvent, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { AudioCapture } from '../audio/AudioCapture.js'
 import { AudioSettingsDialog } from '../audio/AudioSettingsDialog.js'
 import { type AudioSettings, loadAudioSettings } from '../audio/audio-settings.js'
@@ -13,24 +11,19 @@ import {
   segmentsToDraft,
 } from '../audio/draft-turns.js'
 import { SpeakerAssign } from '../audio/SpeakerAssign.js'
-import { api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
 import { parseTranscript, serialiseTurns } from '../lib/transcript.js'
 import { Button } from '../ui/Button.js'
-import { Card, Skeleton } from '../ui/Card.js'
+import { Card } from '../ui/Card.js'
 
 /*
  * Ordered by how central each path is to the product, not by how it was built,
  * and the first tab is the one that opens.
- *
- * A reviewer with no microphone is one tab away from the bundled cases, which
- * is the right cost to put on the path that is not the product. Recording is.
  */
 const TABS = [
   { id: 'record', label: 'Record', Icon: Mic },
   { id: 'upload', label: 'Upload', Icon: FileUp },
   { id: 'paste', label: 'Paste', Icon: Type },
-  { id: 'fixture', label: 'Bundled Case', Icon: FolderOpen },
 ] as const
 
 /**
@@ -48,28 +41,19 @@ const TABS = [
  * safety control rather than UX polish (issue #70).
  */
 export function CapturePanel({
-  patientId,
   onCapture,
   saving,
   error,
 }: {
-  patientId?: string
   onCapture: (transcript: Transcript) => void
   saving: boolean
   error: string | null
 }) {
   /*
-   * Named on screen, not merely carried in the query string. A doctor who
-   * arrived here from a patient profile has to be able to confirm the
-   * consultation will be filed to the right person before capturing it, and
-   * filing to the wrong patient is not something the review screen could catch
-   * afterwards. Observed in production on 27/08/26.
+   * The doctor arrived on a consultation page that is already scoped to one
+   * patient, so the record's destination is carried by the page itself and is
+   * not restated here (removed on the owner's decision 2026-09-02).
    */
-  const filedTo = useQuery({
-    queryKey: ['patient', patientId],
-    queryFn: () => api.getPatient(patientId ?? ''),
-    enabled: patientId !== undefined,
-  })
   const [audio, setAudio] = useState<AudioSettings>(loadAudioSettings)
   /*
    * Record is the default tab, except when ambient mode has already taken the
@@ -88,7 +72,7 @@ export function CapturePanel({
    */
   const recordBlocked = audio.mode === 'ambient'
   const [text, setText] = useState('')
-  const [source, setSource] = useState<TranscriptSource>('fixture')
+  const [source, setSource] = useState<TranscriptSource>('paste')
   /*
    * Drafted speaker labels live here, outside the textarea, until the doctor
    * explicitly applies them. While a draft is pending the recording is not in
@@ -97,8 +81,6 @@ export function CapturePanel({
    * why that gate is a safety control rather than UX polish).
    */
   const [draft, setDraft] = useState<DraftLine[] | null>(null)
-
-  const fixtures = useQuery({ queryKey: ['fixtures'], queryFn: api.fixtures })
 
   const turns = parseTranscript(text)
 
@@ -163,20 +145,7 @@ export function CapturePanel({
 
   return (
     <div>
-      {patientId && (
-        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-card bg-accent-soft px-4 py-3 text-sm">
-          <UserRound aria-hidden className="size-4 text-accent" />
-          <span className="text-ink-muted">Filing to</span>
-          <Link
-            to={`/patients/${patientId}`}
-            className="font-medium text-accent transition-colors hover:text-accent-hover"
-          >
-            {filedTo.data?.name ?? 'this patient'}
-          </Link>
-        </div>
-      )}
-
-      <div role="tablist" aria-label="Transcript source" className="mt-6 flex flex-wrap gap-1">
+      <div role="tablist" aria-label="Transcript source" className="flex flex-wrap gap-1">
         {TABS.map(({ id, label, Icon }) => (
           <button
             key={id}
@@ -231,36 +200,12 @@ export function CapturePanel({
       />
 
       <div className="mt-4">
-        {tab === 'fixture' && (
-          <div className="flex flex-col gap-2">
-            {fixtures.isPending &&
-              [0, 1].map((key) => <Skeleton key={key} className="h-14 w-full" />)}
-            {fixtures.data?.map((fixture) => (
-              <button
-                key={fixture.id}
-                type="button"
-                onClick={() => {
-                  setText(serialiseTurns(fixture.transcript.turns))
-                  setSource('fixture')
-                  setTab('paste')
-                }}
-                className="rounded-card border border-line bg-surface px-4 py-3 text-left transition-colors hover:border-accent"
-              >
-                <p className="text-sm font-medium">{fixture.label}</p>
-                <p className="mt-0.5 text-xs text-ink-muted">
-                  {fixture.transcript.turns.length} turns
-                </p>
-              </button>
-            ))}
-          </div>
-        )}
-
         {tab === 'upload' && (
           <Card className="p-6">
             <label className="flex flex-col items-start gap-2 text-sm">
               <span className="font-medium">Transcript File</span>
               <span className="text-ink-muted">
-                A .txt or .json file. It lands in the editor below so you can correct it before
+                A .txt or .json file. It lands in the Paste tab so you can correct it before
                 submitting.
               </span>
               <input
@@ -276,6 +221,7 @@ export function CapturePanel({
         {tab === 'record' && (
           <Card className="p-6">
             <AudioCapture
+              engine={audio.engine}
               onTranscript={({ text: transcribed, segments, source: from, draftTurns }) => {
                 /*
                  * Appended, never replacing what is already there. A doctor may
@@ -391,15 +337,18 @@ export function CapturePanel({
           </Card>
         )}
 
-        {tab !== 'fixture' && (
-          <label className="mt-4 flex flex-col gap-1.5">
+        {/*
+          The textarea is the paste path's own surface, not a shared one: on
+          Record and Upload the doctor has just been given a different way to
+          fill the transcript, and a second editing field beside it reads as a
+          stray leftover rather than as a destination.
+        */}
+        {tab === 'paste' && (
+          <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Transcript</span>
             <textarea
               value={text}
-              onChange={(event) => {
-                setText(event.target.value)
-                if (source === 'fixture') setSource('paste')
-              }}
+              onChange={(event) => setText(event.target.value)}
               rows={14}
               placeholder={'Doctor: What brings you in today?\nPatient: Batuk sudah 3 hari...'}
               className="rounded-card border border-line bg-surface p-3 font-mono text-sm leading-relaxed transition-colors focus:border-accent"
@@ -409,12 +358,11 @@ export function CapturePanel({
       </div>
 
       {/*
-        Gated on the same tab condition as the textarea above, because this card
-        reports on that textarea. On the Bundled Case tab there is no editing
-        surface on screen, so a parse count for text the doctor cannot see reads
-        as a stray leftover from the tab they came from.
+        Reports on the transcript the tabs fill. Shown on every tab once there
+        is content to report on, because a recording applied in Record lands in
+        the same text and the doctor needs its parse count wherever they are.
       */}
-      {tab !== 'fixture' && (text || draft) && (
+      {(text || draft) && (
         <Card className="mt-4 p-4">
           <p className="text-sm font-medium">
             {turns.length} turn{turns.length === 1 ? '' : 's'} parsed
