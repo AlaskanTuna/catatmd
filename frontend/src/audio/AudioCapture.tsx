@@ -1,8 +1,7 @@
 import { type DraftTurn, type HostedAsrResult, MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
-import { AlertTriangle, Cpu, FileAudio, Loader2, Mic, Server, Square } from 'lucide-react'
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { AlertTriangle, FileAudio, Loader2, Mic, Square } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
-import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
 import { InfoTip } from '../ui/InfoTip.js'
 import {
@@ -29,17 +28,19 @@ import {
  * the model download from the HuggingFace CDN, and the text the doctor chooses
  * to submit.
  *
- * **The one exception is opt-in, per consultation, and never remembered**
- * (issue #155). Ticking the hosted-transcription box below sends that single
- * recording to the relay in `POST /api/asr/transcriptions`, which forwards it
- * to ILMU. The returned text then goes to `POST /api/asr/draft-turns`, where
- * the API de-identifies it and the note model drafts the same per-line
- * speaker labels for review; a labelling failure of any kind falls back to
- * the unlabelled prose (#189). The tick lives in plain `useState`, so it dies
- * with the component and cannot carry from one patient to the next. On-device
- * stays the default and the floor: nothing switches the doctor to hosted, and
- * an on-device failure degrades to typing or pasting, never to the cloud
- * (docs/trd.md section 20).
+ * **The one exception is the hosted engine, chosen in the Audio dialog**
+ * (originally issue #155; a standing preference on the owner's decision
+ * 2026-09-02). When the device's saved engine is hosted, every recording from
+ * this screen goes to the relay in `POST /api/asr/transcriptions`, which
+ * forwards it to ILMU. The returned text then goes to
+ * `POST /api/asr/draft-turns`, where the API de-identifies it and the note
+ * model drafts the same per-line speaker labels for review; a labelling
+ * failure of any kind falls back to the unlabelled prose (#189). The choice is
+ * a device preference, made in settings rather than on the GP-facing screen,
+ * and is restated in the copy below while a hosted transcription runs.
+ * On-device stays the default and the floor: nothing switches the doctor to
+ * hosted, and an on-device failure degrades to typing or pasting, never to the
+ * cloud (docs/trd.md section 20).
  */
 
 /**
@@ -180,46 +181,9 @@ function estimateRemaining(done: number, total: number, elapsedMs: number): stri
   return `about ${Math.ceil(remainingMs / 60_000)} min left`
 }
 
-/**
- * The two transcription engines, presented as a choice rather than as a
- * checkbox buried under a paragraph (issue: Record tab UX).
- *
- * **Neither entry is recommended and the order is not a ranking**, it is
- * default-first. On-device is the default and the floor (docs/trd.md section
- * 20); hosted is entered only by an explicit, recorded, per-consultation act.
- * Presenting them as two peers is what makes that act explicit: the previous
- * unlabelled checkbox asked the doctor to opt into something without ever
- * naming what they were opting out of.
- *
- * The summaries state the real tradeoff in one line each, because the tradeoff
- * is the whole basis of the choice. Everything that elaborates rather than
- * decides sits behind the tip.
- */
-const ENGINES = [
-  {
-    id: 'local',
-    hosted: false,
-    name: 'On this device',
-    model: 'whisper-small · WebGPU',
-    Icon: Cpu,
-    summary: 'The audio never leaves this device. Tuned for English and Manglish.',
-    detail:
-      'Runs in this browser on the GPU where one is available, and falls back to the CPU where it is not. The model weights are downloaded once from a public CDN and then cached; that request carries no audio, no transcript and no identifier, because it happens before any of them exist. A consultation held mainly in Malay can come back rewritten in English rather than transcribed, which is the case the other option exists for.',
-  },
-  {
-    id: 'hosted',
-    hosted: true,
-    name: 'ILMU (Malaysia)',
-    model: 'ilmu-asr-v4.2',
-    Icon: Server,
-    summary: 'The audio leaves this device. Better on Malay-dominant consultations.',
-    detail:
-      'An early-access service. On our scripted Malay consultation it kept code-switched sentences intact, but sometimes hardened the first consonant of a Malay clinical word, hearing batuk as patut and demam as teman, so check those words when you review the draft. We have not agreed separate retention or training terms with ILMU, so their standard early-access terms apply. The returned text is de-identified before the note model drafts the Doctor and Patient labels, which you review line by line before anything enters the transcript, and your choice is recorded in the audit trail. Handled under the PDPA as amended in 2024, under which voice is biometric data and therefore sensitive personal data requiring explicit consent.',
-  },
-] as const
-
 export function AudioCapture({
   onTranscript,
+  engine,
 }: {
   onTranscript: (result: {
     text: string
@@ -228,6 +192,8 @@ export function AudioCapture({
     /** Server-drafted labels, hosted path only; absent whenever labelling failed. */
     draftTurns?: readonly DraftTurn[]
   }) => void
+  /** The device's standing transcription engine, from the Audio dialog. */
+  engine: 'local' | 'hosted'
 }) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState<number | null>(null)
@@ -250,15 +216,17 @@ export function AudioCapture({
   /** The audio behind the current or failed run, so Try Again can rerun it. */
   const [retryBlob, setRetryBlob] = useState<Blob | null>(null)
   /**
-   * The per-consultation hosted-transcription consent (issue #155).
+   * The hosted engine, as a ref.
    *
-   * **Plain `useState` on purpose.** No `localStorage`, no context, no query
-   * cache: consent is given for one consultation and is not transferable to the
-   * next patient, so it has to die when this component unmounts. Persisting it
-   * would turn a per-consultation decision into a standing one, which is the
-   * failure mode the whole control exists to prevent.
+   * Was the per-consultation consent tick (issue #155) in plain `useState`, so
+   * it died with the component and could not carry between patients. It is now
+   * the standing engine preference from the Audio dialog, passed in as a prop;
+   * the ref exists for the same reason it did then, because `media.onstop` is
+   * assigned once per recording and would otherwise fork on whatever the prop
+   * read when the recording started.
    */
-  const [hosted, setHosted] = useState(false)
+  const hostedRef = useRef(engine === 'hosted')
+  hostedRef.current = engine === 'hosted'
 
   /** When the current transcription started, for the remaining-time estimate. */
   const startedAt = useRef<number | null>(null)
@@ -278,22 +246,6 @@ export function AudioCapture({
   const chunks = useRef<Blob[]>([])
   /** The in-flight hosted upload, so Cancel and unmount can both abandon it. */
   const upload = useRef<AbortController | null>(null)
-
-  /*
-   * The consent tick as a ref, because `media.onstop` is assigned once per
-   * recording and would otherwise fork on whatever the checkbox read when the
-   * recording started. The checkbox is disabled while recording, so the two
-   * agree on that path today, but the file-picker and Try Again paths both run
-   * against the current tick, and one source of truth is cheaper than
-   * reasoning about which closure each caller captured.
-   */
-  const hostedRef = useRef(hosted)
-  hostedRef.current = hosted
-
-  /** Ties the consent label to its checkbox without wrapping the disclosure. */
-  // Groups the two engine radios. Instance-scoped rather than a literal, so two
-  // AudioCapture mounts on one page cannot share a group and toggle each other.
-  const engineName = useId()
 
   /**
    * True from the prewarm `load` posted at record start until the real
@@ -318,12 +270,11 @@ export function AudioCapture({
   /*
    * The floor guards one thing: a 250-590 MB model held in memory by this tab.
    * A hosted recording opens no session and loads no weights, so it carries
-   * none of that risk and the gate does not apply to it. Ticking hosted
+   * none of that risk and the gate does not apply to it. Choosing hosted
    * therefore reveals the record controls on a floor-gated device without
-   * touching `overridden`, which means unticking restores the gate rather than
-   * leaving the doctor permanently past a warning they never accepted.
+   * touching `overridden`.
    */
-  const thin = belowHardwareFloor() && !overridden && !hosted
+  const thin = belowHardwareFloor() && !overridden && engine !== 'hosted'
 
   const clearStall = useCallback(() => {
     if (stall.current !== null) {
@@ -938,100 +889,19 @@ export function AudioCapture({
       )}
 
       {/*
-        Findable, but never funnelled (docs/trd.md section 20).
-
-        Always rendered, in the same muted styling, in the same place, whether
-        the doctor arrived here fresh or after an on-device failure. It is not a
-        button and carries no accent: a doctor who has just watched
-        transcription fail must not find the cloud option newly highlighted in
-        front of them, because a choice offered at the moment of frustration is
-        not a freely given one. This is why the local failure copy above never
-        mentions it.
+        Restates the standing engine choice while it is in force. The picker
+        itself lives in the Audio dialog now, so what the GP-facing screen keeps
+        is the one line the doctor has to be able to read without opening
+        settings: that this recording leaves the device. It shows only when the
+        hosted engine is the saved preference, exactly as the consent line it
+        replaced did.
       */}
-      <fieldset className="mt-1 border-t border-line pt-4">
-        <legend className="text-sm font-medium text-ink">Transcription engine</legend>
-
-        {/* Stacked, not side by side. Capture lives in the review screen's
-            transcript column now, and two engine cards sharing ~380px clipped
-            both of them. Each card carries a sentence about where the audio
-            goes, which is the one thing here a doctor has to be able to read. */}
-        <div className="mt-2.5 grid gap-2">
-          {ENGINES.map((engine) => {
-            const selected = hosted === engine.hosted
-            return (
-              <label
-                key={engine.id}
-                className={cn(
-                  'flex cursor-pointer gap-2.5 rounded-card border p-3 transition-colors',
-                  selected
-                    ? 'border-accent/40 bg-accent-soft'
-                    : 'border-line bg-surface hover:bg-sunken-soft',
-                  phase !== 'idle' && 'cursor-not-allowed opacity-60',
-                )}
-              >
-                <input
-                  type="radio"
-                  name={engineName}
-                  value={engine.id}
-                  checked={selected}
-                  onChange={() => setHosted(engine.hosted)}
-                  // Set on the input rather than inherited from the fieldset.
-                  // A fieldset's `disabled` blocks interaction but does not
-                  // reflect into `input.disabled`, so inheriting it would leave
-                  // the property that every caller and test reads saying the
-                  // control is live while a run is in flight.
-                  disabled={phase !== 'idle'}
-                  className="mt-0.5 size-4 shrink-0 accent-[var(--color-accent)]"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5">
-                    <engine.Icon aria-hidden className="size-3.5 shrink-0 text-ink-muted" />
-                    <span className="text-sm font-medium text-ink">{engine.name}</span>
-                    <InfoTip label={`About ${engine.name} transcription`}>{engine.detail}</InfoTip>
-                  </span>
-                  <code className="mt-0.5 block truncate text-2xs text-ink-muted">
-                    {engine.model}
-                  </code>
-                  <span className="mt-1 block text-xs leading-relaxed text-ink-muted">
-                    {engine.summary}
-                  </span>
-                </span>
-              </label>
-            )
-          })}
-        </div>
-
-        {/*
-          Findable, but never funnelled (docs/trd.md section 20).
-
-          The two options carry equal visual weight and the hosted one gains no
-          accent, no badge and no recommendation, whether the doctor arrived
-          here fresh or after an on-device failure. A choice offered at the
-          moment of frustration is not a freely given one, which is also why the
-          local failure copy above never mentions it.
-
-          **What the doctor is agreeing to stays visible; the elaboration moved
-          into the tip.** This was six lines of prose sitting under the choice,
-          which is a wall of text at the moment of a decision and reads as terms
-          rather than as a disclosure.
-
-          What remains is the part the tick actually consents to: that the audio
-          leaves the device, where it goes, and that it applies to this
-          consultation only. Retention terms, the de-identification and
-          labelling sequence and the audit record are elaboration, so they sit
-          in the tip beside the option they describe.
-
-          The line is deliberately not collapsed any further. Consent is only
-          informed if what leaves the room is legible without an interaction,
-          and the tip is a button the doctor has to choose to open.
-        */}
-        {hosted && (
-          <p className="mt-2.5 text-xs leading-relaxed text-ink-muted">
-            This recording leaves this device. It passes through our server to ILMU and is processed
-            in Malaysia. This choice applies to this consultation only.
-          </p>
-        )}
-      </fieldset>
+      {engine === 'hosted' && (
+        <p className="text-xs leading-relaxed text-ink-muted">
+          This recording leaves this device. It passes through our server to ILMU and is processed
+          in Malaysia. Change this in the Audio settings.
+        </p>
+      )}
     </div>
   )
 }

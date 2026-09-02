@@ -191,9 +191,9 @@ async function settle() {
   })
 }
 
-function renderCapture() {
+function renderCapture(engine: 'local' | 'hosted' = 'local') {
   const onTranscript = vi.fn()
-  const view = render(<AudioCapture onTranscript={onTranscript} />)
+  const view = render(<AudioCapture onTranscript={onTranscript} engine={engine} />)
   return { onTranscript, ...view }
 }
 
@@ -204,23 +204,15 @@ function pickFile() {
 }
 
 /*
- * The consent control is a two-option engine picker rather than a single
- * checkbox. The assertions below are unchanged in meaning: `consentBox` is
- * still the input whose checked state grants hosted transcription, and it is
- * still off unless something ticks it. Only the control it points at moved.
- *
- * Queried by role rather than by label text, because each option also carries
- * an InfoTip button whose `aria-label` names the same engine.
+ * The engine is no longer a control on this screen: it is the device's standing
+ * preference from the Audio dialog, arriving as a prop (owner's decision,
+ * 2026-09-02). Hosted tests mount with `engine='hosted'`; the ones that flip
+ * mid-test rerender, the way the same component re-renders when the doctor
+ * saves a new choice in the dialog.
  */
-const consentBox = () => screen.getByRole('radio', { name: /ilmu/i }) as HTMLInputElement
 
-/** The on-device engine, which is the default and the floor. */
-const localBox = () => screen.getByRole('radio', { name: /on this device/i }) as HTMLInputElement
-
-/** Gives per-consultation hosted consent, the only way to reach the relay. */
-function tickHosted() {
-  fireEvent.click(consentBox())
-}
+/** The one hosted line the GP-facing screen still carries, per the docstring. */
+const hostedRestatement = () => screen.getByText(/this recording leaves this device/i)
 
 /** The signal handed to the relay on the most recent upload. */
 function uploadSignal(): AbortSignal {
@@ -720,67 +712,44 @@ describe('prewarming the speech model', () => {
 })
 
 /**
- * The per-consultation hosted transcription consent (issue #155).
+ * The standing transcription-engine preference (originally issue #155, now a
+ * device setting on the owner's decision 2026-09-02).
  *
- * The governing rule is that hosted is findable but never funnelled: on-device
- * is the default and the floor, the tick is explicit and per consultation, and
- * failure in either direction degrades toward privacy rather than toward the
- * other path. These pin the parts of that a reader cannot verify by eye.
+ * The governing rule is still that hosted is findable but never funnelled:
+ * on-device is the default and the floor, and failure in either direction
+ * degrades toward privacy rather than toward the other path. The screen itself
+ * carries no picker any more, so what is pinned here is what a reader cannot
+ * verify by eye: the default stays local, and the hosted restatement line
+ * tracks the prop.
  */
-describe('hosted transcription consent', () => {
-  it('is off by default and does not survive a remount', async () => {
-    const first = renderCapture()
-    expect(consentBox().checked).toBe(false)
-
-    tickHosted()
-    expect(consentBox().checked).toBe(true)
-
-    // A new consultation is a new mount. Consent given for the last patient
-    // must not be sitting ticked for the next one.
-    first.unmount()
-    await settle()
-    renderCapture()
-
-    expect(consentBox().checked).toBe(false)
+describe('the standing engine preference', () => {
+  it('restates the hosted choice on screen only when hosted is the saved engine', () => {
+    renderCapture('hosted')
+    expect(hostedRestatement()).toBeTruthy()
   })
 
-  it('writes nothing to storage when ticked', () => {
-    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+  it('carries no hosted restatement on the default local engine', () => {
     renderCapture()
+    expect(screen.queryByText(/this recording leaves this device/i)).toBeNull()
+  })
 
-    tickHosted()
+  it('shows no engine picker, which lives in the Audio dialog now', () => {
+    renderCapture('hosted')
+    expect(screen.queryByRole('radio', { name: /ilmu/i })).toBeNull()
+    expect(screen.queryByRole('radio', { name: /on this device/i })).toBeNull()
+  })
+
+  it('still records nothing on the GP-facing screen; the setting is device state', () => {
+    // The screen has no control to save with, so it must not write settings.
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    renderCapture('hosted')
 
     expect(setItem).not.toHaveBeenCalled()
-  })
-
-  it('is always rendered, so it is never introduced by a failure', async () => {
-    renderCapture()
-    // Present before anything happens...
-    expect(consentBox()).toBeTruthy()
-
-    pickFile()
-    await settle()
-    act(() => {
-      vi.advanceTimersByTime(STALL_TIMEOUT_MS)
-    })
-
-    // ...and identically present after one, rather than appearing as a new
-    // suggestion at the moment the doctor is most likely to accept it.
-    expect(consentBox()).toBeTruthy()
-    expect(consentBox().checked).toBe(false)
-  })
-
-  it('is disabled while a run is in flight', async () => {
-    renderCapture()
-    pickFile()
-    await settle()
-
-    expect(consentBox().disabled).toBe(true)
   })
 })
 
 describe('the recording fork', () => {
-  it('goes to the worker and never to the relay while consent is unticked', async () => {
+  it('goes to the worker and never to the relay on the default local engine', async () => {
     renderCapture()
     await startRecording()
     await stopRecording()
@@ -789,9 +758,8 @@ describe('the recording fork', () => {
     expect(transcribeRequests()).toHaveLength(1)
   })
 
-  it('goes to the relay with the recording, and runs no worker, once ticked', async () => {
-    renderCapture()
-    tickHosted()
+  it('goes to the relay with the recording, and runs no worker, on the hosted engine', async () => {
+    renderCapture('hosted')
     await startRecording()
     await stopRecording()
 
@@ -802,15 +770,15 @@ describe('the recording fork', () => {
     expect(transcribeRequests()).toHaveLength(0)
   })
 
-  it('terminates a worker left warm by an earlier on-device run', async () => {
-    renderCapture()
+  it('terminates a worker left warm by an earlier on-device run when the engine changes to hosted', async () => {
+    const { rerender } = renderCapture()
     // A local run first, which builds and warms a worker.
     pickFile()
     await settle()
     expect(workers).toHaveLength(1)
     spawned().reply({ type: 'result', text: 'local', segments: [] })
 
-    tickHosted()
+    rerender(<AudioCapture onTranscript={vi.fn()} engine="hosted" />)
     await startRecording()
 
     // Roughly 250 MB of weights held for a path that will not use them.
@@ -818,8 +786,7 @@ describe('the recording fork', () => {
   })
 
   it('sends the picked audio file to the relay too', async () => {
-    renderCapture()
-    tickHosted()
+    renderCapture('hosted')
     pickFile()
     await settle()
 
@@ -828,8 +795,7 @@ describe('the recording fork', () => {
   })
 
   it('reports hosted provenance on success', async () => {
-    const { onTranscript } = renderCapture()
-    tickHosted()
+    const { onTranscript } = renderCapture('hosted')
     transcribeHostedAsr.mockResolvedValue({ text: 'hosted text', durationSeconds: 4, segments: [] })
 
     await startRecording()
@@ -845,8 +811,7 @@ describe('the recording fork', () => {
 
 describe('a hosted upload', () => {
   it('is abandoned by Cancel, with no error and the controls restored', async () => {
-    renderCapture()
-    tickHosted()
+    renderCapture('hosted')
     await startRecording()
     await stopRecording()
 
@@ -860,8 +825,7 @@ describe('a hosted upload', () => {
   })
 
   it('is abandoned on unmount, so no audio keeps flowing from a closed tab', async () => {
-    const { unmount } = renderCapture()
-    tickHosted()
+    const { unmount } = renderCapture('hosted')
     await startRecording()
     await stopRecording()
 
@@ -872,8 +836,7 @@ describe('a hosted upload', () => {
   })
 
   it('is bounded, and the expiry is reported rather than swallowed', async () => {
-    renderCapture()
-    tickHosted()
+    renderCapture('hosted')
     await startRecording()
     await stopRecording()
 
@@ -887,8 +850,7 @@ describe('a hosted upload', () => {
   })
 
   it('degrades toward privacy on failure and never runs the local worker', async () => {
-    renderCapture()
-    tickHosted()
+    renderCapture('hosted')
     transcribeHostedAsr.mockRejectedValue(new Error('relay exploded'))
 
     await startRecording()
@@ -903,19 +865,17 @@ describe('a hosted upload', () => {
     expect(transcribeRequests()).toHaveLength(0)
   })
 
-  it('reruns whichever mode the checkbox currently shows', async () => {
-    renderCapture()
-    tickHosted()
+  it('reruns whichever engine the device setting now names', async () => {
+    const { rerender } = renderCapture('hosted')
     transcribeHostedAsr.mockRejectedValue(new Error('relay exploded'))
     await startRecording()
     await stopRecording()
     expect(screen.getByRole('alert')).toBeTruthy()
 
-    // The doctor switches back to on-device and retries: the retry is local,
-    // not a second upload of audio they have just withdrawn consent for.
-    // Selecting the other engine is the withdrawal now that this is a radio
-    // pair; clicking the selected option again would be a no-op.
-    fireEvent.click(localBox())
+    // The doctor switches the Audio dialog back to on-device and retries: the
+    // retry is local, not a second upload of audio from a setting they have
+    // just withdrawn.
+    rerender(<AudioCapture onTranscript={vi.fn()} engine="local" />)
     fireEvent.click(screen.getByRole('button', { name: /try again/i }))
     await settle()
 
@@ -971,8 +931,7 @@ describe('hosted draft-turn labelling', () => {
   ]
 
   it('delivers the drafted turns alongside the transcript and returns to idle', async () => {
-    const { onTranscript } = renderCapture()
-    tickHosted()
+    const { onTranscript } = renderCapture('hosted')
     transcribeHostedAsr.mockResolvedValue({ text: 'hosted text', durationSeconds: 4, segments: [] })
     draftHostedTurns.mockResolvedValue(SAMPLE_TURNS)
 
@@ -991,8 +950,7 @@ describe('hosted draft-turn labelling', () => {
   })
 
   it('delivers the transcript without draftTurns and raises no banner when labelling is rejected', async () => {
-    const { onTranscript } = renderCapture()
-    tickHosted()
+    const { onTranscript } = renderCapture('hosted')
     transcribeHostedAsr.mockResolvedValue({ text: 'hosted text', durationSeconds: 4, segments: [] })
     draftHostedTurns.mockRejectedValue(new Error('labelling failed'))
 
@@ -1008,14 +966,13 @@ describe('hosted draft-turn labelling', () => {
   })
 
   it('falls back to the unlabelled transcript once the label timeout expires', async () => {
-    const { onTranscript } = renderCapture()
-    tickHosted()
+    const { onTranscript } = renderCapture('hosted')
     transcribeHostedAsr.mockResolvedValue({ text: 'hosted text', durationSeconds: 4, segments: [] })
     hangUntilAborted(draftHostedTurns)
 
     await startRecording()
     await stopRecording()
-    expect(consentBox().disabled).toBe(true)
+    expect(startButton().disabled).toBe(true)
 
     act(() => {
       vi.advanceTimersByTime(LABEL_TIMEOUT_MS)
@@ -1031,8 +988,7 @@ describe('hosted draft-turn labelling', () => {
   })
 
   it('is abandoned by Cancel mid-labelling, with no onTranscript call and no banner', async () => {
-    const { onTranscript } = renderCapture()
-    tickHosted()
+    const { onTranscript } = renderCapture('hosted')
     transcribeHostedAsr.mockResolvedValue({ text: 'hosted text', durationSeconds: 4, segments: [] })
     hangUntilAborted(draftHostedTurns)
 
@@ -1048,8 +1004,7 @@ describe('hosted draft-turn labelling', () => {
   })
 
   it('never calls the labelling client for an empty relay result', async () => {
-    const { onTranscript } = renderCapture()
-    tickHosted()
+    const { onTranscript } = renderCapture('hosted')
     transcribeHostedAsr.mockResolvedValue({ text: '', durationSeconds: 0, segments: [] })
 
     await startRecording()
@@ -1060,8 +1015,7 @@ describe('hosted draft-turn labelling', () => {
   })
 
   it('never calls the labelling client for a relay result over the request bound', async () => {
-    const { onTranscript } = renderCapture()
-    tickHosted()
+    const { onTranscript } = renderCapture('hosted')
     const oversized = 'a'.repeat(MAX_DRAFT_TEXT_CHARACTERS + 1)
     transcribeHostedAsr.mockResolvedValue({ text: oversized, durationSeconds: 9, segments: [] })
 
@@ -1088,19 +1042,18 @@ describe('hosted draft-turn labelling', () => {
     expect(draftHostedTurns).not.toHaveBeenCalled()
   })
 
-  it('disables the hosted-consent checkbox while labelling is in flight', async () => {
-    renderCapture()
-    tickHosted()
+  it('holds the controls busy while labelling is in flight', async () => {
+    renderCapture('hosted')
     transcribeHostedAsr.mockResolvedValue({ text: 'hosted text', durationSeconds: 4, segments: [] })
     hangUntilAborted(draftHostedTurns)
 
     await startRecording()
     await stopRecording()
 
-    expect(consentBox().disabled).toBe(true)
+    expect(startButton().disabled).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
     await settle()
-    expect(consentBox().disabled).toBe(false)
+    expect(startButton().disabled).toBe(false)
   })
 })

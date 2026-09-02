@@ -1,14 +1,44 @@
-import { Mic, Radio } from 'lucide-react'
+import { Cpu, Mic, Radio, Server } from 'lucide-react'
 import { type Ref, useEffect, useRef, useState } from 'react'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
 import { InfoTip } from '../ui/InfoTip.js'
+import { Select } from '../ui/Select.js'
 import {
   type AudioSettings,
   type CaptureMode,
   saveAudioSettings,
+  type TranscriptionEngine,
   toConstraints,
 } from './audio-settings.js'
+
+/**
+ * The two transcription engines, named the way the Record tab's picker named
+ * them so the two screens cannot drift into different vocabularies. The
+ * summaries state the real tradeoff in one line each; the elaboration sits
+ * behind the tip.
+ */
+const ENGINES: {
+  id: TranscriptionEngine
+  name: string
+  Icon: typeof Cpu
+  detail: React.ReactNode
+}[] = [
+  {
+    id: 'local',
+    name: 'On this device (whisper-small · WebGPU)',
+    Icon: Cpu,
+    detail:
+      'Runs in this browser on the GPU where one is available, and falls back to the CPU where it is not. The model weights are downloaded once from a public CDN and then cached; that request carries no audio, no transcript and no identifier, because it happens before any of them exist. Tuned for English and Manglish. A consultation held mainly in Malay can come back rewritten in English rather than transcribed, which is the case the other option exists for.',
+  },
+  {
+    id: 'hosted',
+    name: 'ILMU (Malaysia) · ilmu-asr-v4.2',
+    Icon: Server,
+    detail:
+      'The audio leaves this device. An early-access service: on our scripted Malay consultation it kept code-switched sentences intact, but sometimes hardened the first consonant of a Malay clinical word, hearing batuk as patut and demam as teman, so check those words when you review the draft. We have not agreed separate retention or training terms with ILMU, so their standard early-access terms apply. The returned text is de-identified before the note model drafts the Doctor and Patient labels, which you review line by line before anything enters the transcript, and your choice is recorded in the audit trail. Handled under the PDPA as amended in 2024, under which voice is biometric data and therefore sensitive personal data requiring explicit consent.',
+  },
+]
 
 /**
  * How many bars the input meter draws. Enough to read as a level rather than as
@@ -111,7 +141,9 @@ function Toggle({
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="font-semibold text-sm">{label}</span>
-          <InfoTip label={`About ${label}`}>{detail}</InfoTip>
+          <InfoTip label={`About ${label}`} layered>
+            {detail}
+          </InfoTip>
         </div>
       </div>
       <button
@@ -138,14 +170,19 @@ function Toggle({
 }
 
 /**
- * Capture settings for this device.
+ * Capture settings for this device, including which transcription engine
+ * recordings use (a standing preference, on the owner's decision 2026-09-02).
  *
- * **Consent is deliberately absent from this dialog.** Ambient mode decides how
- * the microphone behaves; it never decides whether a patient is recorded. That
- * question is asked on the consultation screen, per patient, and is never
- * remembered — which is why the note below sits in visible copy rather than
- * behind a tip. A reader must not be able to leave here believing they have
- * agreed to anything on a patient's behalf.
+ * **Consent for recording is deliberately absent from this dialog.** Ambient
+ * mode decides how the microphone behaves; it never decides whether a patient
+ * is recorded. That question is asked on the consultation screen, per patient,
+ * and is never remembered, which is why that note sits in visible copy rather
+ * than behind a tip. A reader must not be able to leave here believing they
+ * have agreed to anything on a patient's behalf.
+ *
+ * The engine choice is different: it names where the audio goes, the hosted
+ * option states that in its own copy, and the choice is restated on the Record
+ * tab while a hosted transcription runs.
  */
 export function AudioSettingsDialog({
   ref,
@@ -236,23 +273,58 @@ export function AudioSettingsDialog({
           </p>
         </fieldset>
 
+        <fieldset className="mt-5">
+          <legend className="mb-2 font-semibold text-xs">Transcription Engine</legend>
+          <div className="grid gap-2">
+            {ENGINES.map((engine) => {
+              const selected = draft.engine === engine.id
+              return (
+                <div
+                  key={engine.id}
+                  className={cn(
+                    'flex gap-2.5 rounded-card border p-3 text-left transition-colors',
+                    selected ? 'border-transparent bg-accent-soft' : 'border-line',
+                  )}
+                >
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setDraft({ ...draft, engine: engine.id })}
+                    className="min-w-0 flex-1 text-left focus-visible:outline-none"
+                  >
+                    <span className="block font-semibold text-sm">{engine.name}</span>
+                    <span className="mt-0.5 block text-ink-muted text-xs">
+                      {engine.id === 'local'
+                        ? 'The audio never leaves this device.'
+                        : 'The audio leaves this device, processed in Malaysia. Better on Malay-dominant consultations.'}
+                    </span>
+                  </button>
+                  <engine.Icon aria-hidden className="mt-0.5 size-4 shrink-0" />
+                  <InfoTip label={`About ${engine.name} transcription`} align="right" layered>
+                    {engine.detail}
+                  </InfoTip>
+                </div>
+              )
+            })}
+          </div>
+        </fieldset>
+
         <div className="mt-5">
           <label htmlFor="mic-device" className="mb-2 block font-semibold text-xs">
             Microphone
           </label>
-          <select
-            id="mic-device"
+          <Select
+            label="Microphone"
             value={draft.deviceId ?? ''}
-            onChange={(e) => setDraft({ ...draft, deviceId: e.target.value || null })}
-            className="h-10 w-full rounded-control border border-line bg-surface px-3 text-sm focus:border-accent focus-visible:outline-none"
-          >
-            <option value="">System default</option>
-            {devices.map((device) => (
-              <option key={device.deviceId} value={device.deviceId}>
-                {device.label || 'Microphone'}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: '', label: 'System default' },
+              ...devices.map((device) => ({
+                value: device.deviceId,
+                label: device.label || 'Microphone',
+              })),
+            ]}
+            onChange={(value) => setDraft({ ...draft, deviceId: value || null })}
+          />
           <InputMeter constraints={toConstraints(draft)} />
         </div>
 

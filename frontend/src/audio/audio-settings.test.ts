@@ -37,6 +37,7 @@ describe('loadAudioSettings', () => {
       deviceId: 'mic-2',
       suppressNoise: false,
       boostQuietSpeech: true,
+      engine: 'local',
     }
     saveAudioSettings(settings)
 
@@ -80,6 +81,7 @@ describe('toConstraints', () => {
         deviceId: null,
         suppressNoise: true,
         boostQuietSpeech: false,
+        engine: 'local',
       }),
     ).toEqual({ noiseSuppression: true, autoGainControl: false, echoCancellation: true })
   })
