@@ -60,10 +60,10 @@ export function HelpButton() {
          * mobile dock below `md` reaches about 4.5rem up (`bottom-3` plus a
          * `min-h-12` row and padding). Everywhere else gets the corner.
          *
-         * The approve bar used to be the other one, and no longer is: this
-         * button does not render on a consultation record at all now, so the
-         * `--approve-bar-height` half of `.fab-anchor` is there for CatatAI's
-         * button rather than for this one.
+         * The approve island used to be the other one, on the record screen
+         * where CatatAI's button shares this anchor. That island is gone: its
+         * action moved under the consultation title, so nothing contests the
+         * corner and `.fab-anchor` no longer measures anything.
          */
         className="glass fab-anchor fixed flex size-12 items-center justify-center rounded-full text-lg font-semibold text-accent transition-[transform,color] duration-150 ease-out-quart hover:text-accent-hover active:scale-[0.94]"
       >
