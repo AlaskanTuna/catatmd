@@ -67,7 +67,7 @@ describe('clinical profiles', () => {
 
     expect(profile.redFlagTriggers).toEqual(REDFLAG_TRIGGERS)
     expect(profile.gapChecklist).toEqual(GAP_CHECKLIST)
-    expect(profile.guidelineCorpus).toEqual(GUIDELINE_CORPUS.slice(0, 11))
+    expect(profile.guidelineCorpus).toEqual(GUIDELINE_CORPUS.slice(0, 10))
   })
 
   it('includes the selected profile version in each analysis stamp', () => {

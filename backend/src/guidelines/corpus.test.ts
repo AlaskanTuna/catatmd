@@ -41,6 +41,22 @@ describe('guideline corpus', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
+  /*
+   * A chunk's `url` is an "Open Guideline" link a doctor follows to check the
+   * citation, so a publisher's homepage is a broken citation even though it
+   * returns HTTP 200. Every `abdullah-2024-*` and `ooi-2022-*` chunk pointed
+   * at one until #239's sweep, which is exactly the failure a reviewer would
+   * find by clicking once. Structural, because a unit test cannot make
+   * network calls: a bare origin with no path is the shape being banned.
+   */
+  it('points every chunk at a document rather than a publisher homepage', () => {
+    const homepages = GUIDELINE_CORPUS.filter(
+      (chunk) => new URL(chunk.url).pathname.replace(/\/+$/, '') === '',
+    ).map((chunk) => `${chunk.id}: ${chunk.url}`)
+
+    expect(homepages).toEqual([])
+  })
+
   it('rejects an adversarial response citing a guideline ID outside the corpus', () => {
     const schema = makeSuggestionsAndRedFlagsSchema(corpusIds)
     const adversarial = {

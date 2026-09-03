@@ -11,12 +11,14 @@ import type { RedFlagTrigger } from './types.js'
  * NICE, whose licence forbids AI use. Where those sources restate Centor /
  * McIsaac, this list expresses them in our own words per docs/trd.md §10.
  *
- * Bumped whenever a trigger is added, removed, or its matcher or severity
- * changes. Recorded with every analysis (docs/trd.md §15).
+ * Bumped whenever a trigger is added, removed, or its matcher, severity or
+ * cited guidance changes. Recorded with every analysis (docs/trd.md §15).
+ * Citations count because they now travel on the flag itself, so a stored
+ * analysis and this list can otherwise disagree about what backed a hit.
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v7',
-  effectiveDate: '2026-09-03',
+  id: 'redflag-list-v8',
+  effectiveDate: '2026-09-04',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -296,6 +298,21 @@ const DELPHI_AIRWAY_NOTE =
   'McIsaac-scored antibiotic pathway that consensus establishes presupposes the absence of ' +
   'airway or swallowing compromise; this finding sits outside that pathway.'
 
+/*
+ * The corpus chunks each prose note above refers to, kept beside the note so
+ * the two cannot drift apart. `triggers.test.ts` checks every id resolves.
+ */
+const NAG_SCOPE_IDS = [
+  'moh-nag-2024-c1-acute-pharyngitis',
+  'moh-nag-2024-c3-acute-bronchitis',
+] as const
+
+const DELPHI_AIRWAY_IDS = [
+  'abdullah-2024-mcisaac-criteria',
+  'abdullah-2024-mcisaac-threshold',
+  'abdullah-2024-safety-netting',
+] as const
+
 export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
   {
     id: 'haemoptysis',
@@ -330,6 +347,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /patu[kt](?:-patu[kt])?\s+(?:sampai\s+)?(?:keluar|ada)\s+darah/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
+    guidelineIds: NAG_SCOPE_IDS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: URTI_PROFILES,
   },
@@ -373,6 +391,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /can\s+you\s+breathe/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
+    guidelineIds: NAG_SCOPE_IDS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: URTI_PROFILES,
   },
@@ -392,6 +411,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /nyeri\s+dada/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
+    guidelineIds: NAG_SCOPE_IDS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: URTI_PROFILES,
   },
@@ -415,6 +435,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /meleleh\s+air\s+liur/i,
       ]),
     clinicalSource: DELPHI_AIRWAY_NOTE,
+    guidelineIds: DELPHI_AIRWAY_IDS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: URTI_PROFILES,
   },
@@ -443,6 +464,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /(?<!\bnot\s)\bable\s+to\s+(?:swallow|eat|drink)/i,
       ]),
     clinicalSource: DELPHI_AIRWAY_NOTE,
+    guidelineIds: DELPHI_AIRWAY_IDS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: URTI_PROFILES,
   },
@@ -480,6 +502,9 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
       "(NAG 2024, Abdullah et al. 2024, Ooi et al. 2022); this trigger matches the clinician's " +
       'own stated severity assessment rather than an invented cutoff — see docs/trd.md §10 ' +
       '"What Stays Undecided".',
+    // No corpus chunk states a numeric vital-sign threshold, so this fires
+    // on the clinician's own words and cites nothing.
+    guidelineIds: [],
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: URTI_AND_UTI_PROFILES,
   },
@@ -490,6 +515,15 @@ const UTI_SCOPE_NOTE =
   'this prototype surfaces a deliberately broad escalation prompt when the transcript describes ' +
   'a feature that can fall outside an uncomplicated adult primary-care presentation. No clinician ' +
   'has reviewed this trigger content.'
+
+/*
+ * The one UTI chunk in the corpus. It is the scope statement rather than a
+ * feature-by-feature source: it names the presentation, not the fever, flank
+ * pain or pregnancy findings the triggers below match on, so this is a
+ * bibliographic link and not evidence that the guidance substantiates each
+ * one.
+ */
+const UTI_SCOPE_IDS = ['moh-nag-2024-acute-uti-scope'] as const
 
 export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
   {
@@ -508,6 +542,7 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /seram\s+sejuk/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
+    guidelineIds: UTI_SCOPE_IDS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: UTI_PROFILES,
   },
@@ -527,6 +562,7 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /belakang\s+(?:(?:te)?rasa\s+)?sakit/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
+    guidelineIds: UTI_SCOPE_IDS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: UTI_PROFILES,
   },
@@ -551,6 +587,7 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /tak\s+larat\s+(?:nak\s+)?bangun/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
+    guidelineIds: UTI_SCOPE_IDS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: UTI_PROFILES,
   },
@@ -570,6 +607,7 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /(?:tak\s+datang|lambat|lewat)\s+(?:period|haid)/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
+    guidelineIds: UTI_SCOPE_IDS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: UTI_PROFILES,
   },
@@ -594,6 +632,7 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /can\s+you\s+(?:pass\s+urine|pee|urinate)/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
+    guidelineIds: UTI_SCOPE_IDS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: UTI_PROFILES,
   },
@@ -620,6 +659,7 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /\b(?:lelaki|laki-laki)\b/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
+    guidelineIds: UTI_SCOPE_IDS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: UTI_PROFILES,
   },

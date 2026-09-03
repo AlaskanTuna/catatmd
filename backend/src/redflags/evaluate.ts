@@ -22,6 +22,7 @@ export function evaluateRedFlags(
       evidence,
       source: 'rule',
       ruleId: trigger.id,
+      guidelineIds: [...trigger.guidelineIds],
     })
   }
   return flags

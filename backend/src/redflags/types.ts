@@ -16,6 +16,16 @@ export interface RedFlagTrigger {
   matcher: (transcript: Transcript) => string | null
   /** Citation for where this trigger comes from (docs/trd.md §10, Q7). */
   clinicalSource: string
+  /**
+   * Corpus chunk ids `clinicalSource` refers to, so the prose citation can be
+   * resolved to guidance the doctor can open. Checked against the corpus by
+   * `triggers.test.ts`, which is what stops an id here drifting from a real
+   * chunk.
+   *
+   * Empty where the corpus genuinely backs nothing, which is a finding rather
+   * than an omission: see `vital-signs-concern`.
+   */
+  guidelineIds: readonly string[]
   /** Version of the trigger list this entry belongs to. */
   listVersion: string
   /** Profiles that include this trigger. */

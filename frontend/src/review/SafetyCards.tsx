@@ -56,14 +56,19 @@ function DispositionControl({
   disposition,
   onDecide,
   acknowledgeLabel,
+  guidelineIds,
+  guidelines,
 }: {
   findingId: string
   disposition: Disposition | undefined
   onDecide: (decision: DispositionInput) => void
   acknowledgeLabel: string
+  guidelineIds?: readonly string[]
+  guidelines: GuidelineChunk[]
 }) {
   const [mode, setMode] = useState<'settled' | 'choosing' | 'reason'>('settled')
   const [reason, setReason] = useState('')
+  const [showSources, setShowSources] = useState(false)
   const reasonId = `dismiss-reason-${findingId}`
 
   if (disposition && mode === 'settled') {
@@ -172,7 +177,19 @@ function DispositionControl({
           >
             Not Applicable
           </Button>
+          <Button
+            size="sm"
+            variant="neutral"
+            aria-expanded={showSources}
+            onClick={() => setShowSources((open) => !open)}
+          >
+            Sources
+          </Button>
         </div>
+      )}
+
+      {mode === 'choosing' && showSources && (
+        <SourcesPanel guidelineIds={guidelineIds} guidelines={guidelines} />
       )}
     </div>
   )
@@ -206,14 +223,61 @@ function unquote(evidence: string): string {
   return text
 }
 
+function SourcesPanel({
+  guidelineIds,
+  guidelines,
+}: {
+  guidelineIds?: readonly string[]
+  guidelines: GuidelineChunk[]
+}) {
+  const resolved = (guidelineIds ?? [])
+    .map((id) => guidelines.find((g) => g.id === id))
+    .filter((chunk): chunk is GuidelineChunk => chunk !== undefined)
+
+  if (resolved.length === 0) {
+    return <p className="text-sm text-ink-muted">No guideline citation.</p>
+  }
+
+  /*
+   * Each row sits on `surface`, not `sunken`, so the id chip keeps the
+   * contrast it has on a Suggestion card. A `sunken` chip on a `sunken` row is
+   * the same fill twice and reads as flat.
+   */
+  return (
+    <div className="flex flex-col gap-2">
+      {resolved.map((chunk) => (
+        <div key={chunk.id} className="rounded-control border border-line bg-surface p-3">
+          <span className="inline-flex min-h-6 items-center rounded-full border border-line bg-sunken px-2.5 py-1 font-mono text-2xs text-ink">
+            {chunk.id}
+          </span>
+          <p className="mt-2 text-xs font-medium text-ink">{chunk.title}</p>
+          <p className="mt-0.5 text-2xs text-ink-muted">
+            {chunk.publisher} · {chunk.year}
+          </p>
+          <a
+            href={chunk.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="mt-2 inline-block text-xs font-medium text-accent underline underline-offset-2"
+          >
+            Open Guideline
+          </a>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function RedFlagCard({
   flag,
   disposition,
   onDecide,
+  guidelines,
 }: {
   flag: RedFlag
   disposition: Disposition | undefined
   onDecide: (decision: DispositionInput) => void
+  guidelines: GuidelineChunk[]
 }) {
   const severity = SEVERITY[flag.severity]
   const acknowledged = disposition !== undefined
@@ -256,6 +320,8 @@ export function RedFlagCard({
             disposition={disposition}
             onDecide={onDecide}
             acknowledgeLabel="Acknowledge"
+            guidelineIds={flag.guidelineIds}
+            guidelines={guidelines}
           />
         </div>
       </div>
@@ -294,10 +360,12 @@ export function GapCard({
   gap,
   disposition,
   onDecide,
+  guidelines,
 }: {
   gap: InformationGap
   disposition: Disposition | undefined
   onDecide: (decision: DispositionInput) => void
+  guidelines: GuidelineChunk[]
 }) {
   const reviewed = disposition !== undefined
   return (
@@ -327,6 +395,7 @@ export function GapCard({
           disposition={disposition}
           onDecide={onDecide}
           acknowledgeLabel="Mark Reviewed"
+          guidelines={guidelines}
         />
       </div>
     </div>
