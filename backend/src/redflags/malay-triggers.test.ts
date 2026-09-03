@@ -19,6 +19,8 @@ import { ALL_REDFLAG_TRIGGERS } from './triggers.js'
 
 const transcript = (turns: { speaker: 'doctor' | 'patient'; text: string }[]): Transcript => ({
   source: 'fixture',
+  // Labels written by hand here, so suppression is available to the engine.
+  labelsReviewed: true,
   turns,
 })
 

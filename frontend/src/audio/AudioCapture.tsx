@@ -186,7 +186,6 @@ export function AudioCapture({
   onTranscript,
   engine,
   transcript,
-  draftPending,
 }: {
   onTranscript: (result: {
     text: string
@@ -199,8 +198,6 @@ export function AudioCapture({
   engine: 'local' | 'hosted'
   /** The transcript so far, shown under the meter while recording. */
   transcript: string
-  /** True while the draft-label list is on screen, which explains itself. */
-  draftPending: boolean
 }) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState<number | null>(null)
@@ -755,15 +752,14 @@ export function AudioCapture({
   return (
     <div className="flex flex-col gap-3">
       {/*
-        Shown only before a recording, and only while no draft is on screen.
-        It sets one expectation the controls cannot: the result is a draft to
-        check, not a finished transcript. Once recording starts, or once the
-        Draft Labels list is up saying the same thing structurally, it is a
-        sentence the doctor has already acted on and reads as furniture.
+        Shown only before a recording. It sets the one expectation the controls
+        cannot: speakers are labelled by the machine, so the transcript is worth
+        a glance. Once recording starts it is a sentence the doctor has already
+        acted on and reads as furniture.
       */}
-      {phase === 'idle' && !draftPending && (
+      {phase === 'idle' && (
         <p className="flex items-start gap-1.5 text-sm text-ink-muted">
-          <span>Speaker labels are drafted for you to check.</span>
+          <span>Speakers are labelled automatically, so check the transcript.</span>
           <InfoTip label="About the draft speaker labels" align="right" className="mt-0.5" layered>
             Nothing enters the transcript until you apply the labels. They are guessed from what
             each sentence says and from segment timing, never from the voices: no voice model runs

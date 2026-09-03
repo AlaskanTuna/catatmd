@@ -61,6 +61,31 @@ export const TranscriptSourceSchema = z.enum([
 export const TranscriptSchema = z.object({
   source: TranscriptSourceSchema,
   turns: z.array(TranscriptTurnSchema).min(1).max(MAX_TRANSCRIPT_TURNS),
+  /**
+   * Whether a human stands behind the speaker on every turn.
+   *
+   * **This is a safety input, not metadata.** `backend/src/redflags/triggers.ts`
+   * may drop a trigger hit when a doctor's question is answered by a patient's
+   * leading denial (issue #70), and that judgement is only as good as the two
+   * speaker labels it rests on. A guessed pair of labels can manufacture that
+   * exact shape, which would suppress a real escalation trigger: the one
+   * failure the engine exists to prevent.
+   *
+   * So the engine only suppresses when this is `true`. Labels a person typed or
+   * confirmed earn the question-denial reading; labels a model drafted do not,
+   * and there the engine fails open and lets the flag stand for the doctor to
+   * dismiss.
+   *
+   * `false` on the recorded paths, where labels are drafted from the words and
+   * segment timing and, since the review step was removed for the real-time
+   * workflow, are applied without a person seeing them. `true` where a person
+   * wrote the `Doctor:` / `Patient:` prefixes themselves.
+   *
+   * Optional so transcripts stored before this field existed still parse. Absent
+   * is read as unreviewed everywhere it is used, because the safe reading of
+   * "nobody recorded whether a human checked" is that nobody did.
+   */
+  labelsReviewed: z.boolean().optional(),
 })
 
 // ─── Hosted ASR ──────────────────────────────────────────────────────────────

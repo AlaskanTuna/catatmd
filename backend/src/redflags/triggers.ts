@@ -78,6 +78,23 @@ const isQuestion = (text: string): boolean => /\?\s*$/.test(text.trim())
  * discarding it would lose the flag entirely.
  */
 const asserts = (transcript: Transcript, index: number): boolean => {
+  /*
+   * The whole question-denial reading rests on two speaker labels being right,
+   * so it is only available when a person stands behind them.
+   *
+   * On the recorded paths the labels are drafted from the words and segment
+   * timing, and since the review step was removed nobody confirms them. A
+   * mislabelled pair can manufacture exactly the doctor-asks/patient-denies
+   * shape this function looks for, and the consequence there is a suppressed
+   * escalation trigger: a false negative, which is the failure this engine
+   * exists to prevent. A guessed label may therefore leave a flag standing for
+   * the doctor to dismiss, and may never take one away.
+   *
+   * Absent is read as unreviewed: the safe reading of "nobody recorded whether
+   * a human checked" is that nobody did.
+   */
+  if (transcript.labelsReviewed !== true) return true
+
   const turn = transcript.turns[index]
   if (turn === undefined || turn.speaker !== 'doctor' || !isQuestion(turn.text)) return true
 

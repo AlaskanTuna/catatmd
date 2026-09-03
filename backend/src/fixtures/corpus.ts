@@ -25,6 +25,9 @@ export const FIXTURES: readonly Fixture[] = [
     label: 'Incomplete URTI — cough, sore throat, fever only (gap-heavy)',
     transcript: {
       source: 'fixture',
+      // Hand-authored, so the speaker on every turn is a person's claim and the
+      // red-flag engine may read the question-denial shape (shared/src/index.ts).
+      labelsReviewed: true,
       turns: [
         { speaker: 'doctor', text: 'Morning, what brings you in today?', offsetSeconds: 0.0 },
         {
@@ -77,6 +80,9 @@ export const FIXTURES: readonly Fixture[] = [
     label: 'Sore throat with airway compromise (hard red flag)',
     transcript: {
       source: 'fixture',
+      // Hand-authored, so the speaker on every turn is a person's claim and the
+      // red-flag engine may read the question-denial shape (shared/src/index.ts).
+      labelsReviewed: true,
       turns: [
         {
           speaker: 'doctor',
@@ -134,6 +140,9 @@ export const FIXTURES: readonly Fixture[] = [
     label: 'Doctor treats without naming a condition (diagnosis NOT_ASSESSED)',
     transcript: {
       source: 'fixture',
+      // Hand-authored, so the speaker on every turn is a person's claim and the
+      // red-flag engine may read the question-denial shape (shared/src/index.ts).
+      labelsReviewed: true,
       turns: [
         { speaker: 'doctor', text: "What's the problem today?", offsetSeconds: 0.0 },
         {
@@ -180,6 +189,9 @@ export const FIXTURES: readonly Fixture[] = [
     label: 'Vague, self-contradictory history (surfacing uncertainty)',
     transcript: {
       source: 'fixture',
+      // Hand-authored, so the speaker on every turn is a person's claim and the
+      // red-flag engine may read the question-denial shape (shared/src/index.ts).
+      labelsReviewed: true,
       turns: [
         { speaker: 'doctor', text: "What's bringing you in today?", offsetSeconds: 0.0 },
         {
@@ -244,6 +256,9 @@ export const FIXTURES: readonly Fixture[] = [
     label: 'Routine complete URTI consult (identifier-dense negative control)',
     transcript: {
       source: 'fixture',
+      // Hand-authored, so the speaker on every turn is a person's claim and the
+      // red-flag engine may read the question-denial shape (shared/src/index.ts).
+      labelsReviewed: true,
       turns: [
         {
           speaker: 'doctor',
@@ -385,6 +400,9 @@ export const FIXTURES: readonly Fixture[] = [
     label: 'Malay-language URTI with red flags (rojak register)',
     transcript: {
       source: 'fixture',
+      // Hand-authored, so the speaker on every turn is a person's claim and the
+      // red-flag engine may read the question-denial shape (shared/src/index.ts).
+      labelsReviewed: true,
       turns: [
         { speaker: 'doctor', text: 'Selamat pagi, apa masalah hari ini?', offsetSeconds: 0.0 },
         {
