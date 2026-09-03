@@ -1,6 +1,7 @@
 import type { Transcript } from '@shared/types'
 import type { ProfileId } from '../clinical-profiles/types.js'
 import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
+import { type Expansion, expandMishears, isRecorded, originalSpan } from './mishears.js'
 import type { RedFlagTrigger } from './types.js'
 
 /**
@@ -159,12 +160,42 @@ const isNegated = (text: string, matchIndex: number): boolean => {
 const SPAN_CARRIES_NEGATOR = /\b(?:no|not|cannot|tak|tidak|takde|tiada)\b|can'?t|won'?t/i
 
 const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string | null => {
+  const recorded = isRecorded(transcript)
+
   for (const [index, turn] of transcript.turns.entries()) {
+    /*
+     * On a recording, the turn is matched twice: as transcribed, and with the
+     * measured Malay devoicings expanded (see `mishears.ts`). The second pass
+     * is what covers the pairs `triggers.ts` deliberately refuses to widen for,
+     * "teman" for "demam" above all, whose coverage used to live in a review-time
+     * hint that no longer exists.
+     *
+     * The expansion is only ever matched against. Negation, assertion and the
+     * returned span are all read from the original text, so a flag never quotes
+     * a word the transcript does not contain.
+     */
+    const expanded = recorded ? expandMishears(turn.text) : null
+    const passes: { text: string; expansion: Expansion | null }[] = [
+      { text: turn.text, expansion: null },
+      ...(expanded === null ? [] : [{ text: expanded.text, expansion: expanded }]),
+    ]
+
     for (const pattern of patterns) {
-      const match = pattern.exec(turn.text)
-      if (match === null) continue
-      if (SPAN_CARRIES_NEGATOR.test(match[0])) return match[0]
-      if (asserts(transcript, index) && !isNegated(turn.text, match.index)) return match[0]
+      for (const pass of passes) {
+        const match = pattern.exec(pass.text)
+        if (match === null) continue
+        const span =
+          pass.expansion === null
+            ? match[0]
+            : originalSpan(turn.text, pass.expansion, match.index, match[0].length)
+        const at =
+          pass.expansion === null
+            ? match.index
+            : (pass.expansion.origin[match.index] ?? match.index)
+
+        if (SPAN_CARRIES_NEGATOR.test(match[0])) return span
+        if (asserts(transcript, index) && !isNegated(turn.text, at)) return span
+      }
     }
   }
   return null
