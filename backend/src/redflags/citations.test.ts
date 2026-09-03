@@ -1,0 +1,84 @@
+import { makeSuggestionsAndRedFlagsSchema } from '@shared/types'
+import { describe, expect, it } from 'vitest'
+import { GUIDELINE_CORPUS } from '../guidelines/index.js'
+import { evaluateRedFlags } from './evaluate.js'
+import { ALL_REDFLAG_TRIGGERS } from './triggers.js'
+
+const corpusIds = new Set(GUIDELINE_CORPUS.map((chunk) => chunk.id))
+
+/*
+ * A trigger's `guidelineIds` is the only thing turning its prose
+ * `clinicalSource` into guidance a doctor can open. An id that does not
+ * resolve renders as nothing on screen, so the citation silently disappears
+ * rather than failing loudly. These tests are that failure.
+ */
+describe('trigger citations resolve against the corpus', () => {
+  it.each(ALL_REDFLAG_TRIGGERS.map((trigger) => [trigger.id, trigger] as const))(
+    '%s cites only real corpus chunks',
+    (_id, trigger) => {
+      for (const guidelineId of trigger.guidelineIds) {
+        expect(corpusIds).toContain(guidelineId)
+      }
+    },
+  )
+
+  it('cites no chunk twice within one trigger', () => {
+    for (const trigger of ALL_REDFLAG_TRIGGERS) {
+      expect(new Set(trigger.guidelineIds).size).toBe(trigger.guidelineIds.length)
+    }
+  })
+
+  /*
+   * Pinned deliberately. The corpus carries no Malaysian numeric vital-sign
+   * threshold, so this trigger fires on the clinician's own stated severity
+   * instead of an invented cutoff. If someone later attaches a citation here,
+   * that is a clinical claim needing review, not a tidy-up.
+   */
+  it('leaves vital-signs-concern uncited, because the corpus backs no threshold', () => {
+    const trigger = ALL_REDFLAG_TRIGGERS.find((entry) => entry.id === 'vital-signs-concern')
+    expect(trigger).toBeDefined()
+    expect(trigger?.guidelineIds).toEqual([])
+  })
+
+  it('carries the trigger citations onto a fired flag', () => {
+    const [trigger] = ALL_REDFLAG_TRIGGERS.filter((entry) => entry.guidelineIds.length > 0)
+    expect(trigger).toBeDefined()
+    const flags = evaluateRedFlags(
+      { source: 'paste', turns: [{ speaker: 'patient', text: 'batuk berdarah' }] },
+      ALL_REDFLAG_TRIGGERS,
+    )
+    for (const flag of flags) {
+      const fired = ALL_REDFLAG_TRIGGERS.find((entry) => entry.id === flag.ruleId)
+      expect(flag.guidelineIds).toEqual([...(fired?.guidelineIds ?? [])])
+    }
+  })
+})
+
+/*
+ * A red flag is not a place a model may attach a citation. The suggestions
+ * half of the same response is ID-constrained precisely so a fabricated
+ * reference fails validation; red flags answer against a schema that has no
+ * citation field at all, which is the stronger guarantee.
+ */
+describe('the model cannot cite on a red flag', () => {
+  const schema = makeSuggestionsAndRedFlagsSchema(['moh-nag-2024-c3-acute-bronchitis'])
+
+  it('strips guidelineIds a model puts on a red flag', () => {
+    const parsed = schema.parse({
+      outOfScope: false,
+      redFlags: [
+        {
+          id: 'model-1',
+          label: 'Something the model noticed',
+          severity: 'advisory',
+          evidence: 'batuk berdarah',
+          source: 'model',
+          guidelineIds: ['moh-nag-2024-c3-acute-bronchitis'],
+        },
+      ],
+      suggestions: [],
+    })
+
+    expect(parsed.redFlags[0]).not.toHaveProperty('guidelineIds')
+  })
+})

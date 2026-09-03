@@ -420,6 +420,21 @@ export const RedFlagSchema = z.object({
   source: z.enum(['rule', 'model']),
   /** Identifier of the rule that fired, when source is `rule`. */
   ruleId: z.string().optional(),
+  /**
+   * Corpus chunk ids for the guidance the fired rule is drawn from, copied
+   * from the trigger list by `evaluateRedFlags`.
+   *
+   * Server-populated, exactly like `ruleId`: the model never supplies it,
+   * because `makeSuggestionsAndRedFlagsSchema` omits it from the schema the
+   * model answers against. A red flag is not a place a model may attach a
+   * citation to.
+   *
+   * Empty is a real answer, not a missing one. `vital-signs-concern` fires on
+   * the clinician's own stated severity precisely because the corpus carries
+   * no Malaysian numeric vital-sign threshold, and showing that it is uncited
+   * is more honest than hiding it.
+   */
+  guidelineIds: z.array(z.string()).optional(),
 })
 
 // ─── Citations ───────────────────────────────────────────────────────────────
@@ -642,7 +657,7 @@ export const makeSuggestionsAndRedFlagsSchema = (corpusIds: readonly [string, ..
   z.object({
     outOfScope: z.boolean(),
     redFlags: z.array(
-      RedFlagSchema.omit({ source: true, ruleId: true }).extend({
+      RedFlagSchema.omit({ source: true, ruleId: true, guidelineIds: true }).extend({
         source: z.literal('model'),
       }),
     ),

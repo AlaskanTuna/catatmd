@@ -1,4 +1,4 @@
-import type { Disposition, RedFlag } from '@shared/types'
+import type { Disposition, GuidelineChunk, RedFlag } from '@shared/types'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RedFlagCard } from './SafetyCards.js'
@@ -26,7 +26,7 @@ afterEach(cleanup)
 
 function renderCard(disposition?: Disposition) {
   const onDecide = vi.fn()
-  render(<RedFlagCard flag={FLAG} disposition={disposition} onDecide={onDecide} />)
+  render(<RedFlagCard flag={FLAG} disposition={disposition} onDecide={onDecide} guidelines={[]} />)
   return onDecide
 }
 
@@ -116,6 +116,7 @@ describe('evidence quoting', () => {
         flag={{ ...FLAG, evidence: '"sesak bila naik tangga"' }}
         disposition={undefined}
         onDecide={vi.fn()}
+        guidelines={[]}
       />,
     )
 
@@ -128,6 +129,7 @@ describe('evidence quoting', () => {
         flag={{ ...FLAG, evidence: '“rasa sesak”' }}
         disposition={undefined}
         onDecide={vi.fn()}
+        guidelines={[]}
       />,
     )
 
@@ -140,9 +142,115 @@ describe('evidence quoting', () => {
         flag={{ ...FLAG, evidence: 'he said "sesak" twice' }}
         disposition={undefined}
         onDecide={vi.fn()}
+        guidelines={[]}
       />,
     )
 
     expect(screen.getByText(/twice/).textContent).toContain('"sesak"')
+  })
+})
+
+describe('RedFlagCard sources panel', () => {
+  const GUIDELINES: GuidelineChunk[] = [
+    {
+      id: 'my-moh-2024',
+      title: 'Malaysian Ministry of Health Cough Guideline',
+      publisher: 'MOH',
+      year: 2024,
+      url: 'https://example.com/my-moh-2024',
+      summary: 'Summary',
+      sourceLicence: 'All rights reserved',
+      verbatimAllowed: false,
+    },
+    {
+      id: 'my-nice-2023',
+      title: 'NICE Sore Throat Guideline',
+      publisher: 'NICE',
+      year: 2023,
+      url: 'https://example.com/my-nice-2023',
+      summary: 'Summary',
+      sourceLicence: 'CC-BY',
+      verbatimAllowed: true,
+      quote: 'A quote that should not render.',
+    },
+    {
+      id: 'who-2022',
+      title: 'WHO Respiratory Infections',
+      publisher: 'WHO',
+      year: 2022,
+      url: 'https://example.com/who-2022',
+      summary: 'Summary',
+      sourceLicence: 'CC-BY',
+      verbatimAllowed: true,
+    },
+  ]
+
+  function renderWithGuidelines(flag: RedFlag) {
+    return render(
+      <RedFlagCard
+        flag={flag}
+        disposition={undefined}
+        onDecide={vi.fn()}
+        guidelines={GUIDELINES}
+      />,
+    )
+  }
+
+  it('shows both titles for two resolvable guidelineIds', () => {
+    renderWithGuidelines({ ...FLAG, guidelineIds: ['my-moh-2024', 'who-2022'] })
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+
+    expect(screen.getByText('Malaysian Ministry of Health Cough Guideline')).toBeTruthy()
+    expect(screen.getByText('WHO Respiratory Infections')).toBeTruthy()
+    expect(screen.getAllByText('Open Guideline')).toHaveLength(2)
+  })
+
+  it('shows exactly "No guideline citation." for an empty guidelineIds array', () => {
+    renderWithGuidelines({ ...FLAG, guidelineIds: [] })
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+
+    expect(screen.getByText('No guideline citation.')).toBeTruthy()
+  })
+
+  it('shows exactly "No guideline citation." for a model-sourced flag', () => {
+    const modelFlag: RedFlag = { ...FLAG, source: 'model' }
+    renderWithGuidelines(modelFlag)
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+
+    expect(screen.getByText('No guideline citation.')).toBeTruthy()
+  })
+
+  it('skips an unresolvable guidelineId without rendering a broken row', () => {
+    renderWithGuidelines({ ...FLAG, guidelineIds: ['my-moh-2024', 'not-a-real-id'] })
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+
+    expect(screen.getByText('Malaysian Ministry of Health Cough Guideline')).toBeTruthy()
+    expect(screen.queryByText('not-a-real-id')).toBeNull()
+    expect(screen.getAllByText('Open Guideline')).toHaveLength(1)
+  })
+
+  it('does not render a quote even when the matching chunk carries one', () => {
+    renderWithGuidelines({ ...FLAG, guidelineIds: ['my-nice-2023'] })
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+
+    expect(screen.getByText('NICE Sore Throat Guideline')).toBeTruthy()
+    expect(screen.queryByText('A quote that should not render.')).toBeNull()
+  })
+
+  it('does not render the sources panel until Sources is clicked', () => {
+    renderWithGuidelines({ ...FLAG, guidelineIds: ['my-moh-2024'] })
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+
+    expect(screen.queryByText('Malaysian Ministry of Health Cough Guideline')).toBeNull()
+    expect(screen.queryByText('No guideline citation.')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+
+    expect(screen.getByText('Malaysian Ministry of Health Cough Guideline')).toBeTruthy()
   })
 })
