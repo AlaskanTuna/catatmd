@@ -81,15 +81,19 @@ export function CapturePanel({
   /*
    * `labelsReviewed` says whether a person stands behind the speaker on every
    * turn, and the red-flag engine reads it before it is willing to drop a
-   * trigger hit (shared/src/index.ts). True where the doctor wrote or edited the
-   * `Doctor:` / `Patient:` prefixes themselves, false on a recording, where they
-   * are drafted from the words and nobody confirms them.
+   * trigger hit (shared/src/index.ts). True on Paste only, because the doctor
+   * typed or edited those prefixes themselves. False on Upload now that the file
+   * is submitted without a press, since the prefixes come from the file and
+   * nobody confirms them. False on a recording, where they are drafted from the
+   * words.
    */
-  const submit = () =>
-    onCapture({ source, turns, labelsReviewed: source === 'paste' || source === 'upload' })
+  const submitText = (fullText: string, nextSource: TranscriptSource) => {
+    const parsed = parseTranscript(fullText)
+    if (parsed.length === 0) return
+    onCapture({ source: nextSource, turns: parsed, labelsReviewed: nextSource === 'paste' })
+  }
 
-  const appendText = (addition: string) =>
-    setText((current) => (current ? `${current.trimEnd()}\n${addition}` : addition))
+  const submit = () => submitText(text, source)
 
   const onUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -102,22 +106,22 @@ export function CapturePanel({
         const parsed: unknown = JSON.parse(raw)
         const list = Array.isArray(parsed) ? parsed : (parsed as { turns?: unknown }).turns
         if (Array.isArray(list)) {
-          setText(
-            serialiseTurns(
-              list.map((turn) => {
-                const t = turn as { speaker?: string; text?: string; offsetSeconds?: number }
-                const mapped: TranscriptTurn = {
-                  speaker: t.speaker === 'doctor' ? 'doctor' : 'patient',
-                  text: t.text ?? '',
-                }
-                if (typeof t.offsetSeconds === 'number' && t.offsetSeconds >= 0) {
-                  mapped.offsetSeconds = t.offsetSeconds
-                }
-                return mapped
-              }),
-            ),
+          const serialised = serialiseTurns(
+            list.map((turn) => {
+              const t = turn as { speaker?: string; text?: string; offsetSeconds?: number }
+              const mapped: TranscriptTurn = {
+                speaker: t.speaker === 'doctor' ? 'doctor' : 'patient',
+                text: t.text ?? '',
+              }
+              if (typeof t.offsetSeconds === 'number' && t.offsetSeconds >= 0) {
+                mapped.offsetSeconds = t.offsetSeconds
+              }
+              return mapped
+            }),
           )
+          setText(serialised)
           setSource('upload')
+          submitText(serialised, 'upload')
           return
         }
       } catch {
@@ -126,6 +130,7 @@ export function CapturePanel({
     }
     setText(raw)
     setSource('upload')
+    submitText(raw, 'upload')
   }
 
   return (
@@ -276,6 +281,7 @@ export function CapturePanel({
                     : timedLines.length > 0
                       ? timedLines
                       : proseToDraft(transcribed)
+                let addition: string
                 if (lines.length > 0) {
                   /*
                    * Applied straight into the transcript. This used to park the
@@ -293,12 +299,21 @@ export function CapturePanel({
                    * trigger hit on a question-denial reading it cannot stand
                    * behind.
                    */
-                  appendText(serialiseTurns(draftToTurns(lines)))
+                  addition = serialiseTurns(draftToTurns(lines))
                 } else {
                   // No usable timing: fall back to the unlabelled prose the
                   // record path produced before #118.
-                  appendText(transcribed)
+                  addition = transcribed
                 }
+                /*
+                 * Composed once and used for both, because the doctor must
+                 * never be shown one transcript while a different one is
+                 * submitted. Appending through a state updater and recomposing
+                 * the submitted string separately would give two answers to
+                 * the same question.
+                 */
+                const nextText = text ? `${text.trimEnd()}\n${addition}` : addition
+                setText(nextText)
                 /*
                  * Hosted is sticky for the rest of the consultation: once any
                  * recording in this transcript went to ILMU, the submitted
@@ -308,9 +323,10 @@ export function CapturePanel({
                  * and the provenance stamp exists to be read by whoever audits
                  * that later.
                  */
-                setSource((current) =>
-                  current === 'asr_hosted' || from === 'asr_hosted' ? 'asr_hosted' : 'asr_local',
-                )
+                const nextSource =
+                  source === 'asr_hosted' || from === 'asr_hosted' ? 'asr_hosted' : 'asr_local'
+                setSource(nextSource)
+                submitText(nextText, nextSource)
               }}
             />
           </Card>
@@ -347,16 +363,18 @@ export function CapturePanel({
         </p>
       )}
 
-      <Button
-        variant="primary"
-        size="lg"
-        className="mt-6"
-        disabled={turns.length === 0}
-        loading={saving}
-        onClick={submit}
-      >
-        Use This Transcript
-      </Button>
+      {tab === 'paste' && (
+        <Button
+          variant="primary"
+          size="lg"
+          className="mt-6"
+          disabled={turns.length === 0}
+          loading={saving}
+          onClick={submit}
+        >
+          Use This Transcript
+        </Button>
+      )}
     </div>
   )
 }
