@@ -50,9 +50,28 @@ function ChecklistRow({
   const summary = (
     <>
       <dt className="min-w-0 truncate text-sm text-ink">{label}</dt>
-      <dd className="flex shrink-0 items-center gap-2">
+      {/* `dd` used to be `shrink-0`, and the value span capped at a flat
+          `max-w-[10rem]` (160px) regardless of how wide the row actually was.
+          At the two-column checklist width a row can be as narrow as ~162px
+          total, so a 160px value cap plus the badge next to it could not
+          possibly fit, whatever else truncated correctly: the row overflowed
+          by design, not by a missing `min-w-0` anywhere.
+          `min-w-0` on `dd` is conditional on there being a value to truncate,
+          not a constant, because the two shapes need opposite defaults.
+          With a value: the span (`min-w-0 truncate`) has to be the one that
+          absorbs the squeeze, and `dd` needs `min-w-0` too or its own
+          intrinsic-size floor stays "badge plus the value's full width",
+          overflowing exactly as before. Without a value, `dd` holds only the
+          badge, which is `shrink-0` and must never truncate a clinical state
+          word; there `dd`'s default (unset) minimum already floors correctly
+          at the badge's own width, and adding `min-w-0` breaks that floor,
+          letting the badge itself overflow instead. Both failure modes were
+          measured directly against the built CSS before this was written:
+          a badge-only row overflowed by 21px with `min-w-0` present, and a
+          valued row overflowed by 169px with it absent. */}
+      <dd className={cn('flex items-center gap-2', assertion.value && 'min-w-0')}>
         {assertion.value && (
-          <span className="max-w-[10rem] truncate text-xs text-ink-muted">{assertion.value}</span>
+          <span className="min-w-0 truncate text-xs text-ink-muted">{assertion.value}</span>
         )}
         <AssertionStateBadge state={assertion.state} />
       </dd>
@@ -182,7 +201,20 @@ export function ChecklistPanel({
   const assessed = entries.filter((entry) => entry.assertion.state !== 'NOT_ASSESSED').length
 
   return (
-    <Card className="mt-5">
+    /*
+     * `@container`, so the two-column split below reads the panel's own
+     * rendered width rather than the viewport's. `sm:grid-cols-2` is a media
+     * query: on an ordinary 1280px laptop viewport it is always true, whatever
+     * width the three-column review page has actually left this card, and this
+     * card sits in the narrowest of the three. Measured against the real
+     * rendered checklist: a two-column row can be squeezed to ~162-175px wide,
+     * and a state badge alone needs roughly 90-98px non-negotiable width (it
+     * must never truncate a clinical state word), so two columns simply cannot
+     * fit in that space, no matter how aggressively the label and value
+     * truncate. The container query switches to two columns only once the
+     * card itself has genuinely earned the room.
+     */
+    <Card className="@container mt-5">
       {/*
        * The disclosure had no visual affordance at all. `aria-expanded` told a
        * screen reader it was expandable and nothing told anyone else, so the
@@ -223,7 +255,7 @@ export function ChecklistPanel({
             <h3 className="mb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
               {label}
             </h3>
-            <dl className="mt-1 grid gap-x-10 sm:grid-cols-2">
+            <dl className="mt-1 grid gap-x-10 @[320px]:grid-cols-2">
               {Object.entries(clinicalFacts[key] as Record<string, ClinicalAssertion>).map(
                 ([field, assertion]) => (
                   <ChecklistRow
@@ -242,7 +274,7 @@ export function ChecklistPanel({
           <h3 className="mb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
             Operational
           </h3>
-          <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+          <dl className="mt-2 grid gap-x-4 gap-y-1.5 @[320px]:grid-cols-2">
             {/* Derived from the block itself rather than listed here.
                 A hard-coded field id in a component is a clinical constant
                 that no version stamp describes (issue #16's guard), and
