@@ -751,14 +751,19 @@ export function AudioCapture({
       */}
       <p className="flex items-start gap-1.5 text-sm text-ink-muted">
         <span>
+          {/* The second sentence went into the tip. "Nothing enters the
+              transcript until you do" restated "for you to check and apply",
+              and the gate it describes is enforced by the disabled submit
+              button one card below, which the doctor cannot miss. */}
           Transcription returns <span className="text-ink">draft</span>{' '}
           <code className="text-ink">Doctor</code> / <code className="text-ink">Patient</code> lines
-          for you to check and apply. Nothing enters the transcript until you do.
+          for you to check and apply.
         </span>
         <InfoTip label="About the draft speaker labels" className="mt-0.5">
-          The labels are guessed from what each sentence says and from segment timing, never from
-          the voices: no voice model runs and no speaker identification happens anywhere in this
-          product. You can flip any line, edit its text, or insert the transcript unlabelled.
+          Nothing enters the transcript until you apply the labels. They are guessed from what each
+          sentence says and from segment timing, never from the voices: no voice model runs and no
+          speaker identification happens anywhere in this product. You can flip any line, edit its
+          text, or insert the transcript unlabelled.
         </InfoTip>
       </p>
 
@@ -783,16 +788,20 @@ export function AudioCapture({
         </div>
       )}
 
+      {/* A grid, not a wrapping row. This card lives in a 380px column, so the
+          pair always wrapped, and two content-width buttons stacked on top of
+          each other gave the panel two ragged right edges. One column makes
+          them equal width and aligns both edges at any width. */}
       {!thin && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid gap-2">
           {phase === 'recording' ? (
-            <Button onClick={stop}>
+            <Button className="w-full justify-center" onClick={stop}>
               <Square aria-hidden className="size-4" />
               Stop and Transcribe · {Math.floor(seconds / 60)}:
               {String(seconds % 60).padStart(2, '0')}
             </Button>
           ) : (
-            <Button onClick={start} disabled={busy}>
+            <Button className="w-full justify-center" onClick={start} disabled={busy}>
               <Mic aria-hidden className="size-4" />
               Start Recording
             </Button>
@@ -808,7 +817,7 @@ export function AudioCapture({
             presented as its peer. The height matches `SIZES.md` so the pair
             aligns.
           */}
-          <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-control border border-line bg-sunken-soft px-4 text-sm font-medium text-ink shadow-raised transition-colors hover:bg-sunken">
+          <label className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-control border border-line bg-sunken-soft px-4 text-sm font-medium text-ink shadow-raised transition-colors hover:bg-sunken">
             <FileAudio aria-hidden className="size-4" />
             Use an Audio File
             <input

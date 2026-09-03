@@ -41,12 +41,6 @@ const ENGINES: {
 ]
 
 /**
- * How many bars the input meter draws. Enough to read as a level rather than as
- * a state, few enough that each one is wide enough to see.
- */
-const BARS = 12
-
-/**
  * A live input meter, driven by the actual stream.
  *
  * **It must never be decorative.** An animation on a loop would tell a doctor
@@ -100,21 +94,18 @@ function InputMeter({ constraints }: { constraints: MediaTrackConstraints }) {
     }
   }, [constraints])
 
-  const lit = Math.round(level * BARS)
-
   return (
     <div className="mt-2 flex items-center gap-3">
-      <div className="flex h-4 items-end gap-[3px]" aria-hidden>
-        {Array.from({ length: BARS }, (_, i) => `bar-${i}`).map((id, i) => (
-          <span
-            key={id}
-            className={cn(
-              'w-[3px] rounded-full transition-colors duration-75',
-              i < lit ? 'bg-accent' : 'bg-line',
-            )}
-            style={{ height: `${6 + i * 0.8}px` }}
-          />
-        ))}
+      {/* One horizontal bar, filled by the measured level. The twelve rising
+          bars this replaced read as a waveform, and a waveform implies the
+          shape of the sound rather than its loudness, which is not what the
+          `AnalyserNode` behind it measures. A level meter says the one thing
+          this control exists to answer. */}
+      <div className="h-1.5 w-32 shrink-0 overflow-hidden rounded-full bg-line" aria-hidden>
+        <div
+          className="h-full rounded-full bg-accent transition-[width] duration-75 ease-out"
+          style={{ width: `${Math.round(level * 100)}%` }}
+        />
       </div>
       <span className="text-xs text-ink-muted">
         {state === 'live' && (level > 0.06 ? 'Hearing you now' : 'Silent')}
