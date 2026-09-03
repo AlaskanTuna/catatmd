@@ -31,12 +31,18 @@ import { cn } from '../lib/cn.js'
  * breath as the choice. This carries the elaboration, never the disclosure that
  * consent depends on (docs/trd.md section 20).
  *
- * `layered` renders the panel through a portal at a fixed position instead of
- * anchored in flow. It exists for tips inside a `<dialog>`: the dialog's own
- * overflow clips an absolutely positioned child no matter what z-index it
- * carries, so the panel has to leave the dialog's subtree entirely. The portal
- * lands on `document.body` at the app's tooltip layer, which sits above the
- * modal layer by design.
+ * `layered` is for tips inside a `<dialog>`, where the UA stylesheet's
+ * `overflow: auto` clips an absolutely positioned child however high its
+ * z-index. It portals the panel to the dialog itself and positions it against
+ * the dialog's own box.
+ *
+ * **It must portal INTO the dialog, never to `document.body`.** A dialog opened
+ * with `showModal()` is promoted to the browser's top layer, and the top layer
+ * is above every z-index in the document: a panel on the body renders behind
+ * the very dialog it was lifted out of. That was the previous behaviour here,
+ * and it made every tip in the audio dialog invisible. No test caught it,
+ * because jsdom implements neither the top layer nor `showModal` (the suites
+ * stub the method outright), so this is a browser-only failure by construction.
  */
 export function InfoTip({
   label,
@@ -58,9 +64,12 @@ export function InfoTip({
   const panelId = useId()
   const wrap = useRef<HTMLSpanElement>(null)
   const panelRef = useRef<HTMLSpanElement>(null)
-  const [fixedPos, setFixedPos] = useState<{ top: number; left: number; right?: boolean } | null>(
-    null,
-  )
+  const [hosted, setHosted] = useState<{
+    host: HTMLElement
+    top: number
+    below: boolean
+    maxHeight: number
+  } | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -89,26 +98,36 @@ export function InfoTip({
   }, [open])
 
   /*
-   * The layered panel is positioned in viewport coordinates, so it has to track
-   * the trigger across scrolls (the dialog itself scrolls, and the page may
-   * move behind it) and window resizes while it is open. Measured on every
-   * frame the cheap way: a scroll or resize listener re-reading the rect covers
-   * both causes with one effect.
+   * The layered panel is positioned against its host dialog's scroll box, so it
+   * has to track the trigger while that box scrolls and while the window
+   * resizes. A scroll and a resize listener re-reading the rects covers both
+   * causes with one effect.
    */
   useLayoutEffect(() => {
     if (!open || !layered) return
+    const host = wrap.current?.closest('dialog')
+    if (!host) return
     const place = () => {
       const rect = wrap.current?.getBoundingClientRect()
+      const hostRect = host.getBoundingClientRect()
       if (!rect) return
-      setFixedPos({
-        // Above the trigger, the same side the anchored panel hangs, with the
-        // same 6px gap `mb-1.5` gives it.
-        top: rect.top - 6,
-        // Right alignment anchors the panel's right edge to the trigger's
-        // right edge, the way `right-0` does for the anchored panel, so it
-        // cannot grow off the right side of the viewport.
-        left: align === 'left' ? rect.left : rect.right,
-        right: align === 'right',
+      /*
+       * Above the trigger by default, flipped below when there is more room
+       * that way. A tip on the dialog's first row has nothing above it, and a
+       * panel anchored upward from there is the one whose opening sentence
+       * disappears off the top with no scrollbar to recover it.
+       */
+      const roomAbove = rect.top - hostRect.top
+      const roomBelow = hostRect.bottom - rect.bottom
+      const below = roomBelow > roomAbove
+      setHosted({
+        host,
+        // Host-relative, plus the host's own scroll offset, because the panel
+        // is an absolutely positioned child of a box that scrolls.
+        top:
+          (below ? rect.bottom - hostRect.top + 6 : rect.top - hostRect.top - 6) + host.scrollTop,
+        below,
+        maxHeight: Math.max(roomAbove, roomBelow) - 12,
       })
     }
     place()
@@ -118,33 +137,42 @@ export function InfoTip({
       document.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }
-  }, [open, layered, align])
+  }, [open, layered])
 
   const panelClass = cn(
     'max-h-[min(60vh,22rem)] w-72 max-w-[80vw] overflow-y-auto overscroll-contain rounded-card border border-line bg-surface p-3 text-xs leading-relaxed font-normal text-ink-muted shadow-lg',
   )
 
   const panel =
-    open && layered && fixedPos ? (
+    open && layered && hosted ? (
       createPortal(
         <span
           ref={panelRef}
           id={panelId}
           role="tooltip"
-          // Fixed, at the tooltip layer: above the modal layer the dialog
-          // occupies, so a panel opened from inside a dialog paints over it.
+          /*
+           * Absolute inside the dialog, spanning its width rather than hanging
+           * off the trigger's edge. The dialog is 28rem and the panel wants
+           * 18rem, so a trigger-anchored panel has 10rem of slack to be clamped
+           * within, and clamping it is more moving parts than simply taking the
+           * width that is already there. Spanning also means `align` has
+           * nothing left to decide, which is why it is not read on this path.
+           */
           style={{
-            position: 'fixed',
-            top: fixedPos.top,
-            left: fixedPos.left,
-            transform: fixedPos.right ? 'translateY(-100%) translateX(-100%)' : 'translateY(-100%)',
+            position: 'absolute',
+            top: hosted.top,
+            left: 12,
+            right: 12,
+            width: 'auto',
+            maxHeight: hosted.maxHeight,
+            transform: hosted.below ? undefined : 'translateY(-100%)',
             zIndex: 'var(--z-tooltip)',
           }}
           className={panelClass}
         >
           {children}
         </span>,
-        document.body,
+        hosted.host,
       )
     ) : open ? (
       <span

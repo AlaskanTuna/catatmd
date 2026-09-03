@@ -148,7 +148,14 @@ export function Select({
             }
           }}
           className={cn(
-            'absolute right-0 z-20 mt-1.5 max-h-72 min-w-full overflow-y-auto',
+            // `w-full`, not `min-w-full`. Anchored at `right-0`, a list allowed
+            // to exceed the trigger grows leftward, and inside a `<dialog>`
+            // that is narrower than the widest option it grows straight out of
+            // the dialog's box, where the UA's `overflow: auto` cuts it off.
+            // Device labels are the case that proves it: "Communications -
+            // Microphone (Razer Seiren Mini) (1532:0531)" is wider than the
+            // 28rem audio dialog on its own.
+            'absolute right-0 z-20 mt-1.5 max-h-72 w-full overflow-y-auto',
             'rounded-card border border-line bg-surface p-1 shadow-float',
           )}
         >
@@ -173,13 +180,18 @@ export function Select({
                 }}
                 className={cn(
                   'flex cursor-pointer items-center justify-between gap-3 rounded-control',
-                  'px-3 py-2 text-sm whitespace-nowrap transition-colors duration-150',
+                  'px-3 py-2 text-sm transition-colors duration-150',
                   isSelected
                     ? 'bg-accent-soft font-medium text-accent'
                     : 'text-ink hover:bg-sunken',
                 )}
               >
-                {option.label}
+                {/* Truncated rather than wrapped, matching the trigger, so a
+                    long device label cannot make one option three lines tall.
+                    `title` keeps the full string reachable. */}
+                <span className="truncate" title={option.label}>
+                  {option.label}
+                </span>
                 {isSelected && <Check aria-hidden className="size-4 shrink-0" />}
               </div>
             )

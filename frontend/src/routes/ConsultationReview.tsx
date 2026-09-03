@@ -103,7 +103,15 @@ export function ConsultationReview() {
       block: 'start',
     })
   }, [showTranscript])
-  const [showAllGaps, setShowAllGaps] = useState(false)
+  /*
+   * The full gap list opens in a dialog rather than expanding the rail. Thirty
+   * two gaps inline made the rail scroll for a page and a half while the two
+   * columns beside it had already ended, which is the height mismatch the
+   * fixed column heights above exist to remove. Gated on state as well as the
+   * ref so the cards are not in the DOM twice while it is closed.
+   */
+  const [allGapsOpen, setAllGapsOpen] = useState(false)
+  const allGapsDialog = useRef<HTMLDialogElement>(null)
 
   /*
    * Demo Mode's consultation is not stored, so there is nothing to fetch for it
@@ -430,7 +438,12 @@ export function ConsultationReview() {
           className={cn(
             // `scroll-mt-20` clears the fixed chrome cluster, which is out of
             // flow and would otherwise cover the heading this scrolls to.
-            'order-3 scroll-mt-20 lg:sticky lg:top-6 lg:order-1 lg:self-start',
+            'order-3 scroll-mt-20 lg:sticky lg:top-6 lg:order-1',
+            // One height for all three columns, so their tops and bottoms line
+            // up instead of each ending wherever its content happens to stop.
+            // This column was the worst of it: a one-line transcript left a
+            // 380px stub beside two full-length neighbours.
+            'lg:h-[calc(100vh-9rem)] lg:overflow-y-auto lg:pr-1',
             // The mobile show/hide belongs to a transcript that already
             // exists. Capture is the one thing on this screen a doctor has
             // come here to do, so it is never behind a toggle.
@@ -443,8 +456,12 @@ export function ConsultationReview() {
           <h2 id="transcript-heading" className="mb-2 text-sm font-semibold">
             Transcript
           </h2>
+          {/* The column itself scrolls from `lg` up, so the inner cap is
+              released there rather than nesting one scrollbar inside another.
+              Below `lg` the column is uncapped and this is what stops a long
+              transcript running the page. */}
           {detail.transcript ? (
-            <div className="max-h-[70vh] overflow-y-auto rounded-card bg-sunken p-3">
+            <div className="max-h-[70vh] overflow-y-auto rounded-card bg-sunken p-3 lg:max-h-none lg:overflow-visible">
               {keyedTurns.map((turn) => (
                 <p key={turn.key} className="mb-2 text-xs leading-relaxed">
                   <span
@@ -476,7 +493,11 @@ export function ConsultationReview() {
           )}
         </section>
 
-        <section className="order-2 min-w-0" aria-labelledby="note-heading">
+        <section
+          className="order-2 min-w-0 lg:sticky lg:top-6 lg:h-[calc(100vh-9rem)] lg:overflow-y-auto lg:pr-1"
+          aria-labelledby="note-heading"
+          data-print="expand"
+        >
           <h2 id="note-heading" className="mb-2 text-sm font-semibold" data-print="hide">
             Clinical Note
           </h2>
@@ -511,7 +532,7 @@ export function ConsultationReview() {
               The bottom stop clears the approve bar, which is `sticky bottom-4`
               in flow and would otherwise sit on top of the last card. */}
         <aside
-          className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto lg:pr-1"
+          className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:h-[calc(100vh-9rem)] lg:overflow-y-auto lg:pr-1"
           aria-label="Clinical safety"
           data-print="expand"
         >
@@ -576,10 +597,7 @@ export function ConsultationReview() {
                   back. Slicing would put a truncated list on paper with nothing
                   to say it had been truncated. */}
                 {gaps.map((gap, position) => (
-                  <div
-                    key={gap.id}
-                    className={cn(!showAllGaps && position >= GAP_PREVIEW && 'hidden print:block')}
-                  >
+                  <div key={gap.id} className={cn(position >= GAP_PREVIEW && 'hidden print:block')}>
                     <GapCard
                       gap={gap}
                       disposition={byId(detail.gapDispositions, gap.id)}
@@ -591,11 +609,13 @@ export function ConsultationReview() {
                   <button
                     type="button"
                     data-print="hide"
-                    onClick={() => setShowAllGaps((value) => !value)}
-                    aria-expanded={showAllGaps}
+                    onClick={() => {
+                      setAllGapsOpen(true)
+                      allGapsDialog.current?.showModal()
+                    }}
                     className="mt-1 self-start rounded-control px-2 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-sunken"
                   >
-                    {showAllGaps ? 'Show Fewer' : `Show All ${analysis.gaps.length} Missing Items`}
+                    Show All {analysis.gaps.length} Missing Items
                   </button>
                 )}
               </Panel>
@@ -629,6 +649,44 @@ export function ConsultationReview() {
           )}
         </aside>
       </div>
+
+      {/* Every gap, at a width that fits the card's own explanation, instead of
+          thirty of them threaded through a 340px rail. The rail keeps the first
+          six as the preview and still renders the rest for print, so paper is
+          unaffected by anything here. */}
+      <dialog
+        ref={allGapsDialog}
+        data-print="hide"
+        onClose={() => setAllGapsOpen(false)}
+        aria-labelledby="all-gaps-title"
+        className="glass-panel m-auto w-[44rem] max-w-[calc(100vw-2rem)] rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
+      >
+        {allGapsOpen && analysis && (
+          <div className="flex max-h-[80vh] flex-col">
+            <div className="flex items-center justify-between gap-3 border-b border-line px-6 py-4">
+              <h2 id="all-gaps-title" className="font-display text-lg font-semibold">
+                Missing Information
+                <span className="ml-2 text-sm font-normal text-ink-muted">
+                  {count(analysis.gaps.length, 'item')}
+                </span>
+              </h2>
+              <Button size="sm" variant="neutral" onClick={() => allGapsDialog.current?.close()}>
+                Close
+              </Button>
+            </div>
+            <div className="flex flex-col gap-3 overflow-y-auto p-6">
+              {gaps.map((gap) => (
+                <GapCard
+                  key={gap.id}
+                  gap={gap}
+                  disposition={byId(detail.gapDispositions, gap.id)}
+                  onDecide={(decision) => patch.mutate({ gapDispositions: [decision] })}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </dialog>
 
       {/* The same bar the approved state gets, carrying the gate that comes
           before it. A doctor who has captured nothing sees the action and why

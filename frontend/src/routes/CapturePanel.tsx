@@ -362,8 +362,10 @@ export function CapturePanel({
         is content to report on, because a recording applied in Record lands in
         the same text and the doctor needs its parse count wherever they are.
       */}
+      {/* A bordered strip, not a second Card. Two stacked cards of equal weight
+          read as two subjects, and this one only reports on the card above it. */}
       {(text || draft) && (
-        <Card className="mt-4 p-4">
+        <div className="mt-4 rounded-card border border-line bg-sunken p-3">
           <p className="text-sm font-medium">
             {turns.length} turn{turns.length === 1 ? '' : 's'} parsed
           </p>
@@ -379,7 +381,7 @@ export function CapturePanel({
               starting.
             </p>
           )}
-        </Card>
+        </div>
       )}
 
       {error && (
