@@ -84,6 +84,12 @@ export const TranscriptSchema = z.object({
    * Optional so transcripts stored before this field existed still parse. Absent
    * is read as unreviewed everywhere it is used, because the safe reading of
    * "nobody recorded whether a human checked" is that nobody did.
+   *
+   * Client-asserted and unverifiable by the API, exactly like `source` above. A
+   * client claiming `true` regains only the suppression it would have had before
+   * this field existed: the same client already chose the labels themselves. It
+   * narrows the surface for an honest client and opens nothing new for a
+   * dishonest one, so no safety control may rest on it alone.
    */
   labelsReviewed: z.boolean().optional(),
 })

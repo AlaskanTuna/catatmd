@@ -82,3 +82,51 @@ describe('a mislabelled turn pair cannot suppress a genuine red flag', () => {
     expect(ruleIds(transcript([...swapped], true))).toEqual([])
   })
 })
+
+/**
+ * The other direction, and the one the first version of this change missed.
+ *
+ * `findDeniedAbility` only ever adds a flag, so it needed no guard against
+ * suppression. But it is still label-dependent, and there the dependency costs a
+ * flag rather than buying one: it composes a doctor's question with the
+ * patient's next-turn denial, and "Boleh telan tak?" / "Tak boleh doktor." has
+ * no span for the ordinary matcher to anchor on, so this is the only path that
+ * raises it. Under guessed labels the pair simply goes unrecognised and an
+ * emergency trigger silently does not fire.
+ *
+ * So on unreviewed labels the speaker checks are dropped and the pair is
+ * composed on adjacency alone. Both halves of the engine now fail in the same
+ * direction on labels nobody confirmed: more flags, never fewer.
+ */
+describe('an ability denial is still found when the labels are guessed', () => {
+  const question = 'Boleh telan tak?'
+  const denial = 'Tak boleh doktor.'
+
+  it('fires on the labels a reviewed consultation would have', () => {
+    expect(
+      ruleIds(
+        transcript(
+          [
+            { speaker: 'doctor', text: question },
+            { speaker: 'patient', text: denial },
+          ],
+          true,
+        ),
+      ),
+    ).toContain('swallowing-oral-intake')
+  })
+
+  it('fires when the same pair carries swapped labels and nobody confirmed them', () => {
+    expect(
+      ruleIds(
+        transcript(
+          [
+            { speaker: 'patient', text: question },
+            { speaker: 'doctor', text: denial },
+          ],
+          false,
+        ),
+      ),
+    ).toContain('swallowing-oral-intake')
+  })
+})

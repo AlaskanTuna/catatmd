@@ -14,8 +14,8 @@ import type { RedFlagTrigger } from './types.js'
  * changes. Recorded with every analysis (docs/trd.md §15).
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v6',
-  effectiveDate: '2026-08-16',
+  id: 'redflag-list-v7',
+  effectiveDate: '2026-09-03',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -221,11 +221,27 @@ const findDeniedAbility = (
   transcript: Transcript,
   questionPatterns: readonly RegExp[],
 ): string | null => {
+  /*
+   * This path only ever adds a flag, but it is still label-dependent, and the
+   * dependency runs the other way from `asserts()`: here a wrong label means
+   * the pair is never recognised and an emergency trigger silently does not
+   * fire. "Boleh telan tak?" / "Tak boleh doktor." has no span for `findSpan`
+   * to anchor on, so this is the only path that raises it.
+   *
+   * So on labels nobody confirmed, the speaker checks are dropped and the pair
+   * is composed on adjacency alone: a question turn followed by a denial turn,
+   * whoever the labels claim said them. That fires strictly more often and
+   * never less, which is the direction this engine must fail in.
+   */
+  const trusted = transcript.labelsReviewed === true
+
   for (const [index, turn] of transcript.turns.entries()) {
-    if (turn.speaker !== 'doctor' || !isQuestion(turn.text)) continue
+    if (trusted && turn.speaker !== 'doctor') continue
+    if (!isQuestion(turn.text)) continue
 
     const reply = transcript.turns[index + 1]
-    if (reply === undefined || reply.speaker !== 'patient') continue
+    if (reply === undefined) continue
+    if (trusted && reply.speaker !== 'patient') continue
 
     const denial = ABILITY_DENIAL.exec(reply.text)
     if (denial === null || REPLY_REAFFIRMS.test(reply.text.slice(denial[0].length))) continue

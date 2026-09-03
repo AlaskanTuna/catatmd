@@ -35,9 +35,13 @@ const TABS = [
  * very end. The record now comes first and this writes into it.
  *
  * Everything here is unchanged from that page except its edges: no routing, no
- * create mutation, and a callback where the navigation used to be. The draft
- * speaker-label gate in particular is carried over intact, because it is a
- * safety control rather than UX polish (issue #70).
+ * create mutation, and a callback where the navigation used to be.
+ *
+ * The draft speaker-label gate it used to carry is gone. It was a safety control
+ * rather than UX polish, so it was replaced rather than dropped: `labelsReviewed`
+ * on the submitted transcript tells the red-flag engine whether a person stands
+ * behind the labels, and the engine refuses the question-denial reading when
+ * nobody does (issue #70, backend/src/redflags/mislabel-suppression.test.ts).
  */
 export function CapturePanel({
   onCapture,
@@ -250,15 +254,19 @@ export function CapturePanel({
                 // is disabled on. `proseToDraft` applies the same rules to the
                 // text alone, so the recording stays usable and the labels stay
                 // the doctor's to confirm.
+                /*
+                 * The `undrafted` marker the server sets on a span it could not
+                 * label is deliberately not carried further. Its only reader was
+                 * the review list, which is gone, and a marker nothing reads is
+                 * worse than none. The span's placeholder speaker is bounded
+                 * instead by `labelsReviewed`, which stops the red-flag engine
+                 * trusting any label on this path, drafted or placeholder.
+                 */
                 const hostedLines = (draftTurns ?? []).map(
                   (turn, i): DraftLine => ({
                     id: `hosted-${i}`,
                     speaker: turn.speaker,
                     text: turn.text,
-                    // Carried through rather than dropped: a chunk the server
-                    // could not label arrives with a placeholder speaker, and
-                    // the review list has to say so.
-                    ...(turn.undrafted === true ? { undrafted: true } : {}),
                   }),
                 )
                 const timedLines = segmentsToDraft(segments, transcribed, { withOffsets })
