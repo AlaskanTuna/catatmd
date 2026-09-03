@@ -19,6 +19,12 @@
 name: 'Agent: Dependency Advisories'
 
 on:
+  # Temporary bootstrap trigger. GitHub does not expose workflow_dispatch until a
+  # workflow has run at least once, so this fires the first run. Removed immediately
+  # after, in the follow-up commit on this branch.
+  push:
+    branches:
+      - chore/agent-dependency-advisories
   schedule:
     - cron: '0 1 * * 1' # Mondays 09:00 MYT (01:00 UTC)
   workflow_dispatch:
