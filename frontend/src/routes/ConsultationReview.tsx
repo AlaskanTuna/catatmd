@@ -23,6 +23,7 @@ import { NoteEditor } from '../review/NoteEditor.js'
 import { GapCard, RedFlagCard, SuggestionCard } from '../review/SafetyCards.js'
 import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
+import { InfoTip } from '../ui/InfoTip.js'
 import { PageHeader } from '../ui/PageHeader.js'
 import { RenameField } from '../ui/RenameField.js'
 import { CapturePanel } from './CapturePanel.js'
@@ -69,8 +70,72 @@ const SEVERITY_ORDER = { emergency: 0, urgent: 1, advisory: 2 } as const
  */
 const GAP_PRIORITY_ORDER = { high: 0, medium: 1, low: 2 } as const
 
-/** Enough gaps to show the shape of the list without it swallowing the rail. */
-const GAP_PREVIEW = 6
+/**
+ * Enough findings to show the shape of a list without it swallowing the rail.
+ *
+ * Three, down from six for gaps alone, because the number now governs all three
+ * panels and the rail holds all three at once. Six apiece is eighteen cards in a
+ * 340px column, which is the height the shared column height exists to prevent.
+ */
+const PANEL_PREVIEW = 3
+
+/** One panel's full list, as handed to the shared overflow dialog. */
+type Finding = { id: string; node: React.ReactNode }
+type Overflow = { title: string; findings: Finding[] }
+
+/**
+ * A rail panel that shows the first few findings and puts the rest behind a
+ * dialog.
+ *
+ * The preview is a CSS hide rather than a slice, so `print:block` brings the
+ * whole list back on paper: slicing would put a truncated list in front of a
+ * doctor with nothing to say it had been truncated, and on this rail that could
+ * be a missing red flag.
+ */
+function FindingsPanel({
+  title,
+  findings,
+  noun,
+  empty,
+  onShowAll,
+}: {
+  title: string
+  findings: Finding[]
+  /**
+   * What the CTA counts. Given rather than derived from `title`, because
+   * "Show All 7 Missing Information" is not a sentence.
+   */
+  noun: string
+  /** Shown instead of the list when there is nothing to show. */
+  empty?: React.ReactNode
+  onShowAll: (overflow: Overflow) => void
+}) {
+  return (
+    <Panel title={title} count={findings.length}>
+      {findings.length === 0 ? (
+        <p className="text-sm text-ink-muted">{empty}</p>
+      ) : (
+        <>
+          {findings.map((finding, position) => (
+            <div key={finding.id} className={cn(position >= PANEL_PREVIEW && 'hidden print:block')}>
+              {finding.node}
+            </div>
+          ))}
+          {findings.length > PANEL_PREVIEW && (
+            <button
+              type="button"
+              data-print="hide"
+              onClick={() => onShowAll({ title, findings })}
+              className="mt-1 self-start rounded-control px-2 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-sunken"
+            >
+              Show All {findings.length} {noun}
+            </button>
+          )}
+        </>
+      )}
+    </Panel>
+  )
+}
 
 export function ConsultationReview() {
   const { id = '' } = useParams()
@@ -104,25 +169,33 @@ export function ConsultationReview() {
     })
   }, [showTranscript])
   /*
-   * The full gap list opens in a dialog rather than expanding the rail. Thirty
-   * two gaps inline made the rail scroll for a page and a half while the two
-   * columns beside it had already ended, which is the height mismatch the
-   * fixed column heights above exist to remove. Gated on state as well as the
-   * ref so the cards are not in the DOM twice while it is closed.
+   * A panel's full list opens in a dialog rather than expanding the rail.
+   * Thirty-two gaps inline made the rail scroll for a page and a half while the
+   * two columns beside it had already ended, which is the height mismatch the
+   * shared column height exists to remove. One dialog serves all three panels,
+   * because three dialogs differing only in their title is three places for the
+   * next change to miss.
+   *
+   * The rail still renders every finding, with the ones past the preview hidden
+   * in CSS rather than sliced out, so `print:block` brings them all back. The
+   * dialog's copy is gated on state so the cards are not in the DOM twice while
+   * it is closed.
    */
-  const [allGapsOpen, setAllGapsOpen] = useState(false)
-  const allGapsDialog = useRef<HTMLDialogElement>(null)
-  /*
-   * Focus the first control once the content mounts. It is gated on state, so
-   * it is not in the DOM yet when `showModal()` runs its native autofocus pass,
-   * and without this the dialog itself takes focus and the first Tab starts
-   * from nowhere in particular. Queried off the dialog rather than held on a
-   * ref because `ui/Button.tsx` does not forward one, and teaching a shared
-   * component to do so for one caller is a wider change than this needs.
-   */
+  const [overflow, setOverflow] = useState<Overflow | null>(null)
+  const overflowDialog = useRef<HTMLDialogElement>(null)
+
   useEffect(() => {
-    if (allGapsOpen) allGapsDialog.current?.querySelector('button')?.focus()
-  }, [allGapsOpen])
+    if (!overflow) return
+    overflowDialog.current?.showModal()
+    /*
+     * Focus the first control once the content mounts. It is gated on state, so
+     * it is not in the DOM yet when `showModal()` runs its native autofocus
+     * pass, and without this the dialog itself takes focus and the first Tab
+     * starts from nowhere in particular. Queried off the dialog rather than held
+     * on a ref because `ui/Button.tsx` does not forward one.
+     */
+    overflowDialog.current?.querySelector('button')?.focus()
+  }, [overflow])
 
   /*
    * Demo Mode's consultation is not stored, so there is nothing to fetch for it
@@ -353,8 +426,24 @@ export function ConsultationReview() {
               </Link>
             </li>
             <li aria-hidden>/</li>
-            <li aria-current="page" className="text-ink">
-              Review
+            {/* The patient, not the word "Review". The breadcrumb's last
+                segment was restating the page title one line below it, and the
+                one thing a doctor has to be able to see without leaving this
+                screen is whose note this is: a consultation filed to the wrong
+                patient was undetectable from here until #213. "Review" is the
+                fallback for a consultation captured without a patient, which is
+                the normal case for paste, upload and ad-hoc recording. */}
+            <li aria-current="page" className="min-w-0 truncate text-ink">
+              {detail.patient ? (
+                <Link
+                  to={`/patients/${detail.patient.id}`}
+                  className="text-ink transition-colors hover:text-accent"
+                >
+                  {detail.patient.name ?? 'Unnamed patient'}
+                </Link>
+              ) : (
+                'Review'
+              )}
             </li>
           </ol>
         }
@@ -368,46 +457,99 @@ export function ConsultationReview() {
          * it deliberately, because a filing name is not part of the record that
          * sign-off freezes, and the archive has to stay searchable.
          */
+        /*
+         * The record's name, and nothing else. The patient moved up into the
+         * breadcrumb, and the cuid went entirely: it identified the row for a
+         * developer and told a doctor nothing, while sitting in the most
+         * prominent surface on the screen.
+         *
+         * Renaming is offered on an approved consultation too. The API allows
+         * it deliberately, because a filing name is not part of the record that
+         * sign-off freezes, and the archive has to stay searchable.
+         */
         subtitle={
           isEphemeral ? (
-            <span className="font-mono text-xs">{detail.id}</span>
+            <span className="text-sm font-medium text-ink">{formatCreated(detail.createdAt)}</span>
           ) : (
-            <span className="flex min-w-0 flex-col gap-0.5">
-              <RenameField
-                value={detail.title}
-                fallback={formatCreated(detail.createdAt)}
-                label="Rename this consultation"
-                textClassName="text-sm font-medium text-ink"
-                onSave={(title) => rename.mutate(title)}
-              />
-              {/*
-               * Whose note this is, above the record id.
-               *
-               * A doctor reading a note has to be able to see the patient
-               * without leaving the screen, and until this was added the
-               * review screen showed a date and a cuid and nothing else —
-               * so a consultation filed to the wrong patient was
-               * undetectable from the screen where it mattered. Observed in
-               * production on 27/08/26.
-               *
-               * Absent for a consultation captured without a patient, which
-               * is the normal case for paste, upload and ad-hoc recording.
-               */}
-              {detail.patient && (
-                <Link
-                  to={`/patients/${detail.patient.id}`}
-                  className="w-fit text-accent text-sm transition-colors hover:text-accent-hover"
-                >
-                  {detail.patient.name ?? 'Unnamed patient'}
-                </Link>
-              )}
-              <span className="font-mono text-xs">{detail.id}</span>
-            </span>
+            <RenameField
+              value={detail.title}
+              fallback={formatCreated(detail.createdAt)}
+              label="Rename this consultation"
+              textClassName="text-sm font-medium text-ink"
+              onSave={(title) => rename.mutate(title)}
+            />
           )
         }
         art="/art/review.webp"
+        /*
+         * The page's one primary action lives here, under the record it acts
+         * on, rather than in a floating island at the foot of the screen. The
+         * island covered the bottom of all three columns and needed its own
+         * inset variable so the floating chrome could dodge it; a first-time
+         * doctor also had to scroll to discover it at all.
+         *
+         * Analyse becomes Approve at the same place, which is the sequence the
+         * screen actually has: capture, analyse, review, sign off.
+         */
         actions={
           <>
+            {!analysis && (
+              <>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  icon={<Sparkles className="size-4" />}
+                  disabled={!detail.transcript}
+                  loading={analyze.isPending || detail.status === 'analyzing'}
+                  onClick={() => analyze.mutate()}
+                  data-tour="analyse"
+                >
+                  {analyze.isPending ? 'Analysing' : 'Analyse Consultation'}
+                </Button>
+                {analyze.error ? (
+                  <InfoTip label="Analysis could not be completed" tone="warning">
+                    {analyze.error instanceof ApiError
+                      ? analyze.error.message
+                      : 'Analysis could not be completed.'}
+                  </InfoTip>
+                ) : (
+                  <InfoTip
+                    label={
+                      detail.transcript
+                        ? 'What happens when you analyse'
+                        : 'Why this is not available yet'
+                    }
+                    tone={detail.transcript ? 'info' : 'warning'}
+                  >
+                    {detail.transcript
+                      ? 'De-identified before any part of it leaves this server, and restored only after the response returns.'
+                      : 'Capture the consultation first, on the left.'}
+                  </InfoTip>
+                )}
+              </>
+            )}
+            {analysis && !approved && (
+              <ApproveBar
+                approve={async () =>
+                  isEphemeral
+                    ? ({
+                        ...(tour.ephemeral as ConsultationDetail),
+                        status: 'approved',
+                        approvedAt: new Date(),
+                        // The demo has no signed-in identity distinct from the
+                        // viewer, and inventing a clinician name on a screen
+                        // that teaches what approval means would be wrong.
+                        approvedBy: null,
+                      } as ConsultationDetail)
+                    : api.approve(id)
+                }
+                approved={approved}
+                approvedAt={detail.approvedAt}
+                approvedBy={detail.approvedBy}
+                unacknowledgedCount={unacknowledged.length}
+                onApproved={isEphemeral ? tour.updateEphemeral : onApproved}
+              />
+            )}
             <Button
               className="lg:hidden"
               onClick={() => setShowTranscript((value) => !value)}
@@ -577,171 +719,106 @@ export function ConsultationReview() {
 
           {analysis && (
             <>
-              <Panel title="Red Flags" count={flags.length}>
-                {flags.length === 0 ? (
-                  <p className="text-sm text-ink-muted">
-                    No escalation triggers fired for this consultation.
-                  </p>
-                ) : (
-                  flags.map((flag) => (
+              <FindingsPanel
+                title="Red Flags"
+                noun="Red Flags"
+                empty="No escalation triggers fired for this consultation."
+                findings={flags.map((flag) => ({
+                  id: flag.id,
+                  node: (
                     <RedFlagCard
-                      key={flag.id}
                       flag={flag}
                       disposition={byId(detail.redFlagDispositions, flag.id)}
                       onDecide={(decision) => patch.mutate({ redFlagDispositions: [decision] })}
                     />
-                  ))
-                )}
-              </Panel>
+                  ),
+                }))}
+                onShowAll={setOverflow}
+              />
 
-              {/* Gaps are the one list that gets long enough to bury the panels
-                under it, so it opens at a readable length with the full count
-                still on the heading. Red flags are never collapsed: hiding a
-                fired escalation trigger behind a disclosure is the failure
-                this product exists to prevent. */}
-              <Panel title="Missing Information" count={analysis.gaps.length}>
-                {/* Every gap is rendered and the extras are hidden in CSS rather
-                  than sliced out of the array, so `print:block` brings them all
-                  back. Slicing would put a truncated list on paper with nothing
-                  to say it had been truncated. */}
-                {gaps.map((gap, position) => (
-                  <div key={gap.id} className={cn(position >= GAP_PREVIEW && 'hidden print:block')}>
+              <FindingsPanel
+                title="Missing Information"
+                noun="Missing Items"
+                findings={gaps.map((gap) => ({
+                  id: gap.id,
+                  node: (
                     <GapCard
                       gap={gap}
                       disposition={byId(detail.gapDispositions, gap.id)}
                       onDecide={(decision) => patch.mutate({ gapDispositions: [decision] })}
                     />
-                  </div>
-                ))}
-                {analysis.gaps.length > GAP_PREVIEW && (
-                  <button
-                    type="button"
-                    data-print="hide"
-                    onClick={() => {
-                      setAllGapsOpen(true)
-                      allGapsDialog.current?.showModal()
-                    }}
-                    className="mt-1 self-start rounded-control px-2 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-sunken"
-                  >
-                    Show All {analysis.gaps.length} Missing Items
-                  </button>
-                )}
-              </Panel>
+                  ),
+                }))}
+                onShowAll={setOverflow}
+              />
 
-              <Panel title="Suggestions" count={analysis.suggestions.length}>
-                {analysis.suggestions.length === 0 ? (
+              <FindingsPanel
+                title="Suggestions"
+                noun="Suggestions"
+                empty={
                   /* Three readings, not two, because the system distinguishes
-                   them and the reader deserves the same distinction. Absence is
-                   its own case: consultations analysed before `outOfScope`
-                   shipped have no value, and reading that as `false` would
-                   assert the corpus was consulted when nobody knows. */
-                  <p className="text-sm text-ink-muted">
-                    {analysis.outOfScope === true &&
-                      'Outside the guideline corpus’s scope, so no suggestions were offered.'}
-                    {analysis.outOfScope === false &&
-                      'Within the guideline corpus’s scope, with nothing to suggest for this consultation.'}
-                    {analysis.outOfScope === undefined &&
-                      'No cited suggestions. This consultation was analysed before scope was recorded, so whether the corpus applied is not known.'}
-                  </p>
-                ) : (
-                  analysis.suggestions.map((suggestion) => (
-                    <SuggestionCard
-                      key={suggestion.id}
-                      suggestion={suggestion}
-                      guidelines={guidelines.data ?? []}
-                    />
-                  ))
-                )}
-              </Panel>
+                     them and the reader deserves the same distinction. Absence
+                     is its own case: consultations analysed before `outOfScope`
+                     shipped have no value, and reading that as `false` would
+                     assert the corpus was consulted when nobody knows. */
+                  analysis.outOfScope === true
+                    ? 'Outside the guideline corpus\u2019s scope, so no suggestions were offered.'
+                    : analysis.outOfScope === false
+                      ? 'Within the guideline corpus\u2019s scope, with nothing to suggest for this consultation.'
+                      : 'No cited suggestions. This consultation was analysed before scope was recorded, so whether the corpus applied is not known.'
+                }
+                findings={analysis.suggestions.map((suggestion) => ({
+                  id: suggestion.id,
+                  node: (
+                    <SuggestionCard suggestion={suggestion} guidelines={guidelines.data ?? []} />
+                  ),
+                }))}
+                onShowAll={setOverflow}
+              />
             </>
           )}
         </aside>
       </div>
 
-      {/* Every gap, at a width that fits the card's own explanation, instead of
-          thirty of them threaded through a 340px rail. The rail keeps the first
-          six as the preview and still renders the rest for print, so paper is
-          unaffected by anything here. */}
+      {/* Every finding in the panel, at a width that fits the card's own
+          explanation, instead of thirty of them threaded through a 340px rail.
+          The rail keeps the first three as the preview and still renders the
+          rest for print, so paper is unaffected by anything here. */}
       <dialog
-        ref={allGapsDialog}
+        ref={overflowDialog}
         data-print="hide"
-        onClose={() => setAllGapsOpen(false)}
-        aria-labelledby="all-gaps-title"
+        onClose={() => setOverflow(null)}
+        aria-labelledby="overflow-title"
         className="glass-panel m-auto w-[44rem] max-w-[calc(100vw-2rem)] rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
       >
-        {allGapsOpen && analysis && (
+        {overflow && (
           <div className="flex max-h-[80vh] flex-col">
             <div className="flex items-center justify-between gap-3 border-b border-line px-6 py-4">
-              <h2 id="all-gaps-title" className="font-display text-lg font-semibold">
-                Missing Information
+              <h2 id="overflow-title" className="font-display text-lg font-semibold">
+                {overflow.title}
                 <span className="ml-2 text-sm font-normal text-ink-muted">
-                  {count(analysis.gaps.length, 'item')}
+                  {count(overflow.findings.length, 'item')}
                 </span>
               </h2>
               {/* First in the DOM, and so the one the open effect focuses. */}
-              <Button size="sm" variant="neutral" onClick={() => allGapsDialog.current?.close()}>
+              <Button size="sm" variant="neutral" onClick={() => overflowDialog.current?.close()}>
                 Close
               </Button>
             </div>
             <div className="flex flex-col gap-3 overflow-y-auto p-6">
-              {gaps.map((gap) => (
-                <GapCard
-                  key={gap.id}
-                  gap={gap}
-                  disposition={byId(detail.gapDispositions, gap.id)}
-                  onDecide={(decision) => patch.mutate({ gapDispositions: [decision] })}
-                />
+              {overflow.findings.map((finding) => (
+                <div key={finding.id}>{finding.node}</div>
               ))}
             </div>
           </div>
         )}
       </dialog>
 
-      {/* The same bar the approved state gets, carrying the gate that comes
-          before it. A doctor who has captured nothing sees the action and why
-          it is not available yet, rather than an Analyse button that fails. */}
-      {!analysis && (
-        /*
-         * Sticky, like the approve bar it becomes. It was deliberately not,
-         * because a bar floating over the capture form covered the very
-         * controls it was waiting on. What changed is the ground under it: the
-         * columns now have a bounded height, so the bar has its own strip below
-         * them rather than sharing space with the capture card, and the height
-         * leaves room for it. The reason to pin it is that an action a
-         * first-time user cannot see is an action they do not know exists, and
-         * this one was below the fold on an untouched consultation.
-         */
-        <div
-          className="glass sticky bottom-4 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-float p-3 md:mr-16"
-          data-print="hide"
-        >
-          <p className="px-1 text-sm text-ink-muted">
-            {analyze.error ? (
-              <span role="alert" className="text-emergency">
-                {analyze.error instanceof ApiError
-                  ? analyze.error.message
-                  : 'Analysis could not be completed.'}
-              </span>
-            ) : detail.transcript ? (
-              'De-identified before any part of it leaves this server, and restored only after the response returns.'
-            ) : (
-              'Choose how to capture this consultation.'
-            )}
-          </p>
-          <Button
-            variant="primary"
-            icon={<Sparkles className="size-4" />}
-            disabled={!detail.transcript}
-            loading={analyze.isPending || detail.status === 'analyzing'}
-            onClick={() => analyze.mutate()}
-            data-tour="analyse"
-          >
-            {analyze.isPending ? 'Analysing' : 'Analyse Consultation'}
-          </Button>
-        </div>
-      )}
-
-      {analysis && (
+      {/* Only the approved state renders here now: the attribution is a
+          record, not an action, and it prints (issue #26). The gate itself
+          moved under the consultation title, where it is seen without covering
+          the columns it sits over. */}
+      {analysis && approved && (
         <ApproveBar
           approve={async () =>
             isEphemeral

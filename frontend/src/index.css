@@ -870,32 +870,20 @@
    * mobile dock occupies the bottom edge and the button has to clear it; from
    * `md` up the dock is gone and the corner is free.
    *
-   * **From `md` up the button sits level with the approve island, not above
-   * it** (issue #140 follow-up). It used to be lifted clear by a flat
-   * `--approve-bar-inset`, which read as misaligned: the island's bottom edge
-   * is at `1rem` and the button floated a full row higher, so the two pieces of
-   * chrome on the same corner of the same screen never lined up.
-   *
-   * They can share the row because the island reserves the corner for them.
-   * `<main>` carries `md:pr-6` and this button is `right-6`, so on any viewport
-   * narrower than roughly 86rem the content column reaches the button's column
-   * and the two would collide; `ApproveBar` answers that with its own right
-   * margin rather than by pushing the button out of the way.
-   *
-   * The offset centres a 3rem button against the island's *measured* height,
-   * published as `--approve-bar-height`. Measured rather than assumed because
-   * the island's text wraps at narrow widths, and a constant tuned against one
-   * line drifts out of alignment at two.
+   * It used to dodge the approve island as well, via a measured
+   * `--approve-bar-height` the island published for exactly that. The island is
+   * gone: its action moved under the consultation title, so nothing else
+   * contests this corner and the button simply sits in it.
    */
   .fab-anchor {
     right: calc(var(--spacing) * 4);
-    bottom: calc(5.5rem + var(--approve-bar-inset, 0px));
+    bottom: 5.5rem;
   }
 
   @media (width >= 48rem) {
     .fab-anchor {
       right: calc(var(--spacing) * 6);
-      bottom: calc(1rem + (var(--approve-bar-height, 3rem) - 3rem) / 2);
+      bottom: 1rem;
     }
   }
 }

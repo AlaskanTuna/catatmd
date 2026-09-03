@@ -1,4 +1,4 @@
-import { Info } from 'lucide-react'
+import { AlertCircle, Info } from 'lucide-react'
 import {
   type CSSProperties,
   type ReactNode,
@@ -71,6 +71,7 @@ export function InfoTip({
   className,
   align = 'left',
   layered = false,
+  tone = 'info',
 }: {
   label: string
   children: ReactNode
@@ -79,6 +80,15 @@ export function InfoTip({
   align?: 'left' | 'right'
   /** Portal the panel out, for a tip inside a dialog or a scrolling column. */
   layered?: boolean
+  /**
+   * `warning` swaps the `i` for a `!` and tints the trigger.
+   *
+   * For a tip whose content is a caveat about the control beside it rather than
+   * an elaboration of it. The colour is `urgent`, never `emergency`: this marks
+   * something the doctor should weigh, and spending the escalation colour on a
+   * disclosure would leave nothing louder for an actual escalation.
+   */
+  tone?: 'info' | 'warning'
 }) {
   const [open, setOpen] = useState(false)
   const [pinned, setPinned] = useState(false)
@@ -285,9 +295,20 @@ export function InfoTip({
         onBlur={() => {
           if (!pinned) setOpen(false)
         }}
-        className="inline-flex size-5 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-sunken hover:text-ink focus-visible:bg-sunken focus-visible:text-ink"
+        className={cn(
+          'inline-flex size-5 items-center justify-center rounded-full transition-colors',
+          tone === 'warning'
+            ? // Alpha tint, not a token: this sits on the opaque header card, where a
+              // tint and a solid colour are the same pixels (see docs/decisions.md).
+              'text-urgent hover:bg-urgent/12 focus-visible:bg-urgent/12'
+            : 'text-ink-muted hover:bg-sunken hover:text-ink focus-visible:bg-sunken focus-visible:text-ink',
+        )}
       >
-        <Info aria-hidden className="size-3.5" />
+        {tone === 'warning' ? (
+          <AlertCircle aria-hidden className="size-4" />
+        ) : (
+          <Info aria-hidden className="size-3.5" />
+        )}
       </button>
       {panel}
     </span>

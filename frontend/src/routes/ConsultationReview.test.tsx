@@ -194,7 +194,7 @@ describe('the full missing-information list', () => {
     rationale: 'Because',
     priority: 'medium' as const,
   })
-  // Seven, so exactly one sits past the six-item preview.
+  // Seven, so four sit past the three-item preview.
   const SEVEN = Array.from({ length: 7 }, (_, i) => gap(String(i)))
 
   beforeEach(() => {
@@ -262,5 +262,84 @@ describe('the full missing-information list', () => {
     // The rail's seven and nothing else: the dialog's copy is gated on state,
     // not merely hidden, so a closed dialog contributes no duplicate controls.
     expect(screen.getAllByTestId('gap')).toHaveLength(7)
+  })
+})
+
+describe('the panel overflow threshold', () => {
+  const gap = (id: string) => ({
+    id,
+    question: `Q-${id}`,
+    rationale: 'Because',
+    priority: 'medium' as const,
+  })
+
+  const withGaps = (n: number) => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      analysis: {
+        ...APPROVED.analysis,
+        gaps: Array.from({ length: n }, (_, i) => gap(String(i))),
+      },
+    } as never)
+  }
+
+  it('shows no CTA at the preview size, where nothing is hidden', async () => {
+    withGaps(3)
+    setup()
+
+    expect(await screen.findByText('Missing Information')).toBeTruthy()
+    expect(screen.queryByText(/show all/i)).toBeNull()
+  })
+
+  it('offers the CTA as soon as one finding is past the preview', async () => {
+    withGaps(4)
+    setup()
+
+    expect(await screen.findByText('Show All 4 Missing Items')).toBeTruthy()
+  })
+
+  it('counts every finding on the CTA, not just the hidden ones', async () => {
+    withGaps(9)
+    setup()
+
+    expect(await screen.findByText('Show All 9 Missing Items')).toBeTruthy()
+    // All nine stay in the rail; four are visible and the rest are hidden in
+    // CSS so `print:block` can bring them back.
+    expect(screen.getAllByTestId('gap')).toHaveLength(9)
+  })
+})
+
+describe('the header identifies the consultation', () => {
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelines).mockResolvedValue([])
+  })
+
+  it('names the patient in the breadcrumb rather than the word Review', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      patient: { id: 'patient-1', name: 'Siti binti Ahmad' },
+    } as never)
+    setup()
+
+    expect(await screen.findByText('Siti binti Ahmad')).toBeTruthy()
+    expect(screen.queryByText('Review')).toBeNull()
+  })
+
+  it('falls back to Review when the consultation has no patient', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue(APPROVED as never)
+    setup()
+
+    expect(await screen.findByText('Review')).toBeTruthy()
+  })
+
+  it('never shows the record id, which means nothing to a doctor', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue(APPROVED as never)
+    setup()
+
+    await screen.findByText('Consultation Review')
+    expect(screen.queryByText('consultation-1')).toBeNull()
   })
 })
