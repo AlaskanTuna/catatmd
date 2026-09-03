@@ -134,7 +134,7 @@ export function CapturePanel({
   }
 
   return (
-    <div>
+    <div className="flex flex-1 flex-col">
       {/* One row: the tabs, then the settings affordance pushed to the end.
         The gear was a labelled button inside the `tablist` itself, which is
         both a stray non-tab child of a tab set and, in a 380px column, wide
@@ -205,7 +205,10 @@ export function CapturePanel({
         }}
       />
 
-      <div className="mt-4">
+      {/* Centred in the leftover room rather than pinned under the tabs: the
+          card grows to the column's floor, and capture is the one thing on
+          this screen a doctor came here to do. */}
+      <div className="mt-4 flex flex-1 flex-col justify-center">
         {tab === 'upload' && (
           <Card className="p-6">
             <label className="flex flex-col items-start gap-2 text-sm">

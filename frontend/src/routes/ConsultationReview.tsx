@@ -592,10 +592,14 @@ export function ConsultationReview() {
             // `scroll-mt-20` clears the fixed chrome cluster, which is out of
             // flow and would otherwise cover the heading this scrolls to.
             'order-3 scroll-mt-20 lg:sticky lg:top-6 lg:order-1',
-            // One height for all three columns, so their tops and bottoms line
-            // up instead of each ending wherever its content happens to stop.
-            // This column was the worst of it: a one-line transcript left a
-            // 380px stub beside two full-length neighbours.
+            // One ceiling for all three columns, not one height. The grid
+            // already stretches them to a common row height, so their tops and
+            // bottoms line up without any column being padded out to the
+            // viewport: a draft with three short cards stays short, while a
+            // long transcript stops at the ceiling and scrolls inside itself
+            // rather than running the page. This column was the worst of it
+            // before: a one-line transcript left a 380px stub beside two
+            // full-length neighbours.
             //
             // The last child stretches so the card bottoms line up too, and it
             // is `grow shrink-0` rather than `flex-1` for a measured reason:
@@ -604,7 +608,7 @@ export function ConsultationReview() {
             // everything past the fold becomes unreachable. Growing from an
             // `auto` basis that may never shrink fills the gap when content is
             // short without capping it when content is long.
-            'lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
+            'lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
             // The mobile show/hide belongs to a transcript that already
             // exists. Capture is the one thing on this screen a doctor has
             // come here to do, so it is never behind a toggle.
@@ -638,7 +642,7 @@ export function ConsultationReview() {
               ))}
             </div>
           ) : (
-            <Card className="p-4">
+            <Card className="flex flex-col p-4">
               <CapturePanel
                 saving={capture.isPending}
                 error={
@@ -655,7 +659,7 @@ export function ConsultationReview() {
         </section>
 
         <section
-          className="order-2 min-w-0 lg:sticky lg:top-6 lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0"
+          className="order-2 min-w-0 lg:sticky lg:top-6 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0"
           aria-labelledby="note-heading"
           data-print="expand"
         >
@@ -693,7 +697,7 @@ export function ConsultationReview() {
               The bottom stop clears the approve bar, which is `sticky bottom-4`
               in flow and would otherwise sit on top of the last card. */}
         <aside
-          className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:[&>section]:grow lg:[&>section]:shrink-0"
+          className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:[&>section]:grow lg:[&>section]:shrink-0"
           aria-label="Clinical safety"
           data-print="expand"
         >
