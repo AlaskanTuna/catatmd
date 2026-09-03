@@ -11,6 +11,7 @@ import {
   type TranscriptionEngine,
   toConstraints,
 } from './audio-settings.js'
+import { InputMeter } from './InputMeter.js'
 
 /**
  * The two transcription engines, named the way the Record tab's picker named
@@ -39,82 +40,6 @@ const ENGINES: {
       'The audio leaves this device. An early-access service: on our scripted Malay consultation it kept code-switched sentences intact, but sometimes hardened the first consonant of a Malay clinical word, hearing batuk as patut and demam as teman, so check those words when you review the draft. We have not agreed separate retention or training terms with ILMU, so their standard early-access terms apply. The returned text is de-identified before the note model drafts the Doctor and Patient labels, which you review line by line before anything enters the transcript, and your choice is recorded in the audit trail. Handled under the PDPA as amended in 2024, under which voice is biometric data and therefore sensitive personal data requiring explicit consent.',
   },
 ]
-
-/**
- * A live input meter, driven by the actual stream.
- *
- * **It must never be decorative.** An animation on a loop would tell a doctor
- * the microphone is working while nothing is being captured, which is worse
- * than showing nothing at all: the whole reason this exists is to answer "is it
- * hearing me" before a consultation rather than after one is lost. So it reads
- * a real `AnalyserNode` and shows silence as silence.
- */
-function InputMeter({ constraints }: { constraints: MediaTrackConstraints }) {
-  const [level, setLevel] = useState(0)
-  const [state, setState] = useState<'starting' | 'live' | 'denied'>('starting')
-
-  useEffect(() => {
-    let stream: MediaStream | null = null
-    let context: AudioContext | null = null
-    let frame = 0
-    let cancelled = false
-
-    async function listen() {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: constraints })
-        if (cancelled) return
-        context = new AudioContext()
-        const analyser = context.createAnalyser()
-        analyser.fftSize = 512
-        context.createMediaStreamSource(stream).connect(analyser)
-        const bins = new Uint8Array(analyser.frequencyBinCount)
-        setState('live')
-
-        const tick = () => {
-          analyser.getByteTimeDomainData(bins)
-          // Peak deviation from the 128 midpoint, which tracks loudness closely
-          // enough for a "can you hear me" check and costs nothing per frame.
-          let peak = 0
-          for (const value of bins) peak = Math.max(peak, Math.abs(value - 128))
-          setLevel(Math.min(1, peak / 90))
-          frame = requestAnimationFrame(tick)
-        }
-        tick()
-      } catch {
-        if (!cancelled) setState('denied')
-      }
-    }
-
-    void listen()
-    return () => {
-      cancelled = true
-      cancelAnimationFrame(frame)
-      for (const track of stream?.getTracks() ?? []) track.stop()
-      void context?.close()
-    }
-  }, [constraints])
-
-  return (
-    <div className="mt-2 flex items-center gap-3">
-      {/* One horizontal bar, filled by the measured level. The twelve rising
-          bars this replaced read as a waveform, and a waveform implies the
-          shape of the sound rather than its loudness, which is not what the
-          `AnalyserNode` behind it measures. A level meter says the one thing
-          this control exists to answer. */}
-      <div className="h-1.5 w-32 shrink-0 overflow-hidden rounded-full bg-line" aria-hidden>
-        <div
-          className="h-full rounded-full bg-accent transition-[width] duration-75 ease-out"
-          style={{ width: `${Math.round(level * 100)}%` }}
-        />
-      </div>
-      <span className="text-xs text-ink-muted">
-        {state === 'live' && (level > 0.06 ? 'Hearing you now' : 'Silent')}
-        {state === 'starting' && 'Checking the microphone'}
-        {state === 'denied' && 'No microphone access'}
-      </span>
-    </div>
-  )
-}
 
 function Toggle({
   checked,
@@ -316,7 +241,7 @@ export function AudioSettingsDialog({
             ]}
             onChange={(value) => setDraft({ ...draft, deviceId: value || null })}
           />
-          <InputMeter constraints={toConstraints(draft)} />
+          <InputMeter className="mt-2" constraints={toConstraints(draft)} />
         </div>
 
         <fieldset className="mt-4">

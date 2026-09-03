@@ -102,7 +102,7 @@ export function SpeakerAssign({
             reader who takes these for finished labels applies them unread, and
             that is the mislabel the review step exists to catch.
           */}
-          <InfoTip label="How draft labels work">
+          <InfoTip label="How draft labels work" layered>
             Tap a label to flip it. A dotted word is a measured mishear of a Malay clinical word;
             tap the suggestion after it to correct that word only. A sentence holding both speakers
             is best fixed in the transcript box after applying. Plain text joins the turn above it
