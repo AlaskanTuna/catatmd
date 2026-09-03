@@ -1,9 +1,10 @@
 import type { ConsultationDetail } from '@shared/types'
 import { useMutation } from '@tanstack/react-query'
 import { CheckCircle2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { ApiError } from '../lib/api.js'
 import { Button } from '../ui/Button.js'
+import { InfoTip } from '../ui/InfoTip.js'
 
 /**
  * The approval gate (#10, CAP-5).
@@ -45,46 +46,6 @@ export function ApproveBar({
 }) {
   const [confirming, setConfirming] = useState(false)
 
-  /*
-   * Publishes this bar's footprint so floating chrome can sit above it.
-   *
-   * It is set here rather than inferred from the route, because the route
-   * cannot tell the difference: an approved consultation renders the summary
-   * below instead of this bar, and a FAB lifted by route match then floats
-   * clear of nothing. Tying the offset to the bar's own lifetime makes it
-   * correct in both states without either component importing the other.
-   */
-  const bar = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (approved) return
-    const root = document.documentElement
-    // Below `md` the button still sits above this bar, because the bar spans
-    // the full width there and there is no corner to share.
-    root.style.setProperty('--approve-bar-inset', '4rem')
-
-    /*
-     * From `md` up the button sits level with this bar instead, centred against
-     * its height. Measured rather than assumed: the copy wraps to two lines at
-     * narrow widths and while confirming, and a constant tuned against one line
-     * leaves the two visibly out of line at two.
-     */
-    const element = bar.current
-    const observer = element
-      ? new ResizeObserver(([entry]) => {
-          const height = entry?.borderBoxSize?.[0]?.blockSize ?? entry?.contentRect.height
-          if (height) root.style.setProperty('--approve-bar-height', `${height}px`)
-        })
-      : null
-    if (element && observer) observer.observe(element)
-
-    return () => {
-      observer?.disconnect()
-      root.style.removeProperty('--approve-bar-inset')
-      root.style.removeProperty('--approve-bar-height')
-    }
-  }, [approved])
-
   const approve = useMutation({
     mutationFn: performApproval,
     onSuccess: (next) => {
@@ -120,58 +81,60 @@ export function ApproveBar({
     )
   }
 
+  /*
+   * The action group, rendered in the page header rather than in a floating
+   * island at the foot of the screen.
+   *
+   * The island was pinned there so it could not be missed, which it achieved by
+   * covering the bottom of all three columns and needing its own inset variable
+   * so the floating chrome could dodge it. Under the consultation title it is
+   * seen without contesting anything, and it sits with the record it approves.
+   *
+   * The status line the island carried becomes a tooltip, and only when it has
+   * something to say. "Reviewed and ready to sign off." restated the enabled
+   * button beside it; an unacknowledged count does not, so that is what
+   * survives. It stays an advisory rather than a block for the reason above:
+   * blocking trains a doctor to clear flags reflexively to get past the gate.
+   */
   return (
-    <div
-      ref={bar}
-      /*
-       * `md:mr-16` reserves the bottom-right corner for the floating button,
-       * which is `right-6` and 3rem wide, so 4rem clears it with a gap. Without
-       * it the two overlap on any viewport under roughly 86rem, where the
-       * content column reaches `<main>`'s own `md:pr-6`.
-       *
-       * The island yields rather than the button moving, because the button is
-       * chrome that belongs in the corner on every screen and this bar is the
-       * only thing that ever contests it.
-       */
-      className="glass sticky bottom-4 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-float p-3 md:mr-16"
-      style={{ zIndex: 'var(--z-sticky)' }}
-      data-print="hide"
-      data-tour="approve"
-    >
-      <div className="min-w-0">
-        {confirming ? (
-          <p className="text-sm font-medium">
-            You are taking responsibility for this note. It cannot be edited afterwards.
-          </p>
-        ) : (
-          <p className="text-sm text-ink-muted">
-            {unacknowledgedCount > 0
-              ? `${unacknowledgedCount} red flag${unacknowledgedCount === 1 ? '' : 's'} not yet acknowledged.`
-              : 'Reviewed and ready to sign off.'}
-          </p>
-        )}
-        {approve.error && (
-          <p role="alert" className="mt-1 text-sm text-emergency">
-            {approve.error instanceof ApiError ? approve.error.message : 'Approval failed.'}
-          </p>
-        )}
-      </div>
-
-      <div className="flex gap-2">
-        {confirming && (
-          <Button onClick={() => setConfirming(false)} disabled={approve.isPending}>
-            Cancel
-          </Button>
-        )}
-        <Button
-          variant="primary"
-          size="lg"
-          loading={approve.isPending}
-          onClick={() => (confirming ? approve.mutate() : setConfirming(true))}
-        >
-          {confirming ? 'Confirm Approval' : 'Approve Note'}
+    <div className="flex flex-wrap items-center gap-2" data-print="hide" data-tour="approve">
+      {confirming && (
+        <Button onClick={() => setConfirming(false)} disabled={approve.isPending}>
+          Cancel
         </Button>
-      </div>
+      )}
+      <Button
+        variant="primary"
+        size="lg"
+        loading={approve.isPending}
+        onClick={() => (confirming ? approve.mutate() : setConfirming(true))}
+      >
+        {confirming ? 'Confirm Approval' : 'Approve Note'}
+      </Button>
+
+      {confirming ? (
+        <InfoTip label="What approving does" layered>
+          You are taking responsibility for this note. It cannot be edited afterwards.
+        </InfoTip>
+      ) : (
+        unacknowledgedCount > 0 && (
+          <InfoTip
+            label={`${unacknowledgedCount} red flag${unacknowledgedCount === 1 ? '' : 's'} not yet acknowledged`}
+            tone="warning"
+            layered
+          >
+            {unacknowledgedCount} red flag{unacknowledgedCount === 1 ? '' : 's'} not yet
+            acknowledged. You can still approve; the count is here so the choice is informed, not
+            prevented.
+          </InfoTip>
+        )
+      )}
+
+      {approve.error && (
+        <p role="alert" className="w-full text-sm text-emergency">
+          {approve.error instanceof ApiError ? approve.error.message : 'Approval failed.'}
+        </p>
+      )}
     </div>
   )
 }

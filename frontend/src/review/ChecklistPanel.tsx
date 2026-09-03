@@ -65,19 +65,24 @@ function ChecklistRow({
   // the list would look ragged for a reason the reader cannot see.
   if (!link) {
     return (
-      <div className="flex items-center justify-between gap-3 border-b border-line/60 py-2 last:border-0">
+      <div className="flex min-w-0 items-center justify-between gap-3 border-b border-line/60 px-2 py-2 last:border-0">
         {summary}
       </div>
     )
   }
 
   return (
-    <div className="border-b border-line/60 last:border-0">
+    <div className="min-w-0 border-b border-line/60 last:border-0">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="group -mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-control px-2 py-2 text-left transition-colors hover:bg-sunken-soft"
+        /* `w-full`, not the old `-mx-2 w-[calc(100%+1rem)]` hover bleed. That
+           made every interactive row 1rem wider than its grid cell, so the
+           checklist's own content set the panel's scroll width and the review
+           column grew a horizontal scrollbar. The inert row above carries the
+           same `px-2` instead, so the two still align. */
+        className="group flex w-full min-w-0 items-center justify-between gap-3 rounded-control px-2 py-2 text-left transition-colors hover:bg-sunken-soft"
       >
         {summary}
         <Quote
