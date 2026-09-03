@@ -21,6 +21,7 @@ import { ApproveBar } from '../review/ApproveBar.js'
 import { ChecklistPanel } from '../review/ChecklistPanel.js'
 import { NoteEditor } from '../review/NoteEditor.js'
 import { GapCard, RedFlagCard, SuggestionCard } from '../review/SafetyCards.js'
+import { SourcesDialog } from '../review/SourcesDialog.js'
 import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { InfoTip } from '../ui/InfoTip.js'
@@ -654,6 +655,14 @@ export function ConsultationReview() {
           <h2 id="note-heading" className="mb-2 text-sm font-semibold" data-print="hide">
             Clinical Note
           </h2>
+          {analysis && (
+            <SourcesDialog
+              suggestions={analysis.suggestions}
+              guidelines={guidelines.data ?? []}
+              outOfScope={analysis.outOfScope}
+              className="mb-3"
+            />
+          )}
           {analysis && note ? (
             <>
               <NoteEditor
