@@ -191,9 +191,11 @@ async function settle() {
   })
 }
 
-function renderCapture(engine: 'local' | 'hosted' = 'local') {
+function renderCapture(engine: 'local' | 'hosted' = 'local', transcript = '') {
   const onTranscript = vi.fn()
-  const view = render(<AudioCapture onTranscript={onTranscript} engine={engine} />)
+  const view = render(
+    <AudioCapture onTranscript={onTranscript} engine={engine} transcript={transcript} />,
+  )
   return { onTranscript, ...view }
 }
 
@@ -526,7 +528,11 @@ describe('prewarming the speech model', () => {
     act(() => {
       vi.advanceTimersByTime(1000)
     })
-    screen.getByRole('button', { name: /0:01/ })
+    // The elapsed time reads from its own element beside the Recording heading
+    // rather than from the stop button's label, so this asserts the clock, not
+    // the control it used to be printed on.
+    screen.getByText('0:01')
+    stopButton()
   })
 
   it('never arms the silence budget from prewarm alone', async () => {
@@ -778,7 +784,7 @@ describe('the recording fork', () => {
     expect(workers).toHaveLength(1)
     spawned().reply({ type: 'result', text: 'local', segments: [] })
 
-    rerender(<AudioCapture onTranscript={vi.fn()} engine="hosted" />)
+    rerender(<AudioCapture onTranscript={vi.fn()} engine="hosted" transcript="" />)
     await startRecording()
 
     // Roughly 250 MB of weights held for a path that will not use them.
@@ -875,7 +881,7 @@ describe('a hosted upload', () => {
     // The doctor switches the Audio dialog back to on-device and retries: the
     // retry is local, not a second upload of audio from a setting they have
     // just withdrawn.
-    rerender(<AudioCapture onTranscript={vi.fn()} engine="local" />)
+    rerender(<AudioCapture onTranscript={vi.fn()} engine="local" transcript="" />)
     fireEvent.click(screen.getByRole('button', { name: /try again/i }))
     await settle()
 
@@ -1055,5 +1061,36 @@ describe('hosted draft-turn labelling', () => {
     fireEvent.click(screen.getByRole('button', { name: /^cancel$/i }))
     await settle()
     expect(startButton().disabled).toBe(false)
+  })
+})
+
+describe('the recording panel', () => {
+  it('says it is recording, and says when the words arrive', async () => {
+    renderCapture()
+    await startRecording()
+
+    screen.getByText('Recording…')
+    // The field is deliberately empty during the pass. Transcription runs on
+    // the finished recording, so anything else would promise a live transcript
+    // this product does not produce.
+    screen.getByText(/empty until you stop/i)
+  })
+
+  it('shows the transcript already captured, rather than an empty field', async () => {
+    renderCapture('local', 'Doctor: How long has the cough been there?')
+    await startRecording()
+
+    screen.getByText('Doctor: How long has the cough been there?')
+    expect(screen.queryByText(/empty until you stop/i)).toBeNull()
+  })
+
+  it('leaves no recording panel behind once the recording stops', async () => {
+    renderCapture()
+    await startRecording()
+    expect(screen.queryByText('Recording…')).not.toBeNull()
+
+    await stopRecording()
+
+    expect(screen.queryByText('Recording…')).toBeNull()
   })
 })

@@ -1,5 +1,13 @@
 import { Info } from 'lucide-react'
-import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import {
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '../lib/cn.js'
 
@@ -44,13 +52,18 @@ import { cn } from '../lib/cn.js'
  * because jsdom implements neither the top layer nor `showModal` (the suites
  * stub the method outright), so this is a browser-only failure by construction.
  *
- * **It assumes the `<dialog>` is itself the scrolling box**, because the offset
- * it adds is that element's `scrollTop`. That holds for the audio dialog, which
- * scrolls on the UA's own `overflow: auto`. It does not hold for a dialog that
- * scrolls an inner wrapper instead, and the full-gap-list dialog in
- * `routes/ConsultationReview.tsx` is exactly that shape: putting a `layered`
- * tip inside one would track the wrong offset. Position against the scrolling
- * ancestor rather than the dialog if that case ever arrives.
+ * Outside a dialog it portals to the body and positions in viewport
+ * coordinates instead. That path is for a tip inside an ordinary scrolling
+ * container, whose `overflow` clips an in-flow panel exactly the way a dialog's
+ * does: the review columns became such containers when they were given a shared
+ * height, which is what clipped the capture card's tip.
+ *
+ * **The dialog path assumes the `<dialog>` is itself the scrolling box**,
+ * because the offset it adds is that element's `scrollTop`. That holds for the
+ * audio dialog, which scrolls on the UA's own `overflow: auto`. It does not
+ * hold for a dialog that scrolls an inner wrapper instead, and the full-gap-list
+ * dialog in `routes/ConsultationReview.tsx` is exactly that shape: putting a
+ * `layered` tip inside one would track the wrong offset.
  */
 export function InfoTip({
   label,
@@ -64,7 +77,7 @@ export function InfoTip({
   className?: string
   /** Flip to `right` when the tip sits near the right edge of its container. */
   align?: 'left' | 'right'
-  /** Portal the panel to the document body, for tips inside a modal dialog. */
+  /** Portal the panel out, for a tip inside a dialog or a scrolling column. */
   layered?: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -74,9 +87,9 @@ export function InfoTip({
   const panelRef = useRef<HTMLSpanElement>(null)
   const [hosted, setHosted] = useState<{
     host: HTMLElement
-    top: number
     below: boolean
     maxHeight: number
+    style: CSSProperties
   } | null>(null)
 
   useEffect(() => {
@@ -113,29 +126,61 @@ export function InfoTip({
    */
   useLayoutEffect(() => {
     if (!open || !layered) return
-    const host = wrap.current?.closest('dialog')
-    if (!host) return
+    const dialog = wrap.current?.closest('dialog')
     const place = () => {
       const rect = wrap.current?.getBoundingClientRect()
-      const hostRect = host.getBoundingClientRect()
       if (!rect) return
       /*
        * Above the trigger by default, flipped below when there is more room
-       * that way. A tip on the dialog's first row has nothing above it, and a
+       * that way. A tip on the first row of its box has nothing above it, and a
        * panel anchored upward from there is the one whose opening sentence
        * disappears off the top with no scrollbar to recover it.
        */
-      const roomAbove = rect.top - hostRect.top
-      const roomBelow = hostRect.bottom - rect.bottom
+      const bounds = dialog
+        ? dialog.getBoundingClientRect()
+        : new DOMRect(0, 0, window.innerWidth, window.innerHeight)
+      const roomAbove = rect.top - bounds.top
+      const roomBelow = bounds.bottom - rect.bottom
       const below = roomBelow > roomAbove
+      const maxHeight = Math.max(roomAbove, roomBelow) - 12
+
+      if (dialog) {
+        setHosted({
+          host: dialog,
+          below,
+          maxHeight,
+          style: {
+            position: 'absolute',
+            // Dialog-relative, plus the dialog's own scroll offset, because the
+            // panel is an absolutely positioned child of a box that scrolls.
+            top:
+              (below ? rect.bottom - bounds.top + 6 : rect.top - bounds.top - 6) + dialog.scrollTop,
+            left: 12,
+            right: 12,
+            width: 'auto',
+          },
+        })
+        return
+      }
+      /*
+       * No dialog: fixed on the body, in viewport coordinates. This is the path
+       * for a tip inside an ordinary scrolling container, where the container's
+       * own `overflow` clips an in-flow panel exactly the way a dialog's does.
+       * There is no top layer involved outside a modal, so the body is a
+       * perfectly good host and `--z-tooltip` means what it says.
+       */
       setHosted({
-        host,
-        // Host-relative, plus the host's own scroll offset, because the panel
-        // is an absolutely positioned child of a box that scrolls.
-        top:
-          (below ? rect.bottom - hostRect.top + 6 : rect.top - hostRect.top - 6) + host.scrollTop,
+        host: document.body,
         below,
-        maxHeight: Math.max(roomAbove, roomBelow) - 12,
+        maxHeight,
+        style: {
+          position: 'fixed',
+          top: below ? rect.bottom + 6 : rect.top - 6,
+          // Right-aligned to the trigger so a panel near the right edge of a
+          // narrow column cannot grow off the side of the viewport.
+          left: align === 'left' ? rect.left : undefined,
+          right: align === 'left' ? undefined : window.innerWidth - rect.right,
+        },
       })
     }
     place()
@@ -145,7 +190,7 @@ export function InfoTip({
       document.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }
-  }, [open, layered])
+  }, [open, layered, align])
 
   const panelClass = cn(
     'max-h-[min(60vh,22rem)] w-72 max-w-[80vw] overflow-y-auto overscroll-contain rounded-card border border-line bg-surface p-3 text-xs leading-relaxed font-normal text-ink-muted shadow-lg',
@@ -167,11 +212,7 @@ export function InfoTip({
            * nothing left to decide, which is why it is not read on this path.
            */
           style={{
-            position: 'absolute',
-            top: hosted.top,
-            left: 12,
-            right: 12,
-            width: 'auto',
+            ...hosted.style,
             maxHeight: hosted.maxHeight,
             transform: hosted.below ? undefined : 'translateY(-100%)',
             zIndex: 'var(--z-tooltip)',

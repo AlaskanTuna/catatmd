@@ -454,7 +454,7 @@ export function ConsultationReview() {
             // up instead of each ending wherever its content happens to stop.
             // This column was the worst of it: a one-line transcript left a
             // 380px stub beside two full-length neighbours.
-            'lg:h-[calc(100vh-9rem)] lg:overflow-y-auto lg:pr-1',
+            'lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1',
             // The mobile show/hide belongs to a transcript that already
             // exists. Capture is the one thing on this screen a doctor has
             // come here to do, so it is never behind a toggle.
@@ -505,7 +505,7 @@ export function ConsultationReview() {
         </section>
 
         <section
-          className="order-2 min-w-0 lg:sticky lg:top-6 lg:h-[calc(100vh-9rem)] lg:overflow-y-auto lg:pr-1"
+          className="order-2 min-w-0 lg:sticky lg:top-6 lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1"
           aria-labelledby="note-heading"
           data-print="expand"
         >
@@ -543,7 +543,7 @@ export function ConsultationReview() {
               The bottom stop clears the approve bar, which is `sticky bottom-4`
               in flow and would otherwise sit on top of the last card. */}
         <aside
-          className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:h-[calc(100vh-9rem)] lg:overflow-y-auto lg:pr-1"
+          className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1"
           aria-label="Clinical safety"
           data-print="expand"
         >
@@ -557,24 +557,21 @@ export function ConsultationReview() {
                 each panel's findings will land, which is the empty-state claim
                 the prose these replaced was making at three times the length.
               */}
-              <Panel title="Red Flags">
-                <Card className="p-4">
-                  <div className="h-2 w-full rounded-pill bg-sunken" />
-                  <div className="mt-1.5 h-2 w-3/5 rounded-pill bg-sunken" />
-                </Card>
-              </Panel>
-              <Panel title="Missing Information">
-                <Card className="p-4">
-                  <div className="h-2 w-full rounded-pill bg-sunken" />
-                  <div className="mt-1.5 h-2 w-3/5 rounded-pill bg-sunken" />
-                </Card>
-              </Panel>
-              <Panel title="Suggestions">
-                <Card className="p-4">
-                  <div className="h-2 w-full rounded-pill bg-sunken" />
-                  <div className="mt-1.5 h-2 w-3/5 rounded-pill bg-sunken" />
-                </Card>
-              </Panel>
+              {/* One fixed height for all three, rather than three cards each
+                  sized by the two bars inside it. Content-sized placeholders
+                  make the rail's rhythm an accident of how many bars a panel
+                  happens to draw, and the three panels are peers: nothing about
+                  an unanalysed consultation makes one of them shorter than
+                  another. Fixed also means the rail does not resize when the
+                  real findings replace them. */}
+              {(['Red Flags', 'Missing Information', 'Suggestions'] as const).map((title) => (
+                <Panel key={title} title={title}>
+                  <Card className="h-24 p-4">
+                    <div className="h-2 w-full rounded-pill bg-sunken" />
+                    <div className="mt-1.5 h-2 w-3/5 rounded-pill bg-sunken" />
+                  </Card>
+                </Panel>
+              ))}
             </>
           )}
 
@@ -705,13 +702,17 @@ export function ConsultationReview() {
           it is not available yet, rather than an Analyse button that fails. */}
       {!analysis && (
         /*
-         * Not sticky, unlike the approve bar it will become. Approve is pinned
-         * because a doctor scrolls a long note and needs it reachable
-         * throughout; Analyse is pressed once, at the end, and a bar floating
-         * over the capture form covered the very controls it was waiting on.
+         * Sticky, like the approve bar it becomes. It was deliberately not,
+         * because a bar floating over the capture form covered the very
+         * controls it was waiting on. What changed is the ground under it: the
+         * columns now have a bounded height, so the bar has its own strip below
+         * them rather than sharing space with the capture card, and the height
+         * leaves room for it. The reason to pin it is that an action a
+         * first-time user cannot see is an action they do not know exists, and
+         * this one was below the fold on an untouched consultation.
          */
         <div
-          className="glass mt-6 flex flex-wrap items-center justify-between gap-3 rounded-float p-3 md:mr-16"
+          className="glass sticky bottom-4 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-float p-3 md:mr-16"
           data-print="hide"
         >
           <p className="px-1 text-sm text-ink-muted">

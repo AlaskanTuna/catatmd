@@ -221,10 +221,19 @@
     --color-sunken: oklch(0.135 0.005 160);
 
     /* Shadow does almost no work on a dark ground, so elevation is carried by
-     * the surface step above and the shadows only deepen the seam. */
-    --shadow-raised: 0 1px 2px oklch(0 0 0 / 0.4);
-    --shadow-card: 0 1px 2px oklch(0 0 0 / 0.4), 0 6px 16px -4px oklch(0 0 0 / 0.5);
-    --shadow-float: 0 2px 4px oklch(0 0 0 / 0.45), 0 16px 40px -8px oklch(0 0 0 / 0.6);
+     * the surface step above and the shadows only deepen the seam.
+     *
+     * Each therefore opens with a 1px spread ring in a light colour, which is
+     * the edge itself rather than a shadow of one. Without it a card's boundary
+     * is only the surface step, and a black shadow over a near-black ground
+     * cannot draw a boundary at all: light mode read as a defined card and dark
+     * mode read as an unbounded panel. `Card` stays borderless in the markup,
+     * so the two themes still differ in the token and nowhere else. */
+    --shadow-raised: 0 0 0 1px oklch(1 0 0 / 0.06), 0 1px 2px oklch(0 0 0 / 0.4);
+    --shadow-card: 0 0 0 1px oklch(1 0 0 / 0.07), 0 1px 2px oklch(0 0 0 / 0.4),
+      0 6px 16px -4px oklch(0 0 0 / 0.5);
+    --shadow-float: 0 0 0 1px oklch(1 0 0 / 0.09), 0 2px 4px oklch(0 0 0 / 0.45),
+      0 16px 40px -8px oklch(0 0 0 / 0.6);
     --color-ink: oklch(0.945 0.004 160);
     --color-ink-muted: oklch(0.72 0.01 160);
     --color-line: oklch(0.305 0.008 160);

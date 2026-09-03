@@ -145,39 +145,55 @@ export function CapturePanel({
 
   return (
     <div>
-      <div role="tablist" aria-label="Transcript source" className="flex flex-wrap gap-1">
-        {TABS.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={tab === id}
-            aria-disabled={id === 'record' && recordBlocked}
-            onClick={() => {
-              if (id === 'record' && recordBlocked) return
-              setTab(id)
-            }}
-            className={cn(
-              'inline-flex min-h-10 items-center gap-2 rounded-control px-3 text-sm font-medium transition-colors',
-              tab === id ? 'bg-accent-soft text-accent' : 'text-ink-muted hover:bg-sunken',
-              id === 'record' &&
-                recordBlocked &&
-                'cursor-not-allowed opacity-50 hover:bg-transparent',
-            )}
-          >
-            <Icon aria-hidden className="size-4" />
-            {label}
-          </button>
-        ))}
+      {/* One row: the tabs, then the settings affordance pushed to the end.
+        The gear was a labelled button inside the `tablist` itself, which is
+        both a stray non-tab child of a tab set and, in a 380px column, wide
+        enough to wrap onto a line of its own where it read as stranded. An
+        icon fits beside the three tabs at every width the column takes. */}
+      <div className="flex items-center justify-between gap-2">
+        <div role="tablist" aria-label="Transcript source" className="flex flex-wrap gap-1">
+          {TABS.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              aria-disabled={id === 'record' && recordBlocked}
+              onClick={() => {
+                if (id === 'record' && recordBlocked) return
+                setTab(id)
+              }}
+              className={cn(
+                'inline-flex min-h-10 items-center gap-2 rounded-control px-3 text-sm font-medium transition-colors',
+                tab === id ? 'bg-accent-soft text-accent' : 'text-ink-muted hover:bg-sunken',
+                id === 'record' &&
+                  recordBlocked &&
+                  'cursor-not-allowed opacity-50 hover:bg-transparent',
+              )}
+            >
+              <Icon aria-hidden className="size-4" />
+              {label}
+            </button>
+          ))}
+        </div>
 
         <button
           type="button"
           onClick={() => audioDialog.current?.showModal()}
-          aria-label="Audio settings"
-          className="ml-auto inline-flex min-h-10 items-center gap-2 rounded-control px-3 text-ink-muted text-sm transition-colors hover:bg-sunken"
+          aria-label={
+            audio.mode === 'ambient' ? 'Audio settings, ambient mode on' : 'Audio settings'
+          }
+          title="Audio settings"
+          className="relative inline-flex size-10 shrink-0 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-sunken hover:text-ink"
         >
           <Settings2 aria-hidden className="size-4" />
-          {audio.mode === 'ambient' ? 'Ambient' : 'Audio'}
+          {/* The word "Ambient" was carrying this state before the label went.
+              A standing preference that decides whether the room is being
+              listened to is not something the doctor should have to open a
+              dialog to discover, so it keeps a visible mark. */}
+          {audio.mode === 'ambient' && (
+            <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-accent" />
+          )}
         </button>
       </div>
 
@@ -222,6 +238,7 @@ export function CapturePanel({
           <Card className="p-6">
             <AudioCapture
               engine={audio.engine}
+              transcript={text}
               onTranscript={({ text: transcribed, segments, source: from, draftTurns }) => {
                 /*
                  * Appended, never replacing what is already there. A doctor may
