@@ -693,7 +693,7 @@ export function ConsultationReview() {
               The bottom stop clears the approve bar, which is `sticky bottom-4`
               in flow and would otherwise sit on top of the last card. */}
         <aside
-          className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0"
+          className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:[&>section]:grow lg:[&>section]:shrink-0"
           aria-label="Clinical safety"
           data-print="expand"
         >
@@ -716,7 +716,7 @@ export function ConsultationReview() {
                   real findings replace them. */}
               {(['Red Flags', 'Missing Information', 'Suggestions'] as const).map((title) => (
                 <Panel key={title} title={title}>
-                  <Card className="h-24 p-4">
+                  <Card className="flex-1 p-4 min-h-24">
                     <div className="h-2 w-full rounded-pill bg-sunken" />
                     <div className="mt-1.5 h-2 w-3/5 rounded-pill bg-sunken" />
                   </Card>
@@ -914,7 +914,7 @@ function Panel({
   children: React.ReactNode
 }) {
   return (
-    <section>
+    <section className="flex flex-col">
       <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
         {title}
         {count !== undefined && (
@@ -923,7 +923,7 @@ function Panel({
           </span>
         )}
       </h2>
-      <div className="flex flex-col gap-2">{children}</div>
+      <div className="flex flex-1 flex-col gap-2">{children}</div>
     </section>
   )
 }
