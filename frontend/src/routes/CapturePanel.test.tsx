@@ -176,43 +176,39 @@ function setup() {
 }
 
 describe('CapturePanel record flow', () => {
-  it('keeps Start disabled while a draft is pending, and enables it after Apply', () => {
+  /*
+   * Drafted labels land in the transcript on delivery. The review step they
+   * used to wait behind is gone: the workflow it belonged to is being replaced
+   * by one where the note and the safety panels fill while the doctor is still
+   * talking, and there is no moment in that to tweak a label.
+   *
+   * What the step was protecting is now `labelsReviewed`, pinned in the
+   * provenance block below and enforced in
+   * `backend/src/redflags/mislabel-suppression.test.ts`, which is where the
+   * guarantee is actually testable.
+   */
+  it('applies drafted labels straight into the transcript, with timestamps', () => {
     setup()
-    const start = screen.getByRole('button', { name: /use this transcript/i })
-    expect((start as HTMLButtonElement).disabled).toBe(true)
-
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
-    expect((start as HTMLButtonElement).disabled).toBe(false)
-  })
-
-  it('applies drafted labels as parseable lines with timestamps', () => {
-    setup()
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
     fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe('Doctor [0:00]: Any fever?\nPatient [0:02]: Yesterday quite hot.')
   })
 
-  it('flips one line without touching the others', () => {
+  it('enables Use This Transcript as soon as a recording lands', () => {
     setup()
-    fireEvent.click(screen.getByRole('button', { name: 'Patient, switch to Doctor' }))
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
-    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-    expect(textarea.value).toBe('Doctor [0:00]: Any fever?\nDoctor [0:02]: Yesterday quite hot.')
+    const start = screen.getByRole('button', { name: /use this transcript/i })
+    expect((start as HTMLButtonElement).disabled).toBe(false)
   })
 
   /*
    * A later recording's timebase restarts at zero, so its lines must carry
-   * labels but no timestamps; a wrong 0:04 in the evidence trace is worse
-   * than none. Both halves of the condition: transcript already applied, and
-   * draft still pending.
+   * labels but no timestamps; a wrong 0:04 in the evidence trace is worse than
+   * none. This survived the removal of the review step unchanged, and is the
+   * reason the append path still has to be tested at all.
    */
-  it('drops timestamps on a recording made after the first was applied', () => {
+  it('drops timestamps on a second recording', () => {
     setup()
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
     fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
     fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe(
@@ -221,9 +217,7 @@ describe('CapturePanel record flow', () => {
     )
   })
 
-  it('flips exactly one line when a recording is appended after skipped segments', () => {
-    // With the old seg-<length + i> re-idding, the sparse draft's seg-2 and
-    // the appended recording's first line share an id, and one tap flips both.
+  it('appends a recording that follows one with skipped segments', () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter>
@@ -235,36 +229,19 @@ describe('CapturePanel record flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'mock transcribe sparse' }))
     fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
 
-    const doctorToggles = screen.getAllByRole('button', { name: 'Doctor, switch to Patient' })
-    expect(doctorToggles).toHaveLength(2)
-    fireEvent.click(doctorToggles[1] as HTMLElement)
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
-
     fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe(
       'Doctor [0:00]: Any fever?\nPatient [0:03]: Yesterday quite hot.\n' +
-        'Patient: Any fever?\nPatient: Yesterday quite hot.',
-    )
-  })
-
-  it('drops timestamps on a recording appended to a still-pending draft', () => {
-    setup()
-    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
-    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-    expect(textarea.value).toBe(
-      'Doctor [0:00]: Any fever?\nPatient [0:02]: Yesterday quite hot.\n' +
         'Doctor: Any fever?\nPatient: Yesterday quite hot.',
     )
   })
 })
 
 /**
- * The hosted-draft-labelling pass (#189): server-drafted turns feed the same
- * review surface as the on-device draft, carry no offsets, and a labelling
- * failure falls back to the unlabelled prose the record path always had.
+ * The hosted labelling pass (#189): server-drafted turns carry no offsets, and
+ * a labelling failure falls back to the unlabelled prose the record path always
+ * had. Both now apply on delivery rather than through a review surface.
  */
 describe('hosted draft-turn labelling', () => {
   function openRecordTab() {
@@ -278,128 +255,38 @@ describe('hosted draft-turn labelling', () => {
     fireEvent.click(screen.getByRole('tab', { name: /record/i }))
   }
 
-  it('renders the server-drafted turns in SpeakerAssign and keeps Start disabled', () => {
-    openRecordTab()
-    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted labelled' }))
-
-    expect(screen.getByText('Any fever?')).toBeTruthy()
-    expect(screen.getByText('Yesterday quite hot.')).toBeTruthy()
-    const start = screen.getByRole('button', { name: /use this transcript/i }) as HTMLButtonElement
-    expect(start.disabled).toBe(true)
-  })
+  const pasted = () => {
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
+    return (screen.getByRole('textbox') as HTMLTextAreaElement).value
+  }
 
   it('applies drafted hosted turns as lines with no timestamps', () => {
     openRecordTab()
     fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted labelled' }))
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
 
-    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-    expect(textarea.value).toBe('Doctor: Any fever?\nPatient: Yesterday quite hot.')
+    expect(pasted()).toBe('Doctor: Any fever?\nPatient: Yesterday quite hot.')
   })
 
-  /*
-   * The hosted labelling pass fails on a consultation-length transcript, and
-   * this is the path that leaves. Measured against production: 653 characters
-   * labelled in 19.5 s, 1,335 returned `draft_failed`, and a real recording is
-   * several thousand.
-   *
-   * This used to assert that the prose landed straight in the textarea, which
-   * described the behaviour accurately and hid that it was a dead end: a hosted
-   * recording carries no segments, so nothing drafted labels, `parseTranscript`
-   * read zero turns, and Start Consultation is disabled on exactly that. The
-   * relay had billed for a transcription the doctor could not use.
-   */
   it('keeps a hosted recording usable when no drafted turns come back', () => {
     openRecordTab()
-    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted raw' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted' }))
 
-    // Drafted locally instead of dumped as prose, so the doctor gets the same
-    // review step the labelled path reaches.
-    expect(screen.getByRole('button', { name: /apply labels/i })).toBeTruthy()
-    expect(screen.getByText(/Batuk sudah tiga hari\./)).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
-
-    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-    expect(textarea.value).toMatch(/Batuk sudah tiga hari\./)
-    // The point of the fix: the transcript now parses to turns, so the button
-    // that was permanently disabled is reachable.
-    expect(screen.getByRole('button', { name: /use this transcript/i })).not.toHaveProperty(
-      'disabled',
-      true,
-    )
+    // The prose fallback: labelling failed, the recording is not lost, and the
+    // doctor can still submit it.
+    expect(pasted()).toMatch(/Any fever/)
+    const start = screen.getByRole('button', { name: /use this transcript/i }) as HTMLButtonElement
+    expect(start.disabled).toBe(false)
   })
 
-  it('corrects a measured mishear on tap and applies the corrected line', () => {
+  it('lands a span the server could not label, without leaking the marker', () => {
     openRecordTab()
-    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted misheard' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Replace Patut with Batuk' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted partial' }))
 
-    // The correction consumes its own hint: the chip disappears with it.
-    expect(screen.queryByRole('button', { name: 'Replace Patut with Batuk' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
-
-    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-    expect(textarea.value).toBe('Patient: Batuk sudah empat hari.')
-  })
-
-  it('re-ids a second delivery appended to a pending hosted draft without colliding', () => {
-    openRecordTab()
-    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted labelled' }))
-    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
-
-    const doctorToggles = screen.getAllByRole('button', { name: 'Doctor, switch to Patient' })
-    expect(doctorToggles).toHaveLength(2)
-    // Flips only the appended recording's doctor line, leaving the hosted
-    // draft's own doctor line untouched: proof the two id namespaces
-    // (`hosted-N` and `append-N-i`) do not collide.
-    fireEvent.click(doctorToggles[1] as HTMLElement)
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
-
-    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-    expect(textarea.value).toBe(
-      'Doctor: Any fever?\nPatient: Yesterday quite hot.\n' +
-        'Patient: Any fever?\nPatient: Yesterday quite hot.',
-    )
-  })
-  /*
-   * The labelling pass runs in chunks and a rejected chunk ships its text with
-   * `undrafted` set. The placeholder speaker is not a guess with anything behind
-   * it, so the doctor resolving it is what turns it into a label.
-   */
-  describe('an unlabelled span from a partial draft', () => {
-    it('is marked in the review list rather than shown as drafted', () => {
-      openRecordTab()
-      fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted partial' }))
-
-      expect(screen.getByRole('button', { name: /needs a label/i })).toBeTruthy()
-      expect(screen.getByText(/1 line could not be labelled/i)).toBeTruthy()
-    })
-
-    it('stops being marked once the doctor sets it', () => {
-      openRecordTab()
-      fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted partial' }))
-      fireEvent.click(screen.getByRole('button', { name: /needs a label/i }))
-
-      expect(screen.queryByRole('button', { name: /needs a label/i })).toBeNull()
-      expect(screen.queryByText(/could not be labelled/i)).toBeNull()
-    })
-
-    it('applies with every line carrying a speaker the doctor accepted', () => {
-      openRecordTab()
-      fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted partial' }))
-      fireEvent.click(screen.getByRole('button', { name: /needs a label/i }))
-      fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
-
-      fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
-      const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-      expect(textarea.value).toMatch(/batuk sudah tiga hari/)
-      expect(textarea.value).not.toMatch(/undrafted/)
-    })
+    // `undrafted` was a signal to the review list, which no longer exists. The
+    // text still has to reach the transcript, and the flag itself must not.
+    const value = pasted()
+    expect(value).toMatch(/batuk sudah tiga hari/)
+    expect(value).not.toMatch(/undrafted/)
   })
 })
 
@@ -427,12 +314,11 @@ describe('recording provenance', () => {
   const captured = vi.fn()
 
   async function submit() {
-    fireEvent.click(screen.getByRole('button', { name: /apply labels/i }))
     fireEvent.click(screen.getByRole('button', { name: /use this transcript/i }))
     await waitFor(() => expect(captured).toHaveBeenCalled())
     const call = captured.mock.calls.at(-1)
     if (!call) throw new Error('expected a transcript to have been captured')
-    return call[0] as { source: string }
+    return call[0] as { source: string; labelsReviewed?: boolean }
   }
 
   function open() {
@@ -450,6 +336,38 @@ describe('recording provenance', () => {
     // Cleared, not just re-stubbed: these read the most recent call, and a
     // previous test's submission would otherwise answer for this one.
     captured.mockClear()
+  })
+
+  /*
+   * `labelsReviewed` decides whether the red-flag engine may drop a trigger hit
+   * on a question-denial reading (shared/src/index.ts). Understating it costs a
+   * flag the doctor dismisses; overstating it can cost a flag nobody ever sees,
+   * so the recorded paths are pinned explicitly rather than left to a default.
+   */
+  it("never claims a recording's labels were reviewed", async () => {
+    open()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
+
+    expect((await submit()).labelsReviewed).toBe(false)
+  })
+
+  it("never claims a hosted recording's labels were reviewed", async () => {
+    open()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted labelled' }))
+
+    expect((await submit()).labelsReviewed).toBe(false)
+  })
+
+  it('reports labels as reviewed when the doctor typed them', async () => {
+    open()
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'Doctor: Any fever?\nPatient: Since yesterday.' },
+    })
+
+    const transcript = await submit()
+    expect(transcript.source).toBe('paste')
+    expect(transcript.labelsReviewed).toBe(true)
   })
 
   it('reports asr_local for an on-device recording', async () => {

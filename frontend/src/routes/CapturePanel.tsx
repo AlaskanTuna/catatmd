@@ -10,7 +10,6 @@ import {
   proseToDraft,
   segmentsToDraft,
 } from '../audio/draft-turns.js'
-import { SpeakerAssign } from '../audio/SpeakerAssign.js'
 import { cn } from '../lib/cn.js'
 import { parseTranscript, serialiseTurns } from '../lib/transcript.js'
 import { Button } from '../ui/Button.js'
@@ -36,9 +35,13 @@ const TABS = [
  * very end. The record now comes first and this writes into it.
  *
  * Everything here is unchanged from that page except its edges: no routing, no
- * create mutation, and a callback where the navigation used to be. The draft
- * speaker-label gate in particular is carried over intact, because it is a
- * safety control rather than UX polish (issue #70).
+ * create mutation, and a callback where the navigation used to be.
+ *
+ * The draft speaker-label gate it used to carry is gone. It was a safety control
+ * rather than UX polish, so it was replaced rather than dropped: `labelsReviewed`
+ * on the submitted transcript tells the red-flag engine whether a person stands
+ * behind the labels, and the engine refuses the question-denial reading when
+ * nobody does (issue #70, backend/src/redflags/mislabel-suppression.test.ts).
  */
 export function CapturePanel({
   onCapture,
@@ -73,38 +76,20 @@ export function CapturePanel({
   const recordBlocked = audio.mode === 'ambient'
   const [text, setText] = useState('')
   const [source, setSource] = useState<TranscriptSource>('paste')
-  /*
-   * Drafted speaker labels live here, outside the textarea, until the doctor
-   * explicitly applies them. While a draft is pending the recording is not in
-   * the transcript at all and submission stays disabled, so unreviewed
-   * guessed labels can never reach the API (issue #70's suppression shape is
-   * why that gate is a safety control rather than UX polish).
-   */
-  const [draft, setDraft] = useState<DraftLine[] | null>(null)
-
   const turns = parseTranscript(text)
 
-  const submit = () => onCapture({ source, turns })
+  /*
+   * `labelsReviewed` says whether a person stands behind the speaker on every
+   * turn, and the red-flag engine reads it before it is willing to drop a
+   * trigger hit (shared/src/index.ts). True where the doctor wrote or edited the
+   * `Doctor:` / `Patient:` prefixes themselves, false on a recording, where they
+   * are drafted from the words and nobody confirms them.
+   */
+  const submit = () =>
+    onCapture({ source, turns, labelsReviewed: source === 'paste' || source === 'upload' })
 
   const appendText = (addition: string) =>
     setText((current) => (current ? `${current.trimEnd()}\n${addition}` : addition))
-
-  /*
-   * Flipping an undrafted line also resolves it. Its speaker was a placeholder
-   * the server declared it did not stand behind; once the doctor has picked a
-   * side it is theirs, so it stops being marked as needing one.
-   *
-   * The first tap on an undrafted line keeps the speaker shown and only clears
-   * the mark, so choosing the side already displayed takes one tap rather than
-   * two.
-   */
-  const flip = (line: DraftLine): DraftLine => {
-    if (line.undrafted) {
-      const { undrafted: _resolved, ...rest } = line
-      return rest
-    }
-    return { ...line, speaker: line.speaker === 'doctor' ? 'patient' : 'doctor' }
-  }
 
   const onUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -239,7 +224,6 @@ export function CapturePanel({
             <AudioCapture
               engine={audio.engine}
               transcript={text}
-              draftPending={draft !== null}
               onTranscript={({ text: transcribed, segments, source: from, draftTurns }) => {
                 /*
                  * Appended, never replacing what is already there. A doctor may
@@ -256,7 +240,7 @@ export function CapturePanel({
                  * took. It is client-asserted and the API cannot verify it,
                  * which is why nothing in the safety architecture rests on it.
                  */
-                const withOffsets = text === '' && draft === null
+                const withOffsets = text === ''
                 // Hosted recordings carry server-drafted labels instead of
                 // segments (#189); `hosted-` ids are a namespace disjoint from
                 // the local `seg-` ones, and the turns carry no offsets, so a
@@ -270,15 +254,19 @@ export function CapturePanel({
                 // is disabled on. `proseToDraft` applies the same rules to the
                 // text alone, so the recording stays usable and the labels stay
                 // the doctor's to confirm.
+                /*
+                 * The `undrafted` marker the server sets on a span it could not
+                 * label is deliberately not carried further. Its only reader was
+                 * the review list, which is gone, and a marker nothing reads is
+                 * worse than none. The span's placeholder speaker is bounded
+                 * instead by `labelsReviewed`, which stops the red-flag engine
+                 * trusting any label on this path, drafted or placeholder.
+                 */
                 const hostedLines = (draftTurns ?? []).map(
                   (turn, i): DraftLine => ({
                     id: `hosted-${i}`,
                     speaker: turn.speaker,
                     text: turn.text,
-                    // Carried through rather than dropped: a chunk the server
-                    // could not label arrives with a placeholder speaker, and
-                    // the review list has to say so.
-                    ...(turn.undrafted === true ? { undrafted: true } : {}),
                   }),
                 )
                 const timedLines = segmentsToDraft(segments, transcribed, { withOffsets })
@@ -289,21 +277,23 @@ export function CapturePanel({
                       ? timedLines
                       : proseToDraft(transcribed)
                 if (lines.length > 0) {
-                  setDraft((current) =>
-                    current
-                      ? [
-                          ...current,
-                          // Appended lines get their own id namespace: reusing
-                          // seg-N can collide with a seg id already in the
-                          // draft once splits and skipped segments make line
-                          // counts diverge from segment indexes.
-                          ...lines.map((line, i) => ({
-                            ...line,
-                            id: `append-${current.length}-${i}`,
-                          })),
-                        ]
-                      : lines,
-                  )
+                  /*
+                   * Applied straight into the transcript. This used to park the
+                   * lines in a draft the doctor confirmed line by line before
+                   * anything was inserted; that review step is gone, because the
+                   * workflow it belonged to is being replaced by one where the
+                   * note and the safety panels fill while the doctor is still
+                   * talking, and there is no moment in that to tweak labels.
+                   *
+                   * The safety the gate was providing did not come from the
+                   * doctor's eyes on the labels, it came from the red-flag
+                   * engine being allowed to trust them. That trust now travels
+                   * with the transcript instead: `labelsReviewed` is false here,
+                   * and `backend/src/redflags/triggers.ts` will not drop a
+                   * trigger hit on a question-denial reading it cannot stand
+                   * behind.
+                   */
+                  appendText(serialiseTurns(draftToTurns(lines)))
                 } else {
                   // No usable timing: fall back to the unlabelled prose the
                   // record path produced before #118.
@@ -323,35 +313,6 @@ export function CapturePanel({
                 )
               }}
             />
-            {draft && (
-              <SpeakerAssign
-                draft={draft}
-                onToggle={(id) =>
-                  setDraft((current) =>
-                    current ? current.map((line) => (line.id === id ? flip(line) : line)) : current,
-                  )
-                }
-                onReplace={(id, nextText) =>
-                  setDraft((current) =>
-                    current
-                      ? current.map((line) => (line.id === id ? { ...line, text: nextText } : line))
-                      : current,
-                  )
-                }
-                onSwapAll={() => setDraft((current) => (current ? current.map(flip) : current))}
-                onApply={() => {
-                  if (!draft) return
-                  appendText(serialiseTurns(draftToTurns(draft)))
-                  setDraft(null)
-                }}
-                canInsertPlain={turns.length > 0}
-                onInsertPlain={() => {
-                  if (!draft) return
-                  appendText(draft.map((line) => line.text).join(' '))
-                  setDraft(null)
-                }}
-              />
-            )}
           </Card>
         )}
 
@@ -380,22 +341,6 @@ export function CapturePanel({
         is content to report on, because a recording applied in Record lands in
         the same text and the doctor needs its parse count wherever they are.
       */}
-      {/* A bordered strip, not a second Card. Two stacked cards of equal weight
-          read as two subjects, and this one only reports on the card above it. */}
-      {(text || draft) && (
-        <div className="mt-4 rounded-card border border-line bg-sunken p-3">
-          <p className="text-sm font-medium">
-            {turns.length} turn{turns.length === 1 ? '' : 's'} parsed
-          </p>
-          {turns.length === 0 && !draft && (
-            <p className="mt-1 text-sm text-ink-muted">
-              Prefix each line with <code>Doctor:</code> or <code>Patient:</code>.
-            </p>
-          )}
-          {draft && <p className="mt-1 text-sm text-ink-muted">Apply the draft labels first.</p>}
-        </div>
-      )}
-
       {error && (
         <p role="alert" className="mt-4 text-sm text-emergency">
           {error}
@@ -406,7 +351,7 @@ export function CapturePanel({
         variant="primary"
         size="lg"
         className="mt-6"
-        disabled={turns.length === 0 || draft !== null}
+        disabled={turns.length === 0}
         loading={saving}
         onClick={submit}
       >

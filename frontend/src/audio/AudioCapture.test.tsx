@@ -194,12 +194,7 @@ async function settle() {
 function renderCapture(engine: 'local' | 'hosted' = 'local', transcript = '') {
   const onTranscript = vi.fn()
   const view = render(
-    <AudioCapture
-      onTranscript={onTranscript}
-      engine={engine}
-      transcript={transcript}
-      draftPending={false}
-    />,
+    <AudioCapture onTranscript={onTranscript} engine={engine} transcript={transcript} />,
   )
   return { onTranscript, ...view }
 }
@@ -789,9 +784,7 @@ describe('the recording fork', () => {
     expect(workers).toHaveLength(1)
     spawned().reply({ type: 'result', text: 'local', segments: [] })
 
-    rerender(
-      <AudioCapture onTranscript={vi.fn()} engine="hosted" transcript="" draftPending={false} />,
-    )
+    rerender(<AudioCapture onTranscript={vi.fn()} engine="hosted" transcript="" />)
     await startRecording()
 
     // Roughly 250 MB of weights held for a path that will not use them.
@@ -888,9 +881,7 @@ describe('a hosted upload', () => {
     // The doctor switches the Audio dialog back to on-device and retries: the
     // retry is local, not a second upload of audio from a setting they have
     // just withdrawn.
-    rerender(
-      <AudioCapture onTranscript={vi.fn()} engine="local" transcript="" draftPending={false} />,
-    )
+    rerender(<AudioCapture onTranscript={vi.fn()} engine="local" transcript="" />)
     fireEvent.click(screen.getByRole('button', { name: /try again/i }))
     await settle()
 

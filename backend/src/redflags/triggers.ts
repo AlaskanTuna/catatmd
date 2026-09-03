@@ -1,6 +1,7 @@
 import type { Transcript } from '@shared/types'
 import type { ProfileId } from '../clinical-profiles/types.js'
 import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
+import { type Expansion, expandMishears, isRecorded, originalSpan } from './mishears.js'
 import type { RedFlagTrigger } from './types.js'
 
 /**
@@ -14,8 +15,8 @@ import type { RedFlagTrigger } from './types.js'
  * changes. Recorded with every analysis (docs/trd.md §15).
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v6',
-  effectiveDate: '2026-08-16',
+  id: 'redflag-list-v7',
+  effectiveDate: '2026-09-03',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -78,6 +79,23 @@ const isQuestion = (text: string): boolean => /\?\s*$/.test(text.trim())
  * discarding it would lose the flag entirely.
  */
 const asserts = (transcript: Transcript, index: number): boolean => {
+  /*
+   * The whole question-denial reading rests on two speaker labels being right,
+   * so it is only available when a person stands behind them.
+   *
+   * On the recorded paths the labels are drafted from the words and segment
+   * timing, and since the review step was removed nobody confirms them. A
+   * mislabelled pair can manufacture exactly the doctor-asks/patient-denies
+   * shape this function looks for, and the consequence there is a suppressed
+   * escalation trigger: a false negative, which is the failure this engine
+   * exists to prevent. A guessed label may therefore leave a flag standing for
+   * the doctor to dismiss, and may never take one away.
+   *
+   * Absent is read as unreviewed: the safe reading of "nobody recorded whether
+   * a human checked" is that nobody did.
+   */
+  if (transcript.labelsReviewed !== true) return true
+
   const turn = transcript.turns[index]
   if (turn === undefined || turn.speaker !== 'doctor' || !isQuestion(turn.text)) return true
 
@@ -142,12 +160,42 @@ const isNegated = (text: string, matchIndex: number): boolean => {
 const SPAN_CARRIES_NEGATOR = /\b(?:no|not|cannot|tak|tidak|takde|tiada)\b|can'?t|won'?t/i
 
 const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string | null => {
+  const recorded = isRecorded(transcript)
+
   for (const [index, turn] of transcript.turns.entries()) {
+    /*
+     * On a recording, the turn is matched twice: as transcribed, and with the
+     * measured Malay devoicings expanded (see `mishears.ts`). The second pass
+     * is what covers the pairs `triggers.ts` deliberately refuses to widen for,
+     * "teman" for "demam" above all, whose coverage used to live in a review-time
+     * hint that no longer exists.
+     *
+     * The expansion is only ever matched against. Negation, assertion and the
+     * returned span are all read from the original text, so a flag never quotes
+     * a word the transcript does not contain.
+     */
+    const expanded = recorded ? expandMishears(turn.text) : null
+    const passes: { text: string; expansion: Expansion | null }[] = [
+      { text: turn.text, expansion: null },
+      ...(expanded === null ? [] : [{ text: expanded.text, expansion: expanded }]),
+    ]
+
     for (const pattern of patterns) {
-      const match = pattern.exec(turn.text)
-      if (match === null) continue
-      if (SPAN_CARRIES_NEGATOR.test(match[0])) return match[0]
-      if (asserts(transcript, index) && !isNegated(turn.text, match.index)) return match[0]
+      for (const pass of passes) {
+        const match = pattern.exec(pass.text)
+        if (match === null) continue
+        const span =
+          pass.expansion === null
+            ? match[0]
+            : originalSpan(turn.text, pass.expansion, match.index, match[0].length)
+        const at =
+          pass.expansion === null
+            ? match.index
+            : (pass.expansion.origin[match.index] ?? match.index)
+
+        if (SPAN_CARRIES_NEGATOR.test(match[0])) return span
+        if (asserts(transcript, index) && !isNegated(turn.text, at)) return span
+      }
     }
   }
   return null
@@ -204,11 +252,27 @@ const findDeniedAbility = (
   transcript: Transcript,
   questionPatterns: readonly RegExp[],
 ): string | null => {
+  /*
+   * This path only ever adds a flag, but it is still label-dependent, and the
+   * dependency runs the other way from `asserts()`: here a wrong label means
+   * the pair is never recognised and an emergency trigger silently does not
+   * fire. "Boleh telan tak?" / "Tak boleh doktor." has no span for `findSpan`
+   * to anchor on, so this is the only path that raises it.
+   *
+   * So on labels nobody confirmed, the speaker checks are dropped and the pair
+   * is composed on adjacency alone: a question turn followed by a denial turn,
+   * whoever the labels claim said them. That fires strictly more often and
+   * never less, which is the direction this engine must fail in.
+   */
+  const trusted = transcript.labelsReviewed === true
+
   for (const [index, turn] of transcript.turns.entries()) {
-    if (turn.speaker !== 'doctor' || !isQuestion(turn.text)) continue
+    if (trusted && turn.speaker !== 'doctor') continue
+    if (!isQuestion(turn.text)) continue
 
     const reply = transcript.turns[index + 1]
-    if (reply === undefined || reply.speaker !== 'patient') continue
+    if (reply === undefined) continue
+    if (trusted && reply.speaker !== 'patient') continue
 
     const denial = ABILITY_DENIAL.exec(reply.text)
     if (denial === null || REPLY_REAFFIRMS.test(reply.text.slice(denial[0].length))) continue
