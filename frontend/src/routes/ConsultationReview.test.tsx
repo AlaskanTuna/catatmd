@@ -179,3 +179,88 @@ describe('missing information order', () => {
     expect(screen.getAllByTestId('gap')).toHaveLength(3)
   })
 })
+
+/*
+ * jsdom 27 ships `<dialog>` without `showModal`; see PatientList.test.tsx. The
+ * stand-in sets `open` so `getByRole('dialog')` can find it.
+ */
+describe('the full missing-information list', () => {
+  const originalShowModal = HTMLDialogElement.prototype.showModal
+  const originalClose = HTMLDialogElement.prototype.close
+
+  const gap = (id: string) => ({
+    id,
+    question: `Q-${id}`,
+    rationale: 'Because',
+    priority: 'medium' as const,
+  })
+  // Seven, so exactly one sits past the six-item preview.
+  const SEVEN = Array.from({ length: 7 }, (_, i) => gap(String(i)))
+
+  beforeEach(() => {
+    HTMLDialogElement.prototype.showModal = function showModal() {
+      this.open = true
+    }
+    HTMLDialogElement.prototype.close = function close() {
+      this.open = false
+      this.dispatchEvent(new Event('close'))
+    }
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      analysis: { ...APPROVED.analysis, gaps: SEVEN },
+    } as never)
+  })
+
+  afterEach(() => {
+    HTMLDialogElement.prototype.showModal = originalShowModal
+    HTMLDialogElement.prototype.close = originalClose
+  })
+
+  it('keeps every gap in the rail so print is never truncated', async () => {
+    setup()
+
+    // All seven render; the two past the preview are hidden in CSS rather than
+    // sliced out, which is what `print:block` brings back on paper.
+    expect(await screen.findAllByTestId('gap')).toHaveLength(7)
+  })
+
+  it('opens the full list in a dialog rather than expanding the rail', async () => {
+    setup()
+
+    const cta = await screen.findByText('Show All 7 Missing Items')
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    fireEvent.click(cta)
+
+    const dialog = await screen.findByRole('dialog')
+    // Every gap, in the dialog, on top of the seven still in the rail.
+    expect(screen.getAllByTestId('gap')).toHaveLength(14)
+    expect(dialog.textContent).toContain('Missing Information')
+  })
+
+  it('puts focus on the dialog rather than leaving it where the trigger was', async () => {
+    setup()
+
+    fireEvent.click(await screen.findByText('Show All 7 Missing Items'))
+
+    // The content is gated on state, so it is absent when `showModal()` runs
+    // its native autofocus pass. Without the open effect, focus would still be
+    // on the trigger, which is now behind a modal.
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => {
+      expect(dialog.contains(document.activeElement)).toBe(true)
+    })
+    expect((document.activeElement as HTMLElement).textContent).toBe('Close')
+  })
+
+  it('does not put the cards in the DOM twice while it is closed', async () => {
+    setup()
+
+    await screen.findByText('Show All 7 Missing Items')
+    // The rail's seven and nothing else: the dialog's copy is gated on state,
+    // not merely hidden, so a closed dialog contributes no duplicate controls.
+    expect(screen.getAllByTestId('gap')).toHaveLength(7)
+  })
+})

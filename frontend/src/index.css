@@ -824,6 +824,10 @@
   [data-print='expand'] {
     position: static !important;
     max-height: none !important;
+    /* `height` as well as `max-height`: the review columns are given a fixed
+     * viewport height so they align on screen, and a fixed height truncates on
+     * paper exactly the way a capped one does. */
+    height: auto !important;
     overflow: visible !important;
   }
 
