@@ -194,7 +194,12 @@ async function settle() {
 function renderCapture(engine: 'local' | 'hosted' = 'local', transcript = '') {
   const onTranscript = vi.fn()
   const view = render(
-    <AudioCapture onTranscript={onTranscript} engine={engine} transcript={transcript} />,
+    <AudioCapture
+      onTranscript={onTranscript}
+      engine={engine}
+      transcript={transcript}
+      draftPending={false}
+    />,
   )
   return { onTranscript, ...view }
 }
@@ -784,7 +789,9 @@ describe('the recording fork', () => {
     expect(workers).toHaveLength(1)
     spawned().reply({ type: 'result', text: 'local', segments: [] })
 
-    rerender(<AudioCapture onTranscript={vi.fn()} engine="hosted" transcript="" />)
+    rerender(
+      <AudioCapture onTranscript={vi.fn()} engine="hosted" transcript="" draftPending={false} />,
+    )
     await startRecording()
 
     // Roughly 250 MB of weights held for a path that will not use them.
@@ -881,7 +888,9 @@ describe('a hosted upload', () => {
     // The doctor switches the Audio dialog back to on-device and retries: the
     // retry is local, not a second upload of audio from a setting they have
     // just withdrawn.
-    rerender(<AudioCapture onTranscript={vi.fn()} engine="local" transcript="" />)
+    rerender(
+      <AudioCapture onTranscript={vi.fn()} engine="local" transcript="" draftPending={false} />,
+    )
     fireEvent.click(screen.getByRole('button', { name: /try again/i }))
     await settle()
 
@@ -1073,7 +1082,7 @@ describe('the recording panel', () => {
     // The field is deliberately empty during the pass. Transcription runs on
     // the finished recording, so anything else would promise a live transcript
     // this product does not produce.
-    screen.getByText(/empty until you stop/i)
+    screen.getByText(/text appears when you stop/i)
   })
 
   it('shows the transcript already captured, rather than an empty field', async () => {
@@ -1081,7 +1090,7 @@ describe('the recording panel', () => {
     await startRecording()
 
     screen.getByText('Doctor: How long has the cough been there?')
-    expect(screen.queryByText(/empty until you stop/i)).toBeNull()
+    expect(screen.queryByText(/text appears when you stop/i)).toBeNull()
   })
 
   it('leaves no recording panel behind once the recording stops', async () => {
@@ -1092,5 +1101,26 @@ describe('the recording panel', () => {
     await stopRecording()
 
     expect(screen.queryByText('Recording…')).toBeNull()
+  })
+})
+
+describe('the hosted-processing disclosure', () => {
+  /*
+   * `AGENTS.md` forbids demoting consent copy into a tooltip, and this line is
+   * the one the rule is about. Trimming it is allowed; losing a claim is not,
+   * so each of the three is pinned separately rather than the sentence as a
+   * whole: that the audio leaves the device, who receives it, and where it is
+   * processed. A future edit may reword freely and will still fail here if it
+   * drops one.
+   */
+  it('keeps all three claims visible, not in a tooltip', () => {
+    renderCapture('hosted')
+
+    const line = hostedRestatement()
+    expect(line.textContent).toMatch(/leaves this device/i)
+    expect(line.textContent).toMatch(/ILMU/)
+    expect(line.textContent).toMatch(/Malaysia/i)
+    // Visible copy, not a disclosure the doctor has to open.
+    expect(line.closest('[role="tooltip"]')).toBeNull()
   })
 })

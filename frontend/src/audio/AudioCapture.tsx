@@ -186,6 +186,7 @@ export function AudioCapture({
   onTranscript,
   engine,
   transcript,
+  draftPending,
 }: {
   onTranscript: (result: {
     text: string
@@ -198,6 +199,8 @@ export function AudioCapture({
   engine: 'local' | 'hosted'
   /** The transcript so far, shown under the meter while recording. */
   transcript: string
+  /** True while the draft-label list is on screen, which explains itself. */
+  draftPending: boolean
 }) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState<number | null>(null)
@@ -712,11 +715,11 @@ export function AudioCapture({
         // the measured one below exists to avoid. The elapsed count is the
         // honest substitute, and it is what distinguishes a slow relay from a
         // hung screen.
-        `Sending this recording to ILMU for transcription, ${elapsed} elapsed. It is leaving this device.`
+        `Sending to ILMU · ${elapsed}`
       : phase === 'labelling'
         ? // Progress-free for the same reason as the upload, and honest about
           // the wait and the review gate that follows it.
-          `Drafting Doctor / Patient labels from the transcript, ${elapsed} elapsed. This can take up to two and a half minutes, and you will review every line before anything is applied.`
+          `Drafting labels · ${elapsed} · up to 2½ min`
         : phase === 'loading-model'
           ? progress === null
             ? 'Preparing the speech model. The first run downloads it once and the browser caches it.'
@@ -752,29 +755,23 @@ export function AudioCapture({
   return (
     <div className="flex flex-col gap-3">
       {/*
-        Was ninety-five words of muted prose above the only button on the
-        screen, and most of it restated what the engine picker below now says
-        structurally. What survives here is the one thing the doctor has to know
-        before pressing record and cannot infer from the controls: the result
-        arrives as a draft they have to check, not as a finished transcript.
+        Shown only before a recording, and only while no draft is on screen.
+        It sets one expectation the controls cannot: the result is a draft to
+        check, not a finished transcript. Once recording starts, or once the
+        Draft Labels list is up saying the same thing structurally, it is a
+        sentence the doctor has already acted on and reads as furniture.
       */}
-      <p className="flex items-start gap-1.5 text-sm text-ink-muted">
-        <span>
-          {/* The second sentence went into the tip. "Nothing enters the
-              transcript until you do" restated "for you to check and apply",
-              and the gate it describes is enforced by the disabled submit
-              button one card below, which the doctor cannot miss. */}
-          Transcription returns <span className="text-ink">draft</span>{' '}
-          <code className="text-ink">Doctor</code> / <code className="text-ink">Patient</code> lines
-          for you to check and apply.
-        </span>
-        <InfoTip label="About the draft speaker labels" align="right" className="mt-0.5" layered>
-          Nothing enters the transcript until you apply the labels. They are guessed from what each
-          sentence says and from segment timing, never from the voices: no voice model runs and no
-          speaker identification happens anywhere in this product. You can flip any line, edit its
-          text, or insert the transcript unlabelled.
-        </InfoTip>
-      </p>
+      {phase === 'idle' && !draftPending && (
+        <p className="flex items-start gap-1.5 text-sm text-ink-muted">
+          <span>Speaker labels are drafted for you to check.</span>
+          <InfoTip label="About the draft speaker labels" align="right" className="mt-0.5" layered>
+            Nothing enters the transcript until you apply the labels. They are guessed from what
+            each sentence says and from segment timing, never from the voices: no voice model runs
+            and no speaker identification happens anywhere in this product. You can flip any line,
+            edit its text, or insert the transcript unlabelled.
+          </InfoTip>
+        </p>
+      )}
 
       {thin && (
         <div className="flex items-start gap-2 rounded-card border border-line bg-sunken p-3">
@@ -828,21 +825,16 @@ export function AudioCapture({
 
               {liveStream && <InputMeter stream={liveStream} />}
 
-              <div>
-                <p className="mb-1 text-xs font-medium text-ink-muted">Transcript</p>
-                <div className="max-h-32 min-h-16 overflow-y-auto rounded-control border border-line bg-surface p-2 text-xs leading-relaxed">
-                  {transcript ? (
-                    <span className="whitespace-pre-wrap">{transcript}</span>
-                  ) : (
-                    /* Says when text arrives rather than implying it is
-                       arriving now. Transcription runs on the finished
-                       recording, so an empty field with a live cursor would
-                       promise a running transcript that does not exist. */
-                    <span className="text-ink-muted">
-                      Empty until you stop. The recording is transcribed in one pass when it ends.
-                    </span>
-                  )}
-                </div>
+              {/* Unlabelled: it is the only field in the panel, directly under
+                  a heading that says Recording. The placeholder still says when
+                  text arrives rather than implying it is arriving now, because
+                  transcription runs on the finished recording. */}
+              <div className="max-h-32 min-h-16 overflow-y-auto rounded-control border border-line bg-surface p-2 text-xs leading-relaxed">
+                {transcript ? (
+                  <span className="whitespace-pre-wrap">{transcript}</span>
+                ) : (
+                  <span className="text-ink-muted">Text appears when you stop.</span>
+                )}
               </div>
 
               <Button className="w-full justify-center" onClick={stop}>
@@ -867,21 +859,25 @@ export function AudioCapture({
             presented as its peer. The height matches `SIZES.md` so the pair
             aligns.
           */}
-          <label className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-control border border-line bg-sunken-soft px-4 text-sm font-medium text-ink shadow-raised transition-colors hover:bg-sunken">
-            <FileAudio aria-hidden className="size-4" />
-            Use an Audio File
-            <input
-              type="file"
-              accept="audio/*"
-              className="sr-only"
-              disabled={busy || phase === 'recording'}
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (file) void transcribe(file)
-                event.target.value = ''
-              }}
-            />
-          </label>
+          {/* Hidden while recording, where it is disabled anyway: a control
+              that cannot be used is a word the doctor still has to read. */}
+          {phase !== 'recording' && (
+            <label className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-control border border-line bg-sunken-soft px-4 text-sm font-medium text-ink shadow-raised transition-colors hover:bg-sunken">
+              <FileAudio aria-hidden className="size-4" />
+              Use an Audio File
+              <input
+                type="file"
+                accept="audio/*"
+                className="sr-only"
+                disabled={busy}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) void transcribe(file)
+                  event.target.value = ''
+                }}
+              />
+            </label>
+          )}
         </div>
       )}
 
@@ -957,8 +953,7 @@ export function AudioCapture({
       */}
       {engine === 'hosted' && (
         <p className="text-xs leading-relaxed text-ink-muted">
-          This recording leaves this device. It passes through our server to ILMU and is processed
-          in Malaysia. Change this in the Audio settings.
+          This recording leaves this device: sent via our server to ILMU, processed in Malaysia.
         </p>
       )}
     </div>
