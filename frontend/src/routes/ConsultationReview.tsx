@@ -584,8 +584,8 @@ export function ConsultationReview() {
           Capture used to replace this whole arrangement with a single card,
           which meant the doctor captured a consultation with no sight of where
           any of it would land. The columns are the explanation: the note fills
-          the middle, the checks fill the rail, and both say so while they are
-          still empty. */}
+          the middle, the checks fill the rail, and both reveal their shape
+          while they are still empty. */}
       <div className="mt-6 grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)_340px]">
         <section
           ref={transcriptRef}
@@ -597,7 +597,15 @@ export function ConsultationReview() {
             // up instead of each ending wherever its content happens to stop.
             // This column was the worst of it: a one-line transcript left a
             // 380px stub beside two full-length neighbours.
-            'lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1',
+            //
+            // The last child stretches so the card bottoms line up too, and it
+            // is `grow shrink-0` rather than `flex-1` for a measured reason:
+            // `flex-1` is `1 1 0%`, so a transcript taller than the column is
+            // shrunk to fit it, the column stops generating a scrollbar, and
+            // everything past the fold becomes unreachable. Growing from an
+            // `auto` basis that may never shrink fills the gap when content is
+            // short without capping it when content is long.
+            'lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
             // The mobile show/hide belongs to a transcript that already
             // exists. Capture is the one thing on this screen a doctor has
             // come here to do, so it is never behind a toggle.
@@ -648,7 +656,7 @@ export function ConsultationReview() {
         </section>
 
         <section
-          className="order-2 min-w-0 lg:sticky lg:top-6 lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1"
+          className="order-2 min-w-0 lg:sticky lg:top-6 lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0"
           aria-labelledby="note-heading"
           data-print="expand"
         >
@@ -679,7 +687,7 @@ export function ConsultationReview() {
               />
             </>
           ) : (
-            <NotePlaceholder captured={detail.transcript != null} />
+            <NotePlaceholder />
           )}
         </section>
 
@@ -694,7 +702,7 @@ export function ConsultationReview() {
               The bottom stop clears the approve bar, which is `sticky bottom-4`
               in flow and would otherwise sit on top of the last card. */}
         <aside
-          className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1"
+          className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0"
           aria-label="Clinical safety"
           data-print="expand"
         >
@@ -886,7 +894,7 @@ export function ConsultationReview() {
  * pulsing skeletons: nothing is loading here, and a shimmer would promise work
  * in progress when the doctor has not started any.
  */
-function NotePlaceholder({ captured }: { captured: boolean }) {
+function NotePlaceholder() {
   return (
     <Card className="overflow-hidden p-0" data-print="hide">
       {['Subjective', 'Objective', 'Assessment', 'Plan'].map((section) => (
@@ -898,11 +906,6 @@ function NotePlaceholder({ captured }: { captured: boolean }) {
           <div className="mt-1.5 h-2 w-3/5 rounded-pill bg-sunken" />
         </div>
       ))}
-      <p className="px-5 py-5 text-sm text-ink-muted">
-        {captured
-          ? 'The transcript is ready. Analyse it to draft the note, and every finding stays yours to edit and approve.'
-          : 'The note fills in from the consultation. Capture it on the left to begin.'}
-      </p>
     </Card>
   )
 }

@@ -196,6 +196,7 @@ describe('CapturePanel record flow', () => {
 
   it('enables Use This Transcript as soon as a recording lands', () => {
     setup()
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const start = screen.getByRole('button', { name: /use this transcript/i })
     expect((start as HTMLButtonElement).disabled).toBe(false)
   })
@@ -314,7 +315,8 @@ describe('recording provenance', () => {
   const captured = vi.fn()
 
   async function submit() {
-    fireEvent.click(screen.getByRole('button', { name: /use this transcript/i }))
+    const button = screen.queryByRole('button', { name: /use this transcript/i })
+    if (button) fireEvent.click(button)
     await waitFor(() => expect(captured).toHaveBeenCalled())
     const call = captured.mock.calls.at(-1)
     if (!call) throw new Error('expected a transcript to have been captured')
@@ -457,5 +459,101 @@ describe('ambient capture mode', () => {
     renderRoute()
 
     expect(await screen.findByRole('button', { name: /audio settings/i })).toBeTruthy()
+  })
+})
+
+describe('CapturePanel submit flow', () => {
+  const captured = vi.fn()
+
+  function renderForSubmit() {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <CapturePanel onCapture={captured} saving={false} error={null} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+  }
+
+  function makeTextFile(content: string, name = 'transcript.txt'): File {
+    const file = new File([content], name, { type: 'text/plain' })
+    if (typeof file.text !== 'function') {
+      Object.defineProperty(file, 'text', {
+        value: async () => content,
+        configurable: true,
+        writable: true,
+      })
+    }
+    return file
+  }
+
+  function firstCapture<T>(): T {
+    const call = captured.mock.calls.at(0)
+    if (!call) throw new Error('expected a transcript to have been captured')
+    return call[0] as T
+  }
+
+  beforeEach(() => {
+    captured.mockClear()
+  })
+
+  it('submits an uploaded transcript on its own, with labelsReviewed false', async () => {
+    renderForSubmit()
+    fireEvent.click(screen.getByRole('tab', { name: /upload/i }))
+    const file = makeTextFile('Doctor: Any fever?\nPatient: Since yesterday.')
+    fireEvent.change(screen.getByLabelText(/Transcript File/i), { target: { files: [file] } })
+    await waitFor(() => expect(captured).toHaveBeenCalled())
+    const transcript = firstCapture<{ source: string; labelsReviewed?: boolean }>()
+    expect(transcript.source).toBe('upload')
+    expect(transcript.labelsReviewed).toBe(false)
+  })
+
+  it('submits the uploaded text, not the text already in the textarea', async () => {
+    renderForSubmit()
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'Doctor: Old question?\nPatient: Old answer.' },
+    })
+    fireEvent.click(screen.getByRole('tab', { name: /upload/i }))
+    const file = makeTextFile('Patient: New symptom.\nDoctor: Any fever?')
+    fireEvent.change(screen.getByLabelText(/Transcript File/i), { target: { files: [file] } })
+    await waitFor(() => expect(captured).toHaveBeenCalled())
+    const transcript = firstCapture<{ turns: { speaker: string; text: string }[] }>()
+    expect(transcript.turns).toEqual([
+      { speaker: 'patient', text: 'New symptom.' },
+      { speaker: 'doctor', text: 'Any fever?' },
+    ])
+  })
+
+  it('submits a finished recording on its own, with no button press', async () => {
+    renderForSubmit()
+    fireEvent.click(screen.getByRole('tab', { name: /record/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe' }))
+    await waitFor(() => expect(captured).toHaveBeenCalled())
+    const transcript = firstCapture<{ source: string; labelsReviewed?: boolean }>()
+    expect(transcript.source).toBe('asr_local')
+    expect(transcript.labelsReviewed).toBe(false)
+  })
+
+  it('shows Use This Transcript only on the Paste tab', () => {
+    renderForSubmit()
+    expect(screen.queryByRole('button', { name: /use this transcript/i })).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: /upload/i }))
+    expect(screen.queryByRole('button', { name: /use this transcript/i })).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
+    expect(screen.queryByRole('button', { name: /use this transcript/i })).toBeTruthy()
+  })
+
+  it('submits a pasted transcript on the button press, with labelsReviewed true', async () => {
+    renderForSubmit()
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'Doctor: Any fever?\nPatient: Since yesterday.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /use this transcript/i }))
+    await waitFor(() => expect(captured).toHaveBeenCalled())
+    const transcript = firstCapture<{ source: string; labelsReviewed?: boolean }>()
+    expect(transcript.source).toBe('paste')
+    expect(transcript.labelsReviewed).toBe(true)
   })
 })
