@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
 import { Button } from '../ui/Button.js'
 import { InfoTip } from '../ui/InfoTip.js'
+import { InputMeter } from './InputMeter.js'
 import {
   TARGET_SAMPLE_RATE,
   type TranscriptSegment,
@@ -184,6 +185,7 @@ function estimateRemaining(done: number, total: number, elapsedMs: number): stri
 export function AudioCapture({
   onTranscript,
   engine,
+  transcript,
 }: {
   onTranscript: (result: {
     text: string
@@ -194,6 +196,8 @@ export function AudioCapture({
   }) => void
   /** The device's standing transcription engine, from the Audio dialog. */
   engine: 'local' | 'hosted'
+  /** The transcript so far, shown under the meter while recording. */
+  transcript: string
 }) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState<number | null>(null)
@@ -243,6 +247,7 @@ export function AudioCapture({
 
   const worker = useRef<Worker | null>(null)
   const recorder = useRef<MediaRecorder | null>(null)
+  const [liveStream, setLiveStream] = useState<MediaStream | null>(null)
   const chunks = useRef<Blob[]>([])
   /** The in-flight hosted upload, so Cancel and unmount can both abandon it. */
   const upload = useRef<AbortController | null>(null)
@@ -632,10 +637,14 @@ export function AudioCapture({
         // leaves the browser's recording indicator on, which in a consulting
         // room reads as "still listening".
         for (const track of stream.getTracks()) track.stop()
+        // Dropped as the tracks stop, so the meter unmounts with the recording
+        // rather than holding a reference to ended tracks.
+        setLiveStream(null)
         void transcribe(new Blob(chunks.current, { type: media.mimeType }))
       }
       media.start()
       recorder.current = media
+      setLiveStream(stream)
       setSeconds(0)
       setPhase('recording')
       if (hostedRef.current) {
@@ -759,7 +768,7 @@ export function AudioCapture({
           <code className="text-ink">Doctor</code> / <code className="text-ink">Patient</code> lines
           for you to check and apply.
         </span>
-        <InfoTip label="About the draft speaker labels" className="mt-0.5">
+        <InfoTip label="About the draft speaker labels" align="right" className="mt-0.5" layered>
           Nothing enters the transcript until you apply the labels. They are guessed from what each
           sentence says and from segment timing, never from the voices: no voice model runs and no
           speaker identification happens anywhere in this product. You can flip any line, edit its
@@ -795,11 +804,52 @@ export function AudioCapture({
       {!thin && (
         <div className="grid gap-2">
           {phase === 'recording' ? (
-            <Button className="w-full justify-center" onClick={stop}>
-              <Square aria-hidden className="size-4" />
-              Stop and Transcribe · {Math.floor(seconds / 60)}:
-              {String(seconds % 60).padStart(2, '0')}
-            </Button>
+            /*
+             * The recording state gets a panel rather than a changed button
+             * label. While recording is the one moment the doctor is not
+             * looking at the screen, so what it shows has to answer "is this
+             * working" from across the room: that it is running, that the
+             * microphone is hearing the room, and where the words will land.
+             */
+            <div className="grid gap-3 rounded-card border border-line bg-sunken p-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="flex items-center gap-2 text-sm font-medium">
+                  {/* `animate-pulse` on a dot is the one loop that is honest
+                      here: it reports that recording is running, which is
+                      state this component owns, not that sound is arriving,
+                      which only the meter below may claim. */}
+                  <span className="size-2 animate-pulse rounded-full bg-emergency" />
+                  Recording…
+                </p>
+                <span className="font-mono text-sm text-ink-muted tabular-nums">
+                  {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
+                </span>
+              </div>
+
+              {liveStream && <InputMeter stream={liveStream} />}
+
+              <div>
+                <p className="mb-1 text-xs font-medium text-ink-muted">Transcript</p>
+                <div className="max-h-32 min-h-16 overflow-y-auto rounded-control border border-line bg-surface p-2 text-xs leading-relaxed">
+                  {transcript ? (
+                    <span className="whitespace-pre-wrap">{transcript}</span>
+                  ) : (
+                    /* Says when text arrives rather than implying it is
+                       arriving now. Transcription runs on the finished
+                       recording, so an empty field with a live cursor would
+                       promise a running transcript that does not exist. */
+                    <span className="text-ink-muted">
+                      Empty until you stop. The recording is transcribed in one pass when it ends.
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <Button className="w-full justify-center" onClick={stop}>
+                <Square aria-hidden className="size-4" />
+                Stop and Transcribe
+              </Button>
+            </div>
           ) : (
             <Button className="w-full justify-center" onClick={start} disabled={busy}>
               <Mic aria-hidden className="size-4" />
