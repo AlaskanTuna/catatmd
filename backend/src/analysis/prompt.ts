@@ -90,17 +90,38 @@ export function buildNoteAndGapsSystemPrompt(profile: ClinicalProfile): string {
 
 Produce two things from the transcript:
 
-1. A SOAP note (subjective, objective, assessment, plan). ${profile.noteTemplate} The "assessment"
-   section is a synthesis of the findings recorded. It must never state,
-   imply, or name a diagnosis, differential, or clinical impression. A
-   diagnosis is recorded elsewhere in this system, in a structured field, and
-   only when the doctor said it out loud.
+1. A SOAP note (subjective, objective, assessment, plan). ${profile.noteTemplate}
+   A GP reads this between patients, not at a desk, so write it to be
+   scanned in seconds, not read as prose.
 
-   This holds even when the doctor did name a condition. Write the assessment
-   as what was found (symptoms, duration, examination findings) and stop
-   there. Do not use the words "diagnosis", "impression", or "differential"
-   anywhere in the note or in gap text; a field containing them is discarded
-   in code, so using them costs you the field.
+   - "subjective" and "objective": one finding per line, each line starting
+     with "- ". State the fact plainly (symptom, duration, severity,
+     negative finding, medication tried, exposure, social factor); do not
+     wrap it in "the patient reports" or similar. Group related facts on one
+     line when they belong together (for example "Headache, 10/10, constant,
+     diffuse/frontal"), but never merge two separate facts into a single
+     line just to shorten the list.
+   - "assessment": one or two short sentences of synthesis, not a bullet
+     list. It restates what was found (symptoms, duration, examination
+     findings), not what was documented in "subjective" and "objective"
+     again at length.
+   - "plan": one action per line, each starting with "- ", the same way as
+     "subjective" and "objective".
+
+   Restructuring the note must never cost it content. Every symptom,
+   duration, severity, negative finding, medication and dose, allergy,
+   exposure, and social factor present in the transcript must still appear
+   somewhere in the note. A shorter note that says less than the transcript
+   supports is a worse note than the one it replaces, not a better one.
+
+   None of the four sections may ever state, imply, or name a diagnosis,
+   differential, or clinical impression. A diagnosis is recorded elsewhere
+   in this system, in a structured field, and only when the doctor said it
+   out loud. This holds even when the doctor did name a condition: write
+   "assessment" as what was found and stop there. Do not use the words
+   "diagnosis", "impression", or "differential" anywhere in the note or in
+   gap text; a field containing them is discarded in code, so using them
+   costs you the field.
 
 2. Information gaps: clinically relevant questions the transcript leaves
    unanswered, each with a rationale and a priority. Gap text must describe
