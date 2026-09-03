@@ -112,6 +112,17 @@ export function ConsultationReview() {
    */
   const [allGapsOpen, setAllGapsOpen] = useState(false)
   const allGapsDialog = useRef<HTMLDialogElement>(null)
+  /*
+   * Focus the first control once the content mounts. It is gated on state, so
+   * it is not in the DOM yet when `showModal()` runs its native autofocus pass,
+   * and without this the dialog itself takes focus and the first Tab starts
+   * from nowhere in particular. Queried off the dialog rather than held on a
+   * ref because `ui/Button.tsx` does not forward one, and teaching a shared
+   * component to do so for one caller is a wider change than this needs.
+   */
+  useEffect(() => {
+    if (allGapsOpen) allGapsDialog.current?.querySelector('button')?.focus()
+  }, [allGapsOpen])
 
   /*
    * Demo Mode's consultation is not stored, so there is nothing to fetch for it
@@ -670,6 +681,7 @@ export function ConsultationReview() {
                   {count(analysis.gaps.length, 'item')}
                 </span>
               </h2>
+              {/* First in the DOM, and so the one the open effect focuses. */}
               <Button size="sm" variant="neutral" onClick={() => allGapsDialog.current?.close()}>
                 Close
               </Button>

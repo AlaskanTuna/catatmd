@@ -43,6 +43,14 @@ import { cn } from '../lib/cn.js'
  * and it made every tip in the audio dialog invisible. No test caught it,
  * because jsdom implements neither the top layer nor `showModal` (the suites
  * stub the method outright), so this is a browser-only failure by construction.
+ *
+ * **It assumes the `<dialog>` is itself the scrolling box**, because the offset
+ * it adds is that element's `scrollTop`. That holds for the audio dialog, which
+ * scrolls on the UA's own `overflow: auto`. It does not hold for a dialog that
+ * scrolls an inner wrapper instead, and the full-gap-list dialog in
+ * `routes/ConsultationReview.tsx` is exactly that shape: putting a `layered`
+ * tip inside one would track the wrong offset. Position against the scrolling
+ * ancestor rather than the dialog if that case ever arrives.
  */
 export function InfoTip({
   label,

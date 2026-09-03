@@ -240,6 +240,21 @@ describe('the full missing-information list', () => {
     expect(dialog.textContent).toContain('Missing Information')
   })
 
+  it('puts focus on the dialog rather than leaving it where the trigger was', async () => {
+    setup()
+
+    fireEvent.click(await screen.findByText('Show All 7 Missing Items'))
+
+    // The content is gated on state, so it is absent when `showModal()` runs
+    // its native autofocus pass. Without the open effect, focus would still be
+    // on the trigger, which is now behind a modal.
+    const dialog = await screen.findByRole('dialog')
+    await waitFor(() => {
+      expect(dialog.contains(document.activeElement)).toBe(true)
+    })
+    expect((document.activeElement as HTMLElement).textContent).toBe('Close')
+  })
+
   it('does not put the cards in the DOM twice while it is closed', async () => {
     setup()
 
