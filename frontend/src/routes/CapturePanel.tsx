@@ -239,6 +239,7 @@ export function CapturePanel({
             <AudioCapture
               engine={audio.engine}
               transcript={text}
+              draftPending={draft !== null}
               onTranscript={({ text: transcribed, segments, source: from, draftTurns }) => {
                 /*
                  * Appended, never replacing what is already there. A doctor may
@@ -388,16 +389,10 @@ export function CapturePanel({
           </p>
           {turns.length === 0 && !draft && (
             <p className="mt-1 text-sm text-ink-muted">
-              No speaker labels found. Prefix each line with <code>Doctor:</code> or{' '}
-              <code>Patient:</code>.
+              Prefix each line with <code>Doctor:</code> or <code>Patient:</code>.
             </p>
           )}
-          {draft && (
-            <p className="mt-1 text-sm text-ink-muted">
-              A recording is waiting in the Record tab: check its draft labels and apply them before
-              starting.
-            </p>
-          )}
+          {draft && <p className="mt-1 text-sm text-ink-muted">Apply the draft labels first.</p>}
         </div>
       )}
 

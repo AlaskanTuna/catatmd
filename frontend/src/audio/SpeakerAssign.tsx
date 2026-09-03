@@ -118,7 +118,7 @@ export function SpeakerAssign({
         </Button>
       </div>
       <p className="mt-1 text-xs text-ink-muted">
-        Labels are guessed from what each sentence says, not from the voices, and can be wrong.
+        Guessed from the words, not the voices. Check before applying.
       </p>
       {/*
         Named rather than left to be discovered by scrolling. These are the
