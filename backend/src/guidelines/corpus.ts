@@ -13,8 +13,8 @@ export type ProfiledGuidelineChunk = GuidelineChunk & { readonly profiles: reado
  * carries its own source's `publisher` and `year`.
  */
 export const GUIDELINE_CORPUS_VERSION: ClinicalArtefactVersion = {
-  id: 'guideline-corpus-v2',
-  effectiveDate: '2026-08-14',
+  id: 'guideline-corpus-v3',
+  effectiveDate: '2026-09-04',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -30,11 +30,20 @@ const UTI_PROFILES: readonly ProfileId[] = ['adult-acute-uncomplicated-uti']
  * at McIsaac >=4. Merging them into one "Centor threshold" chunk would
  * manufacture a consensus that does not exist, and the ID-constrained
  * citation mechanism cannot catch that because the model would be citing a
- * real, valid ID. No `quote` is populated on any chunk here — this corpus
- * was authored from the resolved TRD summary of each source rather than the
- * primary text, so no span can honestly be marked verbatim yet; a future
- * clinician review pass (docs/prd.md §12) is expected to add `quote`s for
- * the CC-licensed sources where warranted.
+ * real, valid ID. No `quote` is populated on any chunk here — most of this
+ * corpus was authored from the resolved TRD summary of each source rather
+ * than the primary text, so no span can honestly be marked verbatim yet; a
+ * future clinician review pass (docs/prd.md §12) is expected to add `quote`s
+ * for the CC-licensed sources where warranted.
+ *
+ * That authoring method is also a known defect, not just a limitation. The
+ * two `ooi-2022-*` chunks were rewritten against the primary text on 04/09/26
+ * after one was found to assert antibiotic over-prescription while the cited
+ * study reports a 6.0% rate its authors call acceptably low, and a third
+ * chunk was removed because nothing in the article supported it. The
+ * ID-constrained citation mechanism cannot catch that class of error either:
+ * the id resolves, and the summary behind it is still wrong. The remaining
+ * nine chunks have not had the same check (issue #240).
  */
 export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
   // ─── MOH National Antimicrobial Guideline (NAG), 4th ed., 2024 ───────────
@@ -44,7 +53,7 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
     title: 'National Antimicrobial Guideline, 4th Edition — Annex A10, Modified Centor Score',
     publisher: 'Ministry of Health Malaysia',
     year: 2024,
-    url: 'https://www.pharmacy.gov.my/v2/en/documents/national-antimicrobial-guideline-nag.html',
+    url: 'https://pharmacy.moh.gov.my/nag',
     summary:
       'Scores four criteria in adults with sore throat — tonsillar exudate, tender anterior ' +
       'cervical adenopathy, fever by history, and absence of cough — one point each. NAG sets ' +
@@ -59,7 +68,7 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
       'National Antimicrobial Guideline, 4th Edition — Section C1, Acute Pharyngitis/Tonsillitis',
     publisher: 'Ministry of Health Malaysia',
     year: 2024,
-    url: 'https://www.pharmacy.gov.my/v2/en/documents/national-antimicrobial-guideline-nag.html',
+    url: 'https://pharmacy.moh.gov.my/nag',
     summary:
       'Most adult acute pharyngitis is viral and self-limiting; antibiotics are reserved for ' +
       'patients meeting the Modified Centor threshold (see moh-nag-2024-a10-modified-centor) ' +
@@ -75,7 +84,7 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
       'National Antimicrobial Guideline, 4th Edition — Section C1, Distinguishing Viral From Bacterial Sore Throat',
     publisher: 'Ministry of Health Malaysia',
     year: 2024,
-    url: 'https://www.pharmacy.gov.my/v2/en/documents/national-antimicrobial-guideline-nag.html',
+    url: 'https://pharmacy.moh.gov.my/nag',
     summary:
       'Isolated sore throat with coryzal symptoms, cough, and absence of fever points away from ' +
       'a bacterial cause and antibiotics are not indicated on presentation alone; scoring tools ' +
@@ -90,7 +99,7 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
     title: 'National Antimicrobial Guideline, 4th Edition — Section C3, Acute Bronchitis',
     publisher: 'Ministry of Health Malaysia',
     year: 2024,
-    url: 'https://www.pharmacy.gov.my/v2/en/documents/national-antimicrobial-guideline-nag.html',
+    url: 'https://pharmacy.moh.gov.my/nag',
     summary:
       'Acute bronchitis in an otherwise healthy adult is usually viral. Antibiotics are not ' +
       'routinely indicated regardless of sputum colour, and are reserved for patients with ' +
@@ -106,7 +115,7 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
       'National Antimicrobial Guideline, 4th Edition — Section C4, Uncomplicated Upper Respiratory Tract Infection',
     publisher: 'Ministry of Health Malaysia',
     year: 2024,
-    url: 'https://www.pharmacy.gov.my/v2/en/documents/national-antimicrobial-guideline-nag.html',
+    url: 'https://pharmacy.moh.gov.my/nag',
     summary:
       'Uncomplicated URTI (common cold) does not warrant antibiotics; management is symptomatic ' +
       '— analgesia, antipyretics, hydration, and rest — with safety-netting advice to return if ' +
@@ -122,9 +131,9 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
     id: 'abdullah-2024-mcisaac-criteria',
     title:
       'Malaysian Delphi Consensus on Sore Throat Management in Primary Care — McIsaac Score Criteria',
-    publisher: 'Abdullah et al., Infectious Diseases and Therapy',
+    publisher: 'Abdullah et al., Infection and Drug Resistance',
     year: 2024,
-    url: 'https://www.dovepress.com/infection-and-drug-resistance-journal',
+    url: 'https://doi.org/10.2147/IDR.S477038',
     summary:
       'Endorses the McIsaac score for adult sore throat: the four Centor criteria (tonsillar ' +
       'exudate, tender anterior cervical adenopathy, fever by history, absence of cough) plus ' +
@@ -138,9 +147,9 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
     id: 'abdullah-2024-mcisaac-threshold',
     title:
       'Malaysian Delphi Consensus on Sore Throat Management in Primary Care — Antibiotic Threshold',
-    publisher: 'Abdullah et al., Infectious Diseases and Therapy',
+    publisher: 'Abdullah et al., Infection and Drug Resistance',
     year: 2024,
-    url: 'https://www.dovepress.com/infection-and-drug-resistance-journal',
+    url: 'https://doi.org/10.2147/IDR.S477038',
     summary:
       'Malaysian expert consensus recommends considering antibiotics at a McIsaac score of 4 or ' +
       'higher, no antibiotics or further testing below a score of 2, and clinical judgement or ' +
@@ -153,9 +162,9 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
     id: 'abdullah-2024-safety-netting',
     title:
       'Malaysian Delphi Consensus on Sore Throat Management in Primary Care — Safety-Netting Advice',
-    publisher: 'Abdullah et al., Infectious Diseases and Therapy',
+    publisher: 'Abdullah et al., Infection and Drug Resistance',
     year: 2024,
-    url: 'https://www.dovepress.com/infection-and-drug-resistance-journal',
+    url: 'https://doi.org/10.2147/IDR.S477038',
     summary:
       'Consensus that every adult sore-throat consultation, regardless of antibiotic decision, ' +
       'should include explicit advice on when to seek review — worsening swallowing difficulty, ' +
@@ -170,43 +179,32 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
   // CC BY 4.0, quotable with attribution.
   {
     id: 'ooi-2022-urti-epidemiology',
-    title: 'Upper Respiratory Tract Infections in Malaysian Primary Care — Presentation Burden',
+    title:
+      'Upper Respiratory Tract Infections at a Malaysian Primary Care Clinic — Presenting Pattern',
     publisher: 'Ooi et al., Malaysian Family Physician',
     year: 2022,
-    url: 'https://www.mfp.org.my/',
+    url: 'https://doi.org/10.51866/oa.38',
     summary:
-      'URTIs (common cold, acute pharyngitis, acute bronchitis) are among the most frequent ' +
-      'reasons for a primary-care consultation in Malaysia, and the large majority are ' +
-      'viral in an otherwise healthy adult.',
+      'A cross-sectional study of 587 patients at one dedicated URTI clinic in Alor Setar during ' +
+      'the early COVID-19 period. Cough (68.4%), fever (31.6%), runny nose (24.6%) and sore ' +
+      'throat (24.1%) were the commonest presenting symptoms, and acute nasopharyngitis (52.5%) ' +
+      'the commonest recorded condition. Single-centre and pandemic-era, so it describes a presenting ' +
+      'pattern rather than national epidemiology.',
     sourceLicence: 'CC-BY-4.0',
     verbatimAllowed: true,
     profiles: URTI_PROFILES,
   },
   {
     id: 'ooi-2022-antibiotic-prescribing-patterns',
-    title: 'Upper Respiratory Tract Infections in Malaysian Primary Care — Prescribing Patterns',
+    title: 'Upper Respiratory Tract Infections at a Malaysian Primary Care Clinic — Antibiotic Use',
     publisher: 'Ooi et al., Malaysian Family Physician',
     year: 2022,
-    url: 'https://www.mfp.org.my/',
+    url: 'https://doi.org/10.51866/oa.38',
     summary:
-      'Documents antibiotic over-prescription for URTI in Malaysian primary care relative to ' +
-      'the proportion of presentations with a plausible bacterial cause, and identifies patient ' +
-      'expectation and diagnostic uncertainty as drivers — supporting structured scoring tools ' +
-      'as a stewardship intervention.',
-    sourceLicence: 'CC-BY-4.0',
-    verbatimAllowed: true,
-    profiles: URTI_PROFILES,
-  },
-  {
-    id: 'ooi-2022-symptom-duration',
-    title: 'Upper Respiratory Tract Infections in Malaysian Primary Care — Expected Symptom Course',
-    publisher: 'Ooi et al., Malaysian Family Physician',
-    year: 2022,
-    url: 'https://www.mfp.org.my/',
-    summary:
-      'Uncomplicated viral URTI symptoms typically resolve within one to two weeks; cough in ' +
-      'particular can persist beyond resolution of other symptoms without indicating a ' +
-      'secondary bacterial process, which is useful context for reassurance and safety-netting.',
+      'Of 435 URTI presentations, 26 (6.0%) were prescribed an antibiotic, which the ' +
+      'authors describe as acceptably low and as evidence of judicious prescribing. Symptomatic ' +
+      'medication was prescribed to 96.5%. The authors name patient expectation and prescribing ' +
+      'habit as questions for further study, not as established drivers.',
     sourceLicence: 'CC-BY-4.0',
     verbatimAllowed: true,
     profiles: URTI_PROFILES,
@@ -216,7 +214,7 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
     title: 'National Antimicrobial Guideline, 4th Edition, Acute Urinary Tract Infection',
     publisher: 'Ministry of Health Malaysia',
     year: 2024,
-    url: 'https://www.pharmacy.gov.my/v2/en/documents/national-antimicrobial-guideline-nag.html',
+    url: 'https://pharmacy.moh.gov.my/nag',
     summary:
       'MOH NAG 2024 includes guidance for urinary tract infection presentations. This prototype ' +
       'does not encode drug choice, dose, duration, or treatment thresholds from that source; ' +
