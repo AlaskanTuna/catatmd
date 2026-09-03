@@ -19,6 +19,8 @@ const URTI = REDFLAG_TRIGGERS.filter((trigger) => trigger.profiles.includes('adu
 
 const transcript = (turns: { speaker: 'doctor' | 'patient'; text: string }[]): Transcript => ({
   source: 'fixture',
+  // Labels written by hand here, so suppression is available to the engine.
+  labelsReviewed: true,
   turns,
 })
 

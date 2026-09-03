@@ -10,6 +10,8 @@ const turn = (speaker: TranscriptTurn['speaker'], text: string): TranscriptTurn 
 
 const transcript = (...turns: TranscriptTurn[]): Transcript => ({
   source: 'fixture',
+  // Labels written by hand here, so suppression is available to the engine.
+  labelsReviewed: true,
   turns,
 })
 
