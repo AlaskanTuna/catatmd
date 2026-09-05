@@ -1919,7 +1919,7 @@ Ambient capture is **segmented batch transcription at conversational cadence**, 
 mic (open for the session)
   |
   v
-RMS silence detector          cut at a pause; floor 4 s, ceiling 12 s; silent segments dropped
+RMS silence detector          cut at a pause; floor 8 s, ceiling 20 s; silent segments dropped
   |
   v
 segment blob (webm/opus)      POST /api/asr/live-segments   (one request, one response)
@@ -1936,6 +1936,8 @@ running transcript            browser memory only, until the doctor finishes
   v
 Finish                        speaker labelling, then the existing full analysis, unchanged
 ```
+
+**Floor revised 05/09/26.** This diagram first specified a 4 second floor. Measured on real speech, a 4 second floor costs 23.5 points of Malay word error against the whole file, where an 8 second floor costs 1.5. A batch model called once per chunk starts cold each time and loses the surrounding speech it uses to disambiguate, so the penalty is measured in multiples rather than percentages. See 20.8.
 
 **Why no socket.** The browser reaches the API only through the Vercel rewrite that makes the session cookie first-party (§17, issue #156). That rewrite proxies HTTP and server-sent events but not WebSocket upgrades, and a direct browser-to-Render socket would lose the cookie and reintroduce the mobile lockout. A provider socket held by the API is possible, and is the phase 2 option, but it is not needed to reach conversational cadence.
 
@@ -2088,6 +2090,83 @@ The row struck through above was wrong, and it is corrected here rather than qui
 | Utterance to on-screen latency, median and 90th percentile                                                    | The claim being made is real time. It is measured, or it is not made                                                                  |
 
 Reports land in the gitignored `evals/` reports directory and the numbers come back into this section. Nothing about per-language support is said to a client before that table exists.
+
+### 20.8 How This Design Compares To Industry Practice
+
+**Status: `Specified`.** Research recorded 05/09/26 against vendor API documentation, peer-reviewed literature and independent benchmarks. Written because a reviewer will ask what everyone else does, and because two of the answers changed decisions in 20.7. Full source list in the gitignored `evals/reports/` alongside the measurements.
+
+#### The Finding That Matters Most: Nobody De-Identifies Before The Model
+
+This is the largest single divergence between this system and the industry, and it runs in our favour.
+
+| Evidence                                                                                                                                                                                                                                                           | Detail                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| Abridge names OpenAI and Google Cloud as subprocessors on its own trust centre, with no de-identification claim anywhere on it                                                                                                                                     | Transcript content reaches a third-party model bearing identifiers, governed by contract rather than by transformation |
+| A deployed scribe reporting 2.33 million encounters describes its pipeline in a peer-reviewed paper as audio, then speech to text, then model, then template, then clinician review. **No de-identification or redaction step appears in the architecture at all** | This is not an oversight in one product, it is the shape of the category                                               |
+| The Joint Commission and CHAI joint guidance, September 2025, does not require de-identification before data reaches a model                                                                                                                                       | The governing guidance sanctions the contractual posture                                                               |
+| AWS states plainly that its own redaction feature "does not meet the requirements for de-identification under medical privacy laws, such as HIPAA"                                                                                                                 | The vendor selling redaction declines to call it de-identification                                                     |
+
+**The industry answer is a contract; ours is a transformation plus a contract.** Every major model host is available under a business associate agreement, so the standard posture is to bring the model inside the compliance boundary rather than to strip identifiers before it. That is defensible and it is what the regulators have blessed. It is also weaker than a gate that fails closed, and it depends entirely on the paper holding.
+
+Two corroborations of positions this document already took:
+
+- **Voice is itself an identifier.** The HIPAA Safe Harbor list names biometric identifiers "including finger and voice prints" at 45 CFR 164.514(b)(2)(P). That is the same conclusion 20.4 reached from the PDPA 2024 amendment, arrived at from a different statute. It also means transcript redaction alone can never de-identify an ambient pipeline, which is exactly why the audio path is governed by consent and bounds rather than by the gate.
+- **"Risk reduction, not anonymisation"** is the correct framing, and AWS's disclaimer is the strongest available external support for it.
+
+#### Where This Design Matches Industry Practice
+
+| Decision here                                                      | Industry position                                                                                                                                                                                       | Evidence                                                                                                                                                           |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Cascaded pipeline: speech to text, then a language model over text | The standard, and the evidence for it is stark. Measured unsupported-claim rates: human notes 0.01, cascaded 0.21 to 0.23, **end-to-end audio models 0.99 to 1.00**                                     | An end-to-end audio model produces an unsupported claim in essentially every note. Our separation is not conservatism, it is the difference between usable and not |
+| Evidence-bound assertions, every claim carrying a verbatim span    | AWS HealthScribe emits `{EvidenceLinks[], SummarizedSegment}`, one sentence per cluster of transcript segments. Abridge ships the same idea as Linked Evidence. The academic form is Cluster2Sent, 2020 | We arrived at the same structure independently and it is the strongest pattern in the field                                                                        |
+| Full note generated once, at the end                               | AWS HealthScribe generates only on an explicit end-of-session event and has no incremental mode. Nabla has no streaming note endpoint                                                                   | Our decision to run the 20 second pipeline once at Finish is the industry norm, not a compromise                                                                   |
+| No transcript-rewriting correction pass                            | **No vendor documents an ASR post-correction stage.** Nabla instead verifies downstream, splitting the finished note into atomic facts and checking each against the transcript                         | 20.7's rejection was reasoned from our own controls. The industry reached the same place                                                                           |
+
+On that last row the research is unusually decisive. Language-model correction of speech output helps when error rates are high and the corrector is fine-tuned on that recogniser's own mistakes with access to its alternative hypotheses. It hurts in the low-error regime with a general model seeing only final text, which is our situation. A practitioner benchmark found hallucinations in roughly a quarter of cases and concluded the technique is not a breakthrough; Apple's research finds a small specialised model beats a large language model at this with fifteen times fewer parameters. The named failure modes are over-correction of rare proper nouns, which in a clinic means drug and patient names.
+
+#### Where This Design Leads
+
+| Ahead on                                              | Why it matters                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **De-identification before egress**                   | See above. The category does not do this                                                                                                                                                                                                                             |
+| **Deterministic red flags the model cannot suppress** | No industry equivalent was found. The only randomised trial names **negation-detection failure as a counted error class**: "denies chest pain" recorded as chest pain. That is precisely the failure a rules-first engine prevents and a model-mediated one produces |
+| **Live safety and information panes**                 | Nobody generates anything live. This is genuinely ahead of shipped practice, which is both the opportunity in this project and its risk                                                                                                                              |
+
+#### Where This Design Is Behind
+
+| Behind on                     | Industry practice                                                                                                                       | Consequence                                                                                                                                                             |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Session resumption**        | AWS HealthScribe resumes against the same client-supplied session id, any number of times, within five hours                            | We have nothing. A dropped clinic connection currently loses the consultation, and this is the clearest gap the comparison exposed                                      |
+| **Incremental note assembly** | Nabla accepts the previous note plus only the new transcript and folds the delta in, explicitly to avoid resending a growing transcript | 20.7 plans to re-extract over the whole running transcript every cycle. The fold is cheaper and will churn the screen less. **Adopt it**                                |
+| **Partial results**           | Streaming vendors emit revisable partial text in 200 to 500 ms and finals in 0.7 to 4 seconds                                           | Segmented batch shows the doctor nothing until a segment closes. The screen is empty for the whole segment, which is the real experiential cost of the transport choice |
+
+#### What The Clinical Literature Says About The Product Itself
+
+These findings shape what may be claimed, not what is built.
+
+| Finding                                               | Number                                                                                                                                                       | Consequence here                                                                                                                                                         |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Omission is the dominant failure, not fabrication** | 18% of notes carried accidental omissions against 11.5% hallucinations, n=356                                                                                | The missing-information panel addresses the most common documented failure mode. This is the strongest external justification the feature has                            |
+| **A minority of notes carry serious risk**            | 5.3% of notes contained an error posing serious or imminent risk                                                                                             | The single best citation for why approval must be an explicit clinician act and never a default                                                                          |
+| **Time savings are not a safe promise**               | In the only randomised trial the market-leading scribe showed no significant reduction in documentation time. Burnout and task load improved in both arms    | Claim reduced burden, never claim minutes saved                                                                                                                          |
+| **Documenting is not acting**                         | Across 20,302 notes, AI-scribed notes recorded significantly more symptoms yet the clinician was **less** likely to intervene                                | A caution aimed directly at a product whose pitch is surfacing red flags. Surfacing is not the outcome; acting is                                                        |
+| **Speech recognition hallucination tracks silence**   | Roughly 1% of segments in one corpus, rising with non-vocal duration, and 38% of those carried explicit harm                                                 | The patients who pause are the elderly, the breathless, the distressed and anyone speaking through an interpreter. This is a fairness argument, not only an accuracy one |
+| **No standard benchmark exists**                      | A scoping review found 7 qualifying studies and only 2 public datasets, and named the absence of standard hallucination and error metrics as the central gap | There is no benchmark we are failing. The defensible posture is to state our own method, and PDQI-9 with a severity scale is the closest thing to a convention           |
+
+#### What The Research Changed In 20.7
+
+| Item                             | Before                                          | After                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Segment window                   | 4 to 12 seconds                                 | **8 second floor.** Measured: a 4 second floor costs 23.5 points of Malay word error, an 8 second floor costs 1.5                                                                                                                                                                                                                                                                          |
+| Per-consultation language picker | Proposed, then retracted                        | Stays retracted. Detection works unprompted on genuinely spoken audio. **Additionally: constrain the candidate set to the languages expected and exclude Indonesian**, which is what every vendor supporting code-switching advises and what removes the confusion measured here mechanically                                                                                              |
+| Tamil                            | "Not on the vendor's list"                      | **Definitively unsupported.** Qwen3-ASR covers 30 languages plus 22 Chinese dialects and Tamil is absent, which is why language identification failed on all four clips. **Speechmatics ships a single `cmn_en_ms_ta` model covering Mandarin, English, Malay and Tamil**, and is the only vendor with a Malay-English product. It deserves evaluation before Tamil is declared impossible |
+| Incremental analysis             | Re-extract over the whole transcript each cycle | Fold the delta into the previous result, following the one documented incremental contract in the field                                                                                                                                                                                                                                                                                    |
+
+#### Two Numbers To Carry Into Any Client Conversation
+
+**The Malay result is optimistic, and by a lot.** FLEURS is read, scripted, studio-clean speech. On spontaneous Singaporean Malay the same class of model scores 33 to 58 percent word error against the 13.2 percent measured here. Recording conditions alone account for a factor of two and a half to four before code-switching is considered.
+
+**Code-switching is the unmeasured risk.** On Singaporean Malay-English, Whisper-class models exceed 100 percent word error, meaning insertions make the output longer than the reference and unusable. No vendor anywhere publishes a code-switched error rate against a monolingual baseline, and a systematic review of 127 code-switching papers found contextual biasing not discussed at all. There is no public Malaysian conversational Malay-English benchmark. **If the client records his own consultations, that recording becomes the most authoritative Malaysian data in existence on this question**, which is a better thing to offer him than a number from a read-speech corpus.
 
 ## 21. LLM Guardrail Architecture
 
