@@ -1995,17 +1995,66 @@ The obvious way to fix a noisy multilingual transcript is to hand it to a langua
 
 **Tamil is the honest limitation.** No provider on the shortlist that satisfies the residency posture transcribes Tamil. The product says so plainly on the capture surface rather than degrading quietly, which is the same rule §20.1 finding 2 already imposes for declaring a language wrongly.
 
+#### 20.7.1 Measured: Reachability, Containers, And The Context Effect
+
+Measured **05/09/26** against the production `QWEN_API_KEY` already in the Render service. A capability probe, not a benchmark, run to answer whether the recommendation above is even reachable before any of it is built. One sentence per condition, one synthesised voice, no ground-truth corpus, so **no word error rate is reported and none should be quoted from this**.
+
+**Sample provenance.** Two clips generated locally by Windows text-to-speech at 16 kHz mono: one English clinical sentence, one Malay clinical sentence. No patient data, real or simulated. Neither clip is committed.
+
+**Reachability, settled.**
+
+| Question                                        | Answer                                                                                                                                                                                                                                                                 |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Does the existing key reach ASR at all          | **Yes.** `qwen3-asr-flash` answers on the key already in production                                                                                                                                                                                                    |
+| Which host                                      | **`dashscope-intl.aliyuncs.com`, unchanged.** The workspace-scoped `{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com` form in the current documentation is not required for this account, so `ALIBABA_ASR_BASE_URL` can reuse the host `QWEN_BASE_URL` already names     |
+| Which request form                              | Both work. The DashScope form at `/api/v1/services/aigc/multimodal-generation/generation`, and the OpenAI-compatible chat form at `/compatible-mode/v1/chat/completions`. Audio goes in as a base64 data URI on either                                                 |
+| Is there an OpenAI-style transcription endpoint | **No.** `/compatible-mode/v1/audio/transcriptions` drops the connection rather than answering, confirming §20.7's note that the ILMU adapter is a pattern to copy, not a client to reuse                                                                               |
+| Sibling models                                  | `qwen-audio-3.0-asr-flash` and `fun-asr-flash-2026-06-15` both exist on this key but reject this request shape with `UNSUPPORTED_FORMAT: format is empty`. They need a `format` parameter this probe did not send. Not pursued, because the recommended model answered |
+| Latency                                         | 429 ms to 865 ms for clips of 2 s to 7.8 s. Real-time factor near 0.1, an order of magnitude inside what the segment cadence needs                                                                                                                                     |
+| Billing unit                                    | Whole audio seconds, reported per call as `usage.seconds`                                                                                                                                                                                                              |
+| Unrequested extra                               | Every response carries an `emotion` annotation. It is not asked for and must not be surfaced, stored, or acted on. The same clip returned `sad` on one call and `neutral` on another, which is reason enough on its own                                                |
+
+**Containers, and why this decides the browser path.** Raw WAV, `webm/opus` and `ogg/opus` are all accepted directly, with identical transcription. A 5.7 s clip is **16 KB as `webm/opus` against 183 KB as WAV**.
+
+The consequence is that `MediaRecorder` output goes to the provider **as recorded**. No AudioWorklet, no PCM re-encoding, no second code path in the browser, and a segment small enough that the 2 MB route cap in §20.7 is roughly two orders of magnitude of headroom rather than a real bound.
+
+**The context effect, which is the finding that matters.** All five conditions below are the same Malay clip with `language: "ms"`, varying only the system context. Ground truth is _"Doktor, saya batuk sudah lima hari, demam pun ada. Tekak sakit sangat."_
+
+| Condition                                          | Returned                                                                     | Reading                                            |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------- |
+| No context                                         | "Dr. Sayyabah Taksudali Maharaj, D. Mampun ada, Tekak Saki Tsangat."         | Unusable                                           |
+| Generic Malay prose, no clinical words             | "Doktor, saya betul sudah lima hari, di mampun ada, tekak saya kecenggat."   | Large recovery from language priming alone         |
+| **Clinical Malay vocabulary, none of the answers** | **"Doktor, saya betah sudah lima hari, demam pun ada, tekak sakit sangat."** | **One word wrong. The effect is real and general** |
+| Clinical Malay vocabulary including the answers    | "Doktor, saya batuk sudah lima hari, demam pun ada, tekak sakit sangat."     | Verbatim, but this condition is circular           |
+| English clinical context                           | "Doktor Sayyabatuk Sudad Limahari, di Mampandai, Tekak Soket Sangat."        | Worse than nothing                                 |
+
+The third row is the load-bearing one, and the fourth exists to make the third honest. **The first attempt at this measurement put the answer words in the context and proved nothing.** Re-run with a clinical vocabulary containing none of the sentence's content words, the recogniser still recovered "demam pun ada" and "tekak sakit sangat" verbatim, neither of which it had been shown. The effect is domain and language priming, not keyword injection.
+
+**Three design consequences follow, and they change §20.7's layer 1 from plausible to evidenced.**
+
+| Consequence                                                                                          | Detail                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The hotword and context prompt is not a refinement, it is the difference between usable and unusable | It carried the same clip from nonsense to one wrong word. Layer 1 is the highest-value part of the accuracy chain to build first, and it costs one static versioned data file                                                                                                                                                                        |
+| The context must be written in the target language                                                   | English context scored **worse than no context at all**. A single English vocabulary list serving every language would actively harm the non-English consultations this feature exists for                                                                                                                                                           |
+| Automatic language identification is not sufficient on its own                                       | Left to detect, the Malay clip was labelled `en` and transcribed as English nonsense. With `language: "ms"` supplied it labelled correctly. Ambient capture therefore needs a language the doctor sets or the app infers per consultation, not blind auto-detection, and §20.1 finding 2 already establishes what a wrong language declaration costs |
+
+**One word stayed wrong, and it is the word this repository has already met twice.** "batuk" came back as "betah" and "betul", where §20.3 measured both other engines hardening it to "patut". **It cannot be fixed in layer 2:** "betul" is the everyday Malay word for "correct", so adding it to the `mishears.ts` confusables table would raise a cough flag on any sentence agreeing with the doctor. That module's own header already refuses to widen for exactly this reason. Recognition-time biasing is therefore not merely the cheapest place to fix "batuk", it is the **only** place the layered design permits it to be fixed, which is a stronger argument for layer 1 than the one §20.7 was written with.
+
+**Chunking, one encouraging data point.** A 2 s slice cut mid-sentence returned _"Doctor, I have had a bad."_ It truncated where the audio truncated and invented no completion. Compared with the repetition loops §20.1 measured from Whisper under stress, a recogniser that stops cleanly at a cut is the behaviour segmented capture depends on. One clip is not a boundary-loss measurement, and the segmented-against-whole comparison in the table below still has to be run.
+
+**What this does not establish.** The Malay clip is an English voice reading Malay text, so it is anglicised, which §20.3 already ruled out as a basis for any Malay verdict. It is plausibly harder than a Malay speaker, which makes the context effect more striking rather than less, but the direction of that bias is an argument and not a measurement. **Nothing here supports a claim to a client about Malay accuracy.** Tamil, Mandarin and Cantonese were not tested at all. The human-read, per-language corpus remains the gate.
+
 #### What Must Be Measured Before This Is Built
 
 §20.1 is a smoke test on one 50-second casual sample, and is cited as one. Ambient capture needs more before any claim reaches a client.
 
-| Measurement                                                                                              | Why it gates the build                                                                                                                |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Word or character error rate per language: Manglish, Malay, Mandarin, Cantonese, Tamil, accented English | The client will test these personally. A measured number is the only honest answer                                                    |
-| Language identification accuracy on code-switched speech                                                 | Automatic identification is the feature being relied on, and §20.1 finding 2 is what happens when a language is called wrongly        |
-| Segmented against whole-file penalty, at 8, 10 and 12 second cuts                                        | Cutting speech into segments costs accuracy at the boundaries. If that cost is large, layer 1 matters more, or phase 2 arrives sooner |
-| Container acceptance, and the exact Singapore endpoint for this account                                  | Decides whether the browser sends `webm/opus` directly or must encode PCM first                                                       |
-| Utterance to on-screen latency, median and 90th percentile                                               | The claim being made is real time. It is measured, or it is not made                                                                  |
+| Measurement                                                                                                   | Why it gates the build                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Word or character error rate per language: Manglish, Malay, Mandarin, Cantonese, Tamil, accented English      | The client will test these personally. A measured number is the only honest answer                                                    |
+| Language identification accuracy on code-switched speech                                                      | Automatic identification is the feature being relied on, and §20.1 finding 2 is what happens when a language is called wrongly        |
+| Segmented against whole-file penalty, at 8, 10 and 12 second cuts                                             | Cutting speech into segments costs accuracy at the boundaries. If that cost is large, layer 1 matters more, or phase 2 arrives sooner |
+| ~~Container acceptance, and the exact Singapore endpoint for this account~~ **Answered 05/09/26, see 20.7.1** | `webm/opus` is accepted exactly as `MediaRecorder` produces it, on the host already configured. No PCM path is needed                 |
+| Utterance to on-screen latency, median and 90th percentile                                                    | The claim being made is real time. It is measured, or it is not made                                                                  |
 
 Reports land in the gitignored `evals/` reports directory and the numbers come back into this section. Nothing about per-language support is said to a client before that table exists.
 
