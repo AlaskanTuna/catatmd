@@ -2140,6 +2140,8 @@ On that last row the research is unusually decisive. Language-model correction o
 | **Incremental note assembly** | Nabla accepts the previous note plus only the new transcript and folds the delta in, explicitly to avoid resending a growing transcript | 20.7 plans to re-extract over the whole running transcript every cycle. The fold is cheaper and will churn the screen less. **Adopt it**                                |
 | **Partial results**           | Streaming vendors emit revisable partial text in 200 to 500 ms and finals in 0.7 to 4 seconds                                           | Segmented batch shows the doctor nothing until a segment closes. The screen is empty for the whole segment, which is the real experiential cost of the transport choice |
 
+| **Update policy for a live panel** | Online summarisation research measures screen churn directly, and zero-erasure policies exist | Answered in 20.8.1. Adopt a forced-prefix fold rather than regenerating the panel each cycle |
+
 #### What The Clinical Literature Says About The Product Itself
 
 These findings shape what may be claimed, not what is built.
@@ -2152,6 +2154,50 @@ These findings shape what may be claimed, not what is built.
 | **Documenting is not acting**                         | Across 20,302 notes, AI-scribed notes recorded significantly more symptoms yet the clinician was **less** likely to intervene                                | A caution aimed directly at a product whose pitch is surfacing red flags. Surfacing is not the outcome; acting is                                                        |
 | **Speech recognition hallucination tracks silence**   | Roughly 1% of segments in one corpus, rising with non-vocal duration, and 38% of those carried explicit harm                                                 | The patients who pause are the elderly, the breathless, the distressed and anyone speaking through an interpreter. This is a fairness argument, not only an accuracy one |
 | **No standard benchmark exists**                      | A scoping review found 7 qualifying studies and only 2 public datasets, and named the absence of standard hallucination and error metrics as the central gap | There is no benchmark we are failing. The defensible posture is to state our own method, and PDQI-9 with a severity scale is the closest thing to a convention           |
+
+#### 20.8.1 The Published Work Closest To This Design
+
+Four results found 05/09/26 that bear on choices made elsewhere in this document. Two validate a decision, one fills a gap this section had listed as undocumented, and one is a warning about how the system is evaluated.
+
+**Writing the note from the transcript, rather than from extracted facts, is the higher-groundedness choice.** FactsR (Corti, 2025) is the closest published analogue to live ambient generation: a sliding window over transcript turns, a draft-evaluate-refine loop producing structured Facts during the consultation, then a note generated from the Facts and a template rather than from the transcript. Its own measurements:
+
+| Pipeline                        | Completeness | Conciseness | Groundedness |
+| ------------------------------- | ------------ | ----------- | ------------ |
+| **Transcript straight to note** | 0.802        | 0.851       | **0.971**    |
+| Facts to note                   | 0.814        | 0.878       | 0.922        |
+| Facts to note, refined          | 0.931        | 0.948       | 0.914        |
+
+Every intermediate-representation variant scored **lower on groundedness** than going straight from the transcript. An extraction layer is another place for a fact to be distorted before the writer ever sees it, and the refinement that buys completeness costs the most groundedness of all.
+
+That is a direct endorsement of the arrangement in section 12: `clinical_facts` and `note_and_gaps` run **concurrently over the same transcript**, and the note is deliberately not written from the assertions. What was recorded there as a latency optimisation turns out to be the grounding-optimal shape as well. **Keep it.** The live pass planned in 20.7 reuses the extraction half to drive the patient card and the gap checklist, which is the correct use of an intermediate representation, and it must not become the source the note is written from.
+
+**The churn problem has a published metric and a published answer.** This section listed screen churn as undocumented across the industry. It is undocumented among vendors, but not in the literature. Online summarisation research defines **Normalized Erasure**, the volume of previously shown output later retracted, and measures five update policies against it:
+
+| Policy                                                         | Erasure  | Cost              | Note                                                                                               |
+| -------------------------------------------------------------- | -------- | ----------------- | -------------------------------------------------------------------------------------------------- |
+| Full rewriting each cycle                                      | **13.8** | highest           | Authors report "excessive rewriting" causing "high cognitive strain" even where fluency rated well |
+| **Sliding window with the previous output forced as a prefix** | **0**    | about 1.8x tokens | Best intermediate quality of the set                                                               |
+| Independent chunk summaries                                    | 0        | lowest            | Worst quality                                                                                      |
+
+Zero erasure is achievable, and it costs roughly 1.8 times the tokens. For a panel a doctor reads while talking, never retracting a line that has already been shown is worth more than the token saving. This is the concrete mechanism behind the fold that 20.8 recommends adopting from Nabla, and it supersedes "re-extract and re-render each cycle" as the live update policy.
+
+**A language model cannot be used to catch the failure mode that matters most here.** Omission is the dominant documented failure of ambient notes, at 18% against 11.5% for hallucination. A 2026 study measured how well language-model judges detect each:
+
+| What the judge is asked to find           | Discrimination   |
+| ----------------------------------------- | ---------------- |
+| Content that was added and is unsupported | 0.79 to 0.94     |
+| **Content that is missing**               | **0.50 to 0.63** |
+
+At 0.50 a judge is guessing. **Judges verify presence, not absence.** A dedicated per-fact pipeline recovered only 24.6% to 36.9% of omissions at a 2.7% to 6.2% false-alarm rate.
+
+This is the strongest external argument for the shape of the gap engine in section 12. `deriveGaps` does not ask a model what is missing. It enumerates a fixed checklist and reports every field whose assertion state is `NOT_ASSESSED` or `UNKNOWN`, which is absence detection by construction rather than by judgement. Any future proposal to replace it with a model that reads the note and lists what is absent should be refused on this evidence.
+
+**Two cautions about evaluation and claims.**
+
+- An audit of three deployed commercial scribes over 142 consultations found **31.3% of notes carried a verified failure**, concentrated in allergy and medication information, invented patient identity, and history written up as examination on telephone consultations where no examination occurred. More usefully, the same work found the measured failure rate ranged from **28% to 97% depending on the evaluation instrument**, with review instructions alone moving verification rates from 9.3% to 79.0%. Any error rate quoted for this system, ours included, is a statement about the rubric as much as about the software.
+- **No vendor implements clinician approval as an API state transition.** AWS and Abridge both state the requirement in prose, and neither enforces it in the contract. The explicit `approved` transition in section 13, unreachable without a doctor action and pinned by a guard test, is stronger than anything documented in the category.
+
+**One number for the live panes.** The only published latency budget for anything shown to a clinician mid-consultation is Suki's, at **sub-300 ms** for voice-command intent, achieved by keeping a language model out of the hot path entirely and using sentence encoders with nearest-neighbour search instead. Nothing note-shaped has a published budget. That supports the split in 20.7: the deterministic red-flag pass is the surface that must feel immediate, and the model-backed card is allowed to lag.
 
 #### What The Research Changed In 20.7
 
