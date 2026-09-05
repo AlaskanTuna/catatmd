@@ -1,0 +1,17 @@
+mattpocock/skills 1.2.3, vendored 2026-09-05 from commit 3cca18b368ae95cdbdebbff572ccafa662551015.
+MIT licensed, (c) Matt Pocock. Source: https://github.com/mattpocock/skills
+
+Three skills only. The other 22 upstream skills duplicate capabilities this repo already has:
+tdd against superpowers test-driven-development, diagnosing-bugs against systematic-debugging,
+code-review against the built-in plus the project reviewer agents, to-spec against writing-plans,
+implement against executing-plans, research against the Explore agent, and triage/to-tickets
+against the GitHub Issues convention already fixed in AGENTS.md. See issue #258.
+
+  grilling             decision-frontier interview, the primitive behind grill-me
+  grill-me             one-line user-invoked wrapper that calls grilling
+  writing-for-agents   how to write a document an agent consumes, plus SKILL-MECHANICS.md
+
+Vendored rather than installed as a plugin so collaborators get them on clone, per AGENTS.md.
+Refresh: curl the SKILL.md and agents/openai.yaml for each skill from
+  https://raw.githubusercontent.com/mattpocock/skills/main/skills/productivity/<name>/
+Do not hand-edit, a refresh replaces these wholesale. AGENTS.md takes precedence on any conflict.
