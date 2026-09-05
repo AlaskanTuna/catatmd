@@ -2032,11 +2032,42 @@ The third row is the load-bearing one, and the fourth exists to make the third h
 
 **Three design consequences follow, and they change §20.7's layer 1 from plausible to evidenced.**
 
-| Consequence                                                                                          | Detail                                                                                                                                                                                                                                                                                                                                               |
-| ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The hotword and context prompt is not a refinement, it is the difference between usable and unusable | It carried the same clip from nonsense to one wrong word. Layer 1 is the highest-value part of the accuracy chain to build first, and it costs one static versioned data file                                                                                                                                                                        |
-| The context must be written in the target language                                                   | English context scored **worse than no context at all**. A single English vocabulary list serving every language would actively harm the non-English consultations this feature exists for                                                                                                                                                           |
-| Automatic language identification is not sufficient on its own                                       | Left to detect, the Malay clip was labelled `en` and transcribed as English nonsense. With `language: "ms"` supplied it labelled correctly. Ambient capture therefore needs a language the doctor sets or the app infers per consultation, not blind auto-detection, and §20.1 finding 2 already establishes what a wrong language declaration costs |
+| Consequence                                                                                              | Detail                                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| The hotword and context prompt is not a refinement, it is the difference between usable and unusable     | It carried the same clip from nonsense to one wrong word. Layer 1 is the highest-value part of the accuracy chain to build first, and it costs one static versioned data file              |
+| The context must be written in the target language                                                       | English context scored **worse than no context at all**. A single English vocabulary list serving every language would actively harm the non-English consultations this feature exists for |
+| ~~Automatic language identification is not sufficient on its own~~ **Retracted the same day, see below** | The claim was drawn from a sample that could not support it. Corrected immediately below                                                                                                   |
+
+##### Retraction: Language Detection Was Not The Problem
+
+The row struck through above was wrong, and it is corrected here rather than quietly edited, because it was published before the measurement that tests it.
+
+**What it said.** That automatic language identification could not be relied on, and that ambient capture would therefore need a language the doctor sets per consultation.
+
+**What it was based on.** One observation: the anglicised Malay clip, left to auto-detect, was labelled `en`. That clip is an English voice reading Malay text, so it is acoustically English. Labelling it `en` is defensible behaviour, not a failure, and no conclusion about language detection can rest on it.
+
+**What the follow-up measured.** Two further conditions, on the same day.
+
+| Audio                                                               | Context supplied  | Detected | Transcript                      |
+| ------------------------------------------------------------------- | ----------------- | -------- | ------------------------------- |
+| Genuine English speech                                              | none              | `en`     | Verbatim                        |
+| **Genuine Mandarin speech**, from the provider's own text to speech | **none**          | **`zh`** | **Verbatim, homophone aside**   |
+| Genuine Mandarin speech                                             | Chinese clinical  | `zh`     | Identical to the no-context run |
+| Genuine Mandarin speech                                             | four-language mix | `zh`     | Identical to the no-context run |
+
+**Detection works, unprompted, on audio genuinely spoken in a language.** Mandarin was identified and transcribed correctly with no context at all, and neither a Chinese context nor a four-language context changed the result. **No per-consultation language picker is needed**, and §20.7 should not carry one.
+
+**The real constraint is narrower, and it is about the context rather than the detection.** A single-language context rescued the acoustically ambiguous Malay clip; a four-language context did not, and left it on `en`. So:
+
+| Situation                     | Behaviour                                                                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Audio clearly in one language | Detection is correct with no context. A multilingual context is harmless                                                     |
+| Audio acoustically ambiguous  | Detection follows the acoustics. Only a **single-language** context pulls it back                                            |
+| Consequence                   | The context that helps most cannot be chosen until the language is known, and the language is knowable from the audio itself |
+
+**The design that follows needs no user interface at all.** Detect the language from the opening segments with no context, then apply the matching single-language clinical vocabulary for the remainder of the session, revising if detection shifts. That is strictly better than asking the doctor, because it costs nothing at the point of care and cannot be set wrongly and left.
+
+**Still unmeasured, and the reason the register row stays open.** Genuinely spoken Malay, by a human, remains untested: the vendor's text to speech offers no Malay voice, and the machine used here carries only English and Russian. Mid-sentence code-switching, the actual Malaysian consultation register, is untested. Tamil is absent from the vendor's list entirely. The Mandarin result also pairs one vendor's speech synthesis with the same vendor's recogniser, which is a favourable match and is not evidence about a human speaker.
 
 **One word stayed wrong, and it is the word this repository has already met twice.** "batuk" came back as "betah" and "betul", where §20.3 measured both other engines hardening it to "patut". **It cannot be fixed in layer 2:** "betul" is the everyday Malay word for "correct", so adding it to the `mishears.ts` confusables table would raise a cough flag on any sentence agreeing with the doctor. That module's own header already refuses to widen for exactly this reason. Recognition-time biasing is therefore not merely the cheapest place to fix "batuk", it is the **only** place the layered design permits it to be fixed, which is a stronger argument for layer 1 than the one §20.7 was written with.
 
