@@ -4,9 +4,11 @@ import type {
   CopilotProposal,
   Disposition,
   DispositionInput,
+  MedicalRecordNote,
   SoapNote,
   Transcript,
 } from '@shared/types'
+import { MedicalRecordNoteSchema, toSoapNote } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Printer, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -20,7 +22,12 @@ import { formatNoteForClipboard } from '../lib/note-templates.js'
 import { count } from '../lib/plural.js'
 import { ApproveBar } from '../review/ApproveBar.js'
 import { ChecklistPanel } from '../review/ChecklistPanel.js'
+import {
+  LegacyMedicalRecordView,
+  MedicalRecordNoteEditor,
+} from '../review/MedicalRecordNoteEditor.js'
 import { NoteEditor } from '../review/NoteEditor.js'
+import { NoteTemplateSelector } from '../review/NoteTemplateSelector.js'
 import { GapCard, RedFlagCard, SuggestionCard } from '../review/SafetyCards.js'
 import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
@@ -295,6 +302,16 @@ export function ConsultationReview() {
     if (!current) throw new Error('No consultation loaded.')
 
     if (proposal.tool === 'edit_note_section') {
+      const canonical = current.editedMedicalRecordNote ?? current.analysis?.medicalRecordNote
+      if (canonical && proposal.section !== 'subjective') {
+        const next = await api.patch(id, {
+          editedMedicalRecordNote: { [proposal.section]: proposal.text },
+        })
+        invalidate(next)
+        toast.success(`Applied to ${proposal.section}.`)
+        return
+      }
+
       const base = current.editedNote ?? current.analysis?.note
       const next = await api.patch(id, {
         editedNote: { ...base, [proposal.section]: proposal.text },
@@ -324,11 +341,25 @@ export function ConsultationReview() {
     mutationFn: async (body: Parameters<typeof api.patch>[1]) => {
       if (!isEphemeral) return api.patch(id, body)
       const current = tour.ephemeral as ConsultationDetail
+      const nextMedicalRecordNote =
+        body.editedMedicalRecordNote === undefined
+          ? undefined
+          : MedicalRecordNoteSchema.parse({
+              ...(current.editedMedicalRecordNote ?? current.analysis?.medicalRecordNote),
+              ...body.editedMedicalRecordNote,
+            })
       return {
         ...current,
+        ...(body.noteTemplate === undefined ? {} : { noteTemplate: body.noteTemplate }),
         ...(body.editedNote
           ? { editedNote: { ...current.analysis?.note, ...body.editedNote } }
           : {}),
+        ...(nextMedicalRecordNote === undefined
+          ? {}
+          : {
+              editedMedicalRecordNote: nextMedicalRecordNote,
+              editedNote: toSoapNote(nextMedicalRecordNote),
+            }),
         ...(body.acknowledgedRedFlagIds
           ? { acknowledgedRedFlagIds: body.acknowledgedRedFlagIds }
           : {}),
@@ -663,13 +694,33 @@ export function ConsultationReview() {
           </h2>
           {analysis && note ? (
             <>
-              <NoteEditor
-                note={note}
-                aiNote={analysis.note}
-                readOnly={approved}
+              <NoteTemplateSelector
+                value={detail.noteTemplate}
                 saving={patch.isPending}
-                onSave={(editedNote: Partial<SoapNote>) => patch.mutate({ editedNote })}
+                onChange={(noteTemplate) => patch.mutate({ noteTemplate })}
               />
+              {medicalRecordNote && analysis.medicalRecordNote ? (
+                <MedicalRecordNoteEditor
+                  note={medicalRecordNote}
+                  aiNote={analysis.medicalRecordNote}
+                  template={detail.noteTemplate}
+                  readOnly={approved}
+                  saving={patch.isPending}
+                  onSave={(editedMedicalRecordNote: Partial<MedicalRecordNote>) =>
+                    patch.mutate({ editedMedicalRecordNote })
+                  }
+                />
+              ) : detail.noteTemplate === 'malaysian' ? (
+                <LegacyMedicalRecordView note={note} aiNote={analysis.note} />
+              ) : (
+                <NoteEditor
+                  note={note}
+                  aiNote={analysis.note}
+                  readOnly={approved}
+                  saving={patch.isPending}
+                  onSave={(editedNote: Partial<SoapNote>) => patch.mutate({ editedNote })}
+                />
+              )}
               <ChecklistPanel
                 clinicalFacts={analysis.clinicalFacts}
                 operational={analysis.operational}

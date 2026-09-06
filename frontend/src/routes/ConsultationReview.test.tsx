@@ -1,3 +1,4 @@
+import type { CopilotProposal } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -28,7 +29,23 @@ vi.mock('../lib/api.js', () => ({
   },
 }))
 
-vi.mock('../copilot/CatatAI.js', () => ({ CatatAI: () => null }))
+vi.mock('../copilot/CatatAI.js', () => ({
+  CatatAI: ({ onApply }: { onApply: (proposal: CopilotProposal) => Promise<void> }) => (
+    <button
+      type="button"
+      onClick={() =>
+        void onApply({
+          tool: 'edit_note_section',
+          section: 'plan',
+          text: 'Updated safety-net advice.',
+          rationale: 'The doctor requested clearer follow-up advice.',
+        })
+      }
+    >
+      Apply Copilot Plan Edit
+    </button>
+  ),
+}))
 vi.mock('../review/ApproveBar.js', () => ({ ApproveBar: () => null }))
 vi.mock('../review/ChecklistPanel.js', () => ({ ChecklistPanel: () => null }))
 vi.mock('../review/NoteEditor.js', () => ({
@@ -137,6 +154,132 @@ describe('approved note copy', () => {
     )
     expect(screen.getByRole('button', { name: 'Export' })).toBeTruthy()
     expect(toastSuccess).toHaveBeenCalledWith('Note copied.')
+  })
+})
+
+describe('consultation note template', () => {
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.getConsultation).mockResolvedValue(APPROVED as never)
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.patch).mockReset()
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    })
+  })
+
+  it('persists a switch to the Malaysian layout and renders its ordered headings', async () => {
+    vi.mocked(api.patch).mockResolvedValue({ ...APPROVED, noteTemplate: 'malaysian' } as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('radio', { name: 'Malaysian Medical Record' }))
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith('consultation-1', {
+        noteTemplate: 'malaysian',
+      }),
+    )
+    expect(await screen.findByRole('heading', { name: 'Family History' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Edit Family History/ })).toBeNull()
+  })
+
+  it('persists one canonical category edit and updates its provenance', async () => {
+    const awaitingReview = {
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      noteTemplate: 'malaysian' as const,
+      approvedAt: null,
+      approvedBy: null,
+    }
+    vi.mocked(api.getConsultation).mockResolvedValue(awaitingReview as never)
+    vi.mocked(api.patch).mockResolvedValue({
+      ...awaitingReview,
+      editedMedicalRecordNote: {
+        ...MEDICAL_RECORD_NOTE,
+        familyHistory: 'Mother has asthma.',
+      },
+    } as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Family History' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Family History' }), {
+      target: { value: 'Mother has asthma.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Family History' }))
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith('consultation-1', {
+        editedMedicalRecordNote: { familyHistory: 'Mother has asthma.' },
+      }),
+    )
+    const section = (await screen.findByText('Mother has asthma.')).closest('section')
+    expect(section?.textContent).toContain('You Edited This')
+  })
+
+  it('copies an approved Malaysian record in the selected order', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      noteTemplate: 'malaysian',
+    } as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy Note' }))
+
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        formatNoteForClipboard('malaysian', NOTE, MEDICAL_RECORD_NOTE),
+      ),
+    )
+  })
+})
+
+describe('copilot note edits', () => {
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.patch).mockReset()
+  })
+
+  it('routes a new-analysis OAP proposal through the canonical note', async () => {
+    const awaitingReview = {
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+    }
+    vi.mocked(api.getConsultation).mockResolvedValue(awaitingReview as never)
+    vi.mocked(api.patch).mockResolvedValue(awaitingReview as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply Copilot Plan Edit' }))
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith('consultation-1', {
+        editedMedicalRecordNote: { plan: 'Updated safety-net advice.' },
+      }),
+    )
+  })
+
+  it('keeps older analyses on the legacy SOAP proposal path', async () => {
+    const legacy = {
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+      analysis: { ...APPROVED.analysis, medicalRecordNote: undefined },
+    }
+    vi.mocked(api.getConsultation).mockResolvedValue(legacy as never)
+    vi.mocked(api.patch).mockResolvedValue(legacy as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply Copilot Plan Edit' }))
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith('consultation-1', {
+        editedNote: { ...NOTE, plan: 'Updated safety-net advice.' },
+      }),
+    )
   })
 })
 
