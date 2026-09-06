@@ -60,6 +60,12 @@ const SCANNED_TREES = [
  * against the registry when this list was extended), which is precisely why
  * `backend/src/lib/asr/ilmu.ts` is written against native fetch, and why that
  * call is pinned separately by `no-stray-fetch.test.ts`.
+ *
+ * Soniox is the opposite case and is caught by scope: it publishes
+ * `@soniox/node` and `@soniox/speech-to-text-web`, and both are refused here.
+ * The web one matters most, because reaching for it would put the vendor's
+ * socket handling and message parsing into the bundle in place of the one
+ * module `no-stray-websocket.test.ts` pins (#268).
  */
 const PROVIDER_PACKAGES = new Set([
   // Text
@@ -81,7 +87,7 @@ const PROVIDER_PACKAGES = new Set([
   'revai-node-sdk',
 ])
 
-const PROVIDER_SCOPES = ['@ai-sdk/', '@mistralai/', '@speechmatics/']
+const PROVIDER_SCOPES = ['@ai-sdk/', '@mistralai/', '@soniox/', '@speechmatics/']
 
 /** `import x from 'y'`, `import 'y'`, `require('y')`, `await import('y')`. */
 const SPECIFIER = /(?:\bfrom\s*|\bimport\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)['"]([^'"]+)['"]/g
@@ -183,6 +189,10 @@ describe('only lib/llm imports a provider SDK (issue #81)', () => {
       '@google-cloud/speech',
       '@aws-sdk/client-transcribe',
       '@speechmatics/batch-client',
+      // The ambient provider (#268). The web SDK is the tempting one: it would
+      // replace the single pinned socket module with the vendor's own.
+      '@soniox/node',
+      '@soniox/speech-to-text-web',
     ]) {
       expect(isProviderSdk(specifier), `${specifier} should be caught`).toBe(true)
     }
@@ -198,7 +208,9 @@ describe('only lib/llm imports a provider SDK (issue #81)', () => {
       // one is our own AWS client for a different service, one is a lookalike.
       '@aws-sdk/client-s3',
       'assemblyai-utils',
+      'soniox-utils',
       './asr/ilmu.js',
+      './asr/soniox.js',
     ]) {
       expect(isProviderSdk(specifier), `${specifier} should not be caught`).toBe(false)
     }

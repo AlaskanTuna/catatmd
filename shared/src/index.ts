@@ -45,10 +45,17 @@ export const TranscriptTurnSchema = z.object({
  * an honest provenance record for a cooperating client, never a security
  * control. See docs/trd.md §3.
  *
- * `asr_hosted` is the only path on which audio leaves the doctor's device: the
- * browser posts the recording to `POST /api/asr/transcriptions`, which relays
- * it to the ASR provider (#154). That egress is server-observed and audited;
- * this field remains the client-asserted linkage recorded at creation.
+ * Two values mean audio left the doctor's device, by different routes:
+ *
+ * - `asr_hosted`: the browser posts a finished recording to
+ *   `POST /api/asr/transcriptions`, which relays it to the provider (#154).
+ * - `asr_live`: ambient capture streams the consultation from the browser
+ *   straight to the provider, under a short-lived key the API minted
+ *   (docs/trd.md §20.10). The API never holds this audio, so the server-side
+ *   half of the record is the minted session rather than the audio itself.
+ *
+ * Both egresses are server-observed and audited at the point the API can see
+ * them; this field remains the client-asserted linkage recorded at creation.
  */
 export const TranscriptSourceSchema = z.enum([
   'fixture',
@@ -56,6 +63,7 @@ export const TranscriptSourceSchema = z.enum([
   'upload',
   'asr_local',
   'asr_hosted',
+  'asr_live',
 ])
 
 export const TranscriptSchema = z.object({
@@ -178,6 +186,103 @@ export const DraftTurnsRequestSchema = z.object({
  */
 export const DraftTurnsResponseSchema = z.object({
   turns: z.array(DraftTurnSchema).min(1).max(MAX_TRANSCRIPT_TURNS),
+})
+
+// ─── Live ASR (ambient capture) ──────────────────────────────────────────────
+
+/**
+ * Where the ambient provider processes audio, and therefore which host the
+ * browser opens a socket to.
+ *
+ * An enum rather than a URL because the browser, not the API, makes this call:
+ * the socket address travels from our server to the client and back out to a
+ * third party, so it must be a value the client can check against a closed set
+ * rather than a string it is asked to trust. Soniox fixes the region when the
+ * project is created, so this names the project the key belongs to; a mismatch
+ * surfaces as the mint failing closed, never as audio reaching another region.
+ *
+ * None of the four is Malaysia or Singapore. That is a real cost, recorded in
+ * docs/dpia.md rather than softened here.
+ */
+export const LiveAsrRegionSchema = z.enum(['us', 'eu', 'jp', 'in'])
+
+/**
+ * The only socket addresses the browser may open.
+ *
+ * The client validates the URL our own API handed it, which is deliberate
+ * belt-and-braces: this is the one field in the system that tells a browser
+ * where to send patient audio, and a compromised or misconfigured API answering
+ * with a different host would otherwise be obeyed. The CSP `connect-src` in
+ * `vercel.json` pins the same host at the platform layer, so redirecting this
+ * egress takes both a bad response and a CSP change.
+ */
+export const LIVE_ASR_WEBSOCKET_URL =
+  /^wss:\/\/stt-rt(?:\.(?:eu|jp|in))?\.soniox\.com\/transcribe-websocket$/
+
+/**
+ * The recognition settings the browser sends as the socket's first frame.
+ *
+ * Served by the API rather than hardcoded in the bundle so hints and the model
+ * can be tuned without a frontend deploy. camelCase here and everywhere in this
+ * file; the provider's snake_case wire names exist in exactly one module,
+ * `frontend/src/audio/live/soniox-stream.ts`, which maps them.
+ */
+export const LiveSessionConfigSchema = z.object({
+  model: z.string().min(1).max(64),
+  /**
+   * Languages to bias toward, not restrict to. The set is constrained and
+   * excludes Indonesian, because Malay is tagged Indonesian often enough to
+   * matter and every vendor supporting code-switching advises naming the
+   * languages expected (issue #218, docs/trd.md 20.7.1).
+   */
+  languageHints: z
+    .array(z.string().regex(/^[a-z]{2,3}$/))
+    .min(1)
+    .max(8),
+  languageIdentification: z.boolean(),
+  speakerDiarization: z.boolean(),
+  endpointDetection: z.boolean(),
+})
+
+/**
+ * What `GET /api/asr/live-sessions/config` returns: everything the consent copy
+ * needs before anything is minted.
+ *
+ * Split from the mint so the capture surface can state where the audio would go
+ * and in which languages, without spending a key on a doctor who is only
+ * reading. A key is minted when the patient has agreed and the microphone is
+ * open, never before.
+ */
+export const LiveAsrConfigSchema = z.object({
+  provider: z.literal('soniox'),
+  region: LiveAsrRegionSchema,
+  websocketUrl: z.string().regex(LIVE_ASR_WEBSOCKET_URL),
+  config: LiveSessionConfigSchema,
+})
+
+/**
+ * Body of `POST /api/asr/live-sessions`.
+ *
+ * `z.literal(true)` rather than a boolean: there is no meaningful request that
+ * asserts no consent, so the absence of agreement is a malformed body rather
+ * than a state the route has to reason about. It is a client assertion the API
+ * cannot verify, exactly like `Transcript.labelsReviewed`, and it is recorded
+ * in the audit row as what the client said rather than as proof.
+ */
+export const LiveSessionRequestSchema = z.object({ consent: z.literal(true) })
+
+/**
+ * What `POST /api/asr/live-sessions` returns.
+ *
+ * `apiKey` is a temporary provider credential that authenticates one connect
+ * within a short window and caps the session it opens. It is deliberately not
+ * the account key: the browser holds it for the length of one consultation and
+ * never stores it. The config fields are repeated rather than referenced so the
+ * client needs one response to open a socket.
+ */
+export const LiveSessionSchema = LiveAsrConfigSchema.extend({
+  apiKey: z.string().min(1),
+  expiresAt: z.string().min(1),
 })
 
 // ─── Structured clinical note (SOAP) ─────────────────────────────────────────
@@ -1232,6 +1337,11 @@ export type TranscriptSource = z.infer<typeof TranscriptSourceSchema>
 export type Transcript = z.infer<typeof TranscriptSchema>
 export type HostedAsrSegment = z.infer<typeof HostedAsrSegmentSchema>
 export type HostedAsrResult = z.infer<typeof HostedAsrResultSchema>
+export type LiveAsrRegion = z.infer<typeof LiveAsrRegionSchema>
+export type LiveSessionConfig = z.infer<typeof LiveSessionConfigSchema>
+export type LiveAsrConfig = z.infer<typeof LiveAsrConfigSchema>
+export type LiveSessionRequest = z.infer<typeof LiveSessionRequestSchema>
+export type LiveSession = z.infer<typeof LiveSessionSchema>
 export type DraftTurn = z.infer<typeof DraftTurnSchema>
 export type DraftTurnsRequest = z.infer<typeof DraftTurnsRequestSchema>
 export type DraftTurnsResponse = z.infer<typeof DraftTurnsResponseSchema>

@@ -41,6 +41,13 @@ services:
       # for a live service; set the key in the dashboard (docs/trd.md §17).
       - key: ILMU_API_KEY
         sync: false
+      # Ambient capture (#268). The browser streams to Soniox directly under a
+      # key this service mints, so the region here must match both the Soniox
+      # project the key belongs to and the connect-src host in vercel.json.
+      - key: SONIOX_API_KEY
+        sync: false
+      - key: SONIOX_REGION
+        value: us
       - key: DEID_FAIL_CLOSED
         value: 'true'
       # Verbosity only. No level widens what may be written: redaction in

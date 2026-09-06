@@ -16,15 +16,20 @@
  */
 
 /**
- * `ambient` is specified (docs/trd.md section 20.7) and not built. The option
- * is kept in the type and in storage because #219 will need both, but it is
- * disabled in the Audio dialog and nothing acts on it: a stored `ambient` used
- * to block the Record tab and claim the room was being listened to, which took
- * away the only working capture and put nothing in its place (#254).
+ * `ambient` streams the whole consultation as it happens (#268); `manual` is
+ * press-to-record. The Record tab shows one panel or the other, and both work,
+ * which is the property #254 exists to protect: a stored `ambient` once blocked
+ * the tab and claimed the room was being listened to while nothing listened,
+ * taking away the only working capture and putting nothing in its place. A mode
+ * whose provider is unconfigured now says so and offers one click back.
  */
 export type CaptureMode = 'ambient' | 'manual'
 
-/** Which transcription engine a recording uses. Hosted is the ILMU relay. */
+/**
+ * Which transcription engine a **press-to-record** recording uses. Hosted is
+ * the ILMU relay. Ambient capture does not read this: it always streams to the
+ * provider the API names, because that is the only one with a live socket.
+ */
 export type TranscriptionEngine = 'local' | 'hosted'
 
 export type AudioSettings = {
@@ -46,8 +51,9 @@ export type AudioSettings = {
 export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   /*
    * Manual is the default, matching on-device transcription being the default:
-   * the quieter behaviour is the one a doctor gets without choosing. It is also
-   * the only mode that does anything until ambient capture is built (#219).
+   * the quieter behaviour is the one a doctor gets without choosing. Ambient
+   * capture sends audio off the device by design, so it is never where a doctor
+   * lands without asking for it.
    */
   mode: 'manual',
   deviceId: null,

@@ -1,15 +1,21 @@
-import type { Transcript, TranscriptSource, TranscriptTurn } from '@shared/types'
+import type { DraftTurn, Transcript, TranscriptSource, TranscriptTurn } from '@shared/types'
 import { FileUp, Mic, Settings2, Type } from 'lucide-react'
 import { type ChangeEvent, useRef, useState } from 'react'
 import { AudioCapture } from '../audio/AudioCapture.js'
 import { AudioSettingsDialog } from '../audio/AudioSettingsDialog.js'
-import { type AudioSettings, loadAudioSettings } from '../audio/audio-settings.js'
+import {
+  type AudioSettings,
+  loadAudioSettings,
+  saveAudioSettings,
+} from '../audio/audio-settings.js'
 import {
   type DraftLine,
   draftToTurns,
   proseToDraft,
   segmentsToDraft,
 } from '../audio/draft-turns.js'
+import { AmbientCapture } from '../audio/live/AmbientCapture.js'
+import type { TranscriptSegment } from '../audio/protocol.js'
 import { cn } from '../lib/cn.js'
 import { parseTranscript, serialiseTurns } from '../lib/transcript.js'
 import { Button } from '../ui/Button.js'
@@ -24,6 +30,19 @@ const TABS = [
   { id: 'upload', label: 'Upload', Icon: FileUp },
   { id: 'paste', label: 'Paste', Icon: Type },
 ] as const
+
+/**
+ * How wide an egress each provenance represents. A transcript's stamp is the
+ * highest any of its passes reached, and it never comes back down.
+ */
+const RECORDED_RANK: Record<TranscriptSource, number> = {
+  fixture: 0,
+  paste: 0,
+  upload: 0,
+  asr_local: 1,
+  asr_hosted: 2,
+  asr_live: 3,
+}
 
 /**
  * Capture, mounted inside the consultation it writes into.
@@ -58,14 +77,25 @@ export function CapturePanel({
    * not restated here (removed on the owner's decision 2026-09-02).
    */
   /*
-   * Only `engine` is read from here. `mode` used to block the Record tab when
-   * it was ambient, on the reasoning that the room was already being listened
-   * to. Nothing listens: ambient is specified in docs/trd.md section 20.7 and
-   * not built, so the block took away the only working capture and put nothing
-   * in its place (#254). It is disabled at its source in the Audio dialog until
-   * #219 makes it real, and nothing here may read it before then.
+   * `mode` chooses which capture panel the Record tab shows, and `engine`
+   * configures the manual one.
+   *
+   * Reading `mode` again is safe now in the way it was not before: it used to
+   * *block* the tab when it was ambient, on the reasoning that the room was
+   * already being listened to, while nothing listened, which took away the only
+   * working capture and put nothing in its place (#254). It now selects between
+   * two panels that both work, and the ambient one offers a way back to manual
+   * when its provider is unconfigured. There is no state in which the Record
+   * tab does nothing.
    */
   const [audio, setAudio] = useState<AudioSettings>(loadAudioSettings)
+  /*
+   * Latched while a session is live, so saving the Audio dialog mid-consultation
+   * cannot unmount the running capture and lose the transcript with it. Stop is
+   * the only path that delivers text, so nothing may take it away.
+   */
+  const [ambientLive, setAmbientLive] = useState(false)
+  const showAmbient = audio.mode === 'ambient' || ambientLive
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>(TABS[0].id)
   const audioDialog = useRef<HTMLDialogElement>(null)
   const [text, setText] = useState('')
@@ -125,6 +155,134 @@ export function CapturePanel({
     setText(raw)
     setSource('upload')
     submitText(raw, 'upload')
+  }
+
+  /*
+   * One handler for both capture panels. Ambient and press-to-record differ in
+   * how the audio was captured and where it went, never in what happens to the
+   * transcript afterwards, so a second copy of this would be a second place for
+   * the provenance rules to drift.
+   */
+  const applyRecording = ({
+    text: transcribed,
+    segments,
+    source: from,
+    draftTurns,
+  }: {
+    text: string
+    segments: readonly TranscriptSegment[]
+    source: TranscriptSource
+    draftTurns?: readonly DraftTurn[]
+  }) => {
+    /*
+     * Appended, never replacing what is already there. A doctor may
+     * record in passes, or have started typing, and silently
+     * discarding either would lose clinical content the same way the
+     * parser's dropped-continuation bug would have.
+     *
+     * Offsets only when this recording is the whole transcript so
+     * far: a later recording's timebase restarts at zero, and a
+     * mixed timebase would assert wrong times in the evidence
+     * trace. Labels still draft; timestamps are dropped.
+     *
+     * The provenance comes from the path the recording actually
+     * took. It is client-asserted and the API cannot verify it,
+     * which is why nothing in the safety architecture rests on it.
+     */
+    const withOffsets = text === ''
+    // Hosted recordings carry server-drafted labels instead of
+    // segments (#189); `hosted-` ids are a namespace disjoint from
+    // the local `seg-` ones, and the turns carry no offsets, so a
+    // wrong timestamp can never be asserted for them.
+    //
+    // The third branch is the one that keeps this from being a
+    // dead end. A hosted recording carries no segments, so when the
+    // labelling pass does not return, the first two produce nothing
+    // and the doctor is left with a block of prose that parses to
+    // zero turns, which is exactly the condition Start Consultation
+    // is disabled on. `proseToDraft` applies the same rules to the
+    // text alone, so the recording stays usable and the labels stay
+    // the doctor's to confirm.
+    /*
+     * The `undrafted` marker the server sets on a span it could not
+     * label is deliberately not carried further. Its only reader was
+     * the review list, which is gone, and a marker nothing reads is
+     * worse than none. The span's placeholder speaker is bounded
+     * instead by `labelsReviewed`, which stops the red-flag engine
+     * trusting any label on this path, drafted or placeholder.
+     */
+    const hostedLines = (draftTurns ?? []).map(
+      (turn, i): DraftLine => ({
+        id: `hosted-${i}`,
+        speaker: turn.speaker,
+        text: turn.text,
+      }),
+    )
+    const timedLines = segmentsToDraft(segments, transcribed, { withOffsets })
+    const lines =
+      hostedLines.length > 0
+        ? hostedLines
+        : timedLines.length > 0
+          ? timedLines
+          : proseToDraft(transcribed)
+    let addition: string
+    if (lines.length > 0) {
+      /*
+       * Applied straight into the transcript. This used to park the
+       * lines in a draft the doctor confirmed line by line before
+       * anything was inserted; that review step is gone, because the
+       * workflow it belonged to is being replaced by one where the
+       * note and the safety panels fill while the doctor is still
+       * talking, and there is no moment in that to tweak labels.
+       *
+       * The safety the gate was providing did not come from the
+       * doctor's eyes on the labels, it came from the red-flag
+       * engine being allowed to trust them. That trust now travels
+       * with the transcript instead: `labelsReviewed` is false here,
+       * and `backend/src/redflags/triggers.ts` will not drop a
+       * trigger hit on a question-denial reading it cannot stand
+       * behind.
+       */
+      addition = serialiseTurns(draftToTurns(lines))
+    } else {
+      // No usable timing: fall back to the unlabelled prose the
+      // record path produced before #118.
+      addition = transcribed
+    }
+    /*
+     * Composed once and used for both, because the doctor must
+     * never be shown one transcript while a different one is
+     * submitted. Appending through a state updater and recomposing
+     * the submitted string separately would give two answers to
+     * the same question.
+     */
+    const nextText = text ? `${text.trimEnd()}\n${addition}` : addition
+    setText(nextText)
+    /*
+     * The widest egress this consultation's audio took, and it only ever
+     * widens. Once any pass streamed live or went to ILMU the submitted
+     * provenance says so, even if later passes were on-device: downgrading
+     * would understate where this consultation's audio has been, and the stamp
+     * exists to be read by whoever audits that later.
+     *
+     * `asr_live` outranks `asr_hosted` because it is the broader claim. The
+     * audio left continuously, and it reached a provider our own API never saw
+     * it pass through.
+     */
+    const nextSource = RECORDED_RANK[from] >= RECORDED_RANK[source] ? from : source
+    setSource(nextSource)
+    submitText(nextText, nextSource)
+  }
+
+  /*
+   * Returns the tab to press-to-record and remembers it, so a doctor whose
+   * deployment has no ambient provider is not sent back to the same dead screen
+   * on the next consultation.
+   */
+  const switchToManual = () => {
+    const next: AudioSettings = { ...audio, mode: 'manual' }
+    saveAudioSettings(next)
+    setAudio(next)
   }
 
   return (
@@ -191,109 +349,15 @@ export function CapturePanel({
 
         {tab === 'record' && (
           <Card className="p-6">
-            <AudioCapture
-              engine={audio.engine}
-              transcript={text}
-              onTranscript={({ text: transcribed, segments, source: from, draftTurns }) => {
-                /*
-                 * Appended, never replacing what is already there. A doctor may
-                 * record in passes, or have started typing, and silently
-                 * discarding either would lose clinical content the same way the
-                 * parser's dropped-continuation bug would have.
-                 *
-                 * Offsets only when this recording is the whole transcript so
-                 * far: a later recording's timebase restarts at zero, and a
-                 * mixed timebase would assert wrong times in the evidence
-                 * trace. Labels still draft; timestamps are dropped.
-                 *
-                 * The provenance comes from the path the recording actually
-                 * took. It is client-asserted and the API cannot verify it,
-                 * which is why nothing in the safety architecture rests on it.
-                 */
-                const withOffsets = text === ''
-                // Hosted recordings carry server-drafted labels instead of
-                // segments (#189); `hosted-` ids are a namespace disjoint from
-                // the local `seg-` ones, and the turns carry no offsets, so a
-                // wrong timestamp can never be asserted for them.
-                //
-                // The third branch is the one that keeps this from being a
-                // dead end. A hosted recording carries no segments, so when the
-                // labelling pass does not return, the first two produce nothing
-                // and the doctor is left with a block of prose that parses to
-                // zero turns, which is exactly the condition Start Consultation
-                // is disabled on. `proseToDraft` applies the same rules to the
-                // text alone, so the recording stays usable and the labels stay
-                // the doctor's to confirm.
-                /*
-                 * The `undrafted` marker the server sets on a span it could not
-                 * label is deliberately not carried further. Its only reader was
-                 * the review list, which is gone, and a marker nothing reads is
-                 * worse than none. The span's placeholder speaker is bounded
-                 * instead by `labelsReviewed`, which stops the red-flag engine
-                 * trusting any label on this path, drafted or placeholder.
-                 */
-                const hostedLines = (draftTurns ?? []).map(
-                  (turn, i): DraftLine => ({
-                    id: `hosted-${i}`,
-                    speaker: turn.speaker,
-                    text: turn.text,
-                  }),
-                )
-                const timedLines = segmentsToDraft(segments, transcribed, { withOffsets })
-                const lines =
-                  hostedLines.length > 0
-                    ? hostedLines
-                    : timedLines.length > 0
-                      ? timedLines
-                      : proseToDraft(transcribed)
-                let addition: string
-                if (lines.length > 0) {
-                  /*
-                   * Applied straight into the transcript. This used to park the
-                   * lines in a draft the doctor confirmed line by line before
-                   * anything was inserted; that review step is gone, because the
-                   * workflow it belonged to is being replaced by one where the
-                   * note and the safety panels fill while the doctor is still
-                   * talking, and there is no moment in that to tweak labels.
-                   *
-                   * The safety the gate was providing did not come from the
-                   * doctor's eyes on the labels, it came from the red-flag
-                   * engine being allowed to trust them. That trust now travels
-                   * with the transcript instead: `labelsReviewed` is false here,
-                   * and `backend/src/redflags/triggers.ts` will not drop a
-                   * trigger hit on a question-denial reading it cannot stand
-                   * behind.
-                   */
-                  addition = serialiseTurns(draftToTurns(lines))
-                } else {
-                  // No usable timing: fall back to the unlabelled prose the
-                  // record path produced before #118.
-                  addition = transcribed
-                }
-                /*
-                 * Composed once and used for both, because the doctor must
-                 * never be shown one transcript while a different one is
-                 * submitted. Appending through a state updater and recomposing
-                 * the submitted string separately would give two answers to
-                 * the same question.
-                 */
-                const nextText = text ? `${text.trimEnd()}\n${addition}` : addition
-                setText(nextText)
-                /*
-                 * Hosted is sticky for the rest of the consultation: once any
-                 * recording in this transcript went to ILMU, the submitted
-                 * provenance says so, even if later passes were on-device.
-                 * Downgrading to `asr_local` on a subsequent local recording
-                 * would understate where this consultation's audio has been,
-                 * and the provenance stamp exists to be read by whoever audits
-                 * that later.
-                 */
-                const nextSource =
-                  source === 'asr_hosted' || from === 'asr_hosted' ? 'asr_hosted' : 'asr_local'
-                setSource(nextSource)
-                submitText(nextText, nextSource)
-              }}
-            />
+            {showAmbient ? (
+              <AmbientCapture
+                onTranscript={applyRecording}
+                onSwitchToManual={switchToManual}
+                onLiveChange={setAmbientLive}
+              />
+            ) : (
+              <AudioCapture engine={audio.engine} transcript={text} onTranscript={applyRecording} />
+            )}
           </Card>
         )}
 

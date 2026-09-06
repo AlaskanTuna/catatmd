@@ -277,6 +277,18 @@ consultationsRouter.post('/', async (req, res) => {
     })
   }
 
+  // Ambient capture streams past the API entirely (#268), so this row is the
+  // only place a consultation is tied to that egress at all. The server-side
+  // half is `asr.live_session_minted`, which belongs to an actor and knows no
+  // consultation id, exactly as the relay's does.
+  if (parsed.data.transcript?.source === 'asr_live') {
+    await recordAuditEvent({
+      action: 'consultation.asr_live_used',
+      actorId: actor,
+      consultationId: created.id,
+    })
+  }
+
   res.status(201).json({ consultation: await toDetailWithApprover(created) })
 })
 
@@ -764,6 +776,13 @@ consultationsRouter.patch('/:id', async (req, res) => {
     if (patch.transcript.source === 'asr_hosted') {
       await recordAuditEvent({
         action: 'consultation.asr_hosted_used',
+        actorId: actor,
+        consultationId: consultation.id,
+      })
+    }
+    if (patch.transcript.source === 'asr_live') {
+      await recordAuditEvent({
+        action: 'consultation.asr_live_used',
         actorId: actor,
         consultationId: consultation.id,
       })
