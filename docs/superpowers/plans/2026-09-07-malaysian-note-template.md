@@ -266,7 +266,7 @@ git commit -m "feat(notes): persist consultation template choice"
 - Produces: `medicalRecordSections(note): Array<{ key; label; value }>` in fixed PC/HPC/PMH/SH/FH/O/A/P order.
 - Consumed by: clipboard action and note renderer.
 
-- [ ] **Step 1: Write failing formatter tests**
+- [x] **Step 1: Write failing formatter tests**
 
 ```ts
 expect(formatNoteForClipboard('malaysian', soap, medical)).toBe(
@@ -283,23 +283,23 @@ expect(formatNoteForClipboard('malaysian', soap, medical)).toBe(
 
 Add a legacy test that returns `Not recorded by this analysis version` for each unavailable history category, while retaining Objective, Assessment, and Plan.
 
-- [ ] **Step 2: Run formatter tests and verify RED**
+- [x] **Step 2: Run formatter tests and verify RED**
 
 Run: `bun run --cwd frontend test -- src/lib/note-templates.test.ts src/routes/ConsultationReview.test.tsx`
 
 Expected: FAIL because the selected-template formatter does not exist.
 
-- [ ] **Step 3: Implement the pure formatter and route copy through it**
+- [x] **Step 3: Implement the pure formatter and route copy through it**
 
 SOAP output retains its existing four headings. Malaysian output always emits all eight headings and substitutes the correct empty or legacy copy. Remove `formatSoapNoteForClipboard` from the route after its tests move to the focused formatter module.
 
-- [ ] **Step 4: Run formatter tests and verify GREEN**
+- [x] **Step 4: Run formatter tests and verify GREEN**
 
 Run: `bun run --cwd frontend test -- src/lib/note-templates.test.ts src/routes/ConsultationReview.test.tsx`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit formatting behavior**
+- [x] **Step 5: Commit formatting behavior**
 
 ```bash
 git add frontend/src/lib/note-templates.ts frontend/src/lib/note-templates.test.ts frontend/src/routes/ConsultationReview.tsx frontend/src/routes/ConsultationReview.test.tsx

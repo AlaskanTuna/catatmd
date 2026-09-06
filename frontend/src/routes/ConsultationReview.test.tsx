@@ -3,7 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../lib/api.js'
-import { ConsultationReview, formatSoapNoteForClipboard } from './ConsultationReview.js'
+import { formatNoteForClipboard } from '../lib/note-templates.js'
+import { ConsultationReview } from './ConsultationReview.js'
 
 const { toastSuccess } = vi.hoisted(() => ({ toastSuccess: vi.fn() }))
 
@@ -48,15 +49,28 @@ const NOTE = {
   plan: 'Supportive care and safety-net advice.',
 }
 
+const MEDICAL_RECORD_NOTE = {
+  presentingComplaint: 'Cough.',
+  historyOfPresentingComplaint: 'Three days.',
+  pastMedicalHistory: '',
+  socialHistory: '',
+  familyHistory: '',
+  objective: NOTE.objective,
+  assessment: NOTE.assessment,
+  plan: NOTE.plan,
+}
+
 const APPROVED = {
   id: 'consultation-1',
   status: 'approved' as const,
+  noteTemplate: 'soap' as const,
   title: 'Acute cough',
   createdAt: new Date('2026-08-27T06:00:00.000Z'),
   updatedAt: new Date('2026-08-27T06:00:00.000Z'),
   transcript: null,
   analysis: {
     note: NOTE,
+    medicalRecordNote: MEDICAL_RECORD_NOTE,
     redFlags: [],
     gaps: [],
     suggestions: [],
@@ -65,6 +79,7 @@ const APPROVED = {
     evidenceLinks: [],
   },
   editedNote: null,
+  editedMedicalRecordNote: null,
   approvedAt: new Date('2026-08-27T07:00:00.000Z'),
   approvedBy: 'Dr Lim',
   acknowledgedRedFlagIds: [],
@@ -102,7 +117,7 @@ describe('approved note copy', () => {
   })
 
   it('formats a plain-text SOAP note for clinic CMS paste', () => {
-    expect(formatSoapNoteForClipboard(NOTE)).toBe(
+    expect(formatNoteForClipboard('soap', NOTE, MEDICAL_RECORD_NOTE)).toBe(
       'Subjective\nCough for three days.\n\n' +
         'Objective\nTemperature 37.2°C.\n\n' +
         'Assessment\nAcute cough under review.\n\n' +
@@ -116,7 +131,9 @@ describe('approved note copy', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Copy Note' }))
 
     await waitFor(() =>
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(formatSoapNoteForClipboard(NOTE)),
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        formatNoteForClipboard('soap', NOTE, MEDICAL_RECORD_NOTE),
+      ),
     )
     expect(screen.getByRole('button', { name: 'Export' })).toBeTruthy()
     expect(toastSuccess).toHaveBeenCalledWith('Note copied.')

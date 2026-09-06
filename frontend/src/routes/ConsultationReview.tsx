@@ -16,6 +16,7 @@ import { CatatAI } from '../copilot/CatatAI.js'
 import { DEMO_CONSULTATION_ID, useDemoTour } from '../demo/DemoTour.js'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
+import { formatNoteForClipboard } from '../lib/note-templates.js'
 import { count } from '../lib/plural.js'
 import { ApproveBar } from '../review/ApproveBar.js'
 import { ChecklistPanel } from '../review/ChecklistPanel.js'
@@ -27,15 +28,6 @@ import { InfoTip } from '../ui/InfoTip.js'
 import { PageHeader } from '../ui/PageHeader.js'
 import { RenameField } from '../ui/RenameField.js'
 import { CapturePanel } from './CapturePanel.js'
-
-export function formatSoapNoteForClipboard(note: SoapNote) {
-  return [
-    `Subjective\n${note.subjective}`,
-    `Objective\n${note.objective}`,
-    `Assessment\n${note.assessment}`,
-    `Plan\n${note.plan}`,
-  ].join('\n\n')
-}
 
 /** The current decision about a finding, or `undefined` if none was made. */
 function byId(dispositions: Disposition[], id: string): Disposition | undefined {
@@ -379,11 +371,14 @@ export function ConsultationReview() {
   const analysis = detail.analysis
   const approved = detail.status === 'approved'
   const note = detail.editedNote ?? analysis?.note ?? null
+  const medicalRecordNote = detail.editedMedicalRecordNote ?? analysis?.medicalRecordNote ?? null
 
   const copyNote = async () => {
     if (!note) return
     try {
-      await navigator.clipboard.writeText(formatSoapNoteForClipboard(note))
+      await navigator.clipboard.writeText(
+        formatNoteForClipboard(detail.noteTemplate, note, medicalRecordNote),
+      )
       toast.success('Note copied.')
     } catch {
       toast.error('Note could not be copied.')
