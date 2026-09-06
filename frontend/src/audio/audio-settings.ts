@@ -1,19 +1,27 @@
 /**
  * Device-scoped capture preferences, and the one boundary that keeps them safe.
  *
- * **Nothing here is consent.** These settings say *how* the microphone behaves
- * on this machine; whether a given patient is recorded is asked per
- * consultation, is never remembered, and never reads from this module
- * (docs/trd.md section 20). The distinction is the whole reason the two live
- * apart: a persisted "ambient: on" that also implied permission would be a
- * privacy control that fails open, silently applying to every patient after the
- * one who agreed.
+ * **Nothing here is consent.** These settings say *how* and *where* capture
+ * happens on this machine; whether a given patient's audio may be sent is asked
+ * per consultation by `audio/ConsentGate.tsx`, is never remembered, and never
+ * reads from this module (docs/trd.md section 20.4). The distinction is the
+ * whole reason the two live apart: a persisted setting that also implied
+ * permission would be a privacy control that fails open, silently applying to
+ * every patient after the one who agreed. That is precisely what #228 did to
+ * the hosted engine for three weeks, and what #254 undid.
  *
  * Stored in `localStorage` because a preference that resets every session is
  * not a preference. It holds no clinical content and no identifier, which is
  * what makes browser storage acceptable here where it is not elsewhere.
  */
 
+/**
+ * `ambient` is specified (docs/trd.md section 20.7) and not built. The option
+ * is kept in the type and in storage because #219 will need both, but it is
+ * disabled in the Audio dialog and nothing acts on it: a stored `ambient` used
+ * to block the Record tab and claim the room was being listened to, which took
+ * away the only working capture and put nothing in its place (#254).
+ */
 export type CaptureMode = 'ambient' | 'manual'
 
 /** Which transcription engine a recording uses. Hosted is the ILMU relay. */
@@ -27,10 +35,10 @@ export type AudioSettings = {
   boostQuietSpeech: boolean
   /**
    * A standing preference set in the Audio dialog, on the owner's decision
-   * (2026-09-02, consulting decision log). Deliberately a preference here
-   * rather than a per-consultation tick: choosing the hosted engine names
-   * where the audio goes, and the choice is stated again on the Record tab
-   * while a hosted transcription runs.
+   * (2026-09-02, consulting decision log). A preference here rather than a
+   * per-consultation tick because it names *where* the audio goes, which does
+   * not change per patient. It is not sufficient on its own: sending also
+   * needs the per-consultation gesture on the Record tab (#254).
    */
   engine: TranscriptionEngine
 }
@@ -38,8 +46,8 @@ export type AudioSettings = {
 export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   /*
    * Manual is the default, matching on-device transcription being the default:
-   * the quieter behaviour is the one a doctor gets without choosing. Ambient is
-   * reachable in one click and is never entered on the doctor's behalf.
+   * the quieter behaviour is the one a doctor gets without choosing. It is also
+   * the only mode that does anything until ambient capture is built (#219).
    */
   mode: 'manual',
   deviceId: null,

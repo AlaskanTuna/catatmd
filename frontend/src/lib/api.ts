@@ -273,8 +273,9 @@ export const api = {
   /**
    * Relays one consultation recording to the hosted ASR path (issue #155).
    *
-   * **The only call site is an explicit per-consultation consent tick** on the
-   * Record tab. The default path transcribes on the device and sends no audio
+   * **The only call site needs two keys**: the device's hosted engine
+   * preference, and an explicit per-consultation consent tick on the Record tab
+   * (#254). The default path transcribes on the device and sends no audio
    * anywhere, so this function existing is not the same as it being reachable:
    * nothing calls it unless a doctor ticked the box for that consultation.
    *

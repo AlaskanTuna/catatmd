@@ -424,6 +424,16 @@ function renderRoute() {
   )
 }
 
+/*
+ * Ambient mode used to block the Record tab and tell the doctor the room was
+ * already being listened to. Nothing listened: ambient is specified in
+ * docs/trd.md section 20.7 and not built, so the block removed the only
+ * working capture and offered nothing in its place. Anyone who flipped the
+ * toggle had bricked the flow (#254, hazard filed in #246).
+ *
+ * These assert the absence, because a stored `mode: 'ambient'` still exists on
+ * any device that saved one and must not brick that device either.
+ */
 describe('ambient capture mode', () => {
   beforeEach(() => localStorage.clear())
 
@@ -434,25 +444,24 @@ describe('ambient capture mode', () => {
     expect(record.getAttribute('aria-disabled')).not.toBe('true')
   })
 
-  it('blocks Record when ambient mode is on, and says why', async () => {
+  it('leaves Record usable on a device that already saved ambient mode', async () => {
     localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
     renderRoute()
 
     const record = await screen.findByRole('tab', { name: /record/i })
-    expect(record.getAttribute('aria-disabled')).toBe('true')
-    expect(await screen.findByText(/ambient mode is on/i)).toBeTruthy()
+    expect(record.getAttribute('aria-disabled')).not.toBe('true')
+
+    fireEvent.click(record)
+    expect(record.getAttribute('aria-selected')).toBe('true')
   })
 
-  it('does not open the Record panel when the blocked tab is clicked', async () => {
+  it('claims no listening it is not doing', async () => {
     localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
     renderRoute()
 
-    const record = await screen.findByRole('tab', { name: /record/i })
-    fireEvent.click(record)
-
-    // Selection never moves to the blocked tab, so the recorder never mounts.
-    expect(record.getAttribute('aria-selected')).toBe('false')
-    expect(await screen.findByText(/ambient mode is on/i)).toBeTruthy()
+    await screen.findByRole('tab', { name: /record/i })
+    expect(screen.queryByText(/already being listened to/i)).toBeNull()
+    expect(screen.queryByText(/ambient mode is on/i)).toBeNull()
   })
 
   it('offers the audio dialog from the capture screen', async () => {

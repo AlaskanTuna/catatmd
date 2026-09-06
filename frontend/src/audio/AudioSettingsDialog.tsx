@@ -37,7 +37,7 @@ const ENGINES: {
     name: 'ILMU (Malaysia) · ilmu-asr-v4.2',
     Icon: Server,
     detail:
-      'The audio leaves this device. An early-access service: on our scripted Malay consultation it kept code-switched sentences intact, but sometimes hardened the first consonant of a Malay clinical word, hearing batuk as patut and demam as teman, so check those words when you review the draft. We have not agreed separate retention or training terms with ILMU, so their standard early-access terms apply. The returned text is de-identified before the note model drafts the Doctor and Patient labels, which you review line by line before anything enters the transcript, and your choice is recorded in the audit trail. Handled under the PDPA as amended in 2024, under which voice is biometric data and therefore sensitive personal data requiring explicit consent.',
+      'The audio leaves this device. An early-access service: on our scripted Malay consultation it kept code-switched sentences intact, but sometimes hardened the first consonant of a Malay clinical word, hearing batuk as patut and demam as teman, so check those words when you review the draft. We have not agreed separate retention or training terms with ILMU, so their standard early-access terms apply. The returned text is de-identified before the note model drafts the Doctor and Patient labels, which are applied unreviewed and marked as such so the red-flag engine will not trust them, and your choice is recorded in the audit trail. Handled under the PDPA as amended in 2024, under which voice is biometric data and therefore sensitive personal data requiring explicit consent.',
   },
 ]
 
@@ -89,16 +89,17 @@ function Toggle({
  * Capture settings for this device, including which transcription engine
  * recordings use (a standing preference, on the owner's decision 2026-09-02).
  *
- * **Consent for recording is deliberately absent from this dialog.** Ambient
- * mode decides how the microphone behaves; it never decides whether a patient
- * is recorded. That question is asked on the consultation screen, per patient,
- * and is never remembered, which is why that note sits in visible copy rather
- * than behind a tip. A reader must not be able to leave here believing they
- * have agreed to anything on a patient's behalf.
+ * **Consent is deliberately absent from this dialog.** Everything here is
+ * remembered for this device, and a remembered agreement is one the patient
+ * after the consenting one never gave. Whether a given patient's audio may be
+ * sent is asked on the Record tab, by `audio/ConsentGate.tsx`, and dies with
+ * that screen. A reader must not be able to leave here believing they have
+ * agreed to anything on a patient's behalf, which is why the note saying so
+ * sits in visible copy rather than behind a tip.
  *
- * The engine choice is different: it names where the audio goes, the hosted
- * option states that in its own copy, and the choice is restated on the Record
- * tab while a hosted transcription runs.
+ * The engine choice is the half that belongs here: it names where the audio
+ * goes rather than whether it may go, and the hosted option states that in its
+ * own copy.
  */
 export function AudioSettingsDialog({
   ref,
@@ -155,27 +156,35 @@ export function AudioSettingsDialog({
                   id: 'ambient',
                   Icon: Radio,
                   name: 'Ambient',
-                  line: 'Listens for the whole session.',
+                  line: 'Not listening yet.',
+                  ready: false,
                 },
                 {
                   id: 'manual',
                   Icon: Mic,
                   name: 'Press To Record',
                   line: 'One consultation at a time.',
+                  ready: true,
                 },
               ] as const
-            ).map(({ id, Icon, name, line }) => (
+            ).map(({ id, Icon, name, line, ready }) => (
               <button
                 key={id}
                 type="button"
-                aria-pressed={draft.mode === id}
+                disabled={!ready}
+                // Never announced as pressed while it is unavailable. A device
+                // that saved ambient before #219 exists still holds that mode,
+                // and claiming it is selected would put the screen reader and
+                // the muted styling into direct disagreement.
+                aria-pressed={ready && draft.mode === id}
                 onClick={() => setDraft({ ...draft, mode: id as CaptureMode })}
                 className={cn(
                   'rounded-control border p-3 text-left transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2',
-                  draft.mode === id
+                  !ready && 'cursor-not-allowed border-line opacity-60',
+                  ready && draft.mode === id
                     ? 'border-transparent bg-accent-soft text-accent'
-                    : 'border-line hover:bg-sunken-soft',
+                    : ready && 'border-line hover:bg-sunken-soft',
                 )}
               >
                 <Icon aria-hidden className="size-4" />
@@ -184,8 +193,14 @@ export function AudioSettingsDialog({
               </button>
             ))}
           </div>
+          {/* The mode was selectable while nothing behind it ran, and the
+              capture surface told the doctor the room was already being
+              listened to. It said so on the deployed application for three
+              weeks. Disabled until the capture exists (#219), rather than
+              hidden, because the choice is the one the client asked for and a
+              control that vanishes reads as a bug. */}
           <p className="mt-2.5 text-ink-muted text-xs">
-            Either way, each patient is asked before anything is kept.
+            Ambient capture is not built yet, so every consultation is recorded by hand.
           </p>
         </fieldset>
 
@@ -223,6 +238,15 @@ export function AudioSettingsDialog({
               )
             })}
           </div>
+          {/* The claim and the control it describes must live or die together.
+              This sentence outlived its control once already: the tick was
+              removed in #228 and the copy stayed, so the dialog told the doctor
+              each patient was asked while nothing asked. Pinned by a test that
+              renders both. */}
+          <p className="mt-2.5 text-ink-muted text-xs">
+            Choosing ILMU does not send anything on its own. Each patient is asked on the Record
+            tab, and that agreement is never remembered.
+          </p>
         </fieldset>
 
         <div className="mt-5">
