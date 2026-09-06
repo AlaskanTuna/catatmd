@@ -13,8 +13,8 @@ export type ProfiledGuidelineChunk = GuidelineChunk & { readonly profiles: reado
  * carries its own source's `publisher` and `year`.
  */
 export const GUIDELINE_CORPUS_VERSION: ClinicalArtefactVersion = {
-  id: 'guideline-corpus-v3',
-  effectiveDate: '2026-09-04',
+  id: 'guideline-corpus-v4',
+  effectiveDate: '2026-09-07',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -30,50 +30,47 @@ const UTI_PROFILES: readonly ProfileId[] = ['adult-acute-uncomplicated-uti']
  * at McIsaac >=4. Merging them into one "Centor threshold" chunk would
  * manufacture a consensus that does not exist, and the ID-constrained
  * citation mechanism cannot catch that because the model would be citing a
- * real, valid ID. No `quote` is populated on any chunk here — most of this
- * corpus was authored from the resolved TRD summary of each source rather
- * than the primary text, so no span can honestly be marked verbatim yet; a
- * future clinician review pass (docs/prd.md §12) is expected to add `quote`s
- * for the CC-licensed sources where warranted.
+ * real, valid ID.
  *
- * That authoring method is also a known defect, not just a limitation. The
- * two `ooi-2022-*` chunks were rewritten against the primary text on 04/09/26
- * after one was found to assert antibiotic over-prescription while the cited
- * study reports a 6.0% rate its authors call acceptably low, and a third
- * chunk was removed because nothing in the article supported it. The
- * ID-constrained citation mechanism cannot catch that class of error either:
- * the id resolves, and the summary behind it is still wrong. The remaining
- * nine chunks have not had the same check (issue #240).
+ * Every summary was checked against its primary source on 07/09/26 (issue
+ * #240). No `quote` is populated: summaries are sufficient for this small
+ * corpus, and keeping them non-verbatim gives every source the same review
+ * path. MOH NAG is a living publication; direct section links and titles
+ * below reflect the section structure available on that date. Some IDs keep
+ * their original section-name slugs because stored analyses and deterministic
+ * red flags cite these stable identifiers; the title and URL identify the
+ * current source location.
  */
 export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
   // ─── MOH National Antimicrobial Guideline (NAG), 4th ed., 2024 ───────────
   // © MOH Malaysia, all rights reserved — summarise and link, never quote.
   {
     id: 'moh-nag-2024-a10-modified-centor',
-    title: 'National Antimicrobial Guideline, 4th Edition — Annex A10, Modified Centor Score',
+    title: 'National Antimicrobial Guideline, 4th Edition — Section A10, Acute Pharyngitis',
     publisher: 'Ministry of Health Malaysia',
     year: 2024,
-    url: 'https://pharmacy.moh.gov.my/nag',
+    url: 'https://sites.google.com/moh.gov.my/nag/contents/section-a-adult/a10-otorhinolaryngology-infections',
     summary:
-      'Scores four criteria in adults with sore throat — tonsillar exudate, tender anterior ' +
-      'cervical adenopathy, fever by history, and absence of cough — one point each. NAG sets ' +
-      'the antibiotic-consideration threshold at a Modified Centor score of 3 or more.',
+      'Respiratory viruses cause more than 80% of acute sore throats. NAG uses the Modified ' +
+      'Centor score to guide care: a score below 3 receives symptomatic treatment without ' +
+      'antibiotics, while a score of 3 or more receives symptomatic and antimicrobial therapy ' +
+      'because group A streptococcal infection is more likely.',
     sourceLicence: 'MOH-ARR',
     verbatimAllowed: false,
     profiles: URTI_PROFILES,
   },
   {
     id: 'moh-nag-2024-c1-acute-pharyngitis',
-    title:
-      'National Antimicrobial Guideline, 4th Edition — Section C1, Acute Pharyngitis/Tonsillitis',
+    title: 'National Antimicrobial Guideline, 4th Edition — Section C3, Strep Score',
     publisher: 'Ministry of Health Malaysia',
     year: 2024,
-    url: 'https://pharmacy.moh.gov.my/nag',
+    url: 'https://sites.google.com/moh.gov.my/nag/contents/section-c-clinical-pathways-in-primary-care/c3-acute-pharyngitis',
     summary:
-      'Most adult acute pharyngitis is viral and self-limiting; antibiotics are reserved for ' +
-      'patients meeting the Modified Centor threshold (see moh-nag-2024-a10-modified-centor) ' +
-      'or with another indication for group A streptococcus coverage. Symptomatic relief is the ' +
-      'first-line management for the majority of presentations.',
+      'The acute tonsillo-pharyngitis pathway assigns one point each for absence of cough, ' +
+      'temperature above 38°C, tender swollen anterior cervical lymph nodes, and tonsillar ' +
+      'exudate or swelling. It adds one point at age 3–14, no age point at 15–44, and subtracts ' +
+      'one point at age 45 or above. Scores below 3 receive symptomatic treatment; scores of 3 ' +
+      'or more also receive antimicrobial therapy.',
     sourceLicence: 'MOH-ARR',
     verbatimAllowed: false,
     profiles: URTI_PROFILES,
@@ -81,45 +78,45 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
   {
     id: 'moh-nag-2024-c1-viral-vs-bacterial',
     title:
-      'National Antimicrobial Guideline, 4th Edition — Section C1, Distinguishing Viral From Bacterial Sore Throat',
+      'National Antimicrobial Guideline, 4th Edition — Section C1, Adult Acute Cough Assessment',
     publisher: 'Ministry of Health Malaysia',
     year: 2024,
-    url: 'https://pharmacy.moh.gov.my/nag',
+    url: 'https://sites.google.com/moh.gov.my/nag/contents/section-c-clinical-pathways-in-primary-care/c1-acute-bronchitis-and-pneumonia',
     summary:
-      'Isolated sore throat with coryzal symptoms, cough, and absence of fever points away from ' +
-      'a bacterial cause and antibiotics are not indicated on presentation alone; scoring tools ' +
-      'exist because history and examination alone do not reliably separate viral from ' +
-      'bacterial pharyngitis in adults.',
+      'For an adult with acute cough, the pathway checks heart rate above 100, respiratory rate ' +
+      'above 24, temperature above 38°C, oxygen saturation below 95%, and examination findings ' +
+      'suggestive of consolidation or pleural effusion. Abnormal findings prompt assessment for ' +
+      'pneumonia, including chest radiography when available.',
     sourceLicence: 'MOH-ARR',
     verbatimAllowed: false,
     profiles: URTI_PROFILES,
   },
   {
     id: 'moh-nag-2024-c3-acute-bronchitis',
-    title: 'National Antimicrobial Guideline, 4th Edition — Section C3, Acute Bronchitis',
+    title: 'National Antimicrobial Guideline, 4th Edition — Section C1, Acute Bronchitis',
     publisher: 'Ministry of Health Malaysia',
     year: 2024,
-    url: 'https://pharmacy.moh.gov.my/nag',
+    url: 'https://sites.google.com/moh.gov.my/nag/contents/section-c-clinical-pathways-in-primary-care/c1-acute-bronchitis-and-pneumonia',
     summary:
-      'Acute bronchitis in an otherwise healthy adult is usually viral. Antibiotics are not ' +
-      'routinely indicated regardless of sputum colour, and are reserved for patients with ' +
-      'significant comorbidity, prolonged symptoms, or evidence of a secondary bacterial ' +
-      'process such as pneumonia.',
+      'When the adult acute-cough assessment finds no vital-sign or examination abnormality ' +
+      'suggesting pneumonia, acute bronchitis is likely. The great majority of cases are ' +
+      'self-limiting and viral, antibiotics are not needed, treatment is symptomatic, and a ' +
+      'bronchodilator may be considered when wheeze is present.',
     sourceLicence: 'MOH-ARR',
     verbatimAllowed: false,
     profiles: URTI_PROFILES,
   },
   {
     id: 'moh-nag-2024-c4-uncomplicated-urti',
-    title:
-      'National Antimicrobial Guideline, 4th Edition — Section C4, Uncomplicated Upper Respiratory Tract Infection',
+    title: 'National Antimicrobial Guideline, 4th Edition — Section C4, Acute Rhinosinusitis',
     publisher: 'Ministry of Health Malaysia',
     year: 2024,
-    url: 'https://pharmacy.moh.gov.my/nag',
+    url: 'https://sites.google.com/moh.gov.my/nag/contents/section-c-clinical-pathways-in-primary-care/c4-acute-rhinosinusitis',
     summary:
-      'Uncomplicated URTI (common cold) does not warrant antibiotics; management is symptomatic ' +
-      '— analgesia, antipyretics, hydration, and rest — with safety-netting advice to return if ' +
-      'symptoms worsen, persist beyond the expected viral course, or a red-flag feature develops.',
+      'Acute viral rhinosinusitis lasting under 10 days receives symptomatic treatment without ' +
+      'antibiotics. Symptoms increasing after 5 days or persisting beyond 10 days indicate ' +
+      'post-viral rhinosinusitis. Likely bacterial rhinosinusitis requires at least three of ' +
+      'fever above 38°C, discoloured mucus, double sickening, severe local pain, or raised ESR/CRP.',
     sourceLicence: 'MOH-ARR',
     verbatimAllowed: false,
     profiles: URTI_PROFILES,
@@ -135,10 +132,9 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
     year: 2024,
     url: 'https://doi.org/10.2147/IDR.S477038',
     summary:
-      'Endorses the McIsaac score for adult sore throat: the four Centor criteria (tonsillar ' +
-      'exudate, tender anterior cervical adenopathy, fever by history, absence of cough) plus ' +
-      'an age adjustment of -1 for age 45 and above, reflecting the lower probability of group A ' +
-      'streptococcus in older adults.',
+      'Describes the McIsaac score using temperature of at least 38°C, no cough, tender anterior ' +
+      'cervical adenopathy, and tonsillar swelling or exudate, each worth one point. It adds one ' +
+      'point at age 3–14, no age point at 15–44, and subtracts one point for age above 45.',
     sourceLicence: 'CC-BY-NC-3.0',
     verbatimAllowed: true,
     profiles: URTI_PROFILES,
@@ -151,25 +147,25 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
     year: 2024,
     url: 'https://doi.org/10.2147/IDR.S477038',
     summary:
-      'Malaysian expert consensus recommends considering antibiotics at a McIsaac score of 4 or ' +
-      'higher, no antibiotics or further testing below a score of 2, and clinical judgement or ' +
-      'point-of-care testing at a score of 2-3.',
+      'A McIsaac score of 4 represents a high likelihood of bacterial infection and antibiotics ' +
+      'are usually indicated; a score below 2 is considered viral and does not require ' +
+      'antibiotics. Point-of-care testing for group A streptococcus can refine treatment ' +
+      'decisions, while antibiotic prescribing still depends on clinical judgement.',
     sourceLicence: 'CC-BY-NC-3.0',
     verbatimAllowed: true,
     profiles: URTI_PROFILES,
   },
   {
     id: 'abdullah-2024-safety-netting',
-    title:
-      'Malaysian Delphi Consensus on Sore Throat Management in Primary Care — Safety-Netting Advice',
+    title: 'Malaysian Delphi Consensus on Sore Throat Management in Primary Care — Evidence Scope',
     publisher: 'Abdullah et al., Infection and Drug Resistance',
     year: 2024,
     url: 'https://doi.org/10.2147/IDR.S477038',
     summary:
-      'Consensus that every adult sore-throat consultation, regardless of antibiotic decision, ' +
-      'should include explicit advice on when to seek review — worsening swallowing difficulty, ' +
-      'drooling, trismus, unilateral peritonsillar swelling, or symptoms persisting beyond the ' +
-      'expected course.',
+      'The consensus addresses antimicrobial resistance, McIsaac scoring, point-of-care testing, ' +
+      'judicious antibiotic use, and symptomatic treatment for acute sore throat. It does not ' +
+      'publish the safety-netting checklist previously attributed to it, so this source must not ' +
+      'be cited as evidence for specific escalation criteria.',
     sourceLicence: 'CC-BY-NC-3.0',
     verbatimAllowed: true,
     profiles: URTI_PROFILES,
@@ -185,11 +181,11 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
     year: 2022,
     url: 'https://doi.org/10.51866/oa.38',
     summary:
-      'A cross-sectional study of 587 patients at one dedicated URTI clinic in Alor Setar during ' +
-      'the early COVID-19 period. Cough (68.4%), fever (31.6%), runny nose (24.6%) and sore ' +
-      'throat (24.1%) were the commonest presenting symptoms, and acute nasopharyngitis (52.5%) ' +
-      'the commonest recorded condition. Single-centre and pandemic-era, so it describes a presenting ' +
-      'pattern rather than national epidemiology.',
+      'At one dedicated URTI clinic in Alor Setar during the early COVID-19 period, 587 patients ' +
+      'attended and 564 met the study criteria; 435 received a URTI diagnosis. Among included ' +
+      'patients, cough (68.4%), fever (31.6%), runny nose (24.6%), and sore throat (24.1%) were ' +
+      'the commonest symptoms, and acute nasopharyngitis (52.5%) the commonest diagnosis. This ' +
+      'single-centre, pandemic-era study describes a presenting pattern, not national epidemiology.',
     sourceLicence: 'CC-BY-4.0',
     verbatimAllowed: true,
     profiles: URTI_PROFILES,
@@ -211,10 +207,10 @@ export const GUIDELINE_CORPUS: readonly ProfiledGuidelineChunk[] = [
   },
   {
     id: 'moh-nag-2024-acute-uti-scope',
-    title: 'National Antimicrobial Guideline, 4th Edition, Acute Urinary Tract Infection',
+    title: 'National Antimicrobial Guideline, 4th Edition — Section A17, Urinary Tract Infections',
     publisher: 'Ministry of Health Malaysia',
     year: 2024,
-    url: 'https://pharmacy.moh.gov.my/nag',
+    url: 'https://sites.google.com/moh.gov.my/nag/contents/section-a-adult/a17-urinary-tract-infections',
     summary:
       'MOH NAG 2024 includes guidance for urinary tract infection presentations. This prototype ' +
       'does not encode drug choice, dose, duration, or treatment thresholds from that source; ' +
