@@ -57,23 +57,17 @@ export function CapturePanel({
    * patient, so the record's destination is carried by the page itself and is
    * not restated here (removed on the owner's decision 2026-09-02).
    */
+  /*
+   * Only `engine` is read from here. `mode` used to block the Record tab when
+   * it was ambient, on the reasoning that the room was already being listened
+   * to. Nothing listens: ambient is specified in docs/trd.md section 20.7 and
+   * not built, so the block took away the only working capture and put nothing
+   * in its place (#254). It is disabled at its source in the Audio dialog until
+   * #219 makes it real, and nothing here may read it before then.
+   */
   const [audio, setAudio] = useState<AudioSettings>(loadAudioSettings)
-  /*
-   * Record is the default tab, except when ambient mode has already taken the
-   * microphone. Opening on a tab the doctor cannot use is the same dead end as
-   * blocking one without saying why.
-   */
-  const [tab, setTab] = useState<(typeof TABS)[number]['id']>(() =>
-    loadAudioSettings().mode === 'ambient' ? 'paste' : TABS[0].id,
-  )
+  const [tab, setTab] = useState<(typeof TABS)[number]['id']>(TABS[0].id)
   const audioDialog = useRef<HTMLDialogElement>(null)
-  /*
-   * Ambient mode already listens to the room for the whole session, so pressing
-   * record here would start a second capture of the same consultation. The tab
-   * is blocked rather than hidden: a control that vanishes reads as a bug, and
-   * the doctor needs to know the mode is on, not merely that recording is gone.
-   */
-  const recordBlocked = audio.mode === 'ambient'
   const [text, setText] = useState('')
   const [source, setSource] = useState<TranscriptSource>('paste')
   const turns = parseTranscript(text)
@@ -148,17 +142,10 @@ export function CapturePanel({
               type="button"
               role="tab"
               aria-selected={tab === id}
-              aria-disabled={id === 'record' && recordBlocked}
-              onClick={() => {
-                if (id === 'record' && recordBlocked) return
-                setTab(id)
-              }}
+              onClick={() => setTab(id)}
               className={cn(
                 'inline-flex min-h-10 items-center gap-2 rounded-control px-3 text-sm font-medium transition-colors',
                 tab === id ? 'bg-accent-soft text-accent' : 'text-ink-muted hover:bg-sunken',
-                id === 'record' &&
-                  recordBlocked &&
-                  'cursor-not-allowed opacity-50 hover:bg-transparent',
               )}
             >
               <Icon aria-hidden className="size-4" />
@@ -170,40 +157,15 @@ export function CapturePanel({
         <button
           type="button"
           onClick={() => audioDialog.current?.showModal()}
-          aria-label={
-            audio.mode === 'ambient' ? 'Audio settings, ambient mode on' : 'Audio settings'
-          }
+          aria-label="Audio settings"
           title="Audio settings"
-          className="relative inline-flex size-10 shrink-0 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-sunken hover:text-ink"
+          className="inline-flex size-10 shrink-0 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-sunken hover:text-ink"
         >
           <Settings2 aria-hidden className="size-4" />
-          {/* The word "Ambient" was carrying this state before the label went.
-              A standing preference that decides whether the room is being
-              listened to is not something the doctor should have to open a
-              dialog to discover, so it keeps a visible mark. */}
-          {audio.mode === 'ambient' && (
-            <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-accent" />
-          )}
         </button>
       </div>
 
-      {recordBlocked && (
-        <p className="mt-2 text-ink-muted text-xs">
-          Ambient mode is on, so the room is already being listened to. Turn it off in Audio to
-          record a single consultation by hand.
-        </p>
-      )}
-
-      <AudioSettingsDialog
-        ref={audioDialog}
-        settings={audio}
-        onApply={(next) => {
-          setAudio(next)
-          // Leaving the doctor on a tab they can no longer use would strand
-          // them on a dead panel with no way to tell why it stopped working.
-          if (next.mode === 'ambient' && tab === 'record') setTab('paste')
-        }}
-      />
+      <AudioSettingsDialog ref={audioDialog} settings={audio} onApply={setAudio} />
 
       {/* Centred in the leftover room rather than pinned under the tabs: the
           card grows to the column's floor, and capture is the one thing on

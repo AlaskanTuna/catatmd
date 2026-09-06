@@ -140,7 +140,7 @@ Three claims the journey diagram is drawn to make checkable:
 Two claims the stack diagram is drawn to make checkable:
 
 - **`lib/llm/` is the only text egress**, and everything crossing that line has already passed `deid/`.
-- **The hosted ASR adapter is the one other path out of the boundary.** Speech-to-text runs on the device by default, so it opens only when a doctor ticks the per-consultation consent box. The diagram draws it dashed because it sits outside the boundary, and the audio reaches it only as a relay through the API (`docs/trd.md` §20.4).
+- **The hosted ASR adapter is the one other path out of the boundary.** Speech-to-text runs on the device by default, so it opens only when a doctor has chosen the hosted engine for the device and ticked the per-consultation consent box for that patient. The diagram draws it dashed because it sits outside the boundary, and the audio reaches it only as a relay through the API (`docs/trd.md` §20.4).
 
 Bun workspaces · TypeScript · Zod (shared contracts) · Express 5 · Prisma 6 · better-auth · React 19 + Vite 7 + Tailwind 4 · Supabase Postgres · Vitest · Biome. Hosting: frontend to Vercel, backend to Render, database to Supabase, all three in one region by design.
 
@@ -170,7 +170,7 @@ All three are on free tiers by design. Render free instances spin down when idle
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Backend**    | De-identification gate, deterministic red-flag engine, Malaysian guideline corpus, structured-extraction pipeline with its evidence-bound assertion check, gaps engine, authentication, synthetic fixtures |
 | **Frontend**   | Consultation list, four-input capture screen, review screen carrying gap, red-flag and suggestion cards, the approval control, on-device audio capture with draft speaker labels                           |
-| **Hosted ASR** | Live in production behind a per-consultation consent gate (#154, #155, #190)                                                                                                                               |
+| **Hosted ASR** | Live in production behind a device engine preference plus a per-consultation consent gate, both required (#154, #155, #190, #254)                                                                          |
 
 `docs/trd.md` tags every section `Built`, `Specified`, or `Open`, and never describes unwritten code as if it exists. Where implementation contradicted the specification, the TRD records which won and why rather than quietly conforming — see §3 (the assertion schema had to split in two), §5 and §7.
 
@@ -274,16 +274,22 @@ The claim stops there, because on modest clinic hardware the on-device path has 
 
 **That last clause is the load-bearing one.** Silently switching to hosted transcription because a device is slow would be a privacy control that fails **open** under load, degrading exactly when the doctor is least able to notice. It is written down as rejected rather than left to an implementer's judgement.
 
-The hosted adapter is **built and live**. Its consent gate (`docs/trd.md` §20, §20.4):
+The hosted adapter is **built and live**, and reaching it takes two separate acts (`docs/trd.md` §20, §20.4):
+
+| Control               | Question it answers               | Scope                                            |
+| --------------------- | --------------------------------- | ------------------------------------------------ |
+| **Engine preference** | Where does audio go?              | This device, remembered, set in Audio settings   |
+| **Consent gesture**   | May this patient's audio be sent? | One recording, never remembered, never inherited |
 
 | Property         | Behaviour                                                                           |
 | ---------------- | ----------------------------------------------------------------------------------- |
-| **Scope**        | One recording. Never remembered, never carried to the next patient                  |
-| **Placement**    | Always on screen, never highlighted                                                 |
+| **Placement**    | Above the record controls it enables, never highlighted                             |
 | **Failure copy** | The on-device failure message never mentions it                                     |
-| **Effect**       | The provider key is set in production, so a ticked box sends that recording to ILMU |
+| **Effect**       | The provider key is set in production, so both together send that recording to ILMU |
 
-**A recording returns as timestamped, speaker-labelled draft lines the doctor reviews and applies.** Each Doctor/Patient label is a guess from segment timing and what the sentence says, never from the voices. Any line can be flipped before applying: one review list, no auto-populated transcript (`docs/trd.md` §20.2).
+**The split is deliberate, and it was got wrong once.** For three weeks the engine preference was the whole gate while the interface still said each patient was asked. A remembered agreement is one the next patient never gave, so the per-consultation half was restored and is now pinned by a test that fails if the claim and the control ever part company again (#254).
+
+**A recording returns as timestamped, speaker-labelled draft lines.** Each Doctor/Patient label is a guess from segment timing and what the sentence says, never from the voices. The doctor no longer confirms them line by line: that gate was removed in #233 because the ambient workflow replacing it has no moment to stop and tweak labels. The safety it bought moved rather than went, and the transcript now carries `labelsReviewed: false` so the red-flag engine will not drop a trigger hit on a label nobody stood behind (`docs/trd.md` §20.2).
 
 **One request does leave the browser on the on-device path**, and it is named here rather than left to be discovered. The speech model's weights are fetched from a public CDN the first time they are needed, then cached.
 
