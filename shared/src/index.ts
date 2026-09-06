@@ -608,6 +608,15 @@ export type EvidenceLink = z.infer<typeof EvidenceLinkSchema>
 
 export const ConsultationAnalysisSchema = z.object({
   note: SoapNoteSchema,
+  /**
+   * The canonical categorized note used by analyses created from the
+   * Malaysian medical-record template onward.
+   *
+   * Optional so consultations analysed before this field existed still parse;
+   * absence means the categorization was not recorded, never that every
+   * category was unestablished.
+   */
+  medicalRecordNote: MedicalRecordNoteSchema.optional(),
   gaps: z.array(InformationGapSchema),
   redFlags: z.array(RedFlagSchema),
   suggestions: z.array(ClinicalSuggestionSchema),
@@ -757,7 +766,7 @@ export const ClinicalFactsResponseSchema = z.object({
  * (docs/trd.md §12), so ordering the two would only cost wall-clock.
  */
 export const NoteAndGapsResponseSchema = z.object({
-  note: SoapNoteSchema,
+  note: MedicalRecordNoteSchema,
   /**
    * Bounded for the same reason as `medicationsDispensed`. The checklist holds
    * 29 fields, so more than 30 gaps cannot correspond to anything real, and an

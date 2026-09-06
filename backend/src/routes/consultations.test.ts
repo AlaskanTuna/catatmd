@@ -18,6 +18,16 @@ vi.mock('../analysis/index.js', async (importOriginal) => ({
       assessment: 'Likely viral URTI',
       plan: 'Fluids and rest',
     },
+    medicalRecordNote: {
+      presentingComplaint: '[PATIENT_1] reports a cough',
+      historyOfPresentingComplaint: 'Cough duration not established',
+      pastMedicalHistory: '',
+      socialHistory: '[PATIENT_1] does not smoke',
+      familyHistory: '',
+      objective: 'Chest clear',
+      assessment: 'Likely viral URTI',
+      plan: 'Fluids and rest',
+    },
     // Shaped like the real thing: assertions nested under groups, and an array
     // of them under `medicationsDispensed`. `evidence` is a verbatim span from
     // the de-identified transcript, so it carries a vault token by construction.
@@ -933,10 +943,16 @@ describe('POST /api/consultations/analyze-ephemeral', () => {
 
   it('returns an analysis and writes no consultation', async () => {
     const res = await call('POST', '/api/consultations/analyze-ephemeral', body(TRANSCRIPT.turns))
-    const json = (await res.json()) as { analysis: { note: { subjective: string } } }
+    const json = (await res.json()) as {
+      analysis: {
+        note: { subjective: string }
+        medicalRecordNote: { presentingComplaint: string }
+      }
+    }
 
     expect(res.status).toBe(200)
     expect(json.analysis.note.subjective).toContain('Ahmad')
+    expect(json.analysis.medicalRecordNote.presentingComplaint).toContain('Ahmad')
     expect(store.size, 'the ephemeral route must persist nothing').toBe(0)
   })
 

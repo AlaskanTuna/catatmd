@@ -118,7 +118,7 @@ git commit -m "feat(notes): add Malaysian note contract"
 - Produces: `NoteAndGapsResult.medicalRecordNote` and `ConsultationAnalysis.medicalRecordNote`.
 - Produces: `MEDICAL_RECORD_TEMPLATE_VERSION` inside every active clinical-content stamp.
 
-- [ ] **Step 1: Write failing pipeline and version tests**
+- [x] **Step 1: Write failing pipeline and version tests**
 
 ```ts
 expect(result.medicalRecordNote.familyHistory).toBe('No relevant family history stated.')
@@ -131,13 +131,13 @@ expect(getActiveClinicalVersions(profile).medicalRecordTemplate).toEqual({
 
 Add a route assertion proving `medicalRecordNote` strings are re-hydrated before persistence, just like SOAP strings.
 
-- [ ] **Step 2: Run focused backend tests and verify RED**
+- [x] **Step 2: Run focused backend tests and verify RED**
 
 Run: `bun run --cwd backend test -- src/analysis/index.test.ts src/clinical-profiles/index.test.ts src/routes/consultations.test.ts`
 
 Expected: FAIL because canonical output and the version stamp do not exist.
 
-- [ ] **Step 3: Change the existing note-generation response, prompt, and pipeline**
+- [x] **Step 3: Change the existing note-generation response, prompt, and pipeline**
 
 Make `NoteAndGapsResponseSchema.note` a `MedicalRecordNoteSchema`. In `analyseNote`, derive SOAP once and pass that projection through `stripDiagnosticProse`; mirror any guarded Assessment back into the canonical note before returning both forms.
 
@@ -145,7 +145,7 @@ Update the prompt to request the five explicit history categories plus Objective
 
 In `runAnalysis`, re-hydrate each canonical string with the request-scoped vault and persist both `medicalRecordNote` and the derived SOAP `note`. Do not log either value.
 
-- [ ] **Step 4: Add and aggregate the mapping version**
+- [x] **Step 4: Add and aggregate the mapping version**
 
 ```ts
 export const MEDICAL_RECORD_TEMPLATE_VERSION = {
@@ -156,13 +156,13 @@ export const MEDICAL_RECORD_TEMPLATE_VERSION = {
 
 Include it as `medicalRecordTemplate` in `ACTIVE_CLINICAL_VERSIONS` so the existing `analysis_completed` stamp picks it up automatically.
 
-- [ ] **Step 5: Run focused backend tests and verify GREEN**
+- [x] **Step 5: Run focused backend tests and verify GREEN**
 
 Run: `bun run --cwd backend test -- src/analysis/index.test.ts src/clinical-profiles/index.test.ts src/routes/consultations.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit analysis and versioning**
+- [x] **Step 6: Commit analysis and versioning**
 
 ```bash
 git add shared/src/index.ts backend/src/analysis backend/src/clinical-versions backend/src/clinical-profiles/index.test.ts backend/src/note-templates backend/src/routes/consultations.ts backend/src/routes/consultations.test.ts

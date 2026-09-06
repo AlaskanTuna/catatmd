@@ -389,6 +389,18 @@ async function runAnalysis(
       assessment: rehydrate(noteResult.note.assessment),
       plan: rehydrate(noteResult.note.plan),
     },
+    medicalRecordNote: {
+      presentingComplaint: rehydrate(noteResult.medicalRecordNote.presentingComplaint),
+      historyOfPresentingComplaint: rehydrate(
+        noteResult.medicalRecordNote.historyOfPresentingComplaint,
+      ),
+      pastMedicalHistory: rehydrate(noteResult.medicalRecordNote.pastMedicalHistory),
+      socialHistory: rehydrate(noteResult.medicalRecordNote.socialHistory),
+      familyHistory: rehydrate(noteResult.medicalRecordNote.familyHistory),
+      objective: rehydrate(noteResult.medicalRecordNote.objective),
+      assessment: rehydrate(noteResult.medicalRecordNote.assessment),
+      plan: rehydrate(noteResult.medicalRecordNote.plan),
+    },
     profileId: profile.id,
     gaps: mergeGaps(
       deriveGaps(noteResult.clinicalFacts, noteResult.operational, profile.gapChecklist),
