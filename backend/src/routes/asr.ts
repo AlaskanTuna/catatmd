@@ -1,10 +1,28 @@
-import { DraftTurnsRequestSchema, DraftTurnsResponseSchema } from '@shared/types'
+import {
+  DraftTurnsRequestSchema,
+  DraftTurnsResponseSchema,
+  LiveAsrConfigSchema,
+  LiveSessionRequestSchema,
+  LiveSessionSchema,
+} from '@shared/types'
 import express, { type NextFunction, type Request, type Response, Router } from 'express'
-import { type AsrRelayFailureReason, recordAuditEvent } from '../audit/index.js'
+import {
+  type AsrRelayFailureReason,
+  type LiveSessionFailureReason,
+  recordAuditEvent,
+} from '../audit/index.js'
 import { env } from '../config/env.js'
 import { DeidentificationError, deidentify } from '../deid/index.js'
 import { DraftTurnsError, draftTurns } from '../draft-turns/index.js'
 import { getAsrDescriptor, IlmuRelayError, transcribeWithIlmu } from '../lib/asr/ilmu.js'
+import {
+  getLiveAsrDescriptor,
+  liveSessionConfig,
+  MAX_SESSION_DURATION_SECONDS,
+  mintSonioxSession,
+  SonioxMintError,
+  sonioxHosts,
+} from '../lib/asr/soniox.js'
 import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor } from '../lib/llm/index.js'
 import { logger } from '../lib/logger.js'
@@ -202,6 +220,169 @@ asrRouter.post(
     }
   },
 )
+
+/**
+ * Feature gate for the ambient routes, mirroring `requireIlmuConfigured`: a
+ * deployment without a Soniox key answers 503 rather than minting nothing and
+ * failing later in the browser, where the doctor is holding an open microphone.
+ */
+function requireSonioxConfigured(_req: Request, _res: Response, next: NextFunction) {
+  if (!env.SONIOX_API_KEY) {
+    next(new HttpError(503, 'asr_unavailable', 'Ambient transcription is not available.'))
+    return
+  }
+  next()
+}
+
+/**
+ * Fixed responses per mint failure. `rejected` reads as plain unavailability
+ * because it means our own account credential or region is wrong, which is a
+ * deployment fault rather than the caller's business.
+ */
+const LIVE_FAILURE_RESPONSES: Record<
+  LiveSessionFailureReason,
+  { status: number; code: string; message: string }
+> = {
+  rejected: {
+    status: 503,
+    code: 'asr_unavailable',
+    message: 'Ambient transcription is not available.',
+  },
+  rate_limited: {
+    status: 429,
+    code: 'rate_limited',
+    message: 'Too many ambient session requests. Please retry shortly.',
+  },
+  unavailable: {
+    status: 502,
+    code: 'asr_failed',
+    message: 'Ambient transcription could not start.',
+  },
+}
+
+/*
+ * What the capture surface needs before anything is minted: where the audio
+ * would go, and in which languages.
+ *
+ * Split from the mint deliberately. The consent copy has to name the provider
+ * and the region before the doctor decides, and a doctor who is only reading
+ * the screen must not spend a key to see it. Nothing egresses here, so there is
+ * no audit row: the read is of our own configuration.
+ */
+asrRouter.get('/live-sessions/config', requireSonioxConfigured, (req, res) => {
+  doctorId(req)
+
+  const body = LiveAsrConfigSchema.safeParse({
+    provider: 'soniox',
+    region: env.SONIOX_REGION,
+    websocketUrl: sonioxHosts(env.SONIOX_REGION).websocket,
+    config: liveSessionConfig(),
+  })
+  // A failure here is a configuration defect, not a caller error: the shared
+  // schema refuses a socket address the browser would also refuse.
+  if (!body.success) {
+    throw new HttpError(500, 'internal_error', 'Ambient transcription is misconfigured.')
+  }
+
+  res.json(body.data)
+})
+
+/*
+ * Mints one browser-usable credential for one ambient session (#268).
+ *
+ * **This route never receives audio.** The stream runs from the browser to the
+ * provider, because a WebSocket cannot pass through the Vercel rewrite that
+ * makes the session cookie first-party (#156) and a direct browser-to-Render
+ * socket would lose it. What stays here is the policy: an authenticated
+ * session, the consent the client asserts, a per-caller limiter, a key that
+ * expires in a minute and caps the session it opens, a reference id the client
+ * cannot choose, and an audit row written before the response.
+ *
+ * The audit contract is the relay's. Pre-flight rejections (401, 400, 429, and
+ * the unconfigured 503) write no row because nothing was minted; once
+ * `mintSonioxSession` is called, exactly one of the two events is written
+ * before any response leaves, so no unaudited session key can be observed by a
+ * client.
+ */
+asrRouter.post('/live-sessions', requireSonioxConfigured, async (req, res) => {
+  const actor = doctorId(req)
+
+  const parsed = LiveSessionRequestSchema.safeParse(req.body)
+  if (!parsed.success) {
+    throw new HttpError(400, 'invalid_body', 'Consent for this consultation is required.')
+  }
+
+  const { model, region } = getLiveAsrDescriptor()
+  const startedAt = performance.now()
+
+  try {
+    const session = await mintSonioxSession()
+
+    // Parsed before the audit row, like the draft-turns pass: a recorded
+    // success must never be followed by a body the client cannot use.
+    const body = LiveSessionSchema.safeParse({
+      provider: 'soniox',
+      region,
+      websocketUrl: sonioxHosts(region).websocket,
+      config: liveSessionConfig(),
+      apiKey: session.apiKey,
+      expiresAt: session.expiresAt,
+    })
+    if (!body.success) {
+      throw new SonioxMintError('Minted session failed schema validation', 'unavailable')
+    }
+
+    // Before the response and unguarded: a failed audit write fails the
+    // request, so a key the trail did not record is never observable.
+    await recordAuditEvent({
+      action: 'asr.live_session_minted',
+      actorId: actor,
+      metadata: {
+        clientReferenceId: session.clientReferenceId,
+        model,
+        region,
+        maxSessionSeconds: MAX_SESSION_DURATION_SECONDS,
+        // What the client said, which is all the API can know: the gate is a
+        // property of the frontend and this row records the assertion.
+        consentAsserted: true,
+      },
+    })
+
+    // The one response in this system that carries a credential. POST is not
+    // cacheable without explicit freshness, so this is defence in depth.
+    res.setHeader('Cache-Control', 'no-store')
+
+    logger.info('live asr session minted', {
+      actorId: actor,
+      outcome: 'ok',
+      durationMs: Math.round(performance.now() - startedAt),
+      model,
+      status: 200,
+    })
+
+    res.json(body.data)
+  } catch (error) {
+    if (!(error instanceof SonioxMintError)) throw error
+
+    const failure = LIVE_FAILURE_RESPONSES[error.reason]
+
+    await recordAuditEvent({
+      action: 'asr.live_session_failed',
+      actorId: actor,
+      metadata: { reason: error.reason },
+    })
+
+    logger.warn('live asr session failed', {
+      actorId: actor,
+      outcome: 'error',
+      durationMs: Math.round(performance.now() - startedAt),
+      model,
+      status: failure.status,
+    })
+
+    throw new HttpError(failure.status, failure.code, failure.message)
+  }
+})
 
 /*
  * The labelling pass that follows a hosted relay (docs/trd.md §20.3): the

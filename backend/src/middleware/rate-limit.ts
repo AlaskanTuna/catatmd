@@ -158,6 +158,31 @@ export const hostedAsrRateLimit = rateLimit({
 })
 
 /**
+ * Per-IP limiter for `POST /api/asr/live-sessions`, which mints one ambient
+ * session key (#268).
+ *
+ * Five a minute because one consultation needs one key: the number is a bound
+ * on restarts and retries by a human hand, not a throughput allowance. It is
+ * the only per-caller control on this path, since the request carries no audio
+ * and so needs no in-flight gate; each key it issues is separately bounded by
+ * `MAX_SESSION_DURATION_SECONDS`. Its own bucket, so ambient sessions can
+ * neither be funded by an unspent relay budget nor exhaust one.
+ */
+export const liveSessionRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: {
+      code: 'rate_limited',
+      message: 'Too many ambient session requests. Please retry shortly.',
+    },
+  },
+})
+
+/**
  * Per-IP limiter for `POST /api/asr/draft-turns`, the labelling pass that
  * follows a hosted relay. An LLM call, so it registers its own limiter like
  * every route that spends model budget; its own bucket rather than the relay's

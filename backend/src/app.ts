@@ -12,6 +12,7 @@ import {
   eraseRateLimit,
   guestSignInRateLimit,
   hostedAsrRateLimit,
+  liveSessionRateLimit,
   settingsWriteRateLimit,
 } from './middleware/rate-limit.js'
 import { requestContext } from './middleware/request-context.js'
@@ -101,6 +102,9 @@ export function createApp() {
   // The labelling pass that follows a hosted relay is an LLM call, so it
   // carries its own bucket for the same reason the relay does.
   app.post('/api/asr/draft-turns', draftTurnsRateLimit)
+  // Ambient capture mints one provider key per session and streams the audio
+  // from the browser, so this bounds key issuance rather than audio (#268).
+  app.post('/api/asr/live-sessions', liveSessionRateLimit)
 
   // ── Clinical routers ─────────────────────────────────────────────────────
   // These inherit the session guard and the analyze limiter above, and must

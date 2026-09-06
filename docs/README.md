@@ -140,7 +140,7 @@ Three claims the journey diagram is drawn to make checkable:
 Two claims the stack diagram is drawn to make checkable:
 
 - **`lib/llm/` is the only text egress**, and everything crossing that line has already passed `deid/`.
-- **The hosted ASR adapter is the one other path out of the boundary.** Speech-to-text runs on the device by default, so it opens only when a doctor has chosen the hosted engine for the device and ticked the per-consultation consent box for that patient. The diagram draws it dashed because it sits outside the boundary, and the audio reaches it only as a relay through the API (`docs/trd.md` §20.4).
+- **Two audio paths leave the boundary, and neither can be de-identified first.** Speech-to-text runs on the device by default, so it opens only when a doctor has chosen the hosted engine for the device and ticked the per-consultation consent box for that patient. The diagram draws it dashed because it sits outside the boundary, and the audio reaches it only as a relay through the API (`docs/trd.md` §20.4). Ambient capture is the second: it never enters the API at all, streaming from the browser to the provider under a short-lived key the API mints, which is why the browser carries a guard of its own pinning that socket to one module.
 
 Bun workspaces · TypeScript · Zod (shared contracts) · Express 5 · Prisma 6 · better-auth · React 19 + Vite 7 + Tailwind 4 · Supabase Postgres · Vitest · Biome. Hosting: frontend to Vercel, backend to Render, database to Supabase, all three in one region by design.
 
@@ -166,11 +166,12 @@ All three are on free tiers by design. Render free instances spin down when idle
 
 **Both tiers are built and running.**
 
-| Layer          | What Is Built                                                                                                                                                                                              |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Backend**    | De-identification gate, deterministic red-flag engine, Malaysian guideline corpus, structured-extraction pipeline with its evidence-bound assertion check, gaps engine, authentication, synthetic fixtures |
-| **Frontend**   | Consultation list, four-input capture screen, review screen carrying gap, red-flag and suggestion cards, the approval control, on-device audio capture with draft speaker labels                           |
-| **Hosted ASR** | Live in production behind a device engine preference plus a per-consultation consent gate, both required (#154, #155, #190, #254)                                                                          |
+| Layer               | What Is Built                                                                                                                                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Backend**         | De-identification gate, deterministic red-flag engine, Malaysian guideline corpus, structured-extraction pipeline with its evidence-bound assertion check, gaps engine, authentication, synthetic fixtures                |
+| **Frontend**        | Consultation list, four-input capture screen, review screen carrying gap, red-flag and suggestion cards, the approval control, on-device audio capture with draft speaker labels                                          |
+| **Hosted ASR**      | Live in production behind a device engine preference plus a per-consultation consent gate, both required (#154, #155, #190, #254)                                                                                         |
+| **Ambient capture** | Building (#268). The consultation streams from the browser to Soniox as it happens, under a short-lived key the API mints; the API never receives the audio. No accuracy figure for that provider exists in this repo yet |
 
 `docs/trd.md` tags every section `Built`, `Specified`, or `Open`, and never describes unwritten code as if it exists. Where implementation contradicted the specification, the TRD records which won and why rather than quietly conforming — see §3 (the assertion schema had to split in two), §5 and §7.
 
@@ -286,6 +287,16 @@ The hosted adapter is **built and live**, and reaching it takes two separate act
 | **Placement**    | Above the record controls it enables, never highlighted                             |
 | **Failure copy** | The on-device failure message never mentions it                                     |
 | **Effect**       | The provider key is set in production, so both together send that recording to ILMU |
+
+**Three capture paths exist, and they leave the device by different routes.**
+
+| Path                       | Where the audio goes                                                    | Region        |
+| -------------------------- | ----------------------------------------------------------------------- | ------------- |
+| Press to record, on-device | Nowhere. The model runs in the browser                                  | The device    |
+| Press to record, hosted    | One finished recording, through our API, to ILMU                        | Malaysia      |
+| Ambient capture            | Streamed from the browser straight to Soniox, under a key our API mints | United States |
+
+**Ambient capture is the one that leaves the region.** Soniox offers the United States, the European Union, Japan and India, and no Malaysian or Singapore option. That is the honest cost of the only streaming recogniser tested here that handles Malay, English and Chinese switching mid-sentence, and the transfer basis is recorded as open in [`dpia.md`](./dpia.md) rather than treated as solved. Our servers never hold that audio.
 
 **The split is deliberate, and it was got wrong once.** For three weeks the engine preference was the whole gate while the interface still said each patient was asked. A remembered agreement is one the next patient never gave, so the per-consultation half was restored and is now pinned by a test that fails if the claim and the control ever part company again (#254).
 

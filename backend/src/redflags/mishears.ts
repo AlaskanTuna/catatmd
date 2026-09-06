@@ -3,10 +3,18 @@ import type { Transcript } from '@shared/types'
 /**
  * Measured Malay ASR confusables (docs/trd.md §20.3, issue #193).
  *
- * Both measured ASR arms harden the first consonant of Malay clinical words:
- * "batuk" comes back as "patut", "demam" as "teman", "denggi" as "tenggi". The
- * table is capped at pairs the §20.3 token table actually recorded, never
- * phonetic speculation.
+ * Both ASR arms that have been measured harden the first consonant of Malay
+ * clinical words: "batuk" comes back as "patut", "demam" as "teman", "denggi"
+ * as "tenggi". The table is capped at pairs the §20.3 token table actually
+ * recorded, never phonetic speculation.
+ *
+ * **A third recorded source now exists and is not among them.** Ambient capture
+ * (#268) streams to a different recogniser whose error family nobody here has
+ * measured, and this table still applies to it. That is deliberate rather than
+ * an oversight: expansion is additive, so on a provider it was not measured
+ * against the worst it can cost is a flag the doctor dismisses, and it can
+ * never hide one. What it does not do is prove these triggers fire on that
+ * provider's output at all, which stays unmeasured (§20.10).
  *
  * **This used to be a review-time hint in the UI**, offered on a list the doctor
  * confirmed before the transcript existed. That list was removed for the
@@ -110,7 +118,9 @@ export const expandMishears = (text: string): Expansion | null => {
  * whether a measured mishear is possible in them at all.
  */
 export const isRecorded = (transcript: Transcript): boolean =>
-  transcript.source === 'asr_local' || transcript.source === 'asr_hosted'
+  transcript.source === 'asr_local' ||
+  transcript.source === 'asr_hosted' ||
+  transcript.source === 'asr_live'
 
 /**
  * The original span a match on the expanded text corresponds to.
