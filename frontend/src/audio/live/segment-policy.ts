@@ -7,16 +7,23 @@
 export type SegmentBounds = {
   floorMs: number
   ceilingMs: number
-  /** How long a pause must hold before it counts as an utterance boundary. */
+  /**
+   * How long a pause must hold before it counts as an utterance boundary.
+   *
+   * This is the boundary-quality knob, and it errs long deliberately. A silence
+   * cutter that trips inside a phrase can score worse than naive fixed cuts,
+   * whereas a hold set too long merely defers the cut to the ceiling, which is
+   * the cheap direction to be wrong in.
+   */
   silenceHoldMs: number
 }
 
 /*
- * The window docs/trd.md 20.7 specifies, and configuration rather than
+ * The window docs/trd.md 20.7 specifies, held as configuration rather than
  * constants for a measured reason: 20.9 records that the floor was measured on
  * `qwen3-asr-flash` and "is not known to transfer to a different recogniser".
- * #264 is measuring it on ILMU at 8, 12 and 20 seconds. When that lands it
- * should move these numbers, not this file's shape.
+ * A measurement against the provider actually in use should move these numbers
+ * or confirm them, without touching this file's shape.
  */
 export const DEFAULT_SEGMENT_BOUNDS: SegmentBounds = {
   floorMs: 8_000,
@@ -36,10 +43,17 @@ export type SegmentState = {
 }
 
 /*
- * A pause is only allowed to end a window once the floor has passed, because
- * the floor is the expensive threshold: cutting below it cost 23.5 points of
- * Malay word error against 1.5 at eight seconds (docs/trd.md 20.7). The ceiling
- * overrides everything, so a patient who does not pause still gets transcribed.
+ * A pause may only end a window once the floor has passed, because short
+ * windows are the expensive direction: a batch recogniser called once per chunk
+ * starts cold each time and loses the surrounding speech it disambiguates with.
+ *
+ * How expensive is provider-specific, which is the whole reason the floor is a
+ * parameter. docs/trd.md 20.7 measured a cliff below it on `qwen3-asr-flash`,
+ * and 20.9 records that the result "is not known to transfer to a different
+ * recogniser". Do not read that cliff as this system's penalty.
+ *
+ * The ceiling overrides everything, so a patient who never pauses, or a room
+ * whose noise floor hides every pause, still gets transcribed.
  */
 export function shouldCut(state: SegmentState, bounds: SegmentBounds): boolean {
   if (state.elapsedMs >= bounds.ceilingMs) return true

@@ -51,10 +51,11 @@ describe('shouldCut', () => {
   })
 
   /*
-   * The floor is the expensive threshold to get wrong. Cutting below it cost
-   * 23.5 points of Malay word error against 1.5 at eight seconds, because a
-   * batch recogniser called per chunk starts cold and loses the surrounding
-   * speech it disambiguates with (docs/trd.md 20.7).
+   * The floor is the threshold worth tuning against measurement, and how much
+   * it costs to get wrong is provider-specific: docs/trd.md 20.7 measured a
+   * cliff below it on one recogniser, and 20.9 records that the result is not
+   * known to transfer to another. Hence a supplied floor rather than a baked-in
+   * one, which is the behaviour this pins.
    */
   it('honours a floor supplied by measurement rather than the default', () => {
     const wider: SegmentBounds = { floorMs: 12_000, ceilingMs: 20_000, silenceHoldMs: 600 }
