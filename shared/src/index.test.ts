@@ -10,6 +10,8 @@ import {
   DraftTurnsResponseSchema,
   ErrorEnvelopeSchema,
   GuidelineChunkSchema,
+  LiveSessionRequestSchema,
+  LiveSessionSchema,
   LlmClinicalAssertionSchema,
   LlmClinicalFactsSchema,
   MAX_DRAFT_TEXT_CHARACTERS,
@@ -488,5 +490,89 @@ describe('ConsultationListItemSchema title tolerance', () => {
   it('still carries a title through when the API sends one', () => {
     const result = ConsultationListItemSchema.parse({ ...row, title: 'Cough, sore throat' })
     expect(result.title).toBe('Cough, sore throat')
+  })
+})
+
+/*
+ * The live-session contract is the one place a value from our API tells a
+ * browser where to send patient audio, so these assertions are about refusal
+ * rather than shape.
+ */
+describe('LiveSessionSchema', () => {
+  const session = {
+    provider: 'soniox',
+    region: 'us',
+    websocketUrl: 'wss://stt-rt.soniox.com/transcribe-websocket',
+    apiKey: 'temporary-key',
+    expiresAt: '2026-09-06T12:00:00.000Z',
+    config: {
+      model: 'stt-rt-v5',
+      languageHints: ['ms', 'en', 'zh', 'ta'],
+      languageIdentification: true,
+      speakerDiarization: true,
+      endpointDetection: true,
+    },
+  }
+
+  it('accepts the four regional socket addresses and nothing else', () => {
+    for (const url of [
+      'wss://stt-rt.soniox.com/transcribe-websocket',
+      'wss://stt-rt.eu.soniox.com/transcribe-websocket',
+      'wss://stt-rt.jp.soniox.com/transcribe-websocket',
+      'wss://stt-rt.in.soniox.com/transcribe-websocket',
+    ]) {
+      expect(LiveSessionSchema.safeParse({ ...session, websocketUrl: url }).success).toBe(true)
+    }
+  })
+
+  it('refuses a socket address that is not the provider, however plausible', () => {
+    // The client checks the URL our own API handed it: this field is what a
+    // compromised or misconfigured response would have to change to redirect
+    // patient audio, and obeying it would be silent.
+    for (const url of [
+      'ws://stt-rt.soniox.com/transcribe-websocket',
+      'wss://stt-rt.soniox.com.evil.test/transcribe-websocket',
+      'wss://evil.test/transcribe-websocket',
+      'wss://stt-rt.soniox.com/',
+      'https://stt-rt.soniox.com/transcribe-websocket',
+    ]) {
+      expect(LiveSessionSchema.safeParse({ ...session, websocketUrl: url }).success).toBe(false)
+    }
+  })
+
+  it('refuses a session with no key, because an empty credential opens nothing', () => {
+    expect(LiveSessionSchema.safeParse({ ...session, apiKey: '' }).success).toBe(false)
+  })
+
+  it('refuses a region outside the closed set', () => {
+    expect(LiveSessionSchema.safeParse({ ...session, region: 'sg' }).success).toBe(false)
+  })
+
+  it('refuses an empty language hint list, which would bias toward nothing', () => {
+    expect(
+      LiveSessionSchema.safeParse({ ...session, config: { ...session.config, languageHints: [] } })
+        .success,
+    ).toBe(false)
+  })
+})
+
+describe('LiveSessionRequestSchema', () => {
+  it('accepts an asserted agreement', () => {
+    expect(LiveSessionRequestSchema.safeParse({ consent: true }).success).toBe(true)
+  })
+
+  it('refuses a body that asserts no agreement, rather than treating it as a state', () => {
+    // There is no meaningful request that says "no consent", so its absence is
+    // a malformed body and never something the route has to reason about.
+    expect(LiveSessionRequestSchema.safeParse({ consent: false }).success).toBe(false)
+    expect(LiveSessionRequestSchema.safeParse({}).success).toBe(false)
+  })
+})
+
+describe('TranscriptSourceSchema', () => {
+  it('carries the ambient path as its own provenance', () => {
+    // Distinct from `asr_hosted`: the audio took a different route out, and the
+    // stamp exists to be read by whoever audits where it went.
+    expect(TranscriptSourceSchema.safeParse('asr_live').success).toBe(true)
   })
 })

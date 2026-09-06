@@ -147,7 +147,16 @@ function stripComments(source: string): string {
 }
 
 describe('no internal document references ship to the browser', () => {
-  const files = sourceFiles(SRC).filter((file) => !file.endsWith('no-stray-dev-references.test.ts'))
+  /*
+   * Test files are excluded, generalising the exclusion this file already
+   * needed for itself. The rule is about what reaches a doctor's screen, and a
+   * suite is never bundled; a guard whose own inventory is a list of source
+   * paths would otherwise report its data as shipped copy. That was this file
+   * flagging itself at first, and it is now also true of
+   * `audio/live/no-stray-websocket.test.ts`, whose pinned inventory is exactly
+   * such a list.
+   */
+  const files = sourceFiles(SRC).filter((file) => !file.includes('.test.'))
 
   it('scans the frontend source tree', () => {
     expect(files.length).toBeGreaterThan(50)

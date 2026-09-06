@@ -43,6 +43,25 @@ describe('measured Malay devoicings on a recorded transcript', () => {
     expect(ruleIds(transcript('Saya pergi dengan teman saya.', 'paste'))).toEqual([])
   })
 
+  it('covers an ambient transcript, which passed through recognition too', () => {
+    // Ambient capture streams to a different recogniser with an unmeasured
+    // error family (#268). The table stays worth applying because expansion is
+    // additive: it can only add a candidate match, never remove one, so the
+    // worst it costs on a provider it was not measured against is a flag the
+    // doctor dismisses. What it cannot do is hide one.
+    expect(
+      ruleIds(transcript('Saya ada teman dua hari dan sakit belakang.', 'asr_live')),
+    ).toContain('uti-systemic-features')
+  })
+
+  it('still quotes what an ambient transcript actually says', () => {
+    // The expansion is a matching aid and never the evidence. A doctor reading
+    // the trace must see the words in the record, not the corrected ones.
+    expect(spans(transcript('Saya ada teman dua hari dan sakit belakang.', 'asr_live'))).toContain(
+      'teman',
+    )
+  })
+
   it('accepts the over-fire it buys on a recording', () => {
     // Stated rather than hidden: the same expansion that recovers the urgent
     // trigger also fires on the everyday word. One dismissal against one missed

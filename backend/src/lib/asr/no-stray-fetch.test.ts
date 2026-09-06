@@ -44,11 +44,18 @@ const SCANNED_DIR = 'backend/src'
 /**
  * The complete, intended inventory of outbound `fetch` calls in the API.
  *
- * One entry, and it is the audio egress the rule names. `transcribeWithIlmu`
- * uses native fetch because ILMU publishes no SDK (checked against the npm
- * registry when this guard was written, so there is no package name for
- * `no-stray-provider-sdk.test.ts` to pin either), and because importing a
- * second vendor SDK would trip that guard by design.
+ * Two entries, and they are not the same kind of thing.
+ *
+ * `ilmu.ts` is the audio egress the rule names: `transcribeWithIlmu` posts a
+ * recording. `soniox.ts` carries no audio at all, and is here because it mints
+ * the short-lived credential the browser uses to open its own stream (#268);
+ * the egress it enables happens in the client, where this guard cannot see it,
+ * which is why `frontend/src/audio/live/no-stray-websocket.test.ts` exists as
+ * its counterpart.
+ *
+ * Both use native fetch because neither vendor's SDK may be imported: the
+ * repo-wide provider-SDK inventory is pinned at one, inside `lib/llm/`, and
+ * `no-stray-provider-sdk.test.ts` names both vendors so a shortcut trips it.
  *
  * Adding an entry here is the reviewable decision this test exists to force:
  * every one is a new path by which data leaves the API without passing the
@@ -56,6 +63,7 @@ const SCANNED_DIR = 'backend/src'
  */
 const EXPECTED_FETCH_CALLS: ReadonlyMap<string, number> = new Map([
   ['backend/src/lib/asr/ilmu.ts', 1],
+  ['backend/src/lib/asr/soniox.ts', 1],
 ])
 
 function sourceFiles(): string[] {
@@ -134,10 +142,12 @@ describe('only the ASR relay egresses with fetch (issue #172)', () => {
       'scanned almost no files under backend/src; the walk is broken or the tree moved',
     ).toBeGreaterThan(20)
 
-    expect(
-      scanned,
-      'the one file the inventory pins was not scanned, so the inventory below proves nothing',
-    ).toContain('backend/src/lib/asr/ilmu.ts')
+    for (const pinned of EXPECTED_FETCH_CALLS.keys()) {
+      expect(
+        scanned,
+        `${pinned} was not scanned, so the inventory below proves nothing about it`,
+      ).toContain(pinned)
+    }
   })
 
   it('excludes test files, which describe the boundary rather than cross it', () => {

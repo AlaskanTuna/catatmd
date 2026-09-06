@@ -28,6 +28,60 @@ vi.mock('../audio/AudioCapture.js', () => {
   return { AudioCapture: MockAudioCapture }
 })
 
+vi.mock('../audio/live/AmbientCapture.js', () => {
+  return { AmbientCapture: MockAmbientCapture }
+})
+
+/*
+ * The ambient panel, mocked like `AudioCapture` above: this file is about what
+ * the route does with a delivered transcript, and the streaming itself is
+ * covered by `audio/live/AmbientCapture.test.tsx`.
+ */
+function MockAmbientCapture({
+  onTranscript,
+  onSwitchToManual,
+  onLiveChange,
+}: {
+  onTranscript: (result: {
+    text: string
+    segments: { text: string; start: number; end: number | null }[]
+    source: 'asr_live'
+    draftTurns?: readonly DraftTurn[]
+  }) => void
+  onSwitchToManual: () => void
+  onLiveChange: (live: boolean) => void
+}) {
+  return (
+    <>
+      <button type="button" onClick={() => onLiveChange(true)}>
+        mock go live
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          onTranscript({
+            text: 'Any fever? Yesterday quite hot.',
+            segments: [
+              { text: 'Any fever?', start: 0, end: 2 },
+              { text: 'Yesterday quite hot.', start: 2, end: 5 },
+            ],
+            source: 'asr_live',
+            draftTurns: [
+              { speaker: 'doctor', text: 'Any fever?' },
+              { speaker: 'patient', text: 'Yesterday quite hot.' },
+            ],
+          })
+        }
+      >
+        mock transcribe live
+      </button>
+      <button type="button" onClick={onSwitchToManual}>
+        mock switch to manual
+      </button>
+    </>
+  )
+}
+
 // A function declaration so the hoisted vi.mock factory above can reach it.
 function MockAudioCapture({
   onTranscript,
@@ -334,10 +388,17 @@ describe('recording provenance', () => {
     fireEvent.click(screen.getByRole('tab', { name: /record/i }))
   }
 
+  /** The same, on a device whose stored mode is ambient. */
+  function openAmbient() {
+    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
+    open()
+  }
+
   beforeEach(() => {
     // Cleared, not just re-stubbed: these read the most recent call, and a
     // previous test's submission would otherwise answer for this one.
     captured.mockClear()
+    localStorage.clear()
   })
 
   /*
@@ -403,16 +464,34 @@ describe('recording provenance', () => {
 
     expect((await submit()).source).toBe('asr_hosted')
   })
+
+  it('reports asr_live for an ambient consultation', async () => {
+    openAmbient()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe live' }))
+
+    const transcript = await submit()
+    expect(transcript.source).toBe('asr_live')
+    // Server-drafted labels, applied unreviewed, exactly as on the hosted path.
+    expect(transcript.labelsReviewed).toBe(false)
+  })
+
+  it('stays asr_live when a later pass is on-device or relayed', async () => {
+    // The widest egress wins and never comes back down. Ambient audio left the
+    // device continuously and reached a provider the API never saw it pass
+    // through, which is the broader claim of the two.
+    openAmbient()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe live' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock switch to manual' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe hosted' }))
+
+    expect((await submit()).source).toBe('asr_live')
+  })
 })
 
 /**
- * Ambient mode and the Record tab are mutually exclusive by design: ambient
- * already listens to the room for the whole session, so pressing record would
- * start a second capture of the same consultation.
- *
- * The properties worth pinning are the ones a doctor would experience as a bug
- * if they broke — the tab is visibly blocked rather than missing, the reason is
- * on screen, and switching modes never strands anyone on a dead panel.
+ * The Record tab always leads somewhere. The stored capture mode picks which
+ * panel it shows, never whether it shows one, and switching modes strands
+ * nobody on a dead panel.
  */
 function renderRoute() {
   render(
@@ -426,13 +505,13 @@ function renderRoute() {
 
 /*
  * Ambient mode used to block the Record tab and tell the doctor the room was
- * already being listened to. Nothing listened: ambient is specified in
- * docs/trd.md section 20.7 and not built, so the block removed the only
- * working capture and offered nothing in its place. Anyone who flipped the
+ * already being listened to, while nothing listened. That removed the only
+ * working capture and offered nothing in its place, so anyone who flipped the
  * toggle had bricked the flow (#254, hazard filed in #246).
  *
- * These assert the absence, because a stored `mode: 'ambient'` still exists on
- * any device that saved one and must not brick that device either.
+ * It captures now (#268), which changes what has to be asserted but not why.
+ * The rule is that the Record tab always leads somewhere: a stored mode picks
+ * which panel appears, and never whether one does.
  */
 describe('ambient capture mode', () => {
   beforeEach(() => localStorage.clear())
@@ -453,6 +532,55 @@ describe('ambient capture mode', () => {
 
     fireEvent.click(record)
     expect(record.getAttribute('aria-selected')).toBe('true')
+    // A working panel, not a dead tab.
+    expect(screen.getByRole('button', { name: 'mock transcribe live' })).toBeTruthy()
+  })
+
+  it('shows the ambient panel for a stored ambient mode, and the manual one otherwise', async () => {
+    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
+    renderRoute()
+
+    fireEvent.click(await screen.findByRole('tab', { name: /record/i }))
+    expect(screen.getByRole('button', { name: 'mock transcribe live' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'mock transcribe' })).toBeNull()
+
+    cleanup()
+    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'manual' }))
+    renderRoute()
+
+    fireEvent.click(await screen.findByRole('tab', { name: /record/i }))
+    expect(screen.getByRole('button', { name: 'mock transcribe' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'mock transcribe live' })).toBeNull()
+  })
+
+  it('stays mounted when the settings are saved to manual mid-session', async () => {
+    // Stop is the only path that delivers the transcript, so unmounting the
+    // panel from under a live socket would lose the consultation. The latch is
+    // what stops a settings save doing that.
+    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
+    renderRoute()
+
+    fireEvent.click(await screen.findByRole('tab', { name: /record/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock go live' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock switch to manual' }))
+
+    expect(screen.getByRole('button', { name: 'mock transcribe live' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'mock transcribe' })).toBeNull()
+    // The preference is still recorded; only the swap waits for the session.
+    expect(JSON.parse(localStorage.getItem('catatmd.audio') ?? '{}').mode).toBe('manual')
+  })
+
+  it('remembers a switch back to press-to-record, so the next visit is not stuck', async () => {
+    // The way out when the deployment has no ambient provider. Remembering it
+    // is what stops the doctor landing on the same dead screen next time.
+    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
+    renderRoute()
+
+    fireEvent.click(await screen.findByRole('tab', { name: /record/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock switch to manual' }))
+
+    expect(screen.getByRole('button', { name: 'mock transcribe' })).toBeTruthy()
+    expect(JSON.parse(localStorage.getItem('catatmd.audio') ?? '{}').mode).toBe('manual')
   })
 
   it('claims no listening it is not doing', async () => {

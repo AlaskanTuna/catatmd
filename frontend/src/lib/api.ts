@@ -20,6 +20,10 @@ import {
   GuidelineChunkSchema,
   type HostedAsrResult,
   HostedAsrResultSchema,
+  type LiveAsrConfig,
+  LiveAsrConfigSchema,
+  type LiveSession,
+  LiveSessionSchema,
   type NotificationItem,
   NotificationItemSchema,
   type Patient,
@@ -312,6 +316,36 @@ export const api = {
       body: JSON.stringify({ text }),
       signal,
     }).then((r) => r.turns),
+
+  /**
+   * Where ambient capture would send audio, and in which languages (#268).
+   *
+   * Read before anything is minted, because the consent copy has to name the
+   * provider and the region before the doctor decides. Answers 503 on a
+   * deployment with no ambient provider configured, which the capture surface
+   * shows as a plain unavailability with a way back to Press To Record.
+   */
+  liveAsrConfig: (): Promise<LiveAsrConfig> =>
+    request('/asr/live-sessions/config', LiveAsrConfigSchema),
+
+  /**
+   * Mints the short-lived key the browser uses to open its own recognition
+   * stream (#268).
+   *
+   * **Only ever called once the patient has agreed and the microphone is
+   * open.** The asserted consent in the body is what the API records; the gate
+   * itself is the tick in `AmbientCapture`, which is remembered by nothing.
+   *
+   * The returned key authenticates one connection for about a minute and caps
+   * the session it opens. It lives in the component's closure for the length
+   * of one consultation and is never stored.
+   */
+  createLiveSession: (signal: AbortSignal): Promise<LiveSession> =>
+    request('/asr/live-sessions', LiveSessionSchema, {
+      method: 'POST',
+      body: JSON.stringify({ consent: true }),
+      signal,
+    }),
 
   /**
    * The doctor's own recent completed work, derived from `AuditEvent` (#116).

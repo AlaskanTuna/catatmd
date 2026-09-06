@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { LiveAsrRegionSchema } from '@shared/types'
 import { config } from 'dotenv'
 import { z } from 'zod'
 
@@ -55,6 +56,20 @@ const EnvSchema = z.object({
   ILMU_API_KEY: z.string().optional(),
   ILMU_BASE_URL: z.string().url().default('https://api.ilmu.ai/v1'),
   ILMU_ASR_MODEL: z.string().default('ilmu-asr-v4.2'),
+
+  // Soniox real-time ASR, which carries ambient capture (#268). Optional on the
+  // same terms as ILMU: an absent key disables the mint route at request time
+  // (503 asr_unavailable) rather than failing boot.
+  //
+  // The region is an enum, not a URL: hostnames are literals in
+  // lib/asr/soniox.ts, because the socket address travels to the browser and a
+  // hostname assembled from free text is one typo away from the wrong country.
+  // It must name the region of the Soniox project the key belongs to, which
+  // that vendor fixes at project creation; a mismatch fails the mint closed.
+  // Changing it means changing the CSP connect-src host in vercel.json too.
+  SONIOX_API_KEY: z.string().optional(),
+  SONIOX_REGION: LiveAsrRegionSchema.default('us'),
+  SONIOX_RT_MODEL: z.string().default('stt-rt-v5'),
 
   // Verbosity only. No level widens what may be written: redaction in
   // lib/logger.ts is unconditional, so there is no debug flag that unlocks raw

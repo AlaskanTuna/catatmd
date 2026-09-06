@@ -156,8 +156,8 @@ export function AudioSettingsDialog({
                   id: 'ambient',
                   Icon: Radio,
                   name: 'Ambient',
-                  line: 'Not listening yet.',
-                  ready: false,
+                  line: 'Listens for the whole consultation.',
+                  ready: true,
                 },
                 {
                   id: 'manual',
@@ -193,14 +193,14 @@ export function AudioSettingsDialog({
               </button>
             ))}
           </div>
-          {/* The mode was selectable while nothing behind it ran, and the
-              capture surface told the doctor the room was already being
-              listened to. It said so on the deployed application for three
-              weeks. Disabled until the capture exists (#219), rather than
-              hidden, because the choice is the one the client asked for and a
-              control that vanishes reads as a bug. */}
+          {/* This tile was disabled for three weeks while nothing behind it
+              ran, because a mode that claims the room is being listened to
+              while nothing listens is worse than no mode at all (#254). It is
+              live now, and the sentence below is the one that must stay true:
+              choosing ambient still sends nothing on its own. */}
           <p className="mt-2.5 text-ink-muted text-xs">
-            Ambient capture is not built yet, so every consultation is recorded by hand.
+            Ambient capture streams the consultation from this device to Soniox as it happens. Each
+            patient is asked on the Record tab first, and that agreement is never remembered.
           </p>
         </fieldset>
 
@@ -244,8 +244,9 @@ export function AudioSettingsDialog({
               each patient was asked while nothing asked. Pinned by a test that
               renders both. */}
           <p className="mt-2.5 text-ink-muted text-xs">
-            Choosing ILMU does not send anything on its own. Each patient is asked on the Record
-            tab, and that agreement is never remembered.
+            Applies to Press To Record. Ambient capture always uses Soniox. Choosing ILMU does not
+            send anything on its own. Each patient is asked on the Record tab, and that agreement is
+            never remembered.
           </p>
         </fieldset>
 

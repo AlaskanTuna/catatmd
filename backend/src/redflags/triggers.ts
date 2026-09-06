@@ -13,12 +13,16 @@ import type { RedFlagTrigger } from './types.js'
  *
  * Bumped whenever a trigger is added, removed, or its matcher, severity or
  * cited guidance changes. Recorded with every analysis (docs/trd.md §15).
+ * **v9 changed no trigger and no wording.** It widened where the mishear
+ * expansion applies, to the ambient transcript source added by #268, and that
+ * is a matcher change under the rule above even though no transcript that
+ * could exist under v8 gets a different answer.
  * Citations count because they now travel on the flag itself, so a stored
  * analysis and this list can otherwise disagree about what backed a hit.
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v8',
-  effectiveDate: '2026-09-04',
+  id: 'redflag-list-v9',
+  effectiveDate: '2026-09-06',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
