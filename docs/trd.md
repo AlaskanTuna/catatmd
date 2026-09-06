@@ -647,7 +647,7 @@ The concrete trigger content — the actual list of clinical triggers, their thr
 
 ## 11. Guideline Corpus
 
-**Status: `Built`** — implemented 13/08/26 (issue #8). Eleven chunks in `backend/src/guidelines/corpus.ts`. No `quote` is populated on any chunk: the corpus was authored from this section's resolved source summaries rather than the primary texts, so marking any span verbatim would claim a verification that was not performed.
+**Status: `Built`** — implemented 13/08/26 (issue #8). Eleven chunks live in `backend/src/guidelines/corpus.ts`. Every summary was checked against its linked primary source on 07/09/26 (issue #240); clinician review of the corrected summaries remains required. No `quote` is populated because the corpus uses short, non-verbatim summaries throughout.
 
 ### Chunk Record Shape
 
@@ -673,11 +673,11 @@ The corpus as a whole carries `GUIDELINE_CORPUS_VERSION`, one of the three versi
 
 10–15 chunks (Q6), anchored on Malaysian sources:
 
-| Source                                                                                   | Covers                                                       | Licence Posture                                                                      |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| **MOH National Antimicrobial Guideline (NAG) 4th ed., 2024** — §A10, §C1/C3/C4           | Modified Centor scoring, acute pharyngitis, acute bronchitis | © MOH Malaysia, **all rights reserved** — summarise + link, `verbatimAllowed: false` |
-| **Abdullah et al. (2024), Malaysian sore-throat Delphi consensus**, _Infect Drug Resist_ | McIsaac scoring and thresholds                               | **CC BY-NC 3.0** — quotable with attribution, `verbatimAllowed: true`                |
-| **Ooi et al. (2022)**, _Malaysian Family Physician_                                      | Malaysian URTI epidemiology                                  | **CC BY 4.0** — quotable with attribution, `verbatimAllowed: true`                   |
+| Source                                                                                   | Covers                                                                                                  | Licence Posture                                                                      |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **MOH National Antimicrobial Guideline (NAG) 4th ed., 2024** — §A10, §A17, §C1/C3/C4     | Modified Centor scoring, acute pharyngitis, acute cough and bronchitis, acute rhinosinusitis, UTI scope | © MOH Malaysia, **all rights reserved** — summarise + link, `verbatimAllowed: false` |
+| **Abdullah et al. (2024), Malaysian sore-throat Delphi consensus**, _Infect Drug Resist_ | McIsaac scoring, antibiotic thresholds, point-of-care testing, symptomatic treatment                    | **CC BY-NC 3.0** — quotable with attribution, `verbatimAllowed: true`                |
+| **Ooi et al. (2022)**, _Malaysian Family Physician_                                      | Malaysian URTI presenting patterns and antibiotic use                                                   | **CC BY 4.0** — quotable with attribution, `verbatimAllowed: true`                   |
 
 **NICE is excluded from the corpus.** The NICE UK Open Content Licence states that requests to use NICE content **for artificial intelligence purposes, in the UK and internationally, are not covered by the licence**; international reuse requires a paid agreement, and the licence separately forbids amending or adapting the wording or structure of a published recommendation — which chunking for retrieval arguably is. NICE may still be cited as external context in prose; no NICE recommendation text enters the corpus. This is both the safe answer and the better product answer for a Malaysian GP tool.
 
@@ -698,7 +698,7 @@ The whole corpus (Q16) — every chunk's `id`, `title`, and `summary` — is ser
 
 `ClinicalSuggestionSchema.citations[].guidelineId` is `z.string()` in the shared schema (§3) — the shared package cannot depend on a backend-only corpus. The request-time schema used for the suggestions call (§12) narrows this field to `z.enum(corpusIds)`, where `corpusIds` is the live list of chunk ids at request time. A citation naming an id outside that set fails `request.schema.safeParse()` inside `OpenAICompatibleClient.generate()` (§6, `Built`) and throws `LLMResponseError` — the suggestion never reaches the doctor. This is a schema-enforced rejection path, not a prompt instruction the model could choose to ignore.
 
-**Resolved 13/08/26** — source selection and the redistribution stance are settled above, and `verbatimAllowed` now carries the distinction in the schema rather than in a comment. §19 row 3 is closed. Two residual items are **not** settled and are deliberately not represented as such: whether a MaHTAS/MOH _Clinical Practice Guideline_ distinct from the NAG exists for URTI (the MaHTAS portal refused connection during research; the working assumption is that NAG is the operative Malaysian source), and the fact that no clinician has reviewed any chunk in this corpus (`docs/prd.md` §12).
+**Resolved 13/08/26** — source selection and the redistribution stance are settled above, and `verbatimAllowed` now carries the distinction in the schema rather than in a comment. §19 row 3 is closed. Two residual items are **not** settled and are deliberately not represented as such: whether a MaHTAS/MOH _Clinical Practice Guideline_ distinct from the NAG exists for URTI (the MaHTAS portal refused connection during research; the working assumption is that NAG is the operative Malaysian source), and the fact that no clinician has reviewed the summaries corrected by the 07/09/26 primary-source audit (`docs/prd.md` §12, issue #240).
 
 ---
 
