@@ -34,7 +34,7 @@
 - Produces: `toSoapNote(note: MedicalRecordNote): SoapNote`, `formatSoapSubjective(note: MedicalRecordNote): string`, `NOT_ESTABLISHED`.
 - Consumed by: analysis, API persistence, clipboard formatting, and note editors.
 
-- [ ] **Step 1: Write failing shared-contract tests**
+- [x] **Step 1: Write failing shared-contract tests**
 
 ```ts
 const note = MedicalRecordNoteSchema.parse({
@@ -59,13 +59,13 @@ expect(NoteTemplateSchema.safeParse('malaysian').success).toBe(true)
 expect(NoteTemplateSchema.safeParse('free-text').success).toBe(false)
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run: `bun run --cwd shared test -- src/note-templates.test.ts src/index.test.ts`
 
 Expected: FAIL because the schemas and projection exports do not exist.
 
-- [ ] **Step 3: Implement the schemas and pure projection**
+- [x] **Step 3: Implement the schemas and pure projection**
 
 ```ts
 export const NoteTemplateSchema = z.enum(['soap', 'malaysian'])
@@ -83,13 +83,13 @@ export const MedicalRecordNoteSchema = z.object({
 
 `formatSoapSubjective` renders all five headings in the declared order and substitutes `NOT_ESTABLISHED` only for blank canonical strings. `toSoapNote` delegates Subjective to that formatter and copies Objective, Assessment, and Plan.
 
-- [ ] **Step 4: Run the focused shared tests and verify GREEN**
+- [x] **Step 4: Run the focused shared tests and verify GREEN**
 
 Run: `bun run --cwd shared test -- src/note-templates.test.ts src/index.test.ts`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the shared contract**
+- [x] **Step 5: Commit the shared contract**
 
 ```bash
 git add shared/src/index.ts shared/src/index.test.ts shared/src/note-templates.ts shared/src/note-templates.test.ts

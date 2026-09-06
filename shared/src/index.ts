@@ -294,6 +294,29 @@ export const SoapNoteSchema = z.object({
   plan: z.string(),
 })
 
+export const NoteTemplateSchema = z.enum(['soap', 'malaysian'])
+
+/**
+ * One canonical note that can be rendered in either supported record order.
+ *
+ * The five history fields are kept separate because a free-text SOAP
+ * Subjective cannot be split back into PC/HPC/PMH/SH/FH without guessing.
+ * Objective, Assessment and Plan stay on the same object so switching the
+ * presentation never drops the rest of the clinical record.
+ */
+export const MedicalRecordNoteSchema = z.object({
+  presentingComplaint: z.string(),
+  historyOfPresentingComplaint: z.string(),
+  pastMedicalHistory: z.string(),
+  socialHistory: z.string(),
+  familyHistory: z.string(),
+  objective: z.string(),
+  assessment: z.string(),
+  plan: z.string(),
+})
+
+export { formatSoapSubjective, NOT_ESTABLISHED, toSoapNote } from './note-templates.js'
+
 // ─── Per-field clinical assertion ────────────────────────────────────────────
 
 /**
@@ -1346,6 +1369,8 @@ export type DraftTurn = z.infer<typeof DraftTurnSchema>
 export type DraftTurnsRequest = z.infer<typeof DraftTurnsRequestSchema>
 export type DraftTurnsResponse = z.infer<typeof DraftTurnsResponseSchema>
 export type SoapNote = z.infer<typeof SoapNoteSchema>
+export type NoteTemplate = z.infer<typeof NoteTemplateSchema>
+export type MedicalRecordNote = z.infer<typeof MedicalRecordNoteSchema>
 export type AssertionState = z.infer<typeof AssertionStateSchema>
 export type ClinicalAssertion = z.infer<typeof ClinicalAssertionSchema>
 export type ClinicalFacts = z.infer<typeof ClinicalFactsSchema>
