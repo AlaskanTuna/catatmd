@@ -10,10 +10,11 @@ export type SegmentBounds = {
   /**
    * How long a pause must hold before it counts as an utterance boundary.
    *
-   * This is the boundary-quality knob, and it errs long deliberately. A silence
-   * cutter that trips inside a phrase can score worse than naive fixed cuts,
-   * whereas a hold set too long merely defers the cut to the ceiling, which is
-   * the cheap direction to be wrong in.
+   * This is the boundary-quality knob, and it errs long deliberately, because
+   * the two ways of being wrong are not symmetric. Too long merely defers the
+   * cut to the ceiling, and docs/trd.md 20.7 measures longer windows as the
+   * cheaper direction. Too short reintroduces the short-window penalty the
+   * floor exists to avoid.
    */
   silenceHoldMs: number
 }
