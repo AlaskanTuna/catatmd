@@ -23,8 +23,8 @@ describe('gap checklist provenance', () => {
         const guideline = GUIDELINE_CORPUS.find((chunk) => chunk.id === guidelineId)
         expect(guideline, `${entry.id} cites missing guideline ${guidelineId}`).toBeDefined()
         expect(
-          guideline?.profiles.some((profileId) => entry.profiles.includes(profileId)),
-          `${entry.id} cites a guideline from another clinical profile`,
+          entry.profiles.every((profileId) => guideline?.profiles.includes(profileId)),
+          `${entry.id} cites a guideline that does not cover every entry profile`,
         ).toBe(true)
       }
     }
