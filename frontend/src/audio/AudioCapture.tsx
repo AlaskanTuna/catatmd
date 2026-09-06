@@ -2,8 +2,10 @@ import { type DraftTurn, type HostedAsrResult, MAX_DRAFT_TEXT_CHARACTERS } from 
 import { AlertTriangle, FileAudio, Loader2, Mic, Square } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
+import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
 import { InfoTip } from '../ui/InfoTip.js'
+import { ConsentGate } from './ConsentGate.js'
 import { InputMeter } from './InputMeter.js'
 import {
   TARGET_SAMPLE_RATE,
@@ -19,26 +21,26 @@ import {
  * transcript still lands in the same box as the paste path and goes through
  * the same `Doctor:` / `Patient:` parser. Since #118 the worker also returns
  * Whisper's segment timing, from which the caller drafts per-line speaker
- * labels for the doctor to review and apply. That is turn segmentation from
- * timing and punctuation, not diarisation: no voice model runs, and the
- * labels are guesses the doctor confirms line by line before anything enters
- * the transcript.
+ * labels. That is turn segmentation from timing and punctuation, not
+ * diarisation: no voice model runs, and the labels are guesses. The doctor no
+ * longer confirms them line by line (#233); `labelsReviewed` travels false
+ * instead, so the red-flag engine will not trust a label nobody stood behind.
  *
  * **By default no audio byte reaches the API.** Capture, decode and inference
  * all happen here and in the worker. The only thing that crosses the network is
  * the model download from the HuggingFace CDN, and the text the doctor chooses
  * to submit.
  *
- * **The one exception is the hosted engine, chosen in the Audio dialog**
- * (originally issue #155; a standing preference on the owner's decision
- * 2026-09-02). When the device's saved engine is hosted, every recording from
- * this screen goes to the relay in `POST /api/asr/transcriptions`, which
- * forwards it to ILMU. The returned text then goes to
- * `POST /api/asr/draft-turns`, where the API de-identifies it and the note
- * model drafts the same per-line speaker labels for review; a labelling
- * failure of any kind falls back to the unlabelled prose (#189). The choice is
- * a device preference, made in settings rather than on the GP-facing screen,
- * and is restated in the copy below while a hosted transcription runs.
+ * **The one exception is the hosted engine, and it takes two keys** (issue
+ * #155, split in two by #228 and #254). The Audio dialog holds a standing
+ * device preference naming where audio goes; `ConsentGate` below holds a
+ * per-consultation tick naming whether this patient's audio may be sent. Only
+ * with both does a recording go to the relay in `POST /api/asr/transcriptions`
+ * and on to ILMU. The returned text then goes to `POST /api/asr/draft-turns`,
+ * where the API de-identifies it and the note model drafts the per-line speaker
+ * labels; a labelling failure of any kind falls back to the unlabelled prose
+ * (#189).
+ *
  * On-device stays the default and the floor: nothing switches the doctor to
  * hosted, and an on-device failure degrades to typing or pasting, never to the
  * cloud (docs/trd.md section 20).
@@ -161,6 +163,18 @@ const HOSTED_FAILED_ERROR =
   'The recording is still on this device. Try again, transcribe on this device instead, or type or paste the transcript.'
 
 /**
+ * What the doctor is told when a hosted recording finishes with no agreement
+ * in force (issue #254).
+ *
+ * Reachable one way only: the engine was on-device when the recording started
+ * and was switched to hosted in the Audio dialog before it stopped, so the
+ * gate was never on screen to tick. Nothing is sent and nothing is lost, and
+ * Try Again carries the same recording once the patient has agreed.
+ */
+const NOT_AGREED_ERROR =
+  'The recording is still on this device and was not sent, because this patient has not agreed to hosted transcription. Agree above and try again, or transcribe on this device instead.'
+
+/**
  * Roughly how much longer, from how long the finished chunks actually took.
  *
  * **Silent until it has two chunks to reason from.** One chunk is not a rate:
@@ -220,17 +234,31 @@ export function AudioCapture({
   /** The audio behind the current or failed run, so Try Again can rerun it. */
   const [retryBlob, setRetryBlob] = useState<Blob | null>(null)
   /**
+   * Whether this patient has agreed to this recording being sent to ILMU.
+   *
+   * **Plain `useState` on purpose (issue #254).** No `localStorage`, no
+   * context, no query cache: consent is given for one consultation and is not
+   * transferable to the next patient, so it has to die when this component
+   * unmounts. That is the half #228 removed by folding the whole choice into
+   * the device preference, which is remembered and therefore cannot ask.
+   */
+  const [agreed, setAgreed] = useState(false)
+  /**
    * The hosted engine, as a ref.
    *
-   * Was the per-consultation consent tick (issue #155) in plain `useState`, so
-   * it died with the component and could not carry between patients. It is now
-   * the standing engine preference from the Audio dialog, passed in as a prop;
-   * the ref exists for the same reason it did then, because `media.onstop` is
-   * assigned once per recording and would otherwise fork on whatever the prop
-   * read when the recording started.
+   * The standing engine preference from the Audio dialog, passed in as a prop.
+   * The ref exists because `media.onstop` is assigned once per recording and
+   * would otherwise fork on whatever the prop read when the recording started.
    */
   const hostedRef = useRef(engine === 'hosted')
   hostedRef.current = engine === 'hosted'
+  /**
+   * The agreement, as a ref, for exactly the reason above: the dispatcher runs
+   * from `media.onstop` and must read the tick as it stands when the recording
+   * ends, not as it stood when the recording began.
+   */
+  const agreedRef = useRef(agreed)
+  agreedRef.current = agreed
 
   /** When the current transcription started, for the remaining-time estimate. */
   const startedAt = useRef<number | null>(null)
@@ -598,9 +626,31 @@ export function AudioCapture({
    * The single fork every audio source goes through: the Stop button, the file
    * picker and Try Again all land here, so all three honour the tick the
    * checkbox currently shows and none of them can drift apart.
+   *
+   * **The tick is enforced here, not only on the controls.** Disabling Start
+   * and the file picker cannot close the whole hole, because the engine can
+   * change after a recording begins: a run legitimately started on the
+   * on-device path becomes a hosted one the moment the Audio dialog is saved
+   * mid-recording, and the button that started it was never disabled. This is
+   * the last point before egress, so it is the one place the invariant can be
+   * stated once. Refusing keeps the blob, so nothing is lost and Try Again
+   * sends it once the patient has agreed.
+   *
+   * It refuses rather than quietly running the local worker. Silently
+   * switching paths is what the failure copy above already forbids in both
+   * directions, and a doctor who chose hosted for a Malay-dominant
+   * consultation would get a worse transcript and no word that it happened.
    */
   const transcribe = useCallback(
-    (blob: Blob) => (hostedRef.current ? transcribeHosted(blob) : transcribeLocal(blob)),
+    (blob: Blob) => {
+      if (hostedRef.current && !agreedRef.current) {
+        setPhase('idle')
+        setRetryBlob(blob)
+        setError(NOT_AGREED_ERROR)
+        return
+      }
+      return hostedRef.current ? transcribeHosted(blob) : transcribeLocal(blob)
+    },
     [transcribeHosted, transcribeLocal],
   )
 
@@ -679,6 +729,17 @@ export function AudioCapture({
     phase === 'finishing' ||
     phase === 'uploading' ||
     phase === 'labelling'
+
+  /**
+   * Hosted with no agreement in force (issue #254).
+   *
+   * Blocks the two controls whose only destination is the relay, so the
+   * refusal in the dispatcher is a backstop rather than the doctor's first
+   * encounter with the rule. Stop is deliberately never blocked: a recording
+   * already running must always be stoppable, and what it produces is
+   * withheld rather than the recording being trapped.
+   */
+  const blocked = engine === 'hosted' && !agreed
 
   /*
    * One line that always says what is actually happening, and a bar only when
@@ -790,6 +851,21 @@ export function AudioCapture({
         </div>
       )}
 
+      {/*
+        Above the controls, not at the foot where docs/trd.md section 20.4
+        first put it. A disabled button leaves the tab order, so at the foot a
+        keyboard user reaches Start and the file picker only to have them
+        skipped, and arrives at the one control that unlocks them last. Read
+        the disclosure, agree, and the button lights up.
+
+        Only on the hosted engine. The on-device path sends nothing, so there
+        is nothing to agree to, and a tick offered there would put the cloud on
+        a screen that otherwise never mentions it.
+      */}
+      {engine === 'hosted' && (
+        <ConsentGate agreed={agreed} onAgreedChange={setAgreed} disabled={phase !== 'idle'} />
+      )}
+
       {/* A grid, not a wrapping row. This card lives in a 380px column, so the
           pair always wrapped, and two content-width buttons stacked on top of
           each other gave the panel two ragged right edges. One column makes
@@ -839,7 +915,7 @@ export function AudioCapture({
               </Button>
             </div>
           ) : (
-            <Button className="w-full justify-center" onClick={start} disabled={busy}>
+            <Button className="w-full justify-center" onClick={start} disabled={busy || blocked}>
               <Mic aria-hidden className="size-4" />
               Start Recording
             </Button>
@@ -858,14 +934,21 @@ export function AudioCapture({
           {/* Hidden while recording, where it is disabled anyway: a control
               that cannot be used is a word the doctor still has to read. */}
           {phase !== 'recording' && (
-            <label className="inline-flex h-10 w-full cursor-pointer items-center justify-center gap-2 rounded-control border border-line bg-sunken-soft px-4 text-sm font-medium text-ink shadow-raised transition-colors hover:bg-sunken">
+            <label
+              className={cn(
+                'inline-flex h-10 w-full items-center justify-center gap-2 rounded-control border border-line bg-sunken-soft px-4 text-sm font-medium text-ink shadow-raised transition-colors',
+                busy || blocked
+                  ? 'cursor-not-allowed opacity-60'
+                  : 'cursor-pointer hover:bg-sunken',
+              )}
+            >
               <FileAudio aria-hidden className="size-4" />
               Use an Audio File
               <input
                 type="file"
                 accept="audio/*"
                 className="sr-only"
-                disabled={busy}
+                disabled={busy || blocked}
                 onChange={(event) => {
                   const file = event.target.files?.[0]
                   if (file) void transcribe(file)
@@ -932,25 +1015,16 @@ export function AudioCapture({
               unrecoverable, so a failed run keeps its blob rather than
               pointing the doctor at recording the consultation again. */}
           {retryBlob !== null && (
-            <Button size="sm" variant="neutral" onClick={() => void transcribe(retryBlob)}>
+            <Button
+              size="sm"
+              variant="neutral"
+              disabled={blocked}
+              onClick={() => void transcribe(retryBlob)}
+            >
               Try Again
             </Button>
           )}
         </div>
-      )}
-
-      {/*
-        Restates the standing engine choice while it is in force. The picker
-        itself lives in the Audio dialog now, so what the GP-facing screen keeps
-        is the one line the doctor has to be able to read without opening
-        settings: that this recording leaves the device. It shows only when the
-        hosted engine is the saved preference, exactly as the consent line it
-        replaced did.
-      */}
-      {engine === 'hosted' && (
-        <p className="text-xs leading-relaxed text-ink-muted">
-          This recording leaves this device: sent via our server to ILMU, processed in Malaysia.
-        </p>
       )}
     </div>
   )
