@@ -180,9 +180,12 @@ git commit -m "feat(notes): generate categorized medical records"
 - Modify: `shared/src/index.ts`
 - Modify: `backend/src/audit/index.ts`
 - Modify: `backend/src/audit/audit.test.ts`
+- Modify: `backend/src/audit/erasure.ts`
+- Modify: `backend/src/audit/erasure.test.ts`
 - Modify: `backend/src/routes/consultations.ts`
 - Modify: `backend/src/routes/consultations.test.ts`
 - Modify: `frontend/src/lib/api.ts`
+- Modify: `frontend/src/demo/DemoTour.tsx`
 
 **Interfaces:**
 
@@ -191,7 +194,7 @@ git commit -m "feat(notes): generate categorized medical records"
 - Produces: PATCH fields `noteTemplate?: NoteTemplate` and `editedMedicalRecordNote?: Partial<MedicalRecordNote>`.
 - Produces: audit action `consultation.template_selected` with `{ template: NoteTemplate }` only.
 
-- [ ] **Step 1: Write failing API, finality, and audit tests**
+- [x] **Step 1: Write failing API, finality, and audit tests**
 
 ```ts
 expect(response.body.consultation.noteTemplate).toBe('malaysian')
@@ -206,14 +209,15 @@ expect(audit.metadata).toEqual({ template: 'malaysian' })
 ```
 
 Cover template-only PATCH after approval, rejection of clinical edits after approval, invalid template identifiers, and a missing-column fallback to `soap`.
+Add an erasure assertion proving `editedMedicalRecordNote` is nulled with the other PHI-bearing consultation columns.
 
-- [ ] **Step 2: Run focused API and audit tests and verify RED**
+- [x] **Step 2: Run focused API and audit tests and verify RED**
 
 Run: `bun run --cwd backend test -- src/routes/consultations.test.ts src/audit/audit.test.ts`
 
 Expected: FAIL because the database projection, PATCH fields, and audit action do not exist.
 
-- [ ] **Step 3: Add the additive database migration and shared response fields**
+- [x] **Step 3: Add the additive database migration and shared response fields**
 
 ```sql
 CREATE TYPE "NoteTemplate" AS ENUM ('soap', 'malaysian');
@@ -224,13 +228,13 @@ ALTER TABLE "consultation"
 
 Use nullish transforms in shared response schemas so a frontend deployed before the backend defaults absent `noteTemplate` to `soap` and absent edited canonical content to `null`.
 
-- [ ] **Step 4: Implement synchronized PATCH persistence**
+- [x] **Step 4: Implement synchronized PATCH persistence**
 
 For `editedMedicalRecordNote`, merge onto the existing edited canonical note or the AI original, validate the complete shape, derive `editedNote` with `toSoapNote`, and write both JSON columns in one Prisma update. Keep the legacy `editedNote` route for older analyses.
 
 Treat a template-only patch like a title-only patch for the approval gate. Record only the template identifier in the audit event.
 
-- [ ] **Step 5: Regenerate Prisma and verify GREEN**
+- [x] **Step 5: Regenerate Prisma and verify GREEN**
 
 Run: `bun run prisma:generate`
 
@@ -238,7 +242,7 @@ Run: `bun run --cwd backend test -- src/routes/consultations.test.ts src/audit/a
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit persistence and API contracts**
+- [x] **Step 6: Commit persistence and API contracts**
 
 ```bash
 git add prisma shared/src/index.ts backend/src/audit backend/src/routes/consultations.ts backend/src/routes/consultations.test.ts frontend/src/lib/api.ts

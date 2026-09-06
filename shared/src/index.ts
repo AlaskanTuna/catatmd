@@ -713,6 +713,11 @@ export const ConsultationTitleSchema = z
 export const ConsultationSchema = z.object({
   id: z.string(),
   status: ConsultationStatusSchema,
+  /**
+   * Additive and rollout-safe: an older API response is SOAP, which was the
+   * only presentation before this field existed.
+   */
+  noteTemplate: NoteTemplateSchema.nullish().transform((value) => value ?? 'soap'),
   /*
    * Absent reads as "no title", rather than failing the parse.
    *
@@ -1140,6 +1145,7 @@ export type DispositionInput = z.infer<typeof DispositionInputSchema>
 
 export const ConsultationDetailSchema = ConsultationSchema.extend({
   editedNote: SoapNoteSchema.nullable(),
+  editedMedicalRecordNote: MedicalRecordNoteSchema.nullish().transform((value) => value ?? null),
   approvedAt: z.coerce.date().nullable(),
   /**
    * The clinician who approved, by name, and `null` until one has.

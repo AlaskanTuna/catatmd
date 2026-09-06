@@ -24,6 +24,8 @@ import {
   LiveAsrConfigSchema,
   type LiveSession,
   LiveSessionSchema,
+  type MedicalRecordNote,
+  type NoteTemplate,
   type NotificationItem,
   NotificationItemSchema,
   type Patient,
@@ -238,6 +240,8 @@ export const api = {
     body: {
       title?: string | null
       editedNote?: Partial<SoapNote>
+      editedMedicalRecordNote?: Partial<MedicalRecordNote>
+      noteTemplate?: NoteTemplate
       acknowledgedRedFlagIds?: string[]
       reviewedGapIds?: string[]
       redFlagDispositions?: DispositionInput[]
