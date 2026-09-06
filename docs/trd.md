@@ -2347,6 +2347,31 @@ Decided by the owner on 06/09/26, after review of the material above. It is the 
 
 Three runs per condition, because §20.3 measured `temperature=0` as not byte-deterministic on the rojak sample. Without three runs a segmentation penalty cannot be separated from run-to-run noise. Synthetic or scripted audio only, per the §20.1 and §20.2 provenance rules.
 
+#### Measured 06/09/26: The Segmentation Penalty On ILMU
+
+Discharges probe 2 of the table above. Harness: `evals/asr-ab.ts --segment --wer` (#264, PR #265), three runs per condition, the §20.3 rojak sample, 16 kHz mono wav, direct to the provider. Scored by `evals/wer.ts`, whose normalisation is a port of the script behind §20.8's `qwen3-asr-flash` table: NFKC, lowercased, punctuation stripped.
+
+| Condition                     | WER       | CER      | vs whole file |
+| ----------------------------- | --------- | -------- | ------------- |
+| Whole file, transcoded, uncut | 16.2%     | 7.5%     | baseline      |
+| Fixed 8 s                     | 18.4%     | 9.7%     | +2.2          |
+| Fixed 12 s                    | 19.7%     | 10.1%    | +3.5          |
+| **Fixed 20 s**                | **15.8%** | **6.9%** | **-0.4**      |
+
+**The `qwen3-asr-flash` cliff does not transfer.** §20.8 measured silence cuts at a 4 second floor costing +23.5 points on Malay. On ILMU the worst window tested costs +3.5, and the 20 s ceiling costs nothing measurable. The probe's stated failure condition, a large penalty surviving at the 20 s ceiling, is not met, so this does not reverse the ILMU decision.
+
+**The control is transcoded, not the original file.** `--segment 0` re-encodes through the same encoder as the cut arms, so the rows differ only in whether the audio was cut. A control that kept the original AAC would have let a transcoding penalty read as a segmentation penalty.
+
+Limits, stated per the §20.1 convention:
+
+- **One sample, one reader, one recording.** Indicative, not a benchmark.
+- **Not a curve, and not monotonic.** Within-condition spread across three runs reached 0.6 points, so 12 s scoring worse than both neighbours is not credible as a trend. 20 s beating the uncut control is noise: read it as no measurable penalty at 20 s, not as cutting helping.
+- **Fixed windows, not silence cuts.** The frontend segmenter (#266) cuts on a 600 ms silence hold above an 8 s floor, which is untested here. For whoever tests it: §20.8's cutter used `hangover_ms=600` by default, the same value, and at an 8 to 20 s window it tied fixed 10 s at 10.3% exactly. The +23.5 point row was that same cutter at 4 to 12 s. The floor carried that result, not the cutting strategy.
+- **Capture DSP.** This is the §20.3 sample, recorded before §20.6 turned the voice-call DSP off. That makes it the right audio for a segmentation delta, where the arms share it and it cancels, and the wrong audio for an absolute ILMU accuracy claim.
+- **Cutting costs slightly more to bill**, 101 to 105 seconds against 100 uncut, because each call rounds up independently.
+
+**Still open: the latency probe.** Direct-to-provider per-chunk latency measured roughly 315 ms for an 8 s chunk, so the relay hop would have to add over 3 s to breach the 3.5 s threshold. That is an argument from the direct number, not a measurement of the relay. The threshold stays formally unanswered until `--via-relay` is run against the deployment, and this argument must not be cited as the answer.
+
 #### Provenance Of The Sources In This Section
 
 Stated because §20.1's convention requires it, and because this section mixes read sources with search summaries.
@@ -2358,8 +2383,9 @@ Stated because §20.1's convention requires it, and because this section mixes r
 | RLLM-CF, arXiv 2505.24347                                                                                                  | Abstract read directly. The paper reports relative reductions only and states no absolute baselines                                                                                                                                                                                              |
 | HyPoradise, NeurIPS 2023                                                                                                   | **Search summary only, not read.** The 53.9 percent figure and the 316,000-pair dataset size are reported rather than verified here                                                                                                                                                              |
 | Over-correction raising error rates; a Whisper model degrading from 2.7 to over 20 percent WER after medical customisation | **Search summaries only, not read.** Directionally consistent with §20.8 and with §20.7.1's finding that English context over Malay audio scored worse than none, but not primary-verified                                                                                                       |
+| The segmentation table above                                                                                               | **Measured on this system**, 06/09/26, with `evals/asr-ab.ts`. Four dated reports in the gitignored `evals/reports/`, per the §20.3 convention that the harness writes a report and a human transcribes the figures                                                                              |
 
-**No number in this section is a measurement of this system.** Nothing here supports a claim to a client about ambient accuracy in any language.
+**The segmentation table is the only measurement of this system in this section**, and it was added on 06/09/26; everything else here is a vendor claim or a published result about someone else's pipeline. Nothing here supports a claim to a client about ambient accuracy in any language, the measured table included: it quantifies a segmentation delta on one scripted sample recorded before §20.6, not accuracy.
 
 ---
 
