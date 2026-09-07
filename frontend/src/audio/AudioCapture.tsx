@@ -1,5 +1,5 @@
 import { type DraftTurn, type HostedAsrResult, MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
-import { AlertTriangle, FileAudio, Loader2, Mic, Square } from 'lucide-react'
+import { AlertTriangle, FileAudio, Loader2, Mic, Pause, Play, Square } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
@@ -125,6 +125,7 @@ export const LABEL_TIMEOUT_MS = 150_000
 type Phase =
   | 'idle'
   | 'recording'
+  | 'paused'
   | 'loading-model'
   | 'transcribing'
   | 'finishing'
@@ -728,6 +729,20 @@ export function AudioCapture({
     recorder.current = null
   }, [])
 
+  const pause = useCallback(() => {
+    const media = recorder.current
+    if (!media || media.state !== 'recording') return
+    media.pause()
+    setPhase('paused')
+  }, [])
+
+  const resume = useCallback(() => {
+    const media = recorder.current
+    if (!media || media.state !== 'paused') return
+    media.resume()
+    setPhase('recording')
+  }, [])
+
   const busy =
     phase === 'loading-model' ||
     phase === 'transcribing' ||
@@ -813,7 +828,9 @@ export function AudioCapture({
             ? 'Transcribing on this device'
             : phase === 'finishing'
               ? 'Finishing up'
-              : ''
+              : phase === 'paused'
+                ? 'Recording paused'
+                : ''
 
   return (
     <div className="flex flex-col gap-3">
@@ -877,7 +894,7 @@ export function AudioCapture({
           them equal width and aligns both edges at any width. */}
       {!thin && (
         <div className="grid gap-2">
-          {phase === 'recording' ? (
+          {phase === 'recording' || phase === 'paused' ? (
             /*
              * The recording state gets a panel rather than a changed button
              * label. While recording is the one moment the doctor is not
@@ -892,8 +909,13 @@ export function AudioCapture({
                       here: it reports that recording is running, which is
                       state this component owns, not that sound is arriving,
                       which only the meter below may claim. */}
-                  <span className="size-2 animate-pulse rounded-full bg-emergency" />
-                  Recording…
+                  <span
+                    className={cn(
+                      'size-2 rounded-full',
+                      phase === 'recording' ? 'animate-pulse bg-emergency' : 'bg-urgent',
+                    )}
+                  />
+                  {phase === 'recording' ? 'Recording…' : 'Paused'}
                 </p>
                 <span className="font-mono text-sm text-ink-muted tabular-nums">
                   {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
@@ -901,6 +923,12 @@ export function AudioCapture({
               </div>
 
               {liveStream && <InputMeter stream={liveStream} />}
+
+              {phase === 'paused' && (
+                <p className="text-xs text-ink-muted">
+                  Audio is not being added until recording resumes.
+                </p>
+              )}
 
               {/* Unlabelled: it is the only field in the panel, directly under
                   a heading that says Recording. The placeholder still says when
@@ -913,6 +941,19 @@ export function AudioCapture({
                   <span className="text-ink-muted">Text appears when you stop.</span>
                 )}
               </div>
+
+              <Button
+                className="w-full justify-center"
+                variant="neutral"
+                onClick={phase === 'paused' ? resume : pause}
+              >
+                {phase === 'paused' ? (
+                  <Play aria-hidden className="size-4" />
+                ) : (
+                  <Pause aria-hidden className="size-4" />
+                )}
+                {phase === 'paused' ? 'Resume Recording' : 'Pause Recording'}
+              </Button>
 
               <Button className="w-full justify-center" onClick={stop}>
                 <Square aria-hidden className="size-4" />
@@ -938,7 +979,7 @@ export function AudioCapture({
           */}
           {/* Hidden while recording, where it is disabled anyway: a control
               that cannot be used is a word the doctor still has to read. */}
-          {phase !== 'recording' && (
+          {phase !== 'recording' && phase !== 'paused' && (
             <label
               className={cn(
                 'inline-flex h-10 w-full items-center justify-center gap-2 rounded-control border border-line bg-sunken-soft px-4 text-sm font-medium text-ink shadow-raised transition-colors',

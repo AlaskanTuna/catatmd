@@ -75,10 +75,16 @@ class FakeMediaRecorder {
   ondataavailable: ((event: { data: Blob }) => void) | null = null
   onstop: (() => void) | null = null
   /** Modelled because the teardown path reads it before stopping (issue #140). */
-  state: 'inactive' | 'recording' = 'inactive'
+  state: 'inactive' | 'recording' | 'paused' = 'inactive'
   /** Real recorders expose the stream they were built on; teardown needs it. */
   readonly stream: { getTracks: () => { stop: () => void }[] }
   start = vi.fn(() => {
+    this.state = 'recording'
+  })
+  pause = vi.fn(() => {
+    this.state = 'paused'
+  })
+  resume = vi.fn(() => {
     this.state = 'recording'
   })
 
@@ -541,6 +547,48 @@ describe('try again', () => {
 })
 
 describe('prewarming the speech model', () => {
+  it('pauses and resumes the same recorder while freezing the elapsed clock', async () => {
+    renderCapture()
+    await startRecording()
+    const media = recorders[0]
+    if (!media) throw new Error('expected a recorder')
+
+    act(() => vi.advanceTimersByTime(2000))
+    screen.getByText('0:02')
+    fireEvent.click(screen.getByRole('button', { name: 'Pause Recording' }))
+
+    expect(media.pause).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Paused')).toBeTruthy()
+    expect(screen.getByText(/audio is not being added/i)).toBeTruthy()
+    act(() => vi.advanceTimersByTime(5000))
+    screen.getByText('0:02')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume Recording' }))
+    expect(media.resume).toHaveBeenCalledTimes(1)
+    act(() => vi.advanceTimersByTime(1000))
+    screen.getByText('0:03')
+  })
+
+  it('stops and transcribes from paused state without replacing the recorder', async () => {
+    const { onTranscript } = renderCapture()
+    await startRecording()
+    const media = recorders[0]
+    if (!media) throw new Error('expected a recorder')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause Recording' }))
+    await stopRecording()
+
+    expect(recorders).toEqual([media])
+    expect(media.state).toBe('inactive')
+    spawned().reply({ type: 'ready' })
+    spawned().reply({ type: 'result', text: 'paused capture', segments: [] })
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: 'paused capture',
+      segments: [],
+      source: 'asr_local',
+    })
+  })
+
   it('posts a load request to a fresh worker when recording starts', async () => {
     renderCapture()
     await startRecording()

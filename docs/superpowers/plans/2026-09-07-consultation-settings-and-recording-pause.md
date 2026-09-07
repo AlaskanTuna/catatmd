@@ -353,7 +353,7 @@ git commit -m "feat(consultations): move settings into the hero"
 - Preserves: `AudioCapture` busy-state reporting added in Task 4.
 - Preserves: one `MediaRecorder`, one stream, one chunk list, and one prewarmed worker across pause and resume.
 
-- [ ] **Step 1: Extend the fake recorder and write failing pause tests**
+- [x] **Step 1: Extend the fake recorder and write failing pause tests**
 
 Give `FakeMediaRecorder.state` the real union and drive its methods:
 
@@ -375,13 +375,13 @@ Add tests proving:
 - Stop and Transcribe from paused state uses the same recorder and transcribes its accumulated chunk.
 - No Pause Recording control exists in `AmbientCapture.test.tsx`.
 
-- [ ] **Step 2: Run the focused recorder tests and verify RED**
+- [x] **Step 2: Run the focused recorder tests and verify RED**
 
 Run: `bun run --cwd frontend test -- src/audio/AudioCapture.test.tsx src/audio/live/AmbientCapture.test.tsx`
 
 Expected: FAIL because the pause/resume controls and `paused` phase do not exist.
 
-- [ ] **Step 3: Implement the paused phase and controls**
+- [x] **Step 3: Implement the paused phase and controls**
 
 Add guarded handlers:
 
@@ -405,13 +405,13 @@ Render the same recording card for `recording` and `paused`. Freeze the existing
 
 Report all non-idle phases through `onBusyChange`, including paused and post-stop transcription phases. Ensure unmount cleanup stops a paused recorder without invoking its transcription callback.
 
-- [ ] **Step 4: Run focused recorder and capture tests and verify GREEN**
+- [x] **Step 4: Run focused recorder and capture tests and verify GREEN**
 
 Run: `bun run --cwd frontend test -- src/audio/AudioCapture.test.tsx src/audio/live/AmbientCapture.test.tsx src/routes/CapturePanel.test.tsx`
 
 Expected: all tests pass; Ambient remains unchanged.
 
-- [ ] **Step 5: Commit pause and resume**
+- [x] **Step 5: Commit pause and resume**
 
 ```bash
 git add frontend/src/audio/AudioCapture.tsx frontend/src/audio/AudioCapture.test.tsx frontend/src/audio/live/AmbientCapture.test.tsx frontend/src/routes/CapturePanel.tsx frontend/src/routes/CapturePanel.test.tsx
