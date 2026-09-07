@@ -545,28 +545,44 @@ export function ConsultationReview() {
           <>
             {!analysis && (
               <div className="flex items-center gap-2">
-                <Button
-                  variant="primary"
-                  size="lg"
-                  icon={<Sparkles className="size-4" />}
-                  disabled={!detail.transcript}
-                  loading={analyze.isPending || detail.status === 'analyzing'}
-                  onClick={() => analyze.mutate()}
-                  data-tour="analyse"
+                <div
+                  className={cn(
+                    'flex items-center gap-2',
+                    (analyze.error || !detail.transcript) && 'relative inline-flex',
+                  )}
                 >
-                  {analyze.isPending ? 'Analysing' : 'Analyse Consultation'}
-                </Button>
-                {analyze.error ? (
-                  <InfoTip label="Analysis could not be completed" tone="warning">
-                    {analyze.error instanceof ApiError
-                      ? analyze.error.message
-                      : 'Analysis could not be completed.'}
-                  </InfoTip>
-                ) : !detail.transcript ? (
-                  <InfoTip label="Why this is not available yet" tone="warning">
-                    Capture the consultation first, on the left.
-                  </InfoTip>
-                ) : null}
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    className={cn((analyze.error || !detail.transcript) && 'pr-12')}
+                    icon={<Sparkles className="size-4" />}
+                    disabled={!detail.transcript}
+                    loading={analyze.isPending || detail.status === 'analyzing'}
+                    onClick={() => analyze.mutate()}
+                    data-tour="analyse"
+                  >
+                    {analyze.isPending ? 'Analysing' : 'Analyse Consultation'}
+                  </Button>
+                  {analyze.error ? (
+                    <InfoTip
+                      className="absolute top-1/2 right-2 -translate-y-1/2"
+                      label="Analysis could not be completed"
+                      tone="warning"
+                    >
+                      {analyze.error instanceof ApiError
+                        ? analyze.error.message
+                        : 'Analysis could not be completed.'}
+                    </InfoTip>
+                  ) : !detail.transcript ? (
+                    <InfoTip
+                      className="absolute top-1/2 right-2 -translate-y-1/2"
+                      label="Why this is not available yet"
+                      tone="warning"
+                    >
+                      Capture the consultation first, on the left.
+                    </InfoTip>
+                  ) : null}
+                </div>
               </div>
             )}
             {analysis && !approved && (
@@ -611,12 +627,13 @@ export function ConsultationReview() {
               {showTranscript ? 'Hide Transcript' : 'Transcript'}
             </Button>
             {approved && note && (
-              <Button icon={<Copy aria-hidden className="size-4" />} onClick={copyNote}>
+              <Button size="lg" icon={<Copy aria-hidden className="size-4" />} onClick={copyNote}>
                 Copy Note
               </Button>
             )}
             {approved && (
               <Button
+                size="lg"
                 icon={<Printer aria-hidden className="size-4" />}
                 onClick={() => window.print()}
               >

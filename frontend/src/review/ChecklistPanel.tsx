@@ -145,12 +145,67 @@ function ChecklistRow({
   )
 }
 
-const GROUPS: { key: keyof ClinicalFacts; label: string }[] = [
-  { key: 'symptoms', label: 'Symptoms' },
-  { key: 'history', label: 'History' },
-  { key: 'observations', label: 'Observations' },
-  { key: 'examination', label: 'Examination' },
+const CLINICAL_FACT_GROUPS: { key: keyof ClinicalFacts; prefix: string }[] = [
+  { key: 'symptoms', prefix: 'clinicalFacts.symptoms' },
+  { key: 'history', prefix: 'clinicalFacts.history' },
+  { key: 'observations', prefix: 'clinicalFacts.observations' },
+  { key: 'examination', prefix: 'clinicalFacts.examination' },
 ]
+
+const CHECKLIST_SECTION_ORDER = [
+  'presentingComplaint',
+  'historyOfPresentingComplaint',
+  'pastMedicalHistory',
+  'socialHistory',
+  'familyHistory',
+  'objective',
+  'assessment',
+  'plan',
+] as const
+
+type ChecklistSection = (typeof CHECKLIST_SECTION_ORDER)[number]
+
+type ChecklistEntry = {
+  section: ChecklistSection
+  field: string
+  assertion: ClinicalAssertion
+  fieldId: string
+}
+
+const CHECKLIST_SECTION_LABELS: Record<ChecklistSection, string> = {
+  presentingComplaint: 'Presenting Complaint',
+  historyOfPresentingComplaint: 'History of Presenting Complaint',
+  pastMedicalHistory: 'Past Medical History',
+  socialHistory: 'Social History',
+  familyHistory: 'Family History',
+  objective: 'Objective',
+  assessment: 'Assessment',
+  plan: 'Plan',
+}
+
+/** Project extraction fields into the local canonical record view. */
+function sectionForFieldId(fieldId: string): ChecklistSection {
+  if (
+    fieldId === 'clinicalFacts.symptoms.cough' ||
+    fieldId === 'clinicalFacts.symptoms.soreThroat'
+  ) {
+    return 'presentingComplaint'
+  }
+  if (fieldId.startsWith('clinicalFacts.symptoms.')) return 'historyOfPresentingComplaint'
+  if (fieldId.startsWith('clinicalFacts.history.')) {
+    return fieldId.endsWith('.smoking') || fieldId.endsWith('.recentInfectionExposure')
+      ? 'socialHistory'
+      : 'pastMedicalHistory'
+  }
+  if (
+    fieldId.startsWith('clinicalFacts.observations.') ||
+    fieldId.startsWith('clinicalFacts.examination.')
+  ) {
+    return 'objective'
+  }
+  if (fieldId === 'operational.diagnosis') return 'assessment'
+  return 'plan'
+}
 
 /**
  * The 29-field checklist plus the operational block, shown rather than
@@ -201,11 +256,25 @@ export function ChecklistPanel({
     )
   }
 
-  const entries = GROUPS.flatMap(({ key, label }) =>
-    Object.entries(clinicalFacts[key] as Record<string, ClinicalAssertion>).map(
-      ([field, assertion]) => ({ group: label, field, assertion }),
-    ),
-  )
+  const entries: ChecklistEntry[] = []
+  for (const { key, prefix } of CLINICAL_FACT_GROUPS) {
+    for (const [field, assertion] of Object.entries(
+      clinicalFacts[key] as Record<string, ClinicalAssertion>,
+    )) {
+      const fieldId = `${prefix}.${field}`
+      entries.push({ section: sectionForFieldId(fieldId), field, assertion, fieldId })
+    }
+  }
+  for (const [field, assertion] of Object.entries(operational)) {
+    if (field === 'medicationsDispensed') continue
+    const fieldId = `operational.${field}`
+    entries.push({
+      section: sectionForFieldId(fieldId),
+      field,
+      assertion: assertion as ClinicalAssertion,
+      fieldId,
+    })
+  }
   const assessed = entries.filter((entry) => entry.assertion.state !== 'NOT_ASSESSED').length
 
   return (
@@ -258,56 +327,37 @@ export function ChecklistPanel({
           the evidence that the fields were checked, and a collapsed panel in a
           clinical document is just an omission. */}
       <div className={open ? 'block' : 'hidden'} data-print="block">
-        {GROUPS.map(({ key, label }) => (
-          <section key={key} className="border-t border-line px-4 py-4 page-break-avoid">
-            <h3 className="mb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
-              {label}
-            </h3>
-            <dl className="mt-1 grid gap-x-10 @[320px]:grid-cols-2">
-              {Object.entries(clinicalFacts[key] as Record<string, ClinicalAssertion>).map(
-                ([field, assertion]) => (
+        {CHECKLIST_SECTION_ORDER.map((section) => {
+          const sectionEntries = entries.filter((entry) => entry.section === section)
+          const medications = section === 'plan' ? operational.medicationsDispensed : []
+          if (sectionEntries.length === 0 && medications.length === 0) return null
+
+          return (
+            <section key={section} className="border-t border-line px-4 py-4 page-break-avoid">
+              <h3 className="mb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                {CHECKLIST_SECTION_LABELS[section]}
+              </h3>
+              <dl className="mt-1 grid gap-x-10 @[320px]:grid-cols-2">
+                {sectionEntries.map(({ field, fieldId, assertion }) => (
                   <ChecklistRow
-                    key={field}
+                    key={fieldId}
                     label={humanise(field)}
                     assertion={assertion}
-                    link={linkFor(`clinicalFacts.${key}.${field}`)}
+                    link={linkFor(fieldId)}
                   />
-                ),
+                ))}
+              </dl>
+              {medications.length > 0 && (
+                <p className="mt-2 text-sm text-ink">
+                  <span className="text-ink-muted">Dispensed: </span>
+                  {medications
+                    .flatMap((medication) => (medication.value ? [medication.value] : []))
+                    .join(', ')}
+                </p>
               )}
-            </dl>
-          </section>
-        ))}
-
-        <section className="border-t border-line px-4 py-4 page-break-avoid">
-          <h3 className="mb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
-            Operational
-          </h3>
-          <dl className="mt-2 grid gap-x-4 gap-y-1.5 @[320px]:grid-cols-2">
-            {/* Derived from the block itself rather than listed here.
-                A hard-coded field id in a component is a clinical constant
-                that no version stamp describes (issue #16's guard), and
-                deriving it means a new field appears without a UI change. */}
-            {Object.entries(operational)
-              .filter(([field]) => field !== 'medicationsDispensed')
-              .map(([field, assertion]) => (
-                <ChecklistRow
-                  key={field}
-                  label={humanise(field)}
-                  assertion={assertion as ClinicalAssertion}
-                  link={linkFor(`operational.${field}`)}
-                />
-              ))}
-          </dl>
-          {operational.medicationsDispensed.length > 0 && (
-            <p className="mt-2 text-sm text-ink">
-              <span className="text-ink-muted">Dispensed: </span>
-              {operational.medicationsDispensed
-                .map((m) => m.value)
-                .filter(Boolean)
-                .join(', ')}
-            </p>
-          )}
-        </section>
+            </section>
+          )
+        })}
       </div>
     </Card>
   )
