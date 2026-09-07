@@ -627,6 +627,7 @@ export function ConsultationReview() {
       />
 
       <ConsultationSettingsDialog
+        key={`${detail.noteTemplate}-${detail.captureMode}`}
         ref={settingsDialog}
         noteTemplate={detail.noteTemplate}
         captureMode={detail.captureMode}

@@ -236,9 +236,14 @@ export function AudioCapture({
   const [hostedSeconds, setHostedSeconds] = useState(0)
   /** The audio behind the current or failed run, so Try Again can rerun it. */
   const [retryBlob, setRetryBlob] = useState<Blob | null>(null)
-
-  useEffect(() => onBusyChange?.(phase !== 'idle'), [onBusyChange, phase])
-  useEffect(() => () => onBusyChange?.(false), [onBusyChange])
+  const onBusyChangeRef = useRef(onBusyChange)
+  useEffect(() => {
+    onBusyChangeRef.current = onBusyChange
+  }, [onBusyChange])
+  const transitionPhase = useCallback((next: Phase) => {
+    setPhase(next)
+    onBusyChangeRef.current?.(next !== 'idle')
+  }, [])
   /**
    * Whether this patient has agreed to this recording being sent to ILMU.
    *
@@ -341,13 +346,13 @@ export function AudioCapture({
       // still reported as the failure it is.
       upload.current?.abort()
       upload.current = null
-      setPhase('idle')
+      transitionPhase('idle')
       setProgress(null)
       setChunkProgress(null)
       startedAt.current = null
       setError(message)
     },
-    [clearStall],
+    [clearStall, transitionPhase],
   )
 
   /** Rearms the silence budget. Every worker message buys another window. */
@@ -375,12 +380,12 @@ export function AudioCapture({
         case 'progress':
           watchForStall()
           setProgress(message.total > 0 ? Math.round((message.loaded / message.total) * 100) : null)
-          setPhase('loading-model')
+          transitionPhase('loading-model')
           break
         case 'ready':
           watchForStall()
           setProgress(null)
-          setPhase('transcribing')
+          transitionPhase('transcribing')
           startedAt.current = Date.now()
           break
         case 'transcribing':
@@ -396,11 +401,11 @@ export function AudioCapture({
           // would sit minutes past what Cancel already offers, and a wrong
           // one destroys a finished transcription.
           clearStall()
-          setPhase('finishing')
+          transitionPhase('finishing')
           break
         case 'result':
           clearStall()
-          setPhase('idle')
+          transitionPhase('idle')
           setProgress(null)
           setChunkProgress(null)
           startedAt.current = null
@@ -416,7 +421,7 @@ export function AudioCapture({
           // retry is cheap. A stalled or dead worker is terminated in `abort`
           // instead, and its retry rebuilds one.
           clearStall()
-          setPhase('idle')
+          transitionPhase('idle')
           setProgress(null)
           setChunkProgress(null)
           startedAt.current = null
@@ -454,7 +459,7 @@ export function AudioCapture({
     instance.onmessageerror = died
     worker.current = instance
     return instance
-  }, [abort, clearStall, watchForStall])
+  }, [abort, clearStall, transitionPhase, watchForStall])
 
   useEffect(
     () => () => {
@@ -462,6 +467,7 @@ export function AudioCapture({
       // armed, no worker left running, and a decode still in flight sees the
       // bumped attempt and builds nothing.
       attempt.current += 1
+      onBusyChangeRef.current?.(false)
       if (stall.current !== null) window.clearTimeout(stall.current)
       worker.current?.terminate()
       worker.current = null
@@ -509,7 +515,7 @@ export function AudioCapture({
   const transcribeLocal = useCallback(
     async (blob: Blob) => {
       setError(null)
-      setPhase('loading-model')
+      transitionPhase('loading-model')
       setProgress(null)
       setChunkProgress(null)
       startedAt.current = null
@@ -531,11 +537,11 @@ export function AudioCapture({
       } catch (cause) {
         if (attempt.current !== id) return
         clearStall()
-        setPhase('idle')
+        transitionPhase('idle')
         setError(cause instanceof Error ? cause.message : 'Could not read that audio.')
       }
     },
-    [clearStall, ensureWorker, watchForStall],
+    [clearStall, ensureWorker, transitionPhase, watchForStall],
   )
 
   /**
@@ -565,7 +571,7 @@ export function AudioCapture({
   const labelHostedTurns = useCallback(
     async (transcribed: string): Promise<readonly DraftTurn[] | null> => {
       if (transcribed.trim() === '' || transcribed.length > MAX_DRAFT_TEXT_CHARACTERS) return null
-      setPhase('labelling')
+      transitionPhase('labelling')
       const controller = new AbortController()
       upload.current = controller
       const bound = window.setTimeout(() => controller.abort(), LABEL_TIMEOUT_MS)
@@ -578,13 +584,13 @@ export function AudioCapture({
         if (upload.current === controller) upload.current = null
       }
     },
-    [],
+    [transitionPhase],
   )
 
   const transcribeHosted = useCallback(
     async (blob: Blob) => {
       setError(null)
-      setPhase('uploading')
+      transitionPhase('uploading')
       setProgress(null)
       setChunkProgress(null)
       startedAt.current = null
@@ -600,7 +606,7 @@ export function AudioCapture({
         result = await api.transcribeHostedAsr(blob, controller.signal)
       } catch {
         if (attempt.current !== id) return
-        setPhase('idle')
+        transitionPhase('idle')
         setError(HOSTED_FAILED_ERROR)
         return
       } finally {
@@ -616,7 +622,7 @@ export function AudioCapture({
       // Again: retrying would re-upload audio the relay already billed for.
       const draftTurns = await labelHostedTurns(result.text)
       if (attempt.current !== id) return
-      setPhase('idle')
+      transitionPhase('idle')
       setRetryBlob(null)
       onTranscriptRef.current({
         text: result.text,
@@ -625,7 +631,7 @@ export function AudioCapture({
         ...(draftTurns && draftTurns.length > 0 ? { draftTurns } : {}),
       })
     },
-    [labelHostedTurns],
+    [labelHostedTurns, transitionPhase],
   )
 
   /**
@@ -650,14 +656,14 @@ export function AudioCapture({
   const transcribe = useCallback(
     (blob: Blob) => {
       if (hostedRef.current && !agreedRef.current) {
-        setPhase('idle')
+        transitionPhase('idle')
         setRetryBlob(blob)
         setError(NOT_AGREED_ERROR)
         return
       }
       return hostedRef.current ? transcribeHosted(blob) : transcribeLocal(blob)
     },
-    [transcribeHosted, transcribeLocal],
+    [transcribeHosted, transcribeLocal, transitionPhase],
   )
 
   const start = useCallback(async () => {
@@ -702,7 +708,7 @@ export function AudioCapture({
       recorder.current = media
       setLiveStream(stream)
       setSeconds(0)
-      setPhase('recording')
+      transitionPhase('recording')
       if (hostedRef.current) {
         // Nothing local will run for this recording, so there is nothing to
         // warm. Any worker still warm from an earlier on-device run is
@@ -722,7 +728,7 @@ export function AudioCapture({
     } catch {
       setError('Microphone access was refused, or no microphone is available.')
     }
-  }, [ensureWorker, transcribe])
+  }, [ensureWorker, transcribe, transitionPhase])
 
   const stop = useCallback(() => {
     recorder.current?.stop()
@@ -731,17 +737,17 @@ export function AudioCapture({
 
   const pause = useCallback(() => {
     const media = recorder.current
-    if (!media || media.state !== 'recording') return
+    if (media?.state !== 'recording') return
     media.pause()
-    setPhase('paused')
-  }, [])
+    transitionPhase('paused')
+  }, [transitionPhase])
 
   const resume = useCallback(() => {
     const media = recorder.current
-    if (!media || media.state !== 'paused') return
+    if (media?.state !== 'paused') return
     media.resume()
-    setPhase('recording')
-  }, [])
+    transitionPhase('recording')
+  }, [transitionPhase])
 
   const busy =
     phase === 'loading-model' ||

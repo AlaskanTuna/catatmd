@@ -290,7 +290,7 @@ describe('capture ownership reporting', () => {
     const onBusyChange = vi.fn()
     renderCapture('local', '', onBusyChange)
 
-    expect(onBusyChange).toHaveBeenLastCalledWith(false)
+    expect(onBusyChange).not.toHaveBeenCalled()
     await startRecording()
     expect(onBusyChange).toHaveBeenLastCalledWith(true)
 

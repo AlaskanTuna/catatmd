@@ -1,6 +1,6 @@
 import type { CaptureMode, NoteTemplate } from '@shared/types'
 import { Mic, Radio, X } from 'lucide-react'
-import { type Ref, useEffect, useMemo, useRef, useState } from 'react'
+import { type Ref, useMemo, useRef, useState } from 'react'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
 import { NoteTemplateSelector } from './NoteTemplateSelector.js'
@@ -50,9 +50,6 @@ export function ConsultationSettingsDialog({
   const self = useRef<HTMLDialogElement>(null)
   const [draftTemplate, setDraftTemplate] = useState(noteTemplate)
   const [draftCaptureMode, setDraftCaptureMode] = useState(captureMode)
-
-  useEffect(() => setDraftTemplate(noteTemplate), [noteTemplate])
-  useEffect(() => setDraftCaptureMode(captureMode), [captureMode])
 
   const changes = useMemo<ConsultationSettingsPatch>(
     () => ({
