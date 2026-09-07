@@ -303,7 +303,10 @@ export function ConsultationReview() {
 
     if (proposal.tool === 'edit_note_section') {
       const canonical = current.editedMedicalRecordNote ?? current.analysis?.medicalRecordNote
-      if (canonical && proposal.section !== 'subjective') {
+      if (canonical) {
+        if (proposal.section === 'subjective') {
+          throw new Error('A categorized note cannot accept an opaque Subjective replacement.')
+        }
         const next = await api.patch(id, {
           editedMedicalRecordNote: { [proposal.section]: proposal.text },
         })
@@ -379,6 +382,7 @@ export function ConsultationReview() {
       } as ConsultationDetail
     },
     onSuccess: (next) => (isEphemeral ? tour.updateEphemeral(next) : invalidate(next)),
+    onError: () => toast.error('That change could not be saved. Nothing was changed.'),
   })
 
   if (isEphemeral && !tour.ephemeral) {
@@ -402,7 +406,10 @@ export function ConsultationReview() {
   const analysis = detail.analysis
   const approved = detail.status === 'approved'
   const note = detail.editedNote ?? analysis?.note ?? null
-  const medicalRecordNote = detail.editedMedicalRecordNote ?? analysis?.medicalRecordNote ?? null
+  const hasSoapOnlyEdit = detail.editedNote !== null && detail.editedMedicalRecordNote === null
+  const medicalRecordNote = hasSoapOnlyEdit
+    ? null
+    : (detail.editedMedicalRecordNote ?? analysis?.medicalRecordNote ?? null)
 
   const copyNote = async () => {
     if (!note) return

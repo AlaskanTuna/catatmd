@@ -133,7 +133,7 @@ enum NoteTemplate {
 /// A registered patient, created at reception before the consultation begins.
 ///
 /// **The first longitudinal PHI store in this system.** `Consultation` holds
-/// four PHI columns, but every one of them is *derived* from a transcript. The
+/// five PHI columns, but every one of them is *derived* from a transcript. The
 /// columns here are entered by a human and are the identity itself, which is a
 /// stricter class and is why all four are erasable.
 ///
@@ -236,7 +236,7 @@ model Consultation {
 
   /// Presentation order selected for this consultation. It contains no
   /// clinical content and remains switchable after approval.
-  noteTemplate NoteTemplate @default(soap)
+  noteTemplate            NoteTemplate @default(soap)
   /// PHI-bearing clinician edits to the canonical eight-field note.
   /// Erasure must null this beside `analysis` and `editedNote`.
   editedMedicalRecordNote Json?

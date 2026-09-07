@@ -34,6 +34,20 @@ describe('note clipboard templates', () => {
     )
   })
 
+  it('copies blank canonical SOAP sections as explicitly not established', () => {
+    const blankSoap = { ...SOAP, objective: '', assessment: '', plan: '' }
+    const blankMedical = {
+      ...MEDICAL_RECORD,
+      objective: '',
+      assessment: '',
+      plan: '',
+    }
+
+    expect(formatNoteForClipboard('soap', blankSoap, blankMedical)).toContain(
+      'Objective\nNot established\n\nAssessment\nNot established\n\nPlan\nNot established',
+    )
+  })
+
   it('formats every Malaysian section in order and makes empty categories explicit', () => {
     expect(formatNoteForClipboard('malaysian', SOAP, MEDICAL_RECORD)).toBe(
       'Presenting Complaint\nCough.\n\n' +

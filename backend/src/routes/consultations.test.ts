@@ -302,6 +302,12 @@ const ANALYSIS = {
   redFlags: [],
   suggestions: [],
 }
+const LEGACY_ANALYSIS = {
+  note: AI_NOTE,
+  gaps: [],
+  redFlags: [],
+  suggestions: [],
+}
 
 /**
  * Each call presents a distinct client IP. The analyze limiter is per-IP and
@@ -680,7 +686,7 @@ describe('state machine — patch', () => {
   })
 
   it('accepts an edit while awaiting_review', async () => {
-    seed('awaiting_review', { analysis: ANALYSIS })
+    seed('awaiting_review', { analysis: LEGACY_ANALYSIS })
 
     const res = await call('PATCH', '/api/consultations/c1', {
       editedNote: { plan: 'Revised plan' },
@@ -691,7 +697,7 @@ describe('state machine — patch', () => {
   })
 
   it('seeds a partial first edit from the AI note, so editedNote stays complete', async () => {
-    seed('awaiting_review', { analysis: ANALYSIS })
+    seed('awaiting_review', { analysis: LEGACY_ANALYSIS })
 
     const res = await call('PATCH', '/api/consultations/c1', {
       editedNote: { plan: 'Revised plan' },
@@ -708,6 +714,17 @@ describe('state machine — patch', () => {
       assessment: 'AI assessment',
       plan: 'Revised plan',
     })
+  })
+
+  it('rejects a legacy SOAP edit when the analysis has a canonical note', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    const res = await call('PATCH', '/api/consultations/c1', {
+      editedNote: { subjective: 'Opaque replacement' },
+    })
+
+    expect(res.status).toBe(409)
+    expect(store.get('c1')?.editedNote).toBeNull()
   })
 
   it('refuses an edit when there is no note to edit yet', async () => {
@@ -730,7 +747,7 @@ describe('state machine — patch', () => {
   )
 
   it('leaves the original AI analysis untouched when the note is edited', async () => {
-    seed('awaiting_review', { analysis: ANALYSIS })
+    seed('awaiting_review', { analysis: LEGACY_ANALYSIS })
 
     await call('PATCH', '/api/consultations/c1', { editedNote: { plan: 'Doctor plan' } })
 

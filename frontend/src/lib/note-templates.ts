@@ -58,10 +58,13 @@ export function formatNoteForClipboard(
       .join('\n\n')
   }
 
+  const canonicalValue = (value: string) =>
+    medicalRecordNote === null ? value : displayValue(value)
+
   return [
     `Subjective\n${soapNote.subjective}`,
-    `Objective\n${soapNote.objective}`,
-    `Assessment\n${soapNote.assessment}`,
-    `Plan\n${soapNote.plan}`,
+    `Objective\n${canonicalValue(soapNote.objective)}`,
+    `Assessment\n${canonicalValue(soapNote.assessment)}`,
+    `Plan\n${canonicalValue(soapNote.plan)}`,
   ].join('\n\n')
 }

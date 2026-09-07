@@ -326,7 +326,7 @@ git commit -m "feat(notes): format selected record template"
 - `MedicalRecordNoteEditor({ note, aiNote, template, readOnly, saving, onSave })` renders the selected projection from one canonical note.
 - `onSave(edited: Partial<MedicalRecordNote>): void` is the only new-analysis edit path.
 
-- [ ] **Step 1: Write failing interaction and provenance tests**
+- [x] **Step 1: Write failing interaction and provenance tests**
 
 Test that switching to Malaysian:
 
@@ -340,29 +340,29 @@ Test that switching to Malaysian:
 
 Test that editing Family History sends `{ editedMedicalRecordNote: { familyHistory: 'Mother has asthma.' } }` and changes that section's marker to `You Edited This` after the response arrives.
 
-- [ ] **Step 2: Run focused React tests and verify RED**
+- [x] **Step 2: Run focused React tests and verify RED**
 
 Run: `bun run --cwd frontend test -- src/review/MedicalRecordNoteEditor.test.tsx src/review/NoteTemplateSelector.test.tsx src/routes/ConsultationReview.test.tsx`
 
 Expected: FAIL because the selector and canonical editor do not exist.
 
-- [ ] **Step 3: Implement the selector and canonical editor**
+- [x] **Step 3: Implement the selector and canonical editor**
 
 Use accessible radio semantics for the two-option selector. In SOAP mode, render Subjective as the deterministic five-category composition and let its Edit action open the five labeled category fields. In Malaysian mode, render the eight canonical fields individually. Reuse the current `data-provenance` values and print classes.
 
 For older analyses without `medicalRecordNote`, keep `NoteEditor` unchanged and render the explicit legacy unavailable state when Malaysian is selected.
 
-- [ ] **Step 4: Wire stored and ephemeral consultation updates**
+- [x] **Step 4: Wire stored and ephemeral consultation updates**
 
 Route stored changes through `api.patch`. For Demo Mode, merge `noteTemplate` and `editedMedicalRecordNote` in memory and derive `editedNote` using the same shared helper. Update CatatAI proposals for Objective, Assessment, and Plan through the canonical patch path when canonical data exists; retain the legacy SOAP path for old analyses.
 
-- [ ] **Step 5: Run focused React tests and verify GREEN**
+- [x] **Step 5: Run focused React tests and verify GREEN**
 
 Run: `bun run --cwd frontend test -- src/review/MedicalRecordNoteEditor.test.tsx src/review/NoteTemplateSelector.test.tsx src/routes/ConsultationReview.test.tsx`
 
 Expected: PASS with no React warnings.
 
-- [ ] **Step 6: Commit the review experience**
+- [x] **Step 6: Commit the review experience**
 
 ```bash
 git add frontend/src/review frontend/src/routes/ConsultationReview.tsx frontend/src/routes/ConsultationReview.test.tsx
@@ -382,11 +382,11 @@ git commit -m "feat(notes): add Malaysian record view"
 
 - Produces: reviewer-facing explanation of the two layouts and developer-facing schema, persistence, compatibility, and audit behavior.
 
-- [ ] **Step 1: Update the canonical technical documentation**
+- [x] **Step 1: Update the canonical technical documentation**
 
 Document the eight-field canonical note, SOAP projection, template PATCH field, two new database columns, template audit event, clinical-content version, and legacy behavior. Preserve README density rules if the README changes.
 
-- [ ] **Step 2: Run formatting and static checks**
+- [x] **Step 2: Run formatting and static checks**
 
 Run: `bun run lint`
 
@@ -396,7 +396,9 @@ Run: `bunx prettier --check "**/*.{md,yml,yaml}"`
 
 Expected: all pass.
 
-- [ ] **Step 3: Run complete behavioral verification**
+Observed: lint and typecheck pass; Prettier passes for the changed documentation. The repository-wide Prettier check still reports four untouched baseline files.
+
+- [x] **Step 3: Run complete behavioral verification**
 
 Run: `bun run test`
 
@@ -404,7 +406,7 @@ Run: `bun run build`
 
 Expected: all suites and both production builds pass.
 
-- [ ] **Step 4: Run deterministic React and visual-quality audits**
+- [x] **Step 4: Run deterministic React and visual-quality audits**
 
 Run: `npx react-doctor@latest . --verbose`
 
@@ -412,13 +414,15 @@ Run: `npx impeccable detect`
 
 Expected: no unresolved findings in the #222 UI diff. Do not waive an Impeccable finding without explicit human confirmation.
 
-- [ ] **Step 5: Verify PHI and provider boundaries**
+Observed: Impeccable reports no findings. React Doctor reports only the pre-existing `ConsultationReview` complexity warning in changed-file scope.
+
+- [x] **Step 5: Verify PHI and provider boundaries**
 
 Run: `bun run --cwd backend test -- src/lib/logger.leak.test.ts src/lib/llm/no-stray-provider-sdk.test.ts src/acceptance/safety.test.ts`
 
 Expected: no note text in audit/log output and no new provider SDK egress.
 
-- [ ] **Step 6: Commit documentation and verification fixes**
+- [x] **Step 6: Commit documentation and verification fixes**
 
 ```bash
 git add docs backend frontend shared prisma

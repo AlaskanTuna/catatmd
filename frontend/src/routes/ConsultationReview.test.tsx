@@ -7,10 +7,13 @@ import { api } from '../lib/api.js'
 import { formatNoteForClipboard } from '../lib/note-templates.js'
 import { ConsultationReview } from './ConsultationReview.js'
 
-const { toastSuccess } = vi.hoisted(() => ({ toastSuccess: vi.fn() }))
+const { toastError, toastSuccess } = vi.hoisted(() => ({
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
+}))
 
 vi.mock('react-hot-toast', () => ({
-  default: { success: toastSuccess, error: vi.fn() },
+  default: { success: toastSuccess, error: toastError },
 }))
 
 vi.mock('../demo/DemoTour.js', () => ({
@@ -31,19 +34,34 @@ vi.mock('../lib/api.js', () => ({
 
 vi.mock('../copilot/CatatAI.js', () => ({
   CatatAI: ({ onApply }: { onApply: (proposal: CopilotProposal) => Promise<void> }) => (
-    <button
-      type="button"
-      onClick={() =>
-        void onApply({
-          tool: 'edit_note_section',
-          section: 'plan',
-          text: 'Updated safety-net advice.',
-          rationale: 'The doctor requested clearer follow-up advice.',
-        })
-      }
-    >
-      Apply Copilot Plan Edit
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          void onApply({
+            tool: 'edit_note_section',
+            section: 'plan',
+            text: 'Updated safety-net advice.',
+            rationale: 'The doctor requested clearer follow-up advice.',
+          })
+        }
+      >
+        Apply Copilot Plan Edit
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void onApply({
+            tool: 'edit_note_section',
+            section: 'subjective',
+            text: 'Replacement subjective.',
+            rationale: 'The doctor requested a history rewrite.',
+          }).catch(() => undefined)
+        }
+      >
+        Apply Copilot Subjective Edit
+      </button>
+    </>
   ),
 }))
 vi.mock('../review/ApproveBar.js', () => ({ ApproveBar: () => null }))
@@ -75,6 +93,12 @@ const MEDICAL_RECORD_NOTE = {
   objective: NOTE.objective,
   assessment: NOTE.assessment,
   plan: NOTE.plan,
+}
+
+const LEGACY_EDITED_NOTE = {
+  ...NOTE,
+  subjective: 'Clinician-revised SOAP history.',
+  objective: 'Clinician-revised observations.',
 }
 
 const APPROVED = {
@@ -163,6 +187,7 @@ describe('consultation note template', () => {
     vi.mocked(api.getConsultation).mockResolvedValue(APPROVED as never)
     vi.mocked(api.guidelines).mockResolvedValue([])
     vi.mocked(api.patch).mockReset()
+    toastError.mockReset()
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -231,6 +256,51 @@ describe('consultation note template', () => {
         formatNoteForClipboard('malaysian', NOTE, MEDICAL_RECORD_NOTE),
       ),
     )
+    expect(screen.getByRole('heading', { name: 'Presenting Complaint' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Subjective' })).toBeNull()
+  })
+
+  it('surfaces a template save failure without changing the selected layout', async () => {
+    vi.mocked(api.patch).mockRejectedValue(new Error('Unsupported by deployed API'))
+    setup()
+
+    fireEvent.click(await screen.findByRole('radio', { name: 'Malaysian Medical Record' }))
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        'That change could not be saved. Nothing was changed.',
+      ),
+    )
+    expect(screen.getByRole('radio', { name: 'SOAP' }).getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('renders an existing SOAP-only edit instead of hiding it behind canonical AI text', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      editedNote: LEGACY_EDITED_NOTE,
+    } as never)
+    setup()
+
+    expect(await screen.findByText('Clinician-revised SOAP history.')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Family History' })).toBeNull()
+  })
+
+  it('copies an existing SOAP-only edit without mixing in canonical AI categories', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      noteTemplate: 'malaysian',
+      editedNote: LEGACY_EDITED_NOTE,
+    } as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy Note' }))
+
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        formatNoteForClipboard('malaysian', LEGACY_EDITED_NOTE, null),
+      ),
+    )
+    expect(screen.getAllByText('Not recorded by this analysis version')).toHaveLength(5)
   })
 })
 
@@ -259,6 +329,21 @@ describe('copilot note edits', () => {
         editedMedicalRecordNote: { plan: 'Updated safety-net advice.' },
       }),
     )
+  })
+
+  it('refuses an opaque Subjective proposal when the canonical categories exist', async () => {
+    const awaitingReview = {
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+    }
+    vi.mocked(api.getConsultation).mockResolvedValue(awaitingReview as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply Copilot Subjective Edit' }))
+
+    await waitFor(() => expect(api.patch).not.toHaveBeenCalled())
   })
 
   it('keeps older analyses on the legacy SOAP proposal path', async () => {

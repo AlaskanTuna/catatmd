@@ -858,6 +858,10 @@ consultationsRouter.patch('/:id', async (req, res) => {
     nextEditedNote = toSoapNote(merged.data)
   }
   if (patch.editedNote !== undefined) {
+    const storedAnalysis = ConsultationAnalysisSchema.safeParse(consultation.analysis)
+    if (storedAnalysis.success && storedAnalysis.data.medicalRecordNote !== undefined) {
+      throw new HttpError(409, 'invalid_state', 'This categorized note must be edited by category.')
+    }
     const base =
       consultation.editedNote ?? (consultation.analysis as { note?: unknown } | null)?.note ?? null
     const merged = SoapNoteSchema.safeParse({
