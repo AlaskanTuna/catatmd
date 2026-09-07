@@ -30,6 +30,8 @@ import {
   ConsultationSettingsDialog,
   type ConsultationSettingsPatch,
 } from '../review/ConsultationSettingsDialog.js'
+import { LivePrompter } from '../review/LivePrompter.js'
+import { GAP_PRIORITY_ORDER, SEVERITY_ORDER } from '../review/live-prompt.js'
 import {
   LegacyMedicalRecordView,
   MedicalRecordNoteEditor,
@@ -61,20 +63,6 @@ function mergeDispositions(current: Disposition[], incoming: DispositionInput[])
   for (const decision of incoming) next.set(decision.id, { ...decision, decidedAt: new Date() })
   return [...next.values()]
 }
-
-const SEVERITY_ORDER = { emergency: 0, urgent: 1, advisory: 2 } as const
-
-/**
- * Ordering only, which is the whole of what `priority` means.
- *
- * The checklist that produces gaps documents `priority` as a volume and
- * ordering signal carrying no safety meaning on its own, so this sorts the list
- * and nothing more: nothing is filtered, no count changes, and no copy anywhere
- * calls a `high` gap urgent. Without it the six shown before the disclosure
- * were whichever six sat first in the checklist source file, which is an
- * ordering the reader has no way to interpret.
- */
-const GAP_PRIORITY_ORDER = { high: 0, medium: 1, low: 2 } as const
 
 /**
  * Enough findings to show the shape of a list without it swallowing the rail.
@@ -668,18 +656,21 @@ export function ConsultationReview() {
           the middle, the checks fill the rail, and both reveal their shape
           while they are still empty. */}
       {/*
-        The tracks swap on the one phase change that matters. While the doctor
-        is still talking the note is deliberately a placeholder, so leaving it
-        the fluid track spends the widest column on four rows of grey bars and
-        crams the only moving surface on screen into 380px. During capture the
-        transcript takes the fluid track instead; at Stop it hands it back to
-        the note, which is when the note becomes the thing being read.
+        The tracks swap on the one phase change that matters, and during
+        capture the screen drops to two columns (#278).
 
-        Source order and every `order-*` class are untouched, so the columns do
-        not reshuffle: only their widths change, once, at a transition the
-        doctor initiated. The safety rail keeps its 340px in both states,
-        because docs/DESIGN.md requires severity visible without scrolling and
-        that is not a property to trade for a wider transcript.
+        While the doctor is talking the note is deliberately a placeholder, so
+        it is not merely narrow, it is four rows of grey bars occupying a
+        column. The rail beside it held twenty-eight gap cards with 264px of
+        them below the fold, which nobody reads mid-sentence. Both are hidden
+        rather than removed, and both return at Stop; `LivePrompter` carries
+        what is actually readable in a glance and takes the 380px.
+
+        Severity stays visible without scrolling, which is the docs/DESIGN.md
+        requirement the rail's fixed 340px used to serve. It is better served
+        here: the prompter's red-flag section is permanent and above the fold,
+        where a rail hit could sit at position one of thirty-two with the
+        panel scrolled away.
       */}
       <div
         className={cn(
@@ -688,7 +679,7 @@ export function ConsultationReview() {
           // lifts exactly this from `AmbientCapture`'s `onLiveChange`, and two
           // props tracking one session is one of them going stale.
           captureBusy
-            ? 'lg:grid-cols-[minmax(0,1fr)_320px_340px]'
+            ? 'lg:grid-cols-[minmax(0,1fr)_380px]'
             : 'lg:grid-cols-[380px_minmax(0,1fr)_340px]',
         )}
       >
@@ -714,7 +705,25 @@ export function ConsultationReview() {
             // everything past the fold becomes unreachable. Growing from an
             // `auto` basis that may never shrink fills the gap when content is
             // short without capping it when content is long.
-            'lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
+            /*
+             * Two ceilings, because the two phases have different amounts of
+             * page above them and only one of them has to fit.
+             *
+             * `13rem` is the review figure and it is measured to be too
+             * generous: at 1440x900 the band above the grid is 292px, the
+             * column resolves to 692px, and the page overflows by 234px. That
+             * is survivable while reading a note, because the columns are
+             * sticky and settle after one scroll.
+             *
+             * It is not survivable while talking, which is the whole
+             * complaint: the doctor scrolls the page to see the bottom of a
+             * transcript that is scrolling itself. `26rem` is what makes
+             * 292px of header plus the column plus the page's own bottom
+             * padding land inside one viewport, so during capture the
+             * transcript is the only thing on screen that scrolls.
+             */
+            captureBusy ? 'lg:max-h-[calc(100vh-26rem)]' : 'lg:max-h-[calc(100vh-13rem)]',
+            'lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
             // The mobile show/hide belongs to a transcript that already
             // exists. Capture is the one thing on this screen a doctor has
             // come here to do, so it is never behind a toggle.
@@ -740,27 +749,55 @@ export function ConsultationReview() {
             what made this read as a wall.
           */}
           {detail.transcript ? (
-            <div className="max-h-[70vh] overflow-y-auto rounded-card bg-sunken p-4 lg:max-h-none lg:overflow-visible">
-              <ol className="grid gap-1">
+            <div className="@container max-h-[70vh] overflow-y-auto rounded-card bg-sunken p-4 lg:max-h-none lg:overflow-visible">
+              {/*
+                Sides, not a single left edge, matching the live pane (#278).
+                The doctor keeps the left because that is where they sat while
+                the words were arriving; a transcript that reflowed at Stop
+                would make the reader re-find the thread.
+
+                One rule holds across both panes: the right speaker takes
+                `accent-soft`, and the left takes whichever neutral contrasts
+                with the ground. That is `surface` here and `sunken` in the
+                live pane, because the two grounds are the other way round.
+              */}
+              <ol className="flex flex-col gap-3">
                 {keyedTurns.map((turn, index) => {
                   const opensTurn = keyedTurns[index - 1]?.speaker !== turn.speaker
+                  const doctor = turn.speaker === 'doctor'
                   return (
-                    <li key={turn.key} className={cn(opensTurn && index > 0 && 'mt-3')}>
+                    <li
+                      key={turn.key}
+                      className={cn(
+                        // Same two-sided rule as the live pane, and the same
+                        // reason for the two caps: this column is 380px here
+                        // and fluid during capture, so 62% would break a line
+                        // every three words in the narrow case.
+                        'flex flex-col max-w-[88%] @lg:max-w-[62%]',
+                        doctor ? 'items-start self-start' : 'items-end self-end',
+                        !opensTurn && '-mt-2',
+                      )}
+                    >
                       {opensTurn && (
                         <span className="mb-1 block">
                           <span
                             className={cn(
                               'rounded-pill px-2 py-0.5 text-2xs font-medium',
-                              turn.speaker === 'doctor'
-                                ? 'bg-accent-soft text-accent'
-                                : 'bg-surface text-ink-muted',
+                              doctor ? 'bg-surface text-ink-muted' : 'bg-accent-soft text-accent',
                             )}
                           >
-                            {turn.speaker === 'doctor' ? 'Doctor' : 'Patient'}
+                            {doctor ? 'Doctor' : 'Patient'}
                           </span>
                         </span>
                       )}
-                      <p className="text-ink text-sm leading-relaxed">{turn.text}</p>
+                      <p
+                        className={cn(
+                          'rounded-card px-3 py-2 text-ink text-sm leading-relaxed',
+                          doctor ? 'bg-surface' : 'bg-accent-soft',
+                        )}
+                      >
+                        {turn.text}
+                      </p>
                     </li>
                   )
                 })}
@@ -787,8 +824,43 @@ export function ConsultationReview() {
           )}
         </section>
 
+        {/*
+          The one thing on screen during capture that is neither the
+          conversation nor a placeholder for something that has not happened
+          yet (#278).
+
+          `order-1` below `lg`, so on a narrow screen the safety section is
+          first in source order, which is the only way "visible without
+          scrolling" can mean anything there. That is the rule the rail
+          followed and the reason it never became a tab.
+        */}
+        {captureBusy && (
+          <section className="order-1 min-w-0 lg:sticky lg:top-6 lg:order-2 lg:max-h-[calc(100vh-26rem)] lg:overflow-y-auto lg:pr-1">
+            <LivePrompter
+              live={live.panes}
+              onShowAll={() =>
+                setOverflow({
+                  title: 'Missing Information',
+                  findings: [...live.panes.gaps]
+                    .sort((a, b) => GAP_PRIORITY_ORDER[a.priority] - GAP_PRIORITY_ORDER[b.priority])
+                    .map((gap) => ({
+                      id: gap.id,
+                      node: <GapCard gap={gap} disposition={undefined} guidelines={[]} />,
+                    })),
+                })
+              }
+            />
+          </section>
+        )}
+
         <section
-          className="order-2 min-w-0 lg:sticky lg:top-6 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0"
+          className={cn(
+            'order-2 min-w-0 lg:sticky lg:top-6 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
+            // Hidden, never unmounted: the note placeholder and its live
+            // checklist keep their state across the capture, and Stop brings
+            // them straight back rather than rebuilding them.
+            captureBusy && 'hidden',
+          )}
           aria-labelledby="note-heading"
           data-print="expand"
         >
@@ -859,7 +931,10 @@ export function ConsultationReview() {
               The bottom stop clears the approve bar, which is `sticky bottom-4`
               in flow and would otherwise sit on top of the last card. */}
         <aside
-          className="order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:[&>section]:grow lg:[&>section]:shrink-0"
+          className={cn(
+            'order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:[&>section]:grow lg:[&>section]:shrink-0',
+            captureBusy && 'hidden',
+          )}
           aria-label="Clinical safety"
           data-print="expand"
         >

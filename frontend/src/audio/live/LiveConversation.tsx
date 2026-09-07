@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { cn } from '../../lib/cn.js'
 import type { LiveSegment } from './live-tokens.js'
 
@@ -45,6 +45,73 @@ function SpeakerChip({ speaker }: { speaker: string }) {
     >
       Speaker {speaker}
     </span>
+  )
+}
+
+/**
+ * One turn, on its own side of the pane (#278).
+ *
+ * Speaker 1 sits left and Speaker 2 right, so turn-taking is a shape rather
+ * than something read off a label. The 62% cap is doing quieter work: the
+ * full-width row this replaces ran to roughly 105 characters on a 936px
+ * column, well past the 68ch docs/DESIGN.md sets for prose.
+ *
+ * The tint follows `SpeakerChip` rather than deciding again, so one turn never
+ * carries two different answers to whose it is.
+ *
+ * **Sides are not roles.** The recogniser numbers speakers; roles are assigned
+ * after Stop by the labelling pass. An id that swaps mid-consultation
+ * therefore moves the conversation bodily across the pane, which is louder
+ * than a chip changing its text. That is the trade this layout makes for
+ * legibility, and it is the reason the diarisation config is worth keeping
+ * honest rather than a cosmetic detail.
+ */
+function Turn({
+  speaker,
+  time,
+  opensTurn,
+  muted = false,
+  children,
+}: {
+  speaker: string | null
+  /** Only on the row that opens a turn; a grouped row would repeat it. */
+  time: string | null
+  opensTurn: boolean
+  /** The unsettled tail, which is quiet until it settles. */
+  muted?: boolean
+  children: ReactNode
+}) {
+  const right = speaker === '2'
+  return (
+    <li
+      className={cn(
+        // Always two sides, and the cap is what varies. This pane also
+        // renders in a 380px rail, where 62% is a 235px bubble breaking every
+        // three words; 88% there keeps the offset legible without shredding
+        // the measure. The container query is on the width that actually
+        // matters, which is the column's, not the viewport's.
+        'flex flex-col max-w-[88%] @lg:max-w-[62%]',
+        right ? 'items-end self-end' : 'items-start self-start',
+        // Rows grouped under one chip sit closer than the gap between turns.
+        !opensTurn && '-mt-2',
+      )}
+    >
+      {opensTurn && speaker !== null && (
+        <span className={cn('mb-1 flex items-center gap-2', right && 'flex-row-reverse')}>
+          <SpeakerChip speaker={speaker} />
+          {time !== null && <span className="text-2xs text-ink-muted tabular-nums">{time}</span>}
+        </span>
+      )}
+      <p
+        className={cn(
+          'rounded-card px-3 py-2 text-sm leading-relaxed',
+          right ? 'bg-accent-soft' : 'bg-sunken',
+          muted && 'text-ink-muted',
+        )}
+      >
+        {children}
+      </p>
+    </li>
   )
 }
 
@@ -108,12 +175,12 @@ export function LiveConversation({
       <div
         ref={scroller}
         onScroll={onScroll}
-        className="max-h-[min(60vh,32rem)] min-h-48 overflow-y-auto rounded-card bg-surface p-4 shadow-card"
+        className="@container max-h-[min(60vh,32rem)] min-h-48 overflow-y-auto rounded-card bg-surface p-4 shadow-card"
       >
         {segments.length === 0 && interim === '' ? (
           <p className="text-ink-muted text-sm">Text appears as the consultation is spoken.</p>
         ) : (
-          <ol className="grid gap-1">
+          <ol className="flex flex-col gap-3">
             {segments.map((segment, index) => {
               // Consecutive turns from one speaker drop the chip and the
               // timestamp. That grouping is what makes the column read as a
@@ -123,30 +190,17 @@ export function LiveConversation({
               const isLast = index === segments.length - 1
 
               return (
-                <li
+                <Turn
                   key={`${segment.start}-${segment.text}`}
-                  className={cn(
-                    'grid grid-cols-[3rem_minmax(0,1fr)] gap-3',
-                    opensTurn && index > 0 && 'mt-3',
-                  )}
+                  speaker={segment.speaker}
+                  time={opensTurn ? elapsed(segment.start) : null}
+                  opensTurn={opensTurn}
                 >
-                  <span className="pt-0.5 text-2xs text-ink-muted tabular-nums">
-                    {opensTurn ? elapsed(segment.start) : ''}
-                  </span>
-                  <div className="min-w-0">
-                    {opensTurn && segment.speaker !== null && (
-                      <span className="mb-1 block">
-                        <SpeakerChip speaker={segment.speaker} />
-                      </span>
-                    )}
-                    <p className="text-ink text-sm leading-relaxed">
-                      {segment.text}
-                      {isLast && interimJoinsLastTurn && (
-                        <span className="text-ink-muted"> {interim}</span>
-                      )}
-                    </p>
-                  </div>
-                </li>
+                  {segment.text}
+                  {isLast && interimJoinsLastTurn && (
+                    <span className="text-ink-muted"> {interim}</span>
+                  )}
+                </Turn>
               )
             })}
 
@@ -154,17 +208,9 @@ export function LiveConversation({
                 deliberately no timestamp: it would shift the moment the tokens
                 settle and the real one is known. */}
             {interim !== '' && !interimJoinsLastTurn && (
-              <li className="mt-3 grid grid-cols-[3rem_minmax(0,1fr)] gap-3">
-                <span />
-                <div className="min-w-0">
-                  {interimSpeaker !== null && (
-                    <span className="mb-1 block">
-                      <SpeakerChip speaker={interimSpeaker} />
-                    </span>
-                  )}
-                  <p className="text-ink-muted text-sm leading-relaxed">{interim}</p>
-                </div>
-              </li>
+              <Turn speaker={interimSpeaker} time={null} opensTurn muted>
+                {interim}
+              </Turn>
             )}
           </ol>
         )}
