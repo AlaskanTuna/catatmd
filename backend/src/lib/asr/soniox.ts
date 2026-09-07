@@ -114,6 +114,29 @@ export const MAX_SESSION_DURATION_SECONDS = 1_800
  */
 const LANGUAGE_HINTS = ['ms', 'en', 'zh', 'ta'] as const
 
+/**
+ * Domain hints for the recogniser, and the vendor's documented lever on
+ * diarisation: naming the speakers in the `general` section "can help the model
+ * more reliably separate voices".
+ *
+ * **Static by construction, and it must stay that way.** This travels in the
+ * socket's first frame, so it crosses the audio egress, and audio cannot be
+ * de-identified on the way out. `liveSessionConfig()` below takes no arguments,
+ * which is what structurally prevents a consultation, a patient, or anything
+ * else a caller supplies from reaching this value. Do not make either of them
+ * a function of a request; `soniox.test.ts` pins the returned object.
+ *
+ * It says how many voices to expect and in what setting, and nothing about who
+ * they are. Deliberately no `terms` section: clinical vocabulary would target
+ * word recognition rather than diarisation, and is unmeasured here.
+ */
+const CONTEXT = {
+  general: [
+    { key: 'domain', value: 'Healthcare' },
+    { key: 'speakers', value: 'Two speakers: a doctor and a patient' },
+  ],
+} as const
+
 /** Upstream statuses with a specific meaning; anything else is `unavailable`. */
 const REASON_BY_STATUS: Record<number, LiveSessionFailureReason> = {
   400: 'rejected',
@@ -141,13 +164,32 @@ const SonioxTemporaryKeyWireSchema = z.object({
   expires_at: z.string().min(1),
 })
 
+/**
+ * The recognition settings the browser sends as its first frame.
+ *
+ * **Endpoint detection is off, and that is the whole point of it.** The vendor
+ * states that it "forces tokens to finalize early, which reduces diarization
+ * accuracy", and separately that a final token "will never change in future
+ * responses". Together those mean an early finalisation freezes a speaker id
+ * before the diariser has the context to settle it, and nothing on the wire can
+ * correct it afterwards. That is what produced turns attributed to the wrong
+ * speaker for the rest of a consultation. Their own guidance is "for the
+ * highest diarization accuracy, do not use endpoint detection", and here
+ * knowing who spoke outranks settling the text a moment sooner.
+ *
+ * The cost is real and accepted: without `<end>` markers, `tokensToSegments` in
+ * the SPA closes a group on a speaker change or the pause backstop only, so
+ * text settles slightly later. In a two-person consultation the speaker change
+ * is the dominant boundary, and it is the boundary that was unreliable before.
+ */
 export function liveSessionConfig(): LiveSessionConfig {
   return {
     model: env.SONIOX_RT_MODEL,
     languageHints: [...LANGUAGE_HINTS],
     languageIdentification: true,
     speakerDiarization: true,
-    endpointDetection: true,
+    endpointDetection: false,
+    context: { general: CONTEXT.general.map((entry) => ({ ...entry })) },
   }
 }
 
