@@ -81,6 +81,72 @@ export type LiveSegment = TranscriptSegment & { speaker: string | null }
  */
 export const SEGMENT_GAP_MS = 1_500
 
+/**
+ * How close two tokens must sit to read as halves of one word.
+ *
+ * Paired with the script test in `continuesWord`, and both halves are load
+ * bearing: text alone would swallow a genuine handoff the recogniser happened
+ * not to prefix with a space, and timing alone would merge two people talking
+ * over each other. Two speakers cannot swap mid-word with no gap at all, so
+ * the pair together only ever describes a diarisation glitch.
+ */
+const MID_WORD_CONTIGUITY_MS = 200
+
+/**
+ * Whether a cut between these two tokens would land inside a word.
+ *
+ * The recogniser emits subword units, so "Ya" arrives as "Y" then "a", and its
+ * real-time diarisation is documented to show "temporary speaker switches that
+ * stabilize as more context is available". When such a switch falls between
+ * the halves of a word, the speaker rule below would cut there and put one
+ * word across two lines. It is not only ugly: `segmentsToDraft` in
+ * `../draft-turns.ts` reads a segment boundary as its primary evidence of a
+ * real speaker handoff, so an invented boundary becomes an invented turn.
+ *
+ * Scoped to Latin script on purpose. Tokens carry their own leading spaces, so
+ * a space is what marks a word boundary; Chinese tokens carry none and are
+ * each a word of their own, which is why testing for whitespace alone would
+ * stop Chinese cutting at all.
+ */
+const continuesWord = (previous: LiveToken, next: LiveToken): boolean =>
+  next.startMs - previous.endMs <= MID_WORD_CONTIGUITY_MS &&
+  /[\p{Script=Latin}\p{N}]$/u.test(previous.text) &&
+  /^[\p{Script=Latin}\p{N}]/u.test(next.text)
+
+/**
+ * Who a group belongs to, measured by how long each speaker held it.
+ *
+ * Deliberately not the first token. A group may now contain a speaker change
+ * that was suppressed for falling inside a word, and a single mis-diarised
+ * subword at the head of a turn would otherwise relabel the entire turn, which
+ * is exactly how a patient's answer came to be attributed to the doctor.
+ *
+ * Weighted by duration rather than by token count, so one long word does not
+ * lose to several short ones. `null` when no token carried a speaker at all,
+ * which is how an undiarised stream stays undiarised rather than gaining a
+ * label nothing earned.
+ */
+function dominantSpeaker(group: readonly LiveToken[]): string | null {
+  const held = new Map<string, number>()
+  for (const token of group) {
+    if (token.speaker === null) continue
+    // Floored at one, so a token the recogniser gave no duration still counts
+    // for something rather than weighing nothing at all.
+    const ms = Math.max(1, token.endMs - token.startMs)
+    held.set(token.speaker, (held.get(token.speaker) ?? 0) + ms)
+  }
+
+  let dominant: string | null = null
+  let longest = 0
+  for (const [speaker, ms] of held) {
+    if (ms > longest) {
+      longest = ms
+      dominant = speaker
+    }
+  }
+  return dominant
+}
+
 export function absorb(transcript: LiveTranscript, tokens: readonly LiveToken[]): LiveTranscript {
   const settled = tokens.filter((token) => token.isFinal)
   return {
@@ -112,13 +178,13 @@ export function tokensToSegments(final: readonly LiveToken[]): LiveSegment[] {
     // A group of pure whitespace is dropped rather than emitted: an empty
     // segment would fail the caller's own reconstruction check.
     if (text && first && last) {
-      // A group is cut on speaker change, so every token in it shares one
-      // speaker and the first is representative of all of them.
+      // A group is cut on speaker change *except* inside a word, so it can hold
+      // a suppressed switch and the first token is not representative of it.
       segments.push({
         text,
         start: first.startMs / 1_000,
         end: last.endMs / 1_000,
-        speaker: first.speaker,
+        speaker: dominantSpeaker(group),
       })
     }
     group = []
@@ -132,6 +198,7 @@ export function tokensToSegments(final: readonly LiveToken[]): LiveSegment[] {
     const previous = group[group.length - 1]
     if (
       previous &&
+      !continuesWord(previous, token) &&
       (token.speaker !== previous.speaker || token.startMs - previous.endMs > SEGMENT_GAP_MS)
     ) {
       close()
@@ -161,11 +228,12 @@ export function tokensToText(final: readonly LiveToken[]): string {
  * Who is speaking the unsettled tail, so it can be shown inside the turn it
  * belongs to rather than as a floating line beneath the conversation.
  *
- * Read off the first non-control token: interim tokens are re-sent in full on
- * every message, so the tail belongs to one speaker at a time.
+ * Whoever held most of the tail, for the same reason `close` weighs a group
+ * rather than reading its first token: a mis-diarised opening subword would
+ * otherwise put the chip on the wrong speaker for the whole unsettled line.
  */
 export function interimSpeaker(interim: readonly LiveToken[]): string | null {
-  return interim.find((token) => !token.endpoint)?.speaker ?? null
+  return dominantSpeaker(interim.filter((token) => !token.endpoint))
 }
 
 /** The unsettled tail, shown muted beneath the settled text. */

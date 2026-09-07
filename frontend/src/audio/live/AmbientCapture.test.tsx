@@ -123,7 +123,13 @@ const session = {
     languageHints: ['ms', 'en', 'zh', 'ta'],
     languageIdentification: true,
     speakerDiarization: true,
-    endpointDetection: true,
+    endpointDetection: false,
+    context: {
+      general: [
+        { key: 'domain', value: 'Healthcare' },
+        { key: 'speakers', value: 'Two speakers: a doctor and a patient' },
+      ],
+    },
   },
 }
 
