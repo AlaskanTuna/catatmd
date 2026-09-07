@@ -6,6 +6,7 @@ import {
 } from '../clinical-profiles/index.js'
 import { GAP_CHECKLIST_VERSION } from '../gaps/index.js'
 import { GUIDELINE_CORPUS_VERSION } from '../guidelines/index.js'
+import { MEDICAL_RECORD_TEMPLATE_VERSION } from '../note-templates/index.js'
 import { RED_FLAG_LIST_VERSION } from '../redflags/index.js'
 import type { ClinicalArtefactVersion } from './types.js'
 
@@ -25,6 +26,7 @@ export const ACTIVE_CLINICAL_VERSIONS = {
   redFlagList: RED_FLAG_LIST_VERSION,
   gapChecklist: GAP_CHECKLIST_VERSION,
   guidelineCorpus: GUIDELINE_CORPUS_VERSION,
+  medicalRecordTemplate: MEDICAL_RECORD_TEMPLATE_VERSION,
   clinicalProfile: CLINICAL_PROFILES[DEFAULT_PROFILE_ID].version,
 } as const satisfies Record<string, ClinicalArtefactVersion>
 

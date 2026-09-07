@@ -43,7 +43,16 @@ const emptyFacts = () =>
   LlmClinicalFactsSchema.parse({ symptoms: {}, history: {}, observations: {}, examination: {} })
 
 const blankProse = (): NoteAndGapsResponse => ({
-  note: { subjective: '', objective: '', assessment: '', plan: '' },
+  note: {
+    presentingComplaint: '',
+    historyOfPresentingComplaint: '',
+    pastMedicalHistory: '',
+    socialHistory: '',
+    familyHistory: '',
+    objective: '',
+    assessment: '',
+    plan: '',
+  },
   gaps: [],
 })
 
@@ -52,6 +61,31 @@ beforeEach(() => {
 })
 
 describe('analyseNote', () => {
+  it('returns one canonical categorized note and derives SOAP Subjective from it', async () => {
+    const { text: content } = deidentify('Patient: I have been coughing for three days.')
+    const medicalRecordNote = {
+      presentingComplaint: 'Cough.',
+      historyOfPresentingComplaint: 'Three days.',
+      pastMedicalHistory: '',
+      socialHistory: '',
+      familyHistory: 'No relevant family history stated.',
+      objective: '',
+      assessment: 'Acute cough under review.',
+      plan: 'Supportive care.',
+    }
+
+    stubSplit(
+      { clinicalFacts: emptyFacts(), operational: LlmOperationalBlockSchema.parse({}) },
+      { note: medicalRecordNote, gaps: [] },
+    )
+
+    const result = await analyseNote(content, content)
+
+    expect(result.medicalRecordNote).toEqual(medicalRecordNote)
+    expect(result.note.subjective).toContain('Presenting Complaint\nCough.')
+    expect(result.note.subjective).toContain('Family History\nNo relevant family history stated.')
+  })
+
   it('returns the model output unchanged when every PRESENT/DENIED assertion carries real evidence', async () => {
     const fixture = fixtureById('urti-gap-heavy')
     const { text: content } = deidentifyTranscript(fixture.transcript)
@@ -70,7 +104,11 @@ describe('analyseNote', () => {
 
     const prose: NoteAndGapsResponse = {
       note: {
-        subjective: 'Cough 3 days, sore throat.',
+        presentingComplaint: 'Cough and sore throat.',
+        historyOfPresentingComplaint: 'Three days.',
+        pastMedicalHistory: '',
+        socialHistory: '',
+        familyHistory: '',
         objective: 'Throat red, tonsils swollen.',
         assessment: 'Findings support a viral upper respiratory illness.',
         plan: 'Symptomatic treatment, 2 days MC.',
@@ -84,7 +122,7 @@ describe('analyseNote', () => {
 
     expect(result.discardedFieldIds).toEqual([])
     expect(result.clinicalFacts.symptoms.cough.state).toBe('PRESENT')
-    expect(result.note.subjective).toBe('Cough 3 days, sore throat.')
+    expect(result.note.subjective).toContain('Presenting Complaint\nCough and sore throat.')
   })
 
   describe('the split operation (docs/trd.md §12, §19 row 19)', () => {
@@ -169,7 +207,11 @@ describe('analyseNote', () => {
 
       stubSplit(facts, {
         note: {
-          subjective: 'Cough 3 days, sore throat, fever yesterday.',
+          presentingComplaint: 'Cough and sore throat.',
+          historyOfPresentingComplaint: 'Three days, fever yesterday.',
+          pastMedicalHistory: '',
+          socialHistory: '',
+          familyHistory: '',
           objective: 'Throat red, tonsils swollen.',
           assessment: 'Findings support a viral upper respiratory illness.',
           plan: 'Symptomatic treatment, 2 days MC.',

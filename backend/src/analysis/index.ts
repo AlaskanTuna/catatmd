@@ -1,4 +1,4 @@
-import { ClinicalFactsResponseSchema, NoteAndGapsResponseSchema } from '@shared/types'
+import { ClinicalFactsResponseSchema, NoteAndGapsResponseSchema, toSoapNote } from '@shared/types'
 import { type ClinicalProfile, getClinicalProfile } from '../clinical-profiles/index.js'
 import type { Deidentified } from '../deid/types.js'
 import { getLLMClient } from '../lib/llm/index.js'
@@ -61,10 +61,12 @@ export async function analyseNote(
     transcriptText,
   )
 
-  const guarded = stripDiagnosticProse(prose.note, prose.gaps)
+  const guarded = stripDiagnosticProse(toSoapNote(prose.note), prose.gaps)
+  const medicalRecordNote = { ...prose.note, assessment: guarded.note.assessment }
 
   return {
     note: guarded.note,
+    medicalRecordNote,
     clinicalFacts,
     operational,
     gaps: guarded.gaps,

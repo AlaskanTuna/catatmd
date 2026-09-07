@@ -90,17 +90,29 @@ export function buildNoteAndGapsSystemPrompt(profile: ClinicalProfile): string {
 
 Produce two things from the transcript:
 
-1. A SOAP note (subjective, objective, assessment, plan). ${profile.noteTemplate}
-   A GP reads this between patients, not at a desk, so write it to be
-   scanned in seconds, not read as prose.
+1. A categorized clinical note with Presenting Complaint,
+   History of Presenting Complaint, Past Medical History, Social History,
+   Family History, Objective, Assessment, and Plan. ${profile.noteTemplate}
+   These fields are the source for both the Malaysian medical-record view and
+   the SOAP projection. A GP reads this between patients, not at a desk, so
+   write it to be scanned in seconds, not read as prose.
 
-   - "subjective" and "objective": one finding per line, each line starting
-     with "- ". State the fact plainly (symptom, duration, severity,
-     negative finding, medication tried, exposure, social factor); do not
-     wrap it in "the patient reports" or similar. Group related facts on one
-     line when they belong together (for example "Headache, 10/10, constant,
-     diffuse/frontal"), but never merge two separate facts into a single
-     line just to shorten the list.
+   - Put each fact in exactly one of the five history categories. Do not copy
+     a complaint into both Presenting Complaint and History of Presenting
+     Complaint. Use an empty string when the transcript says nothing about a
+     category; never write a negative or "not established" on the model's own
+     authority.
+   - "presentingComplaint" states the symptom or problem that brought the
+     patient in. "historyOfPresentingComplaint" carries its duration, course,
+     severity, associated symptoms, relevant negatives, and treatment tried.
+   - "pastMedicalHistory" carries prior conditions, current medication, and
+     allergies. "socialHistory" carries smoking, exposure, occupation, and
+     other stated social factors. "familyHistory" carries only family history
+     the transcript actually states.
+   - The five history fields and "objective": one finding per line, each line
+     starting with "- ". State the fact plainly; do not wrap it in "the patient
+     reports" or similar. Group related facts on one line when they belong
+     together, but never merge separate facts merely to shorten the list.
    - "assessment": one or two short sentences of synthesis, not a bullet
      list. It restates what was found (symptoms, duration, examination
      findings), not what was documented in "subjective" and "objective"
@@ -108,13 +120,13 @@ Produce two things from the transcript:
    - "plan": one action per line, each starting with "- ", the same way as
      "subjective" and "objective".
 
-   Restructuring the note must never cost it content. Every symptom,
+   Categorizing the note must never cost it content. Every symptom,
    duration, severity, negative finding, medication and dose, allergy,
    exposure, and social factor present in the transcript must still appear
    somewhere in the note. A shorter note that says less than the transcript
    supports is a worse note than the one it replaces, not a better one.
 
-   None of the four sections may ever state, imply, or name a diagnosis,
+   None of the eight sections may ever state, imply, or name a diagnosis,
    differential, or clinical impression. A diagnosis is recorded elsewhere
    in this system, in a structured field, and only when the doctor said it
    out loud. This holds even when the doctor did name a condition: write

@@ -118,6 +118,15 @@ describe('recordAuditEvent', () => {
     expect(lastWrite().data.metadata).toEqual({ reason: 'llm_response_invalid' })
   })
 
+  it('records only the closed template identifier when presentation changes', async () => {
+    await write({
+      action: 'consultation.template_selected',
+      metadata: { template: 'malaysian' },
+    })
+
+    expect(lastWrite().data.metadata).toEqual({ template: 'malaysian' })
+  })
+
   /**
    * The union is the control: every `metadata` shape in the taxonomy holds
    * identifiers, detector labels or version strings and nothing else. This
@@ -144,6 +153,7 @@ describe('recordAuditEvent', () => {
       },
       { action: 'consultation.analysis_failed', metadata: { reason: 'internal_error' } },
       { action: 'consultation.edited' },
+      { action: 'consultation.template_selected', metadata: { template: 'soap' } },
       { action: 'consultation.erased' },
       { action: 'redflag.acknowledged', metadata: { redFlagId: 'rf-1' } },
       { action: 'gap.reviewed', metadata: { gapId: 'gap-1' } },

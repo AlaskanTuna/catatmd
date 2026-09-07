@@ -1,13 +1,15 @@
-import type { DraftTurn, Transcript, TranscriptSource, TranscriptTurn } from '@shared/types'
+import type {
+  CaptureMode,
+  DraftTurn,
+  Transcript,
+  TranscriptSource,
+  TranscriptTurn,
+} from '@shared/types'
 import { FileUp, Mic, Settings2, Type } from 'lucide-react'
 import { type ChangeEvent, useRef, useState } from 'react'
 import { AudioCapture } from '../audio/AudioCapture.js'
 import { AudioSettingsDialog } from '../audio/AudioSettingsDialog.js'
-import {
-  type AudioSettings,
-  loadAudioSettings,
-  saveAudioSettings,
-} from '../audio/audio-settings.js'
+import { type AudioSettings, loadAudioSettings } from '../audio/audio-settings.js'
 import {
   type DraftLine,
   draftToTurns,
@@ -63,11 +65,17 @@ const RECORDED_RANK: Record<TranscriptSource, number> = {
  * nobody does (issue #70, backend/src/redflags/mislabel-suppression.test.ts).
  */
 export function CapturePanel({
+  captureMode,
   onCapture,
+  onCaptureModeChange,
+  onCaptureBusyChange,
   saving,
   error,
 }: {
+  captureMode: CaptureMode
   onCapture: (transcript: Transcript) => void
+  onCaptureModeChange: (captureMode: CaptureMode) => void
+  onCaptureBusyChange: (busy: boolean) => void
   saving: boolean
   error: string | null
 }) {
@@ -77,25 +85,22 @@ export function CapturePanel({
    * not restated here (removed on the owner's decision 2026-09-02).
    */
   /*
-   * `mode` chooses which capture panel the Record tab shows, and `engine`
-   * configures the manual one.
+   * The consultation's Capture Mode chooses which panel the Record tab shows,
+   * while this device's Audio Settings configure the manual one.
    *
-   * Reading `mode` again is safe now in the way it was not before: it used to
-   * *block* the tab when it was ambient, on the reasoning that the room was
-   * already being listened to, while nothing listened, which took away the only
-   * working capture and put nothing in its place (#254). It now selects between
-   * two panels that both work, and the ambient one offers a way back to manual
-   * when its provider is unconfigured. There is no state in which the Record
-   * tab does nothing.
+   * The mode used to come from this device's local storage, which let one
+   * doctor's preference silently change every later consultation. It now comes
+   * from the record itself and is locked as soon as that record has a
+   * transcript. Both modes remain working capture paths.
    */
   const [audio, setAudio] = useState<AudioSettings>(loadAudioSettings)
   /*
-   * Latched while a session is live, so saving the Audio dialog mid-consultation
-   * cannot unmount the running capture and lose the transcript with it. Stop is
-   * the only path that delivers text, so nothing may take it away.
+   * Latched while a session is live, so an in-flight consultation update cannot
+   * unmount the running capture and lose the transcript with it. Stop is the
+   * only path that delivers text, so nothing may take it away.
    */
   const [ambientLive, setAmbientLive] = useState(false)
-  const showAmbient = audio.mode === 'ambient' || ambientLive
+  const showAmbient = captureMode === 'ambient' || ambientLive
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>(TABS[0].id)
   const audioDialog = useRef<HTMLDialogElement>(null)
   const [text, setText] = useState('')
@@ -275,14 +280,11 @@ export function CapturePanel({
   }
 
   /*
-   * Returns the tab to press-to-record and remembers it, so a doctor whose
-   * deployment has no ambient provider is not sent back to the same dead screen
-   * on the next consultation.
+   * Returns this consultation to press-to-record. A live session stays mounted
+   * until it releases its stream, so no unsent transcript is stranded.
    */
   const switchToManual = () => {
-    const next: AudioSettings = { ...audio, mode: 'manual' }
-    saveAudioSettings(next)
-    setAudio(next)
+    onCaptureModeChange('manual')
   }
 
   return (
@@ -353,10 +355,18 @@ export function CapturePanel({
               <AmbientCapture
                 onTranscript={applyRecording}
                 onSwitchToManual={switchToManual}
-                onLiveChange={setAmbientLive}
+                onLiveChange={(live) => {
+                  setAmbientLive(live)
+                  onCaptureBusyChange(live)
+                }}
               />
             ) : (
-              <AudioCapture engine={audio.engine} transcript={text} onTranscript={applyRecording} />
+              <AudioCapture
+                engine={audio.engine}
+                transcript={text}
+                onTranscript={applyRecording}
+                onBusyChange={onCaptureBusyChange}
+              />
             )}
           </Card>
         )}
