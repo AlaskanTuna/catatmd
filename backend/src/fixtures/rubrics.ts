@@ -59,8 +59,25 @@ export const FIXTURE_RUBRICS: readonly FixtureRubric[] = [
       'model output did not corroborate it. The rules engine never sees the model output — a ' +
       'miss here is a patient-safety regression, not a quality issue.',
     identifierClasses: ['PATIENT'],
-    // The patient reports drooling and that she cannot swallow her own saliva.
-    expectedRedFlagIds: ['stridor-airway-compromise', 'swallowing-oral-intake'],
+    /*
+     * The patient reports drooling and that she cannot swallow her own saliva.
+     *
+     * `significant-dyspnoea` joined this list under `redflag-list-v10`, and it
+     * is a third false negative the phrasing fix uncovered rather than a
+     * widening of what this fixture means. The fixture header has always said
+     * it carries evidence for three overlapping triggers and named
+     * breathlessness as one of them; the rubric could only list two because
+     * "Any trouble breathing?" answered "Yes, breathing feels very tight"
+     * matched nothing. It fires through the screening-question path that
+     * `question-context.test.ts` already pins: the patient affirms without
+     * naming the symptom, so the doctor's question is the only place it is
+     * named.
+     */
+    expectedRedFlagIds: [
+      'significant-dyspnoea',
+      'stridor-airway-compromise',
+      'swallowing-oral-intake',
+    ],
   },
   {
     fixtureId: 'urti-diagnosis-not-assessed',
