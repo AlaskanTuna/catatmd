@@ -67,6 +67,7 @@ export function CapturePanel({
   saving,
   error,
   onLiveSegments,
+  onCapturingChange,
 }: {
   onCapture: (transcript: Transcript) => void
   saving: boolean
@@ -77,6 +78,11 @@ export function CapturePanel({
    * the manual path, which has nothing live to report.
    */
   onLiveSegments?: (segments: readonly TranscriptSegment[]) => void
+  /**
+   * Whether a live capture session is running, so the page can give the
+   * transcript the room it needs while it is the only moving surface (#219).
+   */
+  onCapturingChange?: (capturing: boolean) => void
 }) {
   /*
    * The doctor arrived on a consultation page that is already scoped to one
@@ -360,7 +366,10 @@ export function CapturePanel({
               <AmbientCapture
                 onTranscript={applyRecording}
                 onSwitchToManual={switchToManual}
-                onLiveChange={setAmbientLive}
+                onLiveChange={(live) => {
+                  setAmbientLive(live)
+                  onCapturingChange?.(live)
+                }}
                 onLiveSegments={onLiveSegments}
                 deviceId={audio.deviceId}
               />

@@ -279,6 +279,9 @@ export function ConsultationReview() {
    */
   const live = useLivePanes(isEphemeral ? null : id)
 
+  /** True only while an ambient session is running, which reshapes the grid. */
+  const [capturing, setCapturing] = useState(false)
+
   const analyze = useMutation({
     mutationFn: () => api.analyze(id),
     onSuccess: (next) => {
@@ -586,7 +589,6 @@ export function ConsultationReview() {
           </>
         }
       />
-
       {/* Three panels on wide screens, in every state rather than only the
           analysed one. Below lg the safety rail moves ABOVE the note rather
           than below it: docs/DESIGN.md requires severity to be visible without
@@ -598,7 +600,28 @@ export function ConsultationReview() {
           any of it would land. The columns are the explanation: the note fills
           the middle, the checks fill the rail, and both reveal their shape
           while they are still empty. */}
-      <div className="mt-6 grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)_340px]">
+      {/*
+        The tracks swap on the one phase change that matters. While the doctor
+        is still talking the note is deliberately a placeholder, so leaving it
+        the fluid track spends the widest column on four rows of grey bars and
+        crams the only moving surface on screen into 380px. During capture the
+        transcript takes the fluid track instead; at Stop it hands it back to
+        the note, which is when the note becomes the thing being read.
+
+        Source order and every `order-*` class are untouched, so the columns do
+        not reshuffle: only their widths change, once, at a transition the
+        doctor initiated. The safety rail keeps its 340px in both states,
+        because docs/DESIGN.md requires severity visible without scrolling and
+        that is not a property to trade for a wider transcript.
+      */}
+      <div
+        className={cn(
+          'mt-6 grid gap-5',
+          capturing
+            ? 'lg:grid-cols-[minmax(0,1fr)_320px_340px]'
+            : 'lg:grid-cols-[380px_minmax(0,1fr)_340px]',
+        )}
+      >
         <section
           ref={transcriptRef}
           className={cn(
@@ -638,21 +661,40 @@ export function ConsultationReview() {
               released there rather than nesting one scrollbar inside another.
               Below `lg` the column is uncapped and this is what stops a long
               transcript running the page. */}
+          {/*
+            The settled transcript takes the same turn-per-row shape the live
+            pane uses, so the transcript does not change its reading rules the
+            moment capture stops. Two differences, both earned: the roles are
+            real here, because `draftHostedTurns` has run, and the type is 14px
+            rather than 12px, which is the documented body floor and is most of
+            what made this read as a wall.
+          */}
           {detail.transcript ? (
-            <div className="max-h-[70vh] overflow-y-auto rounded-card bg-sunken p-3 lg:max-h-none lg:overflow-visible">
-              {keyedTurns.map((turn) => (
-                <p key={turn.key} className="mb-2 text-xs leading-relaxed">
-                  <span
-                    className={cn(
-                      'font-semibold',
-                      turn.speaker === 'doctor' ? 'text-accent' : 'text-ink-muted',
-                    )}
-                  >
-                    {turn.speaker === 'doctor' ? 'Doctor' : 'Patient'}:{' '}
-                  </span>
-                  <span className="text-ink">{turn.text}</span>
-                </p>
-              ))}
+            <div className="max-h-[70vh] overflow-y-auto rounded-card bg-sunken p-4 lg:max-h-none lg:overflow-visible">
+              <ol className="grid gap-1">
+                {keyedTurns.map((turn, index) => {
+                  const opensTurn = keyedTurns[index - 1]?.speaker !== turn.speaker
+                  return (
+                    <li key={turn.key} className={cn(opensTurn && index > 0 && 'mt-3')}>
+                      {opensTurn && (
+                        <span className="mb-1 block">
+                          <span
+                            className={cn(
+                              'rounded-pill px-2 py-0.5 text-2xs font-medium',
+                              turn.speaker === 'doctor'
+                                ? 'bg-accent-soft text-accent'
+                                : 'bg-surface text-ink-muted',
+                            )}
+                          >
+                            {turn.speaker === 'doctor' ? 'Doctor' : 'Patient'}
+                          </span>
+                        </span>
+                      )}
+                      <p className="text-ink text-sm leading-relaxed">{turn.text}</p>
+                    </li>
+                  )
+                })}
+              </ol>
             </div>
           ) : (
             <Card className="flex flex-col p-4">
@@ -667,6 +709,7 @@ export function ConsultationReview() {
                 }
                 onCapture={(transcript) => capture.mutate(transcript)}
                 onLiveSegments={live.absorb}
+                onCapturingChange={setCapturing}
               />
             </Card>
           )}
@@ -836,7 +879,6 @@ export function ConsultationReview() {
           )}
         </aside>
       </div>
-
       {/* Every finding in the panel, at a width that fits the card's own
           explanation, instead of thirty of them threaded through a 340px rail.
           The rail keeps the first three as the preview and still renders the
@@ -870,7 +912,6 @@ export function ConsultationReview() {
           </div>
         )}
       </dialog>
-
       {/* Only the approved state renders here now: the attribution is a
           record, not an action, and it prints (issue #26). The gate itself
           moved under the consultation title, where it is seen without covering
@@ -897,7 +938,6 @@ export function ConsultationReview() {
           onApproved={isEphemeral ? tour.updateEphemeral : onApproved}
         />
       )}
-
       {/*
        * Rendered inactive on the tour's consultation, which is not stored, so
        * the copilot route would 404 on every message (#80). It renders at all

@@ -8,9 +8,11 @@ import { InfoTip } from '../../ui/InfoTip.js'
 import { ConsentGate } from '../ConsentGate.js'
 import { InputMeter } from '../InputMeter.js'
 import type { TranscriptSegment } from '../protocol.js'
+import { LiveConversation } from './LiveConversation.js'
 import {
   absorb,
   EMPTY_LIVE_TRANSCRIPT,
+  interimSpeaker,
   interimText,
   type LiveTranscript,
   tokensToSegments,
@@ -579,17 +581,21 @@ export function AmbientCapture({
             <InputMeter stream={micStream ?? undefined} />
           </div>
 
-          <div className="max-h-64 overflow-y-auto rounded-control border border-line p-3 text-sm leading-relaxed">
-            {tokensToSegments(live.final).map((segment) => (
-              <p key={`${segment.start}-${segment.text}`}>{segment.text}</p>
-            ))}
-            {interimText(live.interim) && (
-              <p className="text-ink-muted">{interimText(live.interim)}</p>
-            )}
-            {live.final.length === 0 && interimText(live.interim) === '' && (
-              <p className="text-ink-muted">Text appears as the consultation is spoken.</p>
-            )}
-          </div>
+          <LiveConversation
+            segments={tokensToSegments(live.final)}
+            interim={interimText(live.interim)}
+            interimSpeaker={interimSpeaker(live.interim)}
+          />
+
+          {/*
+            Says out loud what the chips above deliberately do not claim. The
+            recogniser separates voices but does not know which is the doctor,
+            and a doctor who reads "Speaker 2" without this line may reasonably
+            wonder whether the system has failed to work something out.
+          */}
+          <p className="text-2xs text-ink-muted">
+            Speakers are numbered while recording. Roles are assigned when you stop.
+          </p>
 
           <div>
             <Button variant="primary" onClick={() => void stop()}>
