@@ -74,7 +74,15 @@ const session: LiveSession = {
     languageHints: ['ms', 'en', 'zh', 'ta'],
     languageIdentification: true,
     speakerDiarization: true,
-    endpointDetection: true,
+    // Off, because it forces early finalisation and freezes speaker ids before
+    // the diariser can settle them. See `liveSessionConfig` on the API.
+    endpointDetection: false,
+    context: {
+      general: [
+        { key: 'domain', value: 'Healthcare' },
+        { key: 'speakers', value: 'Two speakers: a doctor and a patient' },
+      ],
+    },
   },
 }
 
@@ -130,7 +138,15 @@ describe('connecting', () => {
       language_hints: ['ms', 'en', 'zh', 'ta'],
       enable_language_identification: true,
       enable_speaker_diarization: true,
-      enable_endpoint_detection: true,
+      enable_endpoint_detection: false,
+      // Forwarded exactly as the API composed it. This frame is the audio
+      // egress, so the assertion is that nothing here is added client-side.
+      context: {
+        general: [
+          { key: 'domain', value: 'Healthcare' },
+          { key: 'speakers', value: 'Two speakers: a doctor and a patient' },
+        ],
+      },
     })
     expect(onOpen).toHaveBeenCalledTimes(1)
     expect(stream.state).toBe('streaming')

@@ -189,6 +189,10 @@ export function openSonioxStream(
         enable_language_identification: session.config.languageIdentification,
         enable_speaker_diarization: session.config.speakerDiarization,
         enable_endpoint_detection: session.config.endpointDetection,
+        // Static domain hints the API composed. Forwarded as received and never
+        // added to here: this frame is the audio egress, and the one guarantee
+        // behind this field is that no request shaped it.
+        context: session.config.context,
       }),
     )
     state = 'streaming'

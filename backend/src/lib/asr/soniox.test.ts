@@ -270,7 +270,13 @@ describe('liveSessionConfig', () => {
       languageHints: ['ms', 'en', 'zh', 'ta'],
       languageIdentification: true,
       speakerDiarization: true,
-      endpointDetection: true,
+      endpointDetection: false,
+      context: {
+        general: [
+          { key: 'domain', value: 'Healthcare' },
+          { key: 'speakers', value: 'Two speakers: a doctor and a patient' },
+        ],
+      },
     })
   })
 
@@ -278,6 +284,31 @@ describe('liveSessionConfig', () => {
     // Issue #218 measured Malay tagged Indonesian on 3 of 4 clips; the
     // documented mitigation is to constrain the candidate set.
     expect(liveSessionConfig().languageHints).not.toContain('id')
+  })
+
+  it('leaves endpoint detection off, because it freezes speaker ids', () => {
+    // With it on the vendor finalises tokens early, and a final token is never
+    // revised, so a temporary speaker switch becomes permanent for the rest of
+    // the consultation. Pinned here because the symptom is only observable in
+    // a live capture: nothing else in this suite can catch a regression.
+    expect(liveSessionConfig().endpointDetection).toBe(false)
+  })
+
+  it('hands out a fresh context each call, so no caller can poison the next', () => {
+    // The hint crosses the audio egress, where nothing can be de-identified.
+    // Taking no arguments is what keeps request data out of it; this is the
+    // other half, so a caller that mutates what it was handed cannot change
+    // what the next session sends.
+    const first = liveSessionConfig()
+    first.context.general[0] = { key: 'patient', value: 'leaked' }
+    first.context.general.push({ key: 'extra', value: 'leaked' })
+
+    expect(liveSessionConfig().context).toEqual({
+      general: [
+        { key: 'domain', value: 'Healthcare' },
+        { key: 'speakers', value: 'Two speakers: a doctor and a patient' },
+      ],
+    })
   })
 })
 

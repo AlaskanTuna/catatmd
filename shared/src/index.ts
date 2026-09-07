@@ -242,6 +242,22 @@ export const LiveSessionConfigSchema = z.object({
   languageIdentification: z.boolean(),
   speakerDiarization: z.boolean(),
   endpointDetection: z.boolean(),
+  /**
+   * Static domain hints, which the provider documents as helping it "more
+   * reliably separate voices" when the `general` section names the speakers.
+   *
+   * **Never patient data, and never derived from a request.** This crosses the
+   * audio egress with the rest of the first frame, and audio cannot be
+   * de-identified. `liveSessionConfig()` in `backend/src/lib/asr/soniox.ts`
+   * takes no arguments, which is what structurally keeps a consultation out of
+   * it; the bounds below are the second half of that guarantee.
+   */
+  context: z.object({
+    general: z
+      .array(z.object({ key: z.string().min(1).max(32), value: z.string().min(1).max(128) }))
+      .min(1)
+      .max(8),
+  }),
 })
 
 /**

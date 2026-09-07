@@ -3,6 +3,7 @@ import { segmentsToDraft } from '../draft-turns.js'
 import {
   absorb,
   EMPTY_LIVE_TRANSCRIPT,
+  interimSpeaker,
   interimText,
   type LiveToken,
   SEGMENT_GAP_MS,
@@ -198,5 +199,81 @@ describe('interimText', () => {
 
   it('is empty when nothing is pending', () => {
     expect(interimText([])).toBe('')
+  })
+})
+
+describe('tokensToSegments when diarisation is noisy', () => {
+  /*
+   * The recogniser emits subword tokens, so "Ya" arrives as "Y" then "a", and
+   * its real-time diarisation is documented to show "temporary speaker
+   * switches that stabilize as more context is available". A switch that lands
+   * inside a word must never become a segment boundary: it renders one word
+   * across two lines, and `segmentsToDraft` reads a boundary as its primary
+   * evidence of a real speaker handoff.
+   */
+  const midWordFlip = [
+    token('Y', { speaker: '1', startMs: 25_000, endMs: 25_120 }),
+    token('a', { speaker: '2', startMs: 25_120, endMs: 25_240 }),
+    token(', semalam around 38.5', { speaker: '2', startMs: 25_240, endMs: 26_500 }),
+  ]
+
+  it('never closes a segment inside a word', () => {
+    const segments = tokensToSegments(midWordFlip)
+
+    expect(segments).toHaveLength(1)
+    expect(segments[0]?.text).toBe('Ya, semalam around 38.5')
+  })
+
+  it('does not let one mis-diarised subword relabel the whole turn', () => {
+    // Reading the group's first token said '1' here, which is how a single bad
+    // subword captured an entire patient turn.
+    expect(tokensToSegments(midWordFlip)[0]?.speaker).toBe('2')
+  })
+
+  it('still cuts on a speaker change at a word boundary with no pause', () => {
+    // The leading space is what makes this a boundary rather than a word, so
+    // the guard must not swallow a handoff merely because it arrived quickly.
+    const segments = tokensToSegments([
+      token('badan pun rasa very tired', { speaker: '2', startMs: 13_000, endMs: 15_000 }),
+      token(' Okay', { speaker: '1', startMs: 15_000, endMs: 15_400 }),
+    ])
+
+    expect(segments.map((segment) => segment.text)).toEqual(['badan pun rasa very tired', 'Okay'])
+  })
+
+  it('still cuts between Chinese tokens, which carry no leading space', () => {
+    // The guard keys on Latin script precisely so it cannot suppress a cut
+    // here, where every token is its own word and none carries a space.
+    const segments = tokensToSegments([
+      token('我咳嗽三天', { speaker: '2', startMs: 0, endMs: 1_500 }),
+      token('好的', { speaker: '1', startMs: 1_500, endMs: 2_000 }),
+    ])
+
+    expect(segments.map((segment) => segment.text)).toEqual(['我咳嗽三天', '好的'])
+  })
+})
+
+describe('interimSpeaker', () => {
+  it('reads whoever holds most of the tail, not whoever opened it', () => {
+    expect(
+      interimSpeaker([
+        token('Y', { isFinal: false, speaker: '1', startMs: 0, endMs: 120 }),
+        token('a', { isFinal: false, speaker: '2', startMs: 120, endMs: 240 }),
+        token(', semalam', { isFinal: false, speaker: '2', startMs: 240, endMs: 1_400 }),
+      ]),
+    ).toBe('2')
+  })
+
+  it('ignores control markers, which are boundaries rather than speech', () => {
+    expect(
+      interimSpeaker([
+        token('<end>', { isFinal: false, endpoint: true, speaker: '1' }),
+        token('ok', { isFinal: false, speaker: '2', startMs: 0, endMs: 500 }),
+      ]),
+    ).toBe('2')
+  })
+
+  it('is null when nothing is pending', () => {
+    expect(interimSpeaker([])).toBeNull()
   })
 })

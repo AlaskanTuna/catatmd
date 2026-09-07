@@ -510,7 +510,13 @@ describe('LiveSessionSchema', () => {
       languageHints: ['ms', 'en', 'zh', 'ta'],
       languageIdentification: true,
       speakerDiarization: true,
-      endpointDetection: true,
+      endpointDetection: false,
+      context: {
+        general: [
+          { key: 'domain', value: 'Healthcare' },
+          { key: 'speakers', value: 'Two speakers: a doctor and a patient' },
+        ],
+      },
     },
   }
 
@@ -553,6 +559,24 @@ describe('LiveSessionSchema', () => {
       LiveSessionSchema.safeParse({ ...session, config: { ...session.config, languageHints: [] } })
         .success,
     ).toBe(false)
+  })
+
+  it('bounds the context hint, which rides the same frame as the audio', () => {
+    // The hint is a fixed pair of domain strings on the API. The bounds are
+    // what stops a later change quietly turning this field into somewhere a
+    // consultation could be smuggled out through the one egress that has no
+    // de-identification gate in front of it.
+    const context = (general: { key: string; value: string }[]) =>
+      LiveSessionSchema.safeParse({
+        ...session,
+        config: { ...session.config, context: { general } },
+      }).success
+
+    expect(context([{ key: 'domain', value: 'Healthcare' }])).toBe(true)
+    expect(context([])).toBe(false)
+    expect(context(Array.from({ length: 9 }, () => ({ key: 'k', value: 'v' })))).toBe(false)
+    expect(context([{ key: 'domain', value: 'x'.repeat(129) }])).toBe(false)
+    expect(context([{ key: 'k'.repeat(33), value: 'v' }])).toBe(false)
   })
 })
 
