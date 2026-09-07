@@ -1,4 +1,5 @@
 import {
+  type CaptureMode,
   type ConsultationAnalysis,
   ConsultationAnalysisSchema,
   type ConsultationDetail,
@@ -28,6 +29,8 @@ import {
   LiveFlagsResponseSchema,
   type LiveSession,
   LiveSessionSchema,
+  type MedicalRecordNote,
+  type NoteTemplate,
   type NotificationItem,
   NotificationItemSchema,
   type Patient,
@@ -243,6 +246,9 @@ export const api = {
     body: {
       title?: string | null
       editedNote?: Partial<SoapNote>
+      editedMedicalRecordNote?: Partial<MedicalRecordNote>
+      noteTemplate?: NoteTemplate
+      captureMode?: CaptureMode
       acknowledgedRedFlagIds?: string[]
       reviewedGapIds?: string[]
       redFlagDispositions?: DispositionInput[]

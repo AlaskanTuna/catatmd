@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { type DispositionState, NotificationActionSchema } from '@shared/types'
+import { type DispositionState, type NoteTemplate, NotificationActionSchema } from '@shared/types'
 import type { ProfileId } from '../clinical-profiles/index.js'
 import type { ActiveClinicalVersions } from '../clinical-versions/index.js'
 import { prisma } from '../lib/prisma.js'
@@ -100,6 +100,10 @@ export type ConsultationAuditEvent =
     }
   | { action: 'consultation.live_analysis_failed'; metadata: { reason: AnalysisFailureReason } }
   | { action: 'consultation.edited' }
+  | {
+      action: 'consultation.template_selected'
+      metadata: { template: NoteTemplate }
+    }
   /*
    * Its own action rather than folded into `consultation.edited`, because
    * `title` is a PHI-bearing column a doctor writes free text into, and it is

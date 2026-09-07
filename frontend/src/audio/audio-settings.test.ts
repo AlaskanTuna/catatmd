@@ -26,14 +26,8 @@ describe('loadAudioSettings', () => {
     expect(loadAudioSettings()).toEqual(DEFAULT_AUDIO_SETTINGS)
   })
 
-  it('defaults to press-to-record rather than ambient', () => {
-    // The quieter behaviour is the one a doctor gets without choosing.
-    expect(DEFAULT_AUDIO_SETTINGS.mode).toBe('manual')
-  })
-
   it('round-trips a saved configuration', () => {
     const settings: AudioSettings = {
-      mode: 'ambient',
       deviceId: 'mic-2',
       suppressNoise: false,
       boostQuietSpeech: true,
@@ -50,10 +44,13 @@ describe('loadAudioSettings', () => {
     expect(loadAudioSettings()).toEqual(DEFAULT_AUDIO_SETTINGS)
   })
 
-  it('rejects an unrecognised capture mode rather than trusting it', () => {
-    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'always-on' }))
+  it('ignores a legacy device-scoped capture mode', () => {
+    localStorage.setItem(
+      'catatmd.audio',
+      JSON.stringify({ ...DEFAULT_AUDIO_SETTINGS, mode: 'ambient' }),
+    )
 
-    expect(loadAudioSettings().mode).toBe('manual')
+    expect(loadAudioSettings()).not.toHaveProperty('mode')
   })
 
   it('survives storage throwing, which a private window does', () => {
@@ -77,7 +74,6 @@ describe('toConstraints', () => {
   it('maps the labels onto the constraints they claim to control', () => {
     expect(
       toConstraints({
-        mode: 'manual',
         deviceId: null,
         suppressNoise: true,
         boostQuietSpeech: false,
@@ -101,7 +97,7 @@ describe('toConstraints', () => {
   it('carries nothing about consent into the media constraints', () => {
     // Capture settings describe the microphone. Whether a patient agreed is
     // asked per consultation and must not be derivable from this object.
-    const keys = Object.keys(toConstraints({ ...DEFAULT_AUDIO_SETTINGS, mode: 'ambient' }))
+    const keys = Object.keys(toConstraints(DEFAULT_AUDIO_SETTINGS))
 
     expect(keys).not.toContain('mode')
     expect(keys.some((k) => /consent|ambient/i.test(k))).toBe(false)

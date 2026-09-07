@@ -75,10 +75,16 @@ class FakeMediaRecorder {
   ondataavailable: ((event: { data: Blob }) => void) | null = null
   onstop: (() => void) | null = null
   /** Modelled because the teardown path reads it before stopping (issue #140). */
-  state: 'inactive' | 'recording' = 'inactive'
+  state: 'inactive' | 'recording' | 'paused' = 'inactive'
   /** Real recorders expose the stream they were built on; teardown needs it. */
   readonly stream: { getTracks: () => { stop: () => void }[] }
   start = vi.fn(() => {
+    this.state = 'recording'
+  })
+  pause = vi.fn(() => {
+    this.state = 'paused'
+  })
+  resume = vi.fn(() => {
     this.state = 'recording'
   })
 
@@ -191,12 +197,21 @@ async function settle() {
   })
 }
 
-function renderCapture(engine: 'local' | 'hosted' = 'local', transcript = '') {
+function renderCapture(
+  engine: 'local' | 'hosted' = 'local',
+  transcript = '',
+  onBusyChange = vi.fn(),
+) {
   const onTranscript = vi.fn()
   const view = render(
-    <AudioCapture onTranscript={onTranscript} engine={engine} transcript={transcript} />,
+    <AudioCapture
+      onTranscript={onTranscript}
+      onBusyChange={onBusyChange}
+      engine={engine}
+      transcript={transcript}
+    />,
   )
-  return { onTranscript, ...view }
+  return { onTranscript, onBusyChange, ...view }
 }
 
 function pickFile() {
@@ -269,6 +284,21 @@ const consentBox = () => screen.getByRole('checkbox', { name: /agreed/i }) as HT
  * until someone agrees.
  */
 const agree = () => fireEvent.click(consentBox())
+
+describe('capture ownership reporting', () => {
+  it('reports recording as busy and returns to idle after cancellation', async () => {
+    const onBusyChange = vi.fn()
+    renderCapture('local', '', onBusyChange)
+
+    expect(onBusyChange).not.toHaveBeenCalled()
+    await startRecording()
+    expect(onBusyChange).toHaveBeenLastCalledWith(true)
+
+    await stopRecording()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onBusyChange).toHaveBeenLastCalledWith(false)
+  })
+})
 
 describe('the silence budget', () => {
   it('terminates a worker that stays silent and points at typing or pasting', async () => {
@@ -517,6 +547,48 @@ describe('try again', () => {
 })
 
 describe('prewarming the speech model', () => {
+  it('pauses and resumes the same recorder while freezing the elapsed clock', async () => {
+    renderCapture()
+    await startRecording()
+    const media = recorders[0]
+    if (!media) throw new Error('expected a recorder')
+
+    act(() => vi.advanceTimersByTime(2000))
+    screen.getByText('0:02')
+    fireEvent.click(screen.getByRole('button', { name: 'Pause Recording' }))
+
+    expect(media.pause).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Paused')).toBeTruthy()
+    expect(screen.getByText(/audio is not being added/i)).toBeTruthy()
+    act(() => vi.advanceTimersByTime(5000))
+    screen.getByText('0:02')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume Recording' }))
+    expect(media.resume).toHaveBeenCalledTimes(1)
+    act(() => vi.advanceTimersByTime(1000))
+    screen.getByText('0:03')
+  })
+
+  it('stops and transcribes from paused state without replacing the recorder', async () => {
+    const { onTranscript } = renderCapture()
+    await startRecording()
+    const media = recorders[0]
+    if (!media) throw new Error('expected a recorder')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause Recording' }))
+    await stopRecording()
+
+    expect(recorders).toEqual([media])
+    expect(media.state).toBe('inactive')
+    spawned().reply({ type: 'ready' })
+    spawned().reply({ type: 'result', text: 'paused capture', segments: [] })
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: 'paused capture',
+      segments: [],
+      source: 'asr_local',
+    })
+  })
+
   it('posts a load request to a fresh worker when recording starts', async () => {
     renderCapture()
     await startRecording()

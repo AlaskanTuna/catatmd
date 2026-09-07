@@ -1,14 +1,19 @@
+import type { CopilotProposal } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../lib/api.js'
-import { ConsultationReview, formatSoapNoteForClipboard } from './ConsultationReview.js'
+import { formatNoteForClipboard } from '../lib/note-templates.js'
+import { ConsultationReview } from './ConsultationReview.js'
 
-const { toastSuccess } = vi.hoisted(() => ({ toastSuccess: vi.fn() }))
+const { toastError, toastSuccess } = vi.hoisted(() => ({
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
+}))
 
 vi.mock('react-hot-toast', () => ({
-  default: { success: toastSuccess, error: vi.fn() },
+  default: { success: toastSuccess, error: toastError },
 }))
 
 vi.mock('../demo/DemoTour.js', () => ({
@@ -27,9 +32,47 @@ vi.mock('../lib/api.js', () => ({
   },
 }))
 
-vi.mock('../copilot/CatatAI.js', () => ({ CatatAI: () => null }))
+vi.mock('../copilot/CatatAI.js', () => ({
+  CatatAI: ({ onApply }: { onApply: (proposal: CopilotProposal) => Promise<void> }) => (
+    <>
+      <button
+        type="button"
+        onClick={() =>
+          void onApply({
+            tool: 'edit_note_section',
+            section: 'plan',
+            text: 'Updated safety-net advice.',
+            rationale: 'The doctor requested clearer follow-up advice.',
+          })
+        }
+      >
+        Apply Copilot Plan Edit
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void onApply({
+            tool: 'edit_note_section',
+            section: 'subjective',
+            text: 'Replacement subjective.',
+            rationale: 'The doctor requested a history rewrite.',
+          }).catch(() => undefined)
+        }
+      >
+        Apply Copilot Subjective Edit
+      </button>
+    </>
+  ),
+}))
 vi.mock('../review/ApproveBar.js', () => ({ ApproveBar: () => null }))
 vi.mock('../review/ChecklistPanel.js', () => ({ ChecklistPanel: () => null }))
+vi.mock('./CapturePanel.js', () => ({
+  CapturePanel: ({ onCaptureBusyChange }: { onCaptureBusyChange: (busy: boolean) => void }) => (
+    <button type="button" onClick={() => onCaptureBusyChange(true)}>
+      Mock Capture Busy
+    </button>
+  ),
+}))
 vi.mock('../review/NoteEditor.js', () => ({
   NoteEditor: ({ note }: { note: { subjective: string } }) => <p>{note.subjective}</p>,
 }))
@@ -63,15 +106,35 @@ const NOTE = {
   plan: 'Supportive care and safety-net advice.',
 }
 
+const MEDICAL_RECORD_NOTE = {
+  presentingComplaint: 'Cough.',
+  historyOfPresentingComplaint: 'Three days.',
+  pastMedicalHistory: '',
+  socialHistory: '',
+  familyHistory: '',
+  objective: NOTE.objective,
+  assessment: NOTE.assessment,
+  plan: NOTE.plan,
+}
+
+const LEGACY_EDITED_NOTE = {
+  ...NOTE,
+  subjective: 'Clinician-revised SOAP history.',
+  objective: 'Clinician-revised observations.',
+}
+
 const APPROVED = {
   id: 'consultation-1',
   status: 'approved' as const,
+  noteTemplate: 'soap' as const,
+  captureMode: 'manual' as const,
   title: 'Acute cough',
   createdAt: new Date('2026-08-27T06:00:00.000Z'),
   updatedAt: new Date('2026-08-27T06:00:00.000Z'),
   transcript: null,
   analysis: {
     note: NOTE,
+    medicalRecordNote: MEDICAL_RECORD_NOTE,
     redFlags: [],
     gaps: [],
     suggestions: [],
@@ -80,6 +143,7 @@ const APPROVED = {
     evidenceLinks: [],
   },
   editedNote: null,
+  editedMedicalRecordNote: null,
   approvedAt: new Date('2026-08-27T07:00:00.000Z'),
   approvedBy: 'Dr Lim',
   acknowledgedRedFlagIds: [],
@@ -117,7 +181,7 @@ describe('approved note copy', () => {
   })
 
   it('formats a plain-text SOAP note for clinic CMS paste', () => {
-    expect(formatSoapNoteForClipboard(NOTE)).toBe(
+    expect(formatNoteForClipboard('soap', NOTE, MEDICAL_RECORD_NOTE)).toBe(
       'Subjective\nCough for three days.\n\n' +
         'Objective\nTemperature 37.2°C.\n\n' +
         'Assessment\nAcute cough under review.\n\n' +
@@ -131,10 +195,285 @@ describe('approved note copy', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Copy Note' }))
 
     await waitFor(() =>
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(formatSoapNoteForClipboard(NOTE)),
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        formatNoteForClipboard('soap', NOTE, MEDICAL_RECORD_NOTE),
+      ),
     )
     expect(screen.getByRole('button', { name: 'Export' })).toBeTruthy()
     expect(toastSuccess).toHaveBeenCalledWith('Note copied.')
+  })
+})
+
+describe('consultation note template', () => {
+  const originalShowModal = HTMLDialogElement.prototype.showModal
+  const originalClose = HTMLDialogElement.prototype.close
+
+  beforeEach(() => {
+    HTMLDialogElement.prototype.showModal = function showModal() {
+      this.open = true
+    }
+    HTMLDialogElement.prototype.close = function close() {
+      this.open = false
+      this.dispatchEvent(new Event('close'))
+    }
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.getConsultation).mockResolvedValue(APPROVED as never)
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.patch).mockReset()
+    toastError.mockReset()
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    })
+  })
+
+  afterEach(() => {
+    HTMLDialogElement.prototype.showModal = originalShowModal
+    HTMLDialogElement.prototype.close = originalClose
+  })
+
+  it('moves the layout control out of Clinical Note and saves both changed settings', async () => {
+    vi.mocked(api.patch).mockResolvedValue({
+      ...APPROVED,
+      noteTemplate: 'malaysian',
+      captureMode: 'ambient',
+    } as never)
+    setup()
+
+    await screen.findByRole('heading', { name: 'Clinical Note' })
+    expect(screen.queryByRole('radio', { name: 'Malaysian Medical Record' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Consultation Settings' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Malaysian Medical Record' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Ambient' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith('consultation-1', {
+        noteTemplate: 'malaysian',
+        captureMode: 'ambient',
+      }),
+    )
+    expect(await screen.findByRole('heading', { name: 'Family History' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Edit Family History/ })).toBeNull()
+  })
+
+  it('persists one canonical category edit and updates its provenance', async () => {
+    const awaitingReview = {
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      noteTemplate: 'malaysian' as const,
+      approvedAt: null,
+      approvedBy: null,
+    }
+    vi.mocked(api.getConsultation).mockResolvedValue(awaitingReview as never)
+    vi.mocked(api.patch).mockResolvedValue({
+      ...awaitingReview,
+      editedMedicalRecordNote: {
+        ...MEDICAL_RECORD_NOTE,
+        familyHistory: 'Mother has asthma.',
+      },
+    } as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Family History' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Family History' }), {
+      target: { value: 'Mother has asthma.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save Family History' }))
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith('consultation-1', {
+        editedMedicalRecordNote: { familyHistory: 'Mother has asthma.' },
+      }),
+    )
+    const section = (await screen.findByText('Mother has asthma.')).closest('section')
+    expect(section?.textContent).toContain('You Edited This')
+  })
+
+  it('copies an approved Malaysian record in the selected order', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      noteTemplate: 'malaysian',
+    } as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy Note' }))
+
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        formatNoteForClipboard('malaysian', NOTE, MEDICAL_RECORD_NOTE),
+      ),
+    )
+    expect(screen.getByRole('heading', { name: 'Presenting Complaint' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Subjective' })).toBeNull()
+  })
+
+  it('opens Consultation Settings while awaiting review', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'awaiting_review',
+      approvedAt: null,
+      approvedBy: null,
+    } as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Consultation Settings' }))
+
+    expect(screen.getByRole('dialog', { name: 'Consultation Settings' })).toBeTruthy()
+  })
+
+  it('surfaces a settings save failure inline without changing the selected layout', async () => {
+    vi.mocked(api.patch).mockRejectedValue(new Error('Unsupported by deployed API'))
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Consultation Settings' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Malaysian Medical Record' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(/could not be saved/i)
+    expect(screen.getByRole('dialog', { name: 'Consultation Settings' })).toBeTruthy()
+    expect(
+      screen.getByRole('radio', { name: 'Malaysian Medical Record' }).getAttribute('aria-checked'),
+    ).toBe('true')
+    expect(toastError).not.toHaveBeenCalled()
+  })
+
+  it('renders an existing SOAP-only edit instead of hiding it behind canonical AI text', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      editedNote: LEGACY_EDITED_NOTE,
+    } as never)
+    setup()
+
+    expect(await screen.findByText('Clinician-revised SOAP history.')).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Family History' })).toBeNull()
+  })
+
+  it('copies an existing SOAP-only edit without mixing in canonical AI categories', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      noteTemplate: 'malaysian',
+      editedNote: LEGACY_EDITED_NOTE,
+    } as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy Note' }))
+
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        formatNoteForClipboard('malaysian', LEGACY_EDITED_NOTE, null),
+      ),
+    )
+    expect(screen.getAllByText('Not recorded by this analysis version')).toHaveLength(5)
+  })
+})
+
+describe('consultation hero actions', () => {
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'draft',
+      analysis: null,
+      approvedAt: null,
+      approvedBy: null,
+      transcript: {
+        source: 'paste',
+        labelsReviewed: true,
+        turns: [{ speaker: 'patient', text: 'Cough for three days.' }],
+      },
+    } as never)
+  })
+
+  it('shows no routine information tooltip beside an enabled Analyse action', async () => {
+    setup()
+
+    expect(await screen.findByRole('button', { name: 'Analyse Consultation' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'What happens when you analyse' })).toBeNull()
+  })
+
+  it('disables Consultation Settings while capture owns unsent audio', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'draft',
+      analysis: null,
+      approvedAt: null,
+      approvedBy: null,
+    } as never)
+    setup()
+
+    const settings = await screen.findByRole<HTMLButtonElement>('button', {
+      name: 'Consultation Settings',
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Mock Capture Busy' }))
+
+    expect(settings.disabled).toBe(true)
+  })
+})
+
+describe('copilot note edits', () => {
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.patch).mockReset()
+  })
+
+  it('routes a new-analysis OAP proposal through the canonical note', async () => {
+    const awaitingReview = {
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+    }
+    vi.mocked(api.getConsultation).mockResolvedValue(awaitingReview as never)
+    vi.mocked(api.patch).mockResolvedValue(awaitingReview as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply Copilot Plan Edit' }))
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith('consultation-1', {
+        editedMedicalRecordNote: { plan: 'Updated safety-net advice.' },
+      }),
+    )
+  })
+
+  it('refuses an opaque Subjective proposal when the canonical categories exist', async () => {
+    const awaitingReview = {
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+    }
+    vi.mocked(api.getConsultation).mockResolvedValue(awaitingReview as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply Copilot Subjective Edit' }))
+
+    await waitFor(() => expect(api.patch).not.toHaveBeenCalled())
+  })
+
+  it('keeps older analyses on the legacy SOAP proposal path', async () => {
+    const legacy = {
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+      analysis: { ...APPROVED.analysis, medicalRecordNote: undefined },
+    }
+    vi.mocked(api.getConsultation).mockResolvedValue(legacy as never)
+    vi.mocked(api.patch).mockResolvedValue(legacy as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Apply Copilot Plan Edit' }))
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith('consultation-1', {
+        editedNote: { ...NOTE, plan: 'Updated safety-net advice.' },
+      }),
+    )
   })
 })
 

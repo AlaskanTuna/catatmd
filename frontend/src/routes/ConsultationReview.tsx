@@ -1,15 +1,18 @@
 import type {
+  CaptureMode,
   ClinicalAssertion,
   ConsultationDetail,
   CopilotProposal,
   Disposition,
   DispositionInput,
   GuidelineChunk,
+  MedicalRecordNote,
   SoapNote,
   Transcript,
 } from '@shared/types'
+import { MedicalRecordNoteSchema, toSoapNote } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Printer, Sparkles } from 'lucide-react'
+import { Copy, Printer, Settings2, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, Navigate, useParams } from 'react-router-dom'
@@ -19,9 +22,18 @@ import { CatatAI } from '../copilot/CatatAI.js'
 import { DEMO_CONSULTATION_ID, useDemoTour } from '../demo/DemoTour.js'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
+import { formatNoteForClipboard } from '../lib/note-templates.js'
 import { count } from '../lib/plural.js'
 import { ApproveBar } from '../review/ApproveBar.js'
 import { ChecklistPanel } from '../review/ChecklistPanel.js'
+import {
+  ConsultationSettingsDialog,
+  type ConsultationSettingsPatch,
+} from '../review/ConsultationSettingsDialog.js'
+import {
+  LegacyMedicalRecordView,
+  MedicalRecordNoteEditor,
+} from '../review/MedicalRecordNoteEditor.js'
 import { NoteEditor } from '../review/NoteEditor.js'
 import { GapCard, RedFlagCard, SuggestionCard } from '../review/SafetyCards.js'
 import { Button } from '../ui/Button.js'
@@ -30,15 +42,6 @@ import { InfoTip } from '../ui/InfoTip.js'
 import { PageHeader } from '../ui/PageHeader.js'
 import { RenameField } from '../ui/RenameField.js'
 import { CapturePanel } from './CapturePanel.js'
-
-export function formatSoapNoteForClipboard(note: SoapNote) {
-  return [
-    `Subjective\n${note.subjective}`,
-    `Objective\n${note.objective}`,
-    `Assessment\n${note.assessment}`,
-    `Plan\n${note.plan}`,
-  ].join('\n\n')
-}
 
 /** The current decision about a finding, or `undefined` if none was made. */
 function byId(dispositions: Disposition[], id: string): Disposition | undefined {
@@ -144,7 +147,9 @@ export function ConsultationReview() {
   const { id = '' } = useParams()
   const queryClient = useQueryClient()
   const [showTranscript, setShowTranscript] = useState(false)
+  const [captureBusy, setCaptureBusy] = useState(false)
   const transcriptRef = useRef<HTMLElement>(null)
+  const settingsDialog = useRef<HTMLDialogElement>(null)
 
   /**
    * Revealing the transcript is not the same as showing it.
@@ -279,9 +284,6 @@ export function ConsultationReview() {
    */
   const live = useLivePanes(isEphemeral ? null : id)
 
-  /** True only while an ambient session is running, which reshapes the grid. */
-  const [capturing, setCapturing] = useState(false)
-
   const analyze = useMutation({
     mutationFn: () => api.analyze(id),
     onSuccess: (next) => {
@@ -319,6 +321,19 @@ export function ConsultationReview() {
     if (!current) throw new Error('No consultation loaded.')
 
     if (proposal.tool === 'edit_note_section') {
+      const canonical = current.editedMedicalRecordNote ?? current.analysis?.medicalRecordNote
+      if (canonical) {
+        if (proposal.section === 'subjective') {
+          throw new Error('A categorized note cannot accept an opaque Subjective replacement.')
+        }
+        const next = await api.patch(id, {
+          editedMedicalRecordNote: { [proposal.section]: proposal.text },
+        })
+        invalidate(next)
+        toast.success(`Applied to ${proposal.section}.`)
+        return
+      }
+
       const base = current.editedNote ?? current.analysis?.note
       const next = await api.patch(id, {
         editedNote: { ...base, [proposal.section]: proposal.text },
@@ -344,34 +359,59 @@ export function ConsultationReview() {
    * applied in memory instead of over the wire. The state transition is
    * identical to the stored path; only where it lands differs.
    */
+  const patchConsultation = async (body: Parameters<typeof api.patch>[1]) => {
+    if (!isEphemeral) return api.patch(id, body)
+    const current = tour.ephemeral as ConsultationDetail
+    const nextMedicalRecordNote =
+      body.editedMedicalRecordNote === undefined
+        ? undefined
+        : MedicalRecordNoteSchema.parse({
+            ...(current.editedMedicalRecordNote ?? current.analysis?.medicalRecordNote),
+            ...body.editedMedicalRecordNote,
+          })
+    return {
+      ...current,
+      ...(body.noteTemplate === undefined ? {} : { noteTemplate: body.noteTemplate }),
+      ...(body.captureMode === undefined ? {} : { captureMode: body.captureMode }),
+      ...(body.editedNote ? { editedNote: { ...current.analysis?.note, ...body.editedNote } } : {}),
+      ...(nextMedicalRecordNote === undefined
+        ? {}
+        : {
+            editedMedicalRecordNote: nextMedicalRecordNote,
+            editedNote: toSoapNote(nextMedicalRecordNote),
+          }),
+      ...(body.acknowledgedRedFlagIds
+        ? { acknowledgedRedFlagIds: body.acknowledgedRedFlagIds }
+        : {}),
+      ...(body.reviewedGapIds ? { reviewedGapIds: body.reviewedGapIds } : {}),
+      ...(body.redFlagDispositions
+        ? {
+            redFlagDispositions: mergeDispositions(
+              current.redFlagDispositions,
+              body.redFlagDispositions,
+            ),
+          }
+        : {}),
+      ...(body.gapDispositions
+        ? { gapDispositions: mergeDispositions(current.gapDispositions, body.gapDispositions) }
+        : {}),
+      updatedAt: new Date(),
+    } as ConsultationDetail
+  }
+
   const patch = useMutation({
-    mutationFn: async (body: Parameters<typeof api.patch>[1]) => {
-      if (!isEphemeral) return api.patch(id, body)
-      const current = tour.ephemeral as ConsultationDetail
-      return {
-        ...current,
-        ...(body.editedNote
-          ? { editedNote: { ...current.analysis?.note, ...body.editedNote } }
-          : {}),
-        ...(body.acknowledgedRedFlagIds
-          ? { acknowledgedRedFlagIds: body.acknowledgedRedFlagIds }
-          : {}),
-        ...(body.reviewedGapIds ? { reviewedGapIds: body.reviewedGapIds } : {}),
-        ...(body.redFlagDispositions
-          ? {
-              redFlagDispositions: mergeDispositions(
-                current.redFlagDispositions,
-                body.redFlagDispositions,
-              ),
-            }
-          : {}),
-        ...(body.gapDispositions
-          ? { gapDispositions: mergeDispositions(current.gapDispositions, body.gapDispositions) }
-          : {}),
-        updatedAt: new Date(),
-      } as ConsultationDetail
-    },
+    mutationFn: patchConsultation,
     onSuccess: (next) => (isEphemeral ? tour.updateEphemeral(next) : invalidate(next)),
+    onError: () => toast.error('That change could not be saved. Nothing was changed.'),
+  })
+
+  const settings = useMutation({
+    mutationFn: (changes: ConsultationSettingsPatch) => patchConsultation(changes),
+    onSuccess: (next) => {
+      if (isEphemeral) tour.updateEphemeral(next)
+      else invalidate(next)
+      settingsDialog.current?.close()
+    },
   })
 
   if (isEphemeral && !tour.ephemeral) {
@@ -395,11 +435,17 @@ export function ConsultationReview() {
   const analysis = detail.analysis
   const approved = detail.status === 'approved'
   const note = detail.editedNote ?? analysis?.note ?? null
+  const hasSoapOnlyEdit = detail.editedNote !== null && detail.editedMedicalRecordNote === null
+  const medicalRecordNote = hasSoapOnlyEdit
+    ? null
+    : (detail.editedMedicalRecordNote ?? analysis?.medicalRecordNote ?? null)
 
   const copyNote = async () => {
     if (!note) return
     try {
-      await navigator.clipboard.writeText(formatSoapNoteForClipboard(note))
+      await navigator.clipboard.writeText(
+        formatNoteForClipboard(detail.noteTemplate, note, medicalRecordNote),
+      )
       toast.success('Note copied.')
     } catch {
       toast.error('Note could not be copied.')
@@ -510,7 +556,7 @@ export function ConsultationReview() {
         actions={
           <>
             {!analysis && (
-              <>
+              <div className="flex items-center gap-2">
                 <Button
                   variant="primary"
                   size="lg"
@@ -528,21 +574,12 @@ export function ConsultationReview() {
                       ? analyze.error.message
                       : 'Analysis could not be completed.'}
                   </InfoTip>
-                ) : (
-                  <InfoTip
-                    label={
-                      detail.transcript
-                        ? 'What happens when you analyse'
-                        : 'Why this is not available yet'
-                    }
-                    tone={detail.transcript ? 'info' : 'warning'}
-                  >
-                    {detail.transcript
-                      ? 'De-identified before any part of it leaves this server, and restored only after the response returns.'
-                      : 'Capture the consultation first, on the left.'}
+                ) : !detail.transcript ? (
+                  <InfoTip label="Why this is not available yet" tone="warning">
+                    Capture the consultation first, on the left.
                   </InfoTip>
-                )}
-              </>
+                ) : null}
+              </div>
             )}
             {analysis && !approved && (
               <ApproveBar
@@ -567,6 +604,18 @@ export function ConsultationReview() {
               />
             )}
             <Button
+              variant="neutral"
+              size="lg"
+              aria-label="Consultation Settings"
+              title="Consultation Settings"
+              disabled={captureBusy || capture.isPending || settings.isPending}
+              icon={<Settings2 aria-hidden className="size-4" />}
+              onClick={() => {
+                settings.reset()
+                settingsDialog.current?.showModal()
+              }}
+            />
+            <Button
               className="lg:hidden"
               onClick={() => setShowTranscript((value) => !value)}
               aria-expanded={showTranscript}
@@ -589,6 +638,24 @@ export function ConsultationReview() {
           </>
         }
       />
+
+      <ConsultationSettingsDialog
+        key={`${detail.noteTemplate}-${detail.captureMode}`}
+        ref={settingsDialog}
+        noteTemplate={detail.noteTemplate}
+        captureMode={detail.captureMode}
+        captureModeLocked={detail.transcript !== null}
+        saving={settings.isPending}
+        error={
+          settings.error instanceof ApiError
+            ? settings.error.message
+            : settings.error
+              ? 'That change could not be saved. Nothing was changed.'
+              : null
+        }
+        onSave={(changes) => settings.mutate(changes)}
+      />
+
       {/* Three panels on wide screens, in every state rather than only the
           analysed one. Below lg the safety rail moves ABOVE the note rather
           than below it: docs/DESIGN.md requires severity to be visible without
@@ -617,7 +684,10 @@ export function ConsultationReview() {
       <div
         className={cn(
           'mt-6 grid gap-5',
-          capturing
+          // `captureBusy` rather than a second signal of my own: #272 already
+          // lifts exactly this from `AmbientCapture`'s `onLiveChange`, and two
+          // props tracking one session is one of them going stale.
+          captureBusy
             ? 'lg:grid-cols-[minmax(0,1fr)_320px_340px]'
             : 'lg:grid-cols-[380px_minmax(0,1fr)_340px]',
         )}
@@ -699,6 +769,7 @@ export function ConsultationReview() {
           ) : (
             <Card className="flex flex-col p-4">
               <CapturePanel
+                captureMode={detail.captureMode}
                 saving={capture.isPending}
                 error={
                   capture.error instanceof ApiError
@@ -709,7 +780,8 @@ export function ConsultationReview() {
                 }
                 onCapture={(transcript) => capture.mutate(transcript)}
                 onLiveSegments={live.absorb}
-                onCapturingChange={setCapturing}
+                onCaptureModeChange={(captureMode: CaptureMode) => patch.mutate({ captureMode })}
+                onCaptureBusyChange={setCaptureBusy}
               />
             </Card>
           )}
@@ -725,13 +797,28 @@ export function ConsultationReview() {
           </h2>
           {analysis && note ? (
             <>
-              <NoteEditor
-                note={note}
-                aiNote={analysis.note}
-                readOnly={approved}
-                saving={patch.isPending}
-                onSave={(editedNote: Partial<SoapNote>) => patch.mutate({ editedNote })}
-              />
+              {medicalRecordNote && analysis.medicalRecordNote ? (
+                <MedicalRecordNoteEditor
+                  note={medicalRecordNote}
+                  aiNote={analysis.medicalRecordNote}
+                  template={detail.noteTemplate}
+                  readOnly={approved}
+                  saving={patch.isPending}
+                  onSave={(editedMedicalRecordNote: Partial<MedicalRecordNote>) =>
+                    patch.mutate({ editedMedicalRecordNote })
+                  }
+                />
+              ) : detail.noteTemplate === 'malaysian' ? (
+                <LegacyMedicalRecordView note={note} aiNote={analysis.note} />
+              ) : (
+                <NoteEditor
+                  note={note}
+                  aiNote={analysis.note}
+                  readOnly={approved}
+                  saving={patch.isPending}
+                  onSave={(editedNote: Partial<SoapNote>) => patch.mutate({ editedNote })}
+                />
+              )}
               <ChecklistPanel
                 clinicalFacts={analysis.clinicalFacts}
                 operational={analysis.operational}

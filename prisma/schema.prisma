@@ -123,12 +123,22 @@ enum ConsultationStatus {
   approved
 }
 
+enum NoteTemplate {
+  soap
+  malaysian
+}
+
+enum CaptureMode {
+  ambient
+  manual
+}
+
 /// A single simulated GP consultation. `approved` is only reachable through an
 /// explicit doctor action — nothing auto-approves.
 /// A registered patient, created at reception before the consultation begins.
 ///
 /// **The first longitudinal PHI store in this system.** `Consultation` holds
-/// four PHI columns, but every one of them is *derived* from a transcript. The
+/// five PHI columns, but every one of them is *derived* from a transcript. The
 /// columns here are entered by a human and are the identity itself, which is a
 /// stricter class and is why all four are erasable.
 ///
@@ -228,6 +238,15 @@ model Consultation {
   /// Doctor's edited copy of the note. Kept separate so the AI output and the
   /// approved clinical record are never conflated.
   editedNote Json?
+
+  /// Presentation order selected for this consultation. It contains no
+  /// clinical content and remains switchable after approval.
+  noteTemplate            NoteTemplate @default(soap)
+  /// Capture path selected for this consultation. Locked once a transcript exists.
+  captureMode             CaptureMode  @default(manual)
+  /// PHI-bearing clinician edits to the canonical eight-field note.
+  /// Erasure must null this beside `analysis` and `editedNote`.
+  editedMedicalRecordNote Json?
 
   /// Array of `RedFlag.id` the doctor has acknowledged. Acknowledgment is
   /// additive only — a red flag is never removed or downgraded by it.

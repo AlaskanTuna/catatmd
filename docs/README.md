@@ -214,6 +214,15 @@ So this project does not compete on transcription. It competes on **the boundary
 
 **SOAP is a review scaffold, not a Malaysian norm.** No Malaysian regulation mandates it: MMC Guideline 002/2006 requires contemporaneous, chronological, signed entries and never mentions SOAP.
 
+The review screen therefore offers two persisted views of one editable record:
+
+| View                         | Order                                                                                                                                           |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **SOAP**                     | Subjective (PC, HPC, PMH, SH, FH) → Objective → Assessment → Plan                                                                               |
+| **Malaysian Medical Record** | Presenting Complaint → History of Presenting Complaint → Past Medical History → Social History → Family History → Objective → Assessment → Plan |
+
+Switching views never asks the model again and never reinterprets prose. A category the consultation did not establish stays visible as **Not established**.
+
 What _is_ enforced is the payer contract: condition → treatment → itemised medication dispensed → MC days → referral. Two of those fields have no home in SOAP at all, because the Malaysian GP dispenses in-house and issues the MC in the room.
 
 The note therefore carries an operational block alongside the four SOAP strings (`docs/trd.md` §3):

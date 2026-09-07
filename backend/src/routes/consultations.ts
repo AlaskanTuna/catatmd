@@ -1,5 +1,6 @@
 import type { Consultation, Prisma } from '@prisma/client'
 import {
+  CaptureModeSchema,
   type ConsultationAnalysis,
   ConsultationAnalysisSchema,
   ConsultationDetailSchema,
@@ -16,10 +17,14 @@ import {
   LiveFlagsResponseSchema,
   MAX_LIVE_DELTA_CHARACTERS,
   MAX_LIVE_DELTA_TURNS,
+  type MedicalRecordNote,
+  MedicalRecordNoteSchema,
+  NoteTemplateSchema,
   type SoapNote,
   SoapNoteSchema,
   type Transcript,
   TranscriptSchema,
+  toSoapNote,
 } from '@shared/types'
 import { Router } from 'express'
 import { z } from 'zod'
@@ -101,6 +106,9 @@ function toDetail(
     transcript: row.transcript ?? null,
     analysis: row.analysis ?? null,
     editedNote: row.editedNote ?? null,
+    editedMedicalRecordNote: row.editedMedicalRecordNote ?? null,
+    noteTemplate: row.noteTemplate ?? 'soap',
+    captureMode: row.captureMode ?? 'manual',
     approvedAt: row.approvedAt,
     approvedBy,
     patient,
@@ -394,6 +402,18 @@ async function runAnalysis(
       objective: rehydrate(noteResult.note.objective),
       assessment: rehydrate(noteResult.note.assessment),
       plan: rehydrate(noteResult.note.plan),
+    },
+    medicalRecordNote: {
+      presentingComplaint: rehydrate(noteResult.medicalRecordNote.presentingComplaint),
+      historyOfPresentingComplaint: rehydrate(
+        noteResult.medicalRecordNote.historyOfPresentingComplaint,
+      ),
+      pastMedicalHistory: rehydrate(noteResult.medicalRecordNote.pastMedicalHistory),
+      socialHistory: rehydrate(noteResult.medicalRecordNote.socialHistory),
+      familyHistory: rehydrate(noteResult.medicalRecordNote.familyHistory),
+      objective: rehydrate(noteResult.medicalRecordNote.objective),
+      assessment: rehydrate(noteResult.medicalRecordNote.assessment),
+      plan: rehydrate(noteResult.medicalRecordNote.plan),
     },
     profileId: profile.id,
     gaps: mergeGaps(
@@ -868,6 +888,9 @@ const PatchBodySchema = z
      */
     transcript: TranscriptSchema.optional(),
     editedNote: SoapNoteSchema.partial().optional(),
+    editedMedicalRecordNote: MedicalRecordNoteSchema.partial().optional(),
+    noteTemplate: NoteTemplateSchema.optional(),
+    captureMode: CaptureModeSchema.optional(),
     acknowledgedRedFlagIds: z.array(z.string()).optional(),
     reviewedGapIds: z.array(z.string()).optional(),
     redFlagDispositions: z.array(DispositionInputSchema).optional(),
@@ -881,6 +904,9 @@ const PatchBodySchema = z
    */
   .refine((body) => body.transcript === undefined || Object.keys(body).length === 1, {
     message: 'transcript must be patched on its own',
+  })
+  .refine((body) => body.editedNote === undefined || body.editedMedicalRecordNote === undefined, {
+    message: 'supply one note edit representation at a time',
   })
 
 /**
@@ -927,7 +953,13 @@ consultationsRouter.patch('/:id', async (req, res) => {
    * still meets the original gate unchanged, and a mixed patch is judged by the
    * clinical half rather than excused by the title.
    */
-  const titleOnly = patch.title !== undefined && Object.keys(patch).length === 1
+  const presentationOnly = Object.keys(patch).every(
+    (key) => key === 'title' || key === 'noteTemplate' || key === 'captureMode',
+  )
+
+  if (patch.captureMode !== undefined && consultation.transcript !== null) {
+    throw new HttpError(409, 'invalid_state', 'Capture Mode is locked after transcript capture.')
+  }
 
   /*
    * Capture has the opposite gate to every other field: a transcript may only
@@ -978,7 +1010,7 @@ consultationsRouter.patch('/:id', async (req, res) => {
     return
   }
 
-  if (!titleOnly && consultation.status !== 'awaiting_review') {
+  if (!presentationOnly && consultation.status !== 'awaiting_review') {
     throw new HttpError(
       409,
       'invalid_state',
@@ -999,7 +1031,31 @@ consultationsRouter.patch('/:id', async (req, res) => {
    * never written to, so the two stay independently inspectable.
    */
   let nextEditedNote: SoapNote | undefined
+  let nextEditedMedicalRecordNote: MedicalRecordNote | undefined
+  if (patch.editedMedicalRecordNote !== undefined) {
+    const base =
+      consultation.editedMedicalRecordNote ??
+      (consultation.analysis as { medicalRecordNote?: unknown } | null)?.medicalRecordNote ??
+      null
+    const merged = MedicalRecordNoteSchema.safeParse({
+      ...(base as Record<string, unknown> | null),
+      ...patch.editedMedicalRecordNote,
+    })
+    if (!merged.success) {
+      throw new HttpError(
+        409,
+        'invalid_state',
+        'This consultation has no categorized note to edit yet.',
+      )
+    }
+    nextEditedMedicalRecordNote = merged.data
+    nextEditedNote = toSoapNote(merged.data)
+  }
   if (patch.editedNote !== undefined) {
+    const storedAnalysis = ConsultationAnalysisSchema.safeParse(consultation.analysis)
+    if (storedAnalysis.success && storedAnalysis.data.medicalRecordNote !== undefined) {
+      throw new HttpError(409, 'invalid_state', 'This categorized note must be edited by category.')
+    }
     const base =
       consultation.editedNote ?? (consultation.analysis as { note?: unknown } | null)?.note ?? null
     const merged = SoapNoteSchema.safeParse({
@@ -1047,7 +1103,12 @@ consultationsRouter.patch('/:id', async (req, res) => {
     where: { id: consultation.id },
     data: {
       ...(patch.title === undefined ? {} : { title: patch.title }),
+      ...(patch.noteTemplate === undefined ? {} : { noteTemplate: patch.noteTemplate }),
+      ...(patch.captureMode === undefined ? {} : { captureMode: patch.captureMode }),
       ...(nextEditedNote === undefined ? {} : { editedNote: nextEditedNote }),
+      ...(nextEditedMedicalRecordNote === undefined
+        ? {}
+        : { editedMedicalRecordNote: nextEditedMedicalRecordNote }),
       ...(patch.acknowledgedRedFlagIds === undefined
         ? {}
         : { acknowledgedRedFlagIds: [...previousFlags, ...newFlags] }),
@@ -1087,6 +1148,21 @@ consultationsRouter.patch('/:id', async (req, res) => {
       action: 'consultation.edited',
       actorId: actor,
       consultationId: consultation.id,
+    })
+  }
+  if (patch.editedMedicalRecordNote !== undefined) {
+    await recordAuditEvent({
+      action: 'consultation.edited',
+      actorId: actor,
+      consultationId: consultation.id,
+    })
+  }
+  if (patch.noteTemplate !== undefined) {
+    await recordAuditEvent({
+      action: 'consultation.template_selected',
+      actorId: actor,
+      consultationId: consultation.id,
+      metadata: { template: patch.noteTemplate },
     })
   }
   for (const redFlagId of newFlags) {

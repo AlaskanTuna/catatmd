@@ -1,4 +1,10 @@
-import type { ClinicalFacts, InformationGap, OperationalBlock, SoapNote } from '@shared/types'
+import type {
+  ClinicalFacts,
+  InformationGap,
+  MedicalRecordNote,
+  OperationalBlock,
+  SoapNote,
+} from '@shared/types'
 
 /**
  * Result of the `note_and_gaps` operation (docs/trd.md §12), after the
@@ -8,6 +14,7 @@ import type { ClinicalFacts, InformationGap, OperationalBlock, SoapNote } from '
  */
 export interface NoteAndGapsResult {
   note: SoapNote
+  medicalRecordNote: MedicalRecordNote
   clinicalFacts: ClinicalFacts
   operational: OperationalBlock
   gaps: InformationGap[]

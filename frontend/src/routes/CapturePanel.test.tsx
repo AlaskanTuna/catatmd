@@ -1,6 +1,7 @@
 import type { DraftTurn } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { useState } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CapturePanel } from './CapturePanel.js'
@@ -58,7 +59,8 @@ function MockAmbientCapture({
       </button>
       <button
         type="button"
-        onClick={() =>
+        onClick={() => {
+          onLiveChange(false)
           onTranscript({
             text: 'Any fever? Yesterday quite hot.',
             segments: [
@@ -71,7 +73,7 @@ function MockAmbientCapture({
               { speaker: 'patient', text: 'Yesterday quite hot.' },
             ],
           })
-        }
+        }}
       >
         mock transcribe live
       </button>
@@ -85,6 +87,7 @@ function MockAmbientCapture({
 // A function declaration so the hoisted vi.mock factory above can reach it.
 function MockAudioCapture({
   onTranscript,
+  onBusyChange,
 }: {
   onTranscript: (result: {
     text: string
@@ -92,9 +95,16 @@ function MockAudioCapture({
     source: 'asr_local' | 'asr_hosted'
     draftTurns?: readonly DraftTurn[]
   }) => void
+  onBusyChange: (busy: boolean) => void
 }) {
   return (
     <>
+      <button type="button" onClick={() => onBusyChange(true)}>
+        mock manual busy
+      </button>
+      <button type="button" onClick={() => onBusyChange(false)}>
+        mock manual idle
+      </button>
       <button
         type="button"
         onClick={() =>
@@ -217,11 +227,24 @@ function MockAudioCapture({
 
 afterEach(cleanup)
 
+function consultationCaptureProps(captureMode: 'ambient' | 'manual' = 'manual') {
+  return {
+    captureMode,
+    onCaptureModeChange: vi.fn(),
+    onCaptureBusyChange: vi.fn(),
+  }
+}
+
 function setup() {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <CapturePanel onCapture={vi.fn()} saving={false} error={null} />
+        <CapturePanel
+          {...consultationCaptureProps()}
+          onCapture={vi.fn()}
+          saving={false}
+          error={null}
+        />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -276,7 +299,12 @@ describe('CapturePanel record flow', () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter>
-          <CapturePanel onCapture={vi.fn()} saving={false} error={null} />
+          <CapturePanel
+            {...consultationCaptureProps()}
+            onCapture={vi.fn()}
+            saving={false}
+            error={null}
+          />
         </MemoryRouter>
       </QueryClientProvider>,
     )
@@ -303,7 +331,12 @@ describe('hosted draft-turn labelling', () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter>
-          <CapturePanel onCapture={vi.fn()} saving={false} error={null} />
+          <CapturePanel
+            {...consultationCaptureProps()}
+            onCapture={vi.fn()}
+            saving={false}
+            error={null}
+          />
         </MemoryRouter>
       </QueryClientProvider>,
     )
@@ -377,21 +410,34 @@ describe('recording provenance', () => {
     return call[0] as { source: string; labelsReviewed?: boolean }
   }
 
-  function open() {
+  function open(captureMode: 'ambient' | 'manual' = 'manual') {
+    function Harness() {
+      const [mode, setMode] = useState(captureMode)
+      return (
+        <CapturePanel
+          captureMode={mode}
+          onCaptureModeChange={setMode}
+          onCaptureBusyChange={vi.fn()}
+          onCapture={captured}
+          saving={false}
+          error={null}
+        />
+      )
+    }
+
     render(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter>
-          <CapturePanel onCapture={captured} saving={false} error={null} />
+          <Harness />
         </MemoryRouter>
       </QueryClientProvider>,
     )
     fireEvent.click(screen.getByRole('tab', { name: /record/i }))
   }
 
-  /** The same, on a device whose stored mode is ambient. */
+  /** The same, on a consultation whose stored mode is ambient. */
   function openAmbient() {
-    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
-    open()
+    open('ambient')
   }
 
   beforeEach(() => {
@@ -493,14 +539,24 @@ describe('recording provenance', () => {
  * panel it shows, never whether it shows one, and switching modes strands
  * nobody on a dead panel.
  */
-function renderRoute() {
+function renderRoute(captureMode: 'ambient' | 'manual' = 'manual') {
+  const onCaptureModeChange = vi.fn()
+  const onCaptureBusyChange = vi.fn()
   render(
     <QueryClientProvider client={new QueryClient()}>
       <MemoryRouter>
-        <CapturePanel onCapture={vi.fn()} saving={false} error={null} />
+        <CapturePanel
+          captureMode={captureMode}
+          onCaptureModeChange={onCaptureModeChange}
+          onCaptureBusyChange={onCaptureBusyChange}
+          onCapture={vi.fn()}
+          saving={false}
+          error={null}
+        />
       </MemoryRouter>
     </QueryClientProvider>,
   )
+  return { onCaptureModeChange, onCaptureBusyChange }
 }
 
 /*
@@ -523,9 +579,8 @@ describe('ambient capture mode', () => {
     expect(record.getAttribute('aria-disabled')).not.toBe('true')
   })
 
-  it('leaves Record usable on a device that already saved ambient mode', async () => {
-    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
-    renderRoute()
+  it('leaves Record usable when the consultation uses ambient mode', async () => {
+    renderRoute('ambient')
 
     const record = await screen.findByRole('tab', { name: /record/i })
     expect(record.getAttribute('aria-disabled')).not.toBe('true')
@@ -536,17 +591,15 @@ describe('ambient capture mode', () => {
     expect(screen.getByRole('button', { name: 'mock transcribe live' })).toBeTruthy()
   })
 
-  it('shows the ambient panel for a stored ambient mode, and the manual one otherwise', async () => {
-    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
-    renderRoute()
+  it('shows the consultation-owned ambient mode, and the manual panel otherwise', async () => {
+    renderRoute('ambient')
 
     fireEvent.click(await screen.findByRole('tab', { name: /record/i }))
     expect(screen.getByRole('button', { name: 'mock transcribe live' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'mock transcribe' })).toBeNull()
 
     cleanup()
-    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'manual' }))
-    renderRoute()
+    renderRoute('manual')
 
     fireEvent.click(await screen.findByRole('tab', { name: /record/i }))
     expect(screen.getByRole('button', { name: 'mock transcribe' })).toBeTruthy()
@@ -557,8 +610,7 @@ describe('ambient capture mode', () => {
     // Stop is the only path that delivers the transcript, so unmounting the
     // panel from under a live socket would lose the consultation. The latch is
     // what stops a settings save doing that.
-    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
-    renderRoute()
+    const { onCaptureModeChange } = renderRoute('ambient')
 
     fireEvent.click(await screen.findByRole('tab', { name: /record/i }))
     fireEvent.click(screen.getByRole('button', { name: 'mock go live' }))
@@ -566,26 +618,20 @@ describe('ambient capture mode', () => {
 
     expect(screen.getByRole('button', { name: 'mock transcribe live' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'mock transcribe' })).toBeNull()
-    // The preference is still recorded; only the swap waits for the session.
-    expect(JSON.parse(localStorage.getItem('catatmd.audio') ?? '{}').mode).toBe('manual')
+    expect(onCaptureModeChange).toHaveBeenCalledWith('manual')
   })
 
-  it('remembers a switch back to press-to-record, so the next visit is not stuck', async () => {
-    // The way out when the deployment has no ambient provider. Remembering it
-    // is what stops the doctor landing on the same dead screen next time.
-    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
-    renderRoute()
+  it('requests a persisted switch back to press-to-record', async () => {
+    const { onCaptureModeChange } = renderRoute('ambient')
 
     fireEvent.click(await screen.findByRole('tab', { name: /record/i }))
     fireEvent.click(screen.getByRole('button', { name: 'mock switch to manual' }))
 
-    expect(screen.getByRole('button', { name: 'mock transcribe' })).toBeTruthy()
-    expect(JSON.parse(localStorage.getItem('catatmd.audio') ?? '{}').mode).toBe('manual')
+    expect(onCaptureModeChange).toHaveBeenCalledWith('manual')
   })
 
   it('claims no listening it is not doing', async () => {
-    localStorage.setItem('catatmd.audio', JSON.stringify({ mode: 'ambient' }))
-    renderRoute()
+    renderRoute('ambient')
 
     await screen.findByRole('tab', { name: /record/i })
     expect(screen.queryByText(/already being listened to/i)).toBeNull()
@@ -597,6 +643,18 @@ describe('ambient capture mode', () => {
 
     expect(await screen.findByRole('button', { name: /audio settings/i })).toBeTruthy()
   })
+
+  it('reports manual and ambient capture ownership to the consultation', () => {
+    const manual = renderRoute('manual')
+    fireEvent.click(screen.getByRole('button', { name: 'mock manual busy' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock manual idle' }))
+    expect(manual.onCaptureBusyChange.mock.calls).toEqual([[true], [false]])
+
+    cleanup()
+    const ambient = renderRoute('ambient')
+    fireEvent.click(screen.getByRole('button', { name: 'mock go live' }))
+    expect(ambient.onCaptureBusyChange).toHaveBeenCalledWith(true)
+  })
 })
 
 describe('CapturePanel submit flow', () => {
@@ -606,7 +664,12 @@ describe('CapturePanel submit flow', () => {
     render(
       <QueryClientProvider client={new QueryClient()}>
         <MemoryRouter>
-          <CapturePanel onCapture={captured} saving={false} error={null} />
+          <CapturePanel
+            {...consultationCaptureProps()}
+            onCapture={captured}
+            saving={false}
+            error={null}
+          />
         </MemoryRouter>
       </QueryClientProvider>,
     )

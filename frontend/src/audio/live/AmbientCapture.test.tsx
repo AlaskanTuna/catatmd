@@ -435,6 +435,12 @@ describe('starting', () => {
 })
 
 describe('listening', () => {
+  it('does not offer manual pause controls', async () => {
+    await startSession()
+
+    expect(screen.queryByRole('button', { name: /pause recording/i })).toBeNull()
+  })
+
   it('forwards every chunk the recorder produces', async () => {
     await startSession()
 
