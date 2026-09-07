@@ -1,4 +1,5 @@
 import {
+  type CaptureMode,
   type ConsultationAnalysis,
   ConsultationAnalysisSchema,
   type ConsultationDetail,
@@ -242,6 +243,7 @@ export const api = {
       editedNote?: Partial<SoapNote>
       editedMedicalRecordNote?: Partial<MedicalRecordNote>
       noteTemplate?: NoteTemplate
+      captureMode?: CaptureMode
       acknowledgedRedFlagIds?: string[]
       reviewedGapIds?: string[]
       redFlagDispositions?: DispositionInput[]

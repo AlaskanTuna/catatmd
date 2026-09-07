@@ -1,5 +1,6 @@
 import type { Consultation, Prisma } from '@prisma/client'
 import {
+  CaptureModeSchema,
   type ConsultationAnalysis,
   ConsultationAnalysisSchema,
   ConsultationDetailSchema,
@@ -101,6 +102,7 @@ function toDetail(
     editedNote: row.editedNote ?? null,
     editedMedicalRecordNote: row.editedMedicalRecordNote ?? null,
     noteTemplate: row.noteTemplate ?? 'soap',
+    captureMode: row.captureMode ?? 'manual',
     approvedAt: row.approvedAt,
     approvedBy,
     patient,
@@ -701,6 +703,7 @@ const PatchBodySchema = z
     editedNote: SoapNoteSchema.partial().optional(),
     editedMedicalRecordNote: MedicalRecordNoteSchema.partial().optional(),
     noteTemplate: NoteTemplateSchema.optional(),
+    captureMode: CaptureModeSchema.optional(),
     acknowledgedRedFlagIds: z.array(z.string()).optional(),
     reviewedGapIds: z.array(z.string()).optional(),
     redFlagDispositions: z.array(DispositionInputSchema).optional(),
@@ -764,8 +767,12 @@ consultationsRouter.patch('/:id', async (req, res) => {
    * clinical half rather than excused by the title.
    */
   const presentationOnly = Object.keys(patch).every(
-    (key) => key === 'title' || key === 'noteTemplate',
+    (key) => key === 'title' || key === 'noteTemplate' || key === 'captureMode',
   )
+
+  if (patch.captureMode !== undefined && consultation.transcript !== null) {
+    throw new HttpError(409, 'invalid_state', 'Capture Mode is locked after transcript capture.')
+  }
 
   /*
    * Capture has the opposite gate to every other field: a transcript may only
@@ -910,6 +917,7 @@ consultationsRouter.patch('/:id', async (req, res) => {
     data: {
       ...(patch.title === undefined ? {} : { title: patch.title }),
       ...(patch.noteTemplate === undefined ? {} : { noteTemplate: patch.noteTemplate }),
+      ...(patch.captureMode === undefined ? {} : { captureMode: patch.captureMode }),
       ...(nextEditedNote === undefined ? {} : { editedNote: nextEditedNote }),
       ...(nextEditedMedicalRecordNote === undefined
         ? {}

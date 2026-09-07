@@ -618,11 +618,38 @@ describe('state machine — patch', () => {
 
     const res = await call('GET', '/api/consultations/c1')
     const { consultation } = (await res.json()) as {
-      consultation: { noteTemplate?: string; editedMedicalRecordNote?: unknown }
+      consultation: {
+        noteTemplate?: string
+        captureMode?: string
+        editedMedicalRecordNote?: unknown
+      }
     }
 
     expect(consultation.noteTemplate).toBe('soap')
+    expect(consultation.captureMode).toBe('manual')
     expect(consultation.editedMedicalRecordNote).toBeNull()
+  })
+
+  it('persists Capture Mode before transcript capture', async () => {
+    seed('draft', { transcript: null })
+
+    const res = await call('PATCH', '/api/consultations/c1', { captureMode: 'ambient' })
+    const { consultation } = (await res.json()) as {
+      consultation: { captureMode: string }
+    }
+
+    expect(res.status).toBe(200)
+    expect(consultation.captureMode).toBe('ambient')
+    expect(store.get('c1')?.captureMode).toBe('ambient')
+  })
+
+  it('locks Capture Mode once a transcript exists', async () => {
+    seed('draft')
+
+    const res = await call('PATCH', '/api/consultations/c1', { captureMode: 'ambient' })
+
+    expect(res.status).toBe(409)
+    expect(store.get('c1')?.captureMode).toBeUndefined()
   })
 
   it('persists template choice after approval without reopening clinical content', async () => {

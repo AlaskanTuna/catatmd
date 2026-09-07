@@ -121,7 +121,7 @@ git commit -m "feat(consultations): add capture mode contract"
 - Produces: `api.patch(id, { captureMode })`.
 - Produces: API invariant that any Capture Mode write after transcript capture returns `409 invalid_state`.
 
-- [ ] **Step 1: Write failing route tests**
+- [x] **Step 1: Write failing route tests**
 
 Add cases under `state machine — patch` that prove:
 
@@ -139,13 +139,13 @@ expect(locked.status).toBe(409)
 
 Also assert that a note-template-only PATCH still succeeds after a transcript exists.
 
-- [ ] **Step 2: Run the route tests and verify RED**
+- [x] **Step 2: Run the route tests and verify RED**
 
 Run: `bun run --cwd backend test -- src/routes/consultations.test.ts -t "state machine — patch"`
 
 Expected: FAIL because the route drops `captureMode` and does not enforce its lock.
 
-- [ ] **Step 3: Implement mapping, validation, persistence, and client typing**
+- [x] **Step 3: Implement mapping, validation, persistence, and client typing**
 
 Update `toDetail`, `PatchBodySchema`, `presentationOnly`, and the Prisma update data:
 
@@ -167,7 +167,7 @@ if (patch.captureMode !== undefined && consultation.transcript !== null) {
 
 Add `captureMode?: CaptureMode` to the frontend PATCH body. Set `captureMode: 'manual'` on the ephemeral consultation so the in-memory path satisfies the same contract.
 
-- [ ] **Step 4: Run focused backend and frontend type verification**
+- [x] **Step 4: Run focused backend and frontend type verification**
 
 Run: `bun run --cwd backend test -- src/routes/consultations.test.ts -t "state machine — patch"`
 
@@ -175,7 +175,7 @@ Run: `bun run typecheck`
 
 Expected: route tests and typechecking pass.
 
-- [ ] **Step 5: Commit persistence**
+- [x] **Step 5: Commit persistence**
 
 ```bash
 git add backend/src/routes/consultations.ts backend/src/routes/consultations.test.ts frontend/src/lib/api.ts frontend/src/demo/DemoTour.tsx
