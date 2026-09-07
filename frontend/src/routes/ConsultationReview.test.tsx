@@ -80,8 +80,23 @@ vi.mock('../review/SafetyCards.js', () => ({
   // Renders its question so a test can read the order gaps come out in. The
   // real card is covered by SafetyCards.test.tsx; what matters here is sequence.
   GapCard: ({ gap }: { gap: { question: string } }) => <div data-testid="gap">{gap.question}</div>,
-  RedFlagCard: () => null,
+  RedFlagCard: ({ flag }: { flag: { label: string } }) => (
+    <div data-testid="flag">{flag.label}</div>
+  ),
   SuggestionCard: () => null,
+}))
+
+const livePanes = vi.hoisted(() => ({
+  redFlags: [] as unknown[],
+  gaps: [] as unknown[],
+  answered: [] as unknown[],
+  clinicalFacts: null as unknown,
+  operational: null as unknown,
+  hasContent: false,
+}))
+
+vi.mock('../audio/live/use-live-panes.js', () => ({
+  useLivePanes: () => ({ panes: livePanes, absorb: vi.fn(), reset: vi.fn() }),
 }))
 
 const NOTE = {
@@ -680,5 +695,73 @@ describe('the header identifies the consultation', () => {
 
     await screen.findByText('Consultation Review')
     expect(screen.queryByText('consultation-1')).toBeNull()
+  })
+})
+
+/**
+ * The live panes replace the rail's placeholders while ambient capture runs
+ * (#219). The scheduling is `use-live-panes.test.ts`; what matters here is that
+ * the review screen renders them, and that the note does **not** become one.
+ */
+describe('the live panes during ambient capture', () => {
+  const DRAFT = { ...APPROVED, status: 'draft' as const, analysis: null, editedNote: null }
+
+  beforeEach(() => {
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.getConsultation).mockResolvedValue(DRAFT as never)
+    livePanes.redFlags = []
+    livePanes.gaps = []
+    livePanes.answered = []
+    livePanes.clinicalFacts = null
+    livePanes.operational = null
+    livePanes.hasContent = false
+  })
+
+  it('shows placeholder bars until capture has said something', async () => {
+    setup()
+
+    expect(await screen.findByText('Red Flags')).toBeTruthy()
+    expect(screen.queryByTestId('flag')).toBeNull()
+    expect(screen.queryByTestId('gap')).toBeNull()
+  })
+
+  it('renders live flags and gaps once capture produces them', async () => {
+    livePanes.hasContent = true
+    livePanes.redFlags = [
+      { id: 'haemoptysis', label: 'Coughing up blood', severity: 'emergency', source: 'rule' },
+    ]
+    livePanes.gaps = [
+      { id: 'fever', question: 'Any fever?', rationale: 'Because', priority: 'high' },
+    ]
+    setup()
+
+    expect(await screen.findByTestId('flag')).toBeTruthy()
+    expect(screen.getByTestId('flag').textContent).toBe('Coughing up blood')
+    expect(screen.getByTestId('gap').textContent).toBe('Any fever?')
+  })
+
+  it('moves an answered prompt rather than letting it vanish', async () => {
+    livePanes.hasContent = true
+    livePanes.gaps = []
+    livePanes.answered = [
+      { id: 'fever', question: 'Any fever?', rationale: 'Because', priority: 'high' },
+    ]
+    setup()
+
+    expect(await screen.findByText(/1 covered so far/)).toBeTruthy()
+    expect(screen.getByText(/Any fever\?/)).toBeTruthy()
+  })
+
+  it('leaves the note alone, which is the whole decision', async () => {
+    livePanes.hasContent = true
+    livePanes.redFlags = [
+      { id: 'chest-pain', label: 'Chest pain', severity: 'urgent', source: 'rule' },
+    ]
+    setup()
+
+    await screen.findByTestId('flag')
+    // §20.8.1: the note is written once, from the transcript, at Finish. A note
+    // folded from a previous note is the less-grounded shape by another route.
+    expect(screen.queryByText(NOTE.subjective)).toBeNull()
   })
 })

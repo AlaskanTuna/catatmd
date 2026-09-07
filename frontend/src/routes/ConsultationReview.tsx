@@ -5,6 +5,7 @@ import type {
   CopilotProposal,
   Disposition,
   DispositionInput,
+  GuidelineChunk,
   MedicalRecordNote,
   SoapNote,
   Transcript,
@@ -15,6 +16,8 @@ import { Copy, Printer, Settings2, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, Navigate, useParams } from 'react-router-dom'
+import type { LivePanes } from '../audio/live/use-live-panes.js'
+import { useLivePanes } from '../audio/live/use-live-panes.js'
 import { CatatAI } from '../copilot/CatatAI.js'
 import { DEMO_CONSULTATION_ID, useDemoTour } from '../demo/DemoTour.js'
 import { ApiError, api } from '../lib/api.js'
@@ -270,6 +273,16 @@ export function ConsultationReview() {
     mutationFn: (transcript: Transcript) => api.setTranscript(id, transcript),
     onSuccess: (consultation) => queryClient.setQueryData(['consultation', id], consultation),
   })
+
+  /**
+   * The three live panes, fed by ambient capture while the doctor is still
+   * talking (#219). Inert on every other capture path, because nothing calls
+   * `absorb` until settled recognition tokens arrive.
+   *
+   * Ephemeral demo consultations have no id to scope a route to, so they get
+   * `null` and the panes simply stay in their placeholder state.
+   */
+  const live = useLivePanes(isEphemeral ? null : id)
 
   const analyze = useMutation({
     mutationFn: () => api.analyze(id),
@@ -654,7 +667,31 @@ export function ConsultationReview() {
           any of it would land. The columns are the explanation: the note fills
           the middle, the checks fill the rail, and both reveal their shape
           while they are still empty. */}
-      <div className="mt-6 grid gap-5 lg:grid-cols-[380px_minmax(0,1fr)_340px]">
+      {/*
+        The tracks swap on the one phase change that matters. While the doctor
+        is still talking the note is deliberately a placeholder, so leaving it
+        the fluid track spends the widest column on four rows of grey bars and
+        crams the only moving surface on screen into 380px. During capture the
+        transcript takes the fluid track instead; at Stop it hands it back to
+        the note, which is when the note becomes the thing being read.
+
+        Source order and every `order-*` class are untouched, so the columns do
+        not reshuffle: only their widths change, once, at a transition the
+        doctor initiated. The safety rail keeps its 340px in both states,
+        because docs/DESIGN.md requires severity visible without scrolling and
+        that is not a property to trade for a wider transcript.
+      */}
+      <div
+        className={cn(
+          'mt-6 grid gap-5',
+          // `captureBusy` rather than a second signal of my own: #272 already
+          // lifts exactly this from `AmbientCapture`'s `onLiveChange`, and two
+          // props tracking one session is one of them going stale.
+          captureBusy
+            ? 'lg:grid-cols-[minmax(0,1fr)_320px_340px]'
+            : 'lg:grid-cols-[380px_minmax(0,1fr)_340px]',
+        )}
+      >
         <section
           ref={transcriptRef}
           className={cn(
@@ -694,21 +731,40 @@ export function ConsultationReview() {
               released there rather than nesting one scrollbar inside another.
               Below `lg` the column is uncapped and this is what stops a long
               transcript running the page. */}
+          {/*
+            The settled transcript takes the same turn-per-row shape the live
+            pane uses, so the transcript does not change its reading rules the
+            moment capture stops. Two differences, both earned: the roles are
+            real here, because `draftHostedTurns` has run, and the type is 14px
+            rather than 12px, which is the documented body floor and is most of
+            what made this read as a wall.
+          */}
           {detail.transcript ? (
-            <div className="max-h-[70vh] overflow-y-auto rounded-card bg-sunken p-3 lg:max-h-none lg:overflow-visible">
-              {keyedTurns.map((turn) => (
-                <p key={turn.key} className="mb-2 text-xs leading-relaxed">
-                  <span
-                    className={cn(
-                      'font-semibold',
-                      turn.speaker === 'doctor' ? 'text-accent' : 'text-ink-muted',
-                    )}
-                  >
-                    {turn.speaker === 'doctor' ? 'Doctor' : 'Patient'}:{' '}
-                  </span>
-                  <span className="text-ink">{turn.text}</span>
-                </p>
-              ))}
+            <div className="max-h-[70vh] overflow-y-auto rounded-card bg-sunken p-4 lg:max-h-none lg:overflow-visible">
+              <ol className="grid gap-1">
+                {keyedTurns.map((turn, index) => {
+                  const opensTurn = keyedTurns[index - 1]?.speaker !== turn.speaker
+                  return (
+                    <li key={turn.key} className={cn(opensTurn && index > 0 && 'mt-3')}>
+                      {opensTurn && (
+                        <span className="mb-1 block">
+                          <span
+                            className={cn(
+                              'rounded-pill px-2 py-0.5 text-2xs font-medium',
+                              turn.speaker === 'doctor'
+                                ? 'bg-accent-soft text-accent'
+                                : 'bg-surface text-ink-muted',
+                            )}
+                          >
+                            {turn.speaker === 'doctor' ? 'Doctor' : 'Patient'}
+                          </span>
+                        </span>
+                      )}
+                      <p className="text-ink text-sm leading-relaxed">{turn.text}</p>
+                    </li>
+                  )
+                })}
+              </ol>
             </div>
           ) : (
             <Card className="flex flex-col p-4">
@@ -723,6 +779,7 @@ export function ConsultationReview() {
                       : null
                 }
                 onCapture={(transcript) => capture.mutate(transcript)}
+                onLiveSegments={live.absorb}
                 onCaptureModeChange={(captureMode: CaptureMode) => patch.mutate({ captureMode })}
                 onCaptureBusyChange={setCaptureBusy}
               />
@@ -769,7 +826,25 @@ export function ConsultationReview() {
               />
             </>
           ) : (
-            <NotePlaceholder />
+            <>
+              <NotePlaceholder />
+              {/*
+                The patient card fills while the doctor talks; the note does
+                not. That split is the design rather than an omission: §20.8.1
+                measures writing the note from extracted facts as *less*
+                grounded than writing it from the transcript, and a note folded
+                from a previous note is that shape by another route. So
+                extraction drives this card, and the note is written once, at
+                Finish, from the transcript.
+              */}
+              {live.panes.clinicalFacts && live.panes.operational && (
+                <ChecklistPanel
+                  clinicalFacts={live.panes.clinicalFacts}
+                  operational={live.panes.operational}
+                  defaultOpen
+                />
+              )}
+            </>
           )}
         </section>
 
@@ -805,14 +880,25 @@ export function ConsultationReview() {
                   an unanalysed consultation makes one of them shorter than
                   another. Fixed also means the rail does not resize when the
                   real findings replace them. */}
-              {(['Red Flags', 'Missing Information', 'Suggestions'] as const).map((title) => (
-                <Panel key={title} title={title}>
-                  <Card className="flex-1 p-4 min-h-24">
-                    <div className="h-2 w-full rounded-pill bg-sunken" />
-                    <div className="mt-1.5 h-2 w-3/5 rounded-pill bg-sunken" />
-                  </Card>
-                </Panel>
-              ))}
+              {(['Red Flags', 'Missing Information', 'Suggestions'] as const).map((title) =>
+                /*
+                  Once ambient capture has said something, the first two stop
+                  being placeholders and start being the live panes (#219).
+                  Suggestions keeps its bars: it is the one panel with no live
+                  half, because `generateSuggestions` is the most expensive call
+                  in the pipeline and nobody asked for it mid-consultation.
+                */
+                title !== 'Suggestions' && live.panes.hasContent ? (
+                  <LivePanel key={title} title={title} live={live.panes} />
+                ) : (
+                  <Panel key={title} title={title}>
+                    <Card className="flex-1 p-4 min-h-24">
+                      <div className="h-2 w-full rounded-pill bg-sunken" />
+                      <div className="mt-1.5 h-2 w-3/5 rounded-pill bg-sunken" />
+                    </Card>
+                  </Panel>
+                ),
+              )}
             </>
           )}
 
@@ -880,7 +966,6 @@ export function ConsultationReview() {
           )}
         </aside>
       </div>
-
       {/* Every finding in the panel, at a width that fits the card's own
           explanation, instead of thirty of them threaded through a 340px rail.
           The rail keeps the first three as the preview and still renders the
@@ -914,7 +999,6 @@ export function ConsultationReview() {
           </div>
         )}
       </dialog>
-
       {/* Only the approved state renders here now: the attribution is a
           record, not an action, and it prints (issue #26). The gate itself
           moved under the consultation title, where it is seen without covering
@@ -941,7 +1025,6 @@ export function ConsultationReview() {
           onApproved={isEphemeral ? tour.updateEphemeral : onApproved}
         />
       )}
-
       {/*
        * Rendered inactive on the tour's consultation, which is not stored, so
        * the copilot route would 404 on every message (#80). It renders at all
@@ -991,6 +1074,85 @@ function NotePlaceholder() {
         </div>
       ))}
     </Card>
+  )
+}
+
+/**
+ * A rail panel fed by ambient capture rather than by a finished analysis (#219).
+ *
+ * Deliberately the same cards the analysed rail uses, with `onDecide` omitted:
+ * during capture the record is still `draft` and `PATCH` gates clinical fields
+ * on `awaiting_review`, so a disposition control would offer an action the API
+ * refuses. A second set of cards would also be a second place for the severity
+ * scale and the citation rendering to drift.
+ *
+ * No overflow dialog here. The analysed rail hides past three behind one,
+ * because a finished consultation can produce twenty-seven gaps; a live pane is
+ * read in glances while the doctor is talking, so it shows what it has and
+ * grows, and the full list is one press of Analyse away.
+ */
+function LivePanel({ title, live }: { title: string; live: LivePanes }) {
+  const guidelines: GuidelineChunk[] = []
+
+  if (title === 'Red Flags') {
+    const flags = [...live.redFlags].sort(
+      (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
+    )
+    /*
+       "None so far" is a clinical claim, and the pane may only make it when a
+       check actually ran and returned. A stalled or not-yet-succeeded live
+       check renders as exactly that, because a panel asserting an absence it
+       did not establish is the false negative this engine exists to prevent.
+    */
+    const unearnedAbsence = live.flagsStalled || !live.flagsChecked
+
+    return (
+      <Panel title={title} count={flags.length}>
+        {flags.length === 0 && unearnedAbsence ? (
+          <p className="text-sm text-emergency">
+            {live.flagsStalled
+              ? 'Live safety checks have stopped. Press Analyse to run the full check.'
+              : 'Waiting for the first safety check.'}
+          </p>
+        ) : flags.length === 0 ? (
+          <p className="text-sm text-ink-muted">No escalation triggers so far.</p>
+        ) : (
+          flags.map((flag) => (
+            <RedFlagCard
+              key={flag.id}
+              flag={flag}
+              disposition={undefined}
+              guidelines={guidelines}
+            />
+          ))
+        )}
+      </Panel>
+    )
+  }
+
+  const gaps = [...live.gaps].sort(
+    (a, b) => GAP_PRIORITY_ORDER[a.priority] - GAP_PRIORITY_ORDER[b.priority],
+  )
+  return (
+    <Panel title={title} count={gaps.length}>
+      {gaps.length === 0 ? (
+        <p className="text-sm text-ink-muted">Nothing outstanding so far.</p>
+      ) : (
+        gaps.map((gap) => (
+          <GapCard key={gap.id} gap={gap} disposition={undefined} guidelines={guidelines} />
+        ))
+      )}
+      {live.answered.length > 0 && (
+        /* Answered prompts are moved, never deleted. A gap the doctor has just
+           covered disappearing from under their eye reads as the list losing
+           track of the conversation, which is the churn the live design exists
+           to avoid (docs/trd.md §20.8.1). */
+        <p className="mt-1 text-2xs text-ink-muted">
+          {live.answered.length} covered so far:{' '}
+          {live.answered.map((gap) => gap.question).join(' · ')}
+        </p>
+      )}
+    </Panel>
   )
 }
 

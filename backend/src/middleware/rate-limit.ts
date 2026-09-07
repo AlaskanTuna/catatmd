@@ -204,6 +204,66 @@ export const draftTurnsRateLimit = rateLimit({
 })
 
 /**
+ * Per-IP limiter for `POST /api/consultations/:id/live-flags`, ambient
+ * capture's deterministic pane (#219).
+ *
+ * Spends no model budget: the route runs the rules engine in-process and calls
+ * nothing outward. The limiter exists because every new route registers one,
+ * and because an unbounded loop against it is still CPU a caller did not pay
+ * for.
+ *
+ * 120 a minute is sized from the cadence rather than guessed. A segment closes
+ * every 3 to 8 seconds, so one live consultation is 8 to 20 requests a minute,
+ * and a clinic sitting behind one address can therefore run several at once
+ * without any of them being throttled mid-consultation. Throttling this pane
+ * is worse than throttling most things: it is the surface that carries red
+ * flags.
+ */
+export const liveFlagsRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: {
+      code: 'rate_limited',
+      message: 'Too many live safety checks. Please retry shortly.',
+    },
+  },
+})
+
+/**
+ * Per-IP limiter for `POST /api/consultations/:id/live-analysis`, the
+ * model-backed half of the live panes (#219).
+ *
+ * One consultation at the 12 second cadence is 5 requests a minute, so 20
+ * covers roughly four clinicians on one address. **Its own bucket, and that is
+ * the point:** live cycles must not be fundable from, nor able to exhaust,
+ * `analyzeRateLimit`. The Finish analysis is the operation the product cannot
+ * do without, and a doctor who has just finished a consultation must never be
+ * refused it because the live pane spent the budget while they were talking.
+ *
+ * Per-request cost is separately bounded by `MAX_LIVE_DELTA_TURNS` and
+ * `MAX_LIVE_DELTA_CHARACTERS`. **There is still no per-actor or global spend
+ * cap**, which is the same open gap `hostedAsrRateLimit` and
+ * `liveSessionRateLimit` already record rather than a new one.
+ */
+export const liveAnalysisRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: {
+      code: 'rate_limited',
+      message: 'Too many live analysis requests. Please retry shortly.',
+    },
+  },
+})
+
+/**
  * Per-IP limiter for `PATCH /api/settings/retention` (#80).
  *
  * Not a cost control and not a destructive one: the route writes a single

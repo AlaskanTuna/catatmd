@@ -12,6 +12,8 @@ import {
   eraseRateLimit,
   guestSignInRateLimit,
   hostedAsrRateLimit,
+  liveAnalysisRateLimit,
+  liveFlagsRateLimit,
   liveSessionRateLimit,
   settingsWriteRateLimit,
 } from './middleware/rate-limit.js'
@@ -105,6 +107,12 @@ export function createApp() {
   // Ambient capture mints one provider key per session and streams the audio
   // from the browser, so this bounds key issuance rather than audio (#268).
   app.post('/api/asr/live-sessions', liveSessionRateLimit)
+  // The two live panes, bucketed apart because they cost different things
+  // (#219). Flags run the rules engine in-process and spend no model budget, so
+  // they get a cadence-sized allowance; the fold is an LLM call and gets a
+  // small one that cannot borrow from, or exhaust, the Finish analysis above.
+  app.post('/api/consultations/:id/live-flags', liveFlagsRateLimit)
+  app.post('/api/consultations/:id/live-analysis', liveAnalysisRateLimit)
 
   // ── Clinical routers ─────────────────────────────────────────────────────
   // These inherit the session guard and the analyze limiter above, and must
