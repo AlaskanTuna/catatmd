@@ -17,7 +17,7 @@ import { Card } from '../ui/Card.js'
  * top rule, icon, word label, ink body. Never a tinted passage, never a left
  * stripe, and never colour as the only channel (WCAG 1.4.1).
  */
-const SEVERITY = {
+export const SEVERITY = {
   emergency: {
     label: 'Emergency',
     rule: 'bg-emergency-rule',

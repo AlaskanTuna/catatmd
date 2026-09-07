@@ -232,6 +232,79 @@ and the measurement it rested on both retire (settled 15/08/26).
 - The rail scrolls itself rather than stretching the page. One guest consultation produces four flags and twenty-seven gaps, which made it the tallest column by a wide margin and left the other two beside a long empty gutter.
 - Density target: everything needed for a 60-second review inside one 1440×900 viewport.
 
+### While Capture Is Running
+
+The three panels are the **review** layout. During capture the screen drops to
+two, and both changes are about what a doctor can read in the two seconds they
+can spare while looking at a patient.
+
+| Panel          | During capture           | Why                                                        |
+| -------------- | ------------------------ | ---------------------------------------------------------- |
+| Transcript     | fluid, the only scroller | the one surface actually changing                          |
+| Note           | hidden                   | it is a placeholder; the note is not written until Analyse |
+| Safety rail    | hidden                   | twenty-eight gap cards is not a glance                     |
+| `LivePrompter` | 380px, fixed height      | red flags plus three prompts, chosen by priority           |
+
+**Severity is still visible without scrolling, and it is better served here.**
+The rail's fixed width existed to guarantee that, but measured on production a
+settled review overflows the page by 234px and hides 264px of the rail below the
+fold, which is where a rule hit at position one of thirty-two actually sits. The
+prompter's red-flag section is permanent, above the fold, and first.
+
+**The prompter is push, never pull.** It is not a `<dialog>` and it is never
+modal. A pop-up the doctor has to open is the tabs rule again in another shape:
+a warning behind a click is a warning nobody opens mid-consultation.
+
+**Three prompts, and the cap is the design.** A panel holding twenty-seven gaps
+scrolls exactly like a rail holding twenty-seven. The rest sit behind the shared
+overflow dialog and are never dropped from the count.
+
+**It is opaque, like every other content surface.** It carries red flags and
+prompts, so the glass-is-chrome-only rule applies to it in full.
+
+**Below `lg` it is `order-1`**, above the transcript, for the same reason the
+rail was: on a narrow screen "visible without scrolling" can only mean first in
+source order.
+
+**The column ceiling is `calc(100vh-26rem)` during capture, against
+`calc(100vh-13rem)` for review, and the difference is measured rather than
+guessed.** At 1440x900 the band above the grid is 292px and the page's own
+bottom padding is 121px, so a 692px column overflows the viewport by 234px.
+That is survivable while reading a note, because the columns are sticky and
+settle after one scroll. It is not survivable while talking, which was the
+original complaint: the doctor scrolls the page to reach the bottom of a
+transcript that is scrolling itself. 484px is what makes 292 plus the column
+plus 121 land inside 900, and it is why capture has exactly one scrolling
+surface.
+
+### The Transcript Has Two Sides
+
+Speakers alternate left and right rather than sharing one left edge, in both the
+live pane and the settled transcript.
+
+- **Two caps, because this pane is rendered at two very different widths.**
+  62% once the column clears `@lg`, and 88% below it. Full width on the 880px
+  capture column runs about 105 characters, well past the 68ch this document
+  sets for prose; but 62% of the 380px review column is a 235px bubble that
+  breaks a line every three words. The split itself holds at both widths, only
+  the cap moves.
+- **It is a container query, not a media query.** The thing that varies is the
+  column's width, not the viewport's, and the same component renders in a
+  380px rail and a fluid 880px column on the same 1440px screen.
+- **The right speaker takes `accent-soft`. The left takes whichever neutral
+  contrasts with the ground**: `sunken` in the live pane, which sits on
+  `surface`, and `surface` in the settled transcript, which sits on `sunken`.
+- **The chip and its bubble always agree.** One turn never carries two answers
+  to whose it is.
+- **Consecutive turns from one speaker drop the chip and the timestamp**, and
+  tighten by 8px. That grouping is what makes it read as a conversation rather
+  than a log with a label on every line.
+- **Sides are not roles during capture.** The recogniser numbers speakers and
+  roles are assigned after Stop, so an id that swaps mid-consultation moves the
+  conversation bodily across the pane. That is louder than a chip changing text,
+  and it is the cost this layout accepts for legibility. It is also why the
+  diarisation config is a correctness concern rather than a cosmetic one.
+
 ### The Footer Reveal
 
 The page is an opaque sheet lying on top of a footer that is fixed to the bottom
