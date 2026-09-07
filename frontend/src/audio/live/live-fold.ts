@@ -1,4 +1,9 @@
-import { LIVE_DELTA_LOOKBACK_SEGMENTS, type RedFlag, type TranscriptTurn } from '@shared/types'
+import {
+  LIVE_DELTA_LOOKBACK_SEGMENTS,
+  MAX_LIVE_DELTA_SEGMENTS,
+  type RedFlag,
+  type TranscriptTurn,
+} from '@shared/types'
 import { draftToTurns, segmentsToDraft } from '../draft-turns.js'
 import type { TranscriptSegment } from '../protocol.js'
 
@@ -38,7 +43,17 @@ export function deltaFor(
   committed: number,
 ): TranscriptSegment[] {
   if (closed.length <= committed) return []
-  return closed.slice(Math.max(0, committed - LIVE_DELTA_LOOKBACK_SEGMENTS))
+  const from = Math.max(0, committed - LIVE_DELTA_LOOKBACK_SEGMENTS)
+  /*
+   * Clamped to the newest segments, because `committed` only advances on a
+   * successful cycle. Without the clamp a run of failures grows this window
+   * without bound until it crosses `MAX_LIVE_DELTA_CHARACTERS`, at which point
+   * the route refuses it as invalid for the rest of the consultation and the
+   * pane freezes permanently. Dropping the oldest segments loses coverage the
+   * caller must surface, which is what `flagsStalled` is for; a window that can
+   * never be accepted again loses all of it silently.
+   */
+  return closed.slice(Math.max(from, closed.length - MAX_LIVE_DELTA_SEGMENTS))
 }
 
 /**

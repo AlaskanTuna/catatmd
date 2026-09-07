@@ -29,7 +29,7 @@ import {
 import { Router } from 'express'
 import { z } from 'zod'
 import { analyseNote, buildEvidenceLinks } from '../analysis/index.js'
-import { analyseLiveWindow, foldFacts } from '../analysis/live.js'
+import { analyseLiveWindow, foldFacts, foldOperational } from '../analysis/live.js'
 import { deriveConsultationTitle } from '../analysis/title.js'
 import { eraseConsultation } from '../audit/erasure.js'
 import { type AnalysisFailureReason, getAuditHistory, recordAuditEvent } from '../audit/index.js'
@@ -738,7 +738,18 @@ consultationsRouter.post('/:id/live-flags', async (req, res) => {
   const profile = getClinicalProfile(body.data.profileId ?? DEFAULT_PROFILE_ID)
 
   const redFlags = evaluateRedFlags(
-    { ...body.data.delta, labelsReviewed: false },
+    /*
+     * Both fields are the server's, not the caller's, and for the same reason:
+     * each is a lever that can only ever *weaken* the engine on a window the
+     * client composed entirely.
+     *
+     * `labelsReviewed` gates the question-denial suppression in `asserts()`.
+     * `source` gates `isRecorded` in `redflags/mishears.ts`, so a client
+     * sending anything else silently loses the measured Malay confusables
+     * ("patuk berdarah", "sempuk") that exist for exactly this transcript
+     * source. This route is only ever reached from ambient capture.
+     */
+    { ...body.data.delta, source: 'asr_live', labelsReviewed: false },
     profile.redFlagTriggers,
   )
 
@@ -792,11 +803,31 @@ consultationsRouter.post('/:id/live-analysis', async (req, res) => {
     })
 
     /*
-     * Written on the cycle that opens the session, before the egress it
-     * records, and not repeated. See `consultation.live_analysis_started` in
-     * `audit/index.ts` for why this is session-scoped rather than per cycle.
+     * Written once per consultation, before the egress it records, and the
+     * decision is the server's rather than the caller's.
+     *
+     * The first version gated this on `previous === null`, which meant a client
+     * that fabricated a previous state on its opening request could spend the
+     * whole model budget with no `live_analysis_started` row against the
+     * consultation. That is not the shape of the precedent it cited:
+     * `asr.live_session_minted` is written unconditionally at the only moment
+     * issuance can happen, which is what makes "an egress the trail did not
+     * record is never observable by a client" true there.
+     *
+     * Session-scoping is still right, for the chain-contention reason in
+     * `audit/index.ts`. Reading the session boundary off the request body was
+     * not. One indexed lookup on `[consultationId, createdAt]`, on the
+     * model-backed route only, which its own limiter caps at 20/min.
      */
-    if (previous === null) {
+    const opened = await prisma.auditEvent.findFirst({
+      where: {
+        consultationId: consultation.id,
+        action: 'consultation.live_analysis_started',
+      },
+      select: { id: true },
+    })
+
+    if (opened === null) {
       const llm = getLLMDescriptor()
       await recordAuditEvent({
         action: 'consultation.live_analysis_started',
@@ -825,7 +856,9 @@ consultationsRouter.post('/:id/live-analysis', async (req, res) => {
       previous?.clinicalFacts ?? null,
       rehydrateAssertions(checked.clinicalFacts, rehydrate),
     )
-    const operational = foldFacts(
+    // Not `foldFacts`: this block holds the clinical conclusion, where holding
+    // an established value is the unsafe direction. See `foldOperational`.
+    const operational = foldOperational(
       previous?.operational ?? null,
       rehydrateAssertions(checked.operational, rehydrate),
     )

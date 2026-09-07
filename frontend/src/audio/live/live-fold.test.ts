@@ -1,4 +1,4 @@
-import type { RedFlag } from '@shared/types'
+import { MAX_LIVE_DELTA_SEGMENTS, type RedFlag } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import type { TranscriptSegment } from '../protocol.js'
 import { appendOnly, closedSegments, deltaFor, mergeFlags, segmentsToDelta } from './live-fold.js'
@@ -50,6 +50,20 @@ describe('deltaFor', () => {
 
   it('sends nothing when no new segment has closed', () => {
     expect(deltaFor(closed, 4)).toEqual([])
+  })
+
+  it('clamps the window so a run of failures cannot latch it shut', () => {
+    /*
+     * Found by clinical review. `committed` only advances on success, so
+     * without this ceiling a long run of failures grows the window until it
+     * breaches MAX_LIVE_DELTA_CHARACTERS, after which the route refuses it as
+     * invalid for the rest of the consultation and the safety pane freezes
+     * with no signal. Losing the oldest segments is recoverable and surfaced;
+     * a window that can never be accepted again is not.
+     */
+    const many = Array.from({ length: 200 }, (_, i) => segment(`Sentence ${i}.`, i * 3))
+    expect(deltaFor(many, 0).length).toBe(MAX_LIVE_DELTA_SEGMENTS)
+    expect(deltaFor(many, 0).at(-1)?.text).toBe('Sentence 199.')
   })
 })
 

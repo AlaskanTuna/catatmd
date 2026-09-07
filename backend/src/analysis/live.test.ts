@@ -5,7 +5,7 @@ import {
   OperationalBlockSchema,
 } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { foldFacts } from './live.js'
+import { foldFacts, foldOperational } from './live.js'
 
 /**
  * The fold is what lets a live cycle carry only the new window (#219). Every
@@ -92,29 +92,74 @@ describe('foldFacts over clinical facts', () => {
   })
 })
 
-describe('foldFacts over the operational block', () => {
+describe('foldOperational', () => {
   it('does not let an empty dispensing list erase a filled one', () => {
     const previous = emptyOperational()
     previous.medicationsDispensed = [present('amoxicillin 500mg')]
 
-    const merged = foldFacts(previous, emptyOperational())
+    const merged = foldOperational(previous, emptyOperational())
     expect(merged.medicationsDispensed).toHaveLength(1)
   })
 
-  it('takes a newer non-empty dispensing list', () => {
+  it('unions dispensing lists rather than replacing them', () => {
+    /*
+     * Found by clinical review. Replacing looked right and was not: a later
+     * window naming a second drug erased the first, which made this the one
+     * field where established content could be silently dropped.
+     */
+    const previous = emptyOperational()
+    previous.medicationsDispensed = [present('amoxicillin 500mg')]
+
+    const incoming = emptyOperational()
+    incoming.medicationsDispensed = [present('paracetamol 1g')]
+
+    const merged = foldOperational(previous, incoming)
+    expect(merged.medicationsDispensed.map((m) => m.value)).toEqual([
+      'amoxicillin 500mg',
+      'paracetamol 1g',
+    ])
+  })
+
+  it('does not double a drug named in two windows', () => {
     const previous = emptyOperational()
     previous.medicationsDispensed = [present('amoxicillin 500mg')]
 
     const incoming = emptyOperational()
     incoming.medicationsDispensed = [present('amoxicillin 500mg'), present('paracetamol 1g')]
 
-    expect(foldFacts(previous, incoming).medicationsDispensed).toHaveLength(2)
+    expect(foldOperational(previous, incoming).medicationsDispensed).toHaveLength(2)
   })
 
-  it('folds the scalar fields beside the array', () => {
+  it('lets a clinical conclusion be retracted, unlike a symptom', () => {
+    /*
+     * The asymmetry the "no output is a diagnosis" invariant rests on. Under
+     * the monotone rule a model latching onto a doctor thinking aloud in one
+     * window would pin a diagnosis on screen that no later window could take
+     * back, because NOT_ASSESSED never wins. Expressed per block rather than
+     * per field, because naming the field here would put a clinical rule
+     * outside the versioned data and `no-stray-clinical-constants.test.ts`
+     * catches exactly that.
+     */
+    const previous = emptyOperational()
+    previous.diagnosis = present('community-acquired pneumonia')
+
+    expect(foldOperational(previous, emptyOperational()).diagnosis.state).toBe('NOT_ASSESSED')
+  })
+
+  it('lets the newest window win on every scalar in the block', () => {
+    // The cost of the rule above, stated rather than hidden: a value named
+    // mid-consultation can blank if a later window does not repeat it. Cosmetic
+    // and self-correcting, where a latched conclusion is neither.
     const previous = emptyOperational()
     previous.mcDays = present('2')
 
-    expect(foldFacts(previous, emptyOperational()).mcDays).toEqual(present('2'))
+    expect(foldOperational(previous, emptyOperational()).mcDays.state).toBe('NOT_ASSESSED')
+  })
+
+  it('still keeps clinical facts monotone, which is the safe direction there', () => {
+    const previous = emptyFacts()
+    previous.symptoms.cough = present('three days')
+
+    expect(foldFacts(previous, emptyFacts()).symptoms.cough.state).toBe('PRESENT')
   })
 })

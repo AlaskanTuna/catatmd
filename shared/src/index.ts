@@ -1384,6 +1384,17 @@ export const MAX_LIVE_DELTA_TURNS = 60
 export const MAX_LIVE_DELTA_CHARACTERS = 8_000
 
 /**
+ * How many closed segments one window may carry, whatever has failed since.
+ *
+ * A client only advances its committed count on a successful cycle, so without
+ * a ceiling a run of failures grows the next window until it breaches the two
+ * bounds above, and the route then refuses it as invalid for the rest of the
+ * consultation. Well under `MAX_LIVE_DELTA_TURNS`, because one segment can
+ * split into several turns.
+ */
+export const MAX_LIVE_DELTA_SEGMENTS = 20
+
+/**
  * A ceiling on `cycle`, so an honest client cannot loop forever. It bounds
  * nothing else: a dishonest one simply sends `previous: null` every time, which
  * is why the rate limiter and not this number is the real cost control.

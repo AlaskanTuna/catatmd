@@ -65,7 +65,23 @@ vi.mock('../lib/prisma.js', () => {
       db.auditWrites.push(args)
       return args.data
     },
-    findFirst: async () => {
+    /*
+     * Two different reads share this. `recordAuditEvent` asks for the chain
+     * head with no `where`; the route asks whether this consultation already
+     * has a `live_analysis_started` row. A mock that ignored the filter would
+     * answer the second question with the first one's row and hide the very
+     * defect the test above exists to catch.
+     */
+    findFirst: async (args?: { where?: { consultationId?: string; action?: string } }) => {
+      const action = args?.where?.action
+      if (action !== undefined) {
+        const match = db.auditWrites.find(
+          (write) =>
+            write.data.action === action &&
+            write.data.consultationId === args?.where?.consultationId,
+        )
+        return match === undefined ? null : { id: 'audit-row' }
+      }
       const head = db.auditWrites.at(-1)
       return head === undefined ? null : { hash: head.data.hash }
     },
@@ -294,25 +310,43 @@ describe('POST /api/consultations/:id/live-analysis', () => {
     expect(body.state.cycle).toBe(2)
   })
 
-  it('audits the session once, on the cycle that opens it', async () => {
+  it('audits the session once, however many cycles run', async () => {
+    const state = (cycle: number) => ({
+      cycle,
+      clinicalFacts: { symptoms: {}, history: {}, observations: {}, examination: {} },
+      operational: {},
+    })
+
+    await post({ delta: window_([{ speaker: 'patient', text: 'A cough.' }]), previous: null })
+    await post({ delta: window_([{ speaker: 'patient', text: 'A fever.' }]), previous: state(1) })
+    await post({
+      delta: window_([{ speaker: 'patient', text: 'Sore throat.' }]),
+      previous: state(2),
+    })
+
+    // Session-scoped by design: ~100 chained appends per consultation would
+    // exhaust the audit chain's head-race retries. See audit/index.ts. The
+    // trail, not the request body, is what says the session is already open.
+    expect(actions()).toEqual(['consultation.live_analysis_started'])
+  })
+
+  it('audits the session even when the caller claims it already started', async () => {
+    /*
+     * Found by the PHI-boundary review, not by me. Gating the row on
+     * `previous === null` let a client fabricate an opening state and spend the
+     * whole model budget with nothing recorded against the consultation. The
+     * decision is the server's: it reads the trail, not the request body.
+     */
     await post({
       delta: window_([{ speaker: 'patient', text: 'A cough.' }]),
-      previous: null,
-    })
-    expect(actions()).toEqual(['consultation.live_analysis_started'])
-
-    db.auditWrites.length = 0
-    await post({
-      delta: window_([{ speaker: 'patient', text: 'And a fever.' }]),
       previous: {
-        cycle: 1,
+        cycle: 7,
         clinicalFacts: { symptoms: {}, history: {}, observations: {}, examination: {} },
         operational: {},
       },
     })
-    // Session-scoped by design: ~100 chained appends per consultation would
-    // exhaust the audit chain's head-race retries. See audit/index.ts.
-    expect(actions()).toEqual([])
+
+    expect(actions()).toEqual(['consultation.live_analysis_started'])
   })
 
   it('records a failure and answers 500 without leaking the reason', async () => {

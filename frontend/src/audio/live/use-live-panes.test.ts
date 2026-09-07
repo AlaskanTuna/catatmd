@@ -207,6 +207,39 @@ describe('useLivePanes', () => {
     expect(result.current.panes.redFlags).toHaveLength(1)
   })
 
+  it('reports that the safety check has stalled, rather than claiming none so far', async () => {
+    /*
+     * The blocker clinical review found. A swallowed failure left the pane
+     * rendering "No escalation triggers so far" over a check that had stopped
+     * running, which is an affirmative absence nobody established: the exact
+     * false-negative shape the deterministic engine exists to prevent.
+     */
+    apiMock.liveFlags.mockRejectedValueOnce(new FakeApiError(429, 'rate_limited'))
+    const { result } = renderHook(() => useLivePanes('c1'))
+
+    await act(async () => result.current.absorb(withClosed(1)))
+    await waitFor(() => expect(result.current.panes.flagsStalled).toBe(true))
+    expect(result.current.panes.flagsChecked).toBe(false)
+
+    // And it recovers: one good cycle is enough to earn the sentence back.
+    apiMock.liveFlags.mockResolvedValueOnce([])
+    await act(async () => result.current.absorb(withClosed(2)))
+    await waitFor(() => expect(result.current.panes.flagsStalled).toBe(false))
+    expect(result.current.panes.flagsChecked).toBe(true)
+  })
+
+  it('does not call an abort a stall', async () => {
+    // Aborting is the doctor stopping, or the component unmounting. Saying the
+    // safety checks failed there would be alarming and untrue.
+    const abort = new DOMException('aborted', 'AbortError')
+    apiMock.liveFlags.mockRejectedValueOnce(abort)
+    const { result } = renderHook(() => useLivePanes('c1'))
+
+    await act(async () => result.current.absorb(withClosed(1)))
+    await waitFor(() => expect(apiMock.liveFlags).toHaveBeenCalled())
+    expect(result.current.panes.flagsStalled).toBe(false)
+  })
+
   it('clears everything on reset', async () => {
     apiMock.liveFlags.mockResolvedValueOnce([flag('chest-pain')])
     const { result } = renderHook(() => useLivePanes('c1'))

@@ -1098,9 +1098,23 @@ function LivePanel({ title, live }: { title: string; live: LivePanes }) {
     const flags = [...live.redFlags].sort(
       (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
     )
+    /*
+       "None so far" is a clinical claim, and the pane may only make it when a
+       check actually ran and returned. A stalled or not-yet-succeeded live
+       check renders as exactly that, because a panel asserting an absence it
+       did not establish is the false negative this engine exists to prevent.
+    */
+    const unearnedAbsence = live.flagsStalled || !live.flagsChecked
+
     return (
       <Panel title={title} count={flags.length}>
-        {flags.length === 0 ? (
+        {flags.length === 0 && unearnedAbsence ? (
+          <p className="text-sm text-emergency">
+            {live.flagsStalled
+              ? 'Live safety checks have stopped. Press Analyse to run the full check.'
+              : 'Waiting for the first safety check.'}
+          </p>
+        ) : flags.length === 0 ? (
           <p className="text-sm text-ink-muted">No escalation triggers so far.</p>
         ) : (
           flags.map((flag) => (

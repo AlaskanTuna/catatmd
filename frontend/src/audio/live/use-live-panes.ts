@@ -44,6 +44,23 @@ export type LivePanes = {
   operational: OperationalBlock | null
   /** True once any pane has something to show, so the caller can swap placeholders. */
   hasContent: boolean
+  /**
+   * Whether a flags cycle has ever succeeded.
+   *
+   * Separate from `hasContent` because they answer different questions, and
+   * conflating them let the Red Flags panel claim "none so far" on the strength
+   * of a successful *analysis* cycle. Only this may license that sentence.
+   */
+  flagsChecked: boolean
+  /**
+   * The live safety check is failing.
+   *
+   * The one state the pane must never hide. A panel that says "no escalation
+   * triggers" while the check behind it is erroring is asserting an absence it
+   * did not establish, which is the false negative this engine exists to
+   * prevent.
+   */
+  flagsStalled: boolean
 }
 
 const EMPTY: LivePanes = {
@@ -53,6 +70,8 @@ const EMPTY: LivePanes = {
   clinicalFacts: null,
   operational: null,
   hasContent: false,
+  flagsChecked: false,
+  flagsStalled: false,
 }
 
 export function useLivePanes(consultationId: string | null) {
@@ -133,15 +152,25 @@ export function useLivePanes(consultationId: string | null) {
       // and the API is additive against the authoritative Finish run.
       setPanes((current) => {
         const redFlags = mergeFlags(current.redFlags, raised)
-        return redFlags.length === current.redFlags.length
+        return redFlags.length === current.redFlags.length && !current.flagsStalled
           ? current
-          : { ...current, redFlags, hasContent: true }
+          : { ...current, redFlags, flagsStalled: false, flagsChecked: true }
       })
     } catch (error) {
-      // A dropped cycle is not an error the doctor needs to see: the pane keeps
-      // what it has and the next closed segment resends the same ground. A
-      // failure that matters shows up at Finish, which is the audited run.
       if (!(error instanceof ApiError) && !(error instanceof DOMException)) throw error
+      /*
+       * A dropped cycle used to be swallowed silently, and that was a
+       * false-negative in the shape this engine exists to prevent: the pane
+       * went on rendering "No escalation triggers so far" over a check that had
+       * stopped running, which is an affirmative absence nobody had earned.
+       *
+       * An abort is not a failure. It is the doctor stopping the session or the
+       * component unmounting, and saying the checks stalled there would be
+       * alarming and untrue.
+       */
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        setPanes((current) => (current.flagsStalled ? current : { ...current, flagsStalled: true }))
+      }
     } finally {
       flagsBusy.current = false
       inflight.current = inflight.current.filter((c) => c !== controller)

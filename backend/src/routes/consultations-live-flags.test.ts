@@ -203,6 +203,25 @@ describe('POST /api/consultations/:id/live-flags', () => {
     expect(body.redFlags.map((flag) => flag.id)).toContain('chest-pain')
   })
 
+  it('ignores a client-supplied transcript source', async () => {
+    /*
+     * Found by clinical review, and the same class as `labelsReviewed`: on a
+     * window the client composed entirely, `source` gates `isRecorded` in
+     * `redflags/mishears.ts`, so sending anything but `asr_live` would silently
+     * drop the measured Malay confusables that exist for this very path.
+     */
+    const response = await post({
+      delta: {
+        source: 'paste',
+        labelsReviewed: false,
+        turns: [{ speaker: 'patient' as const, text: 'Doktor, saya patuk berdarah pagi tadi.' }],
+      },
+    })
+
+    const body = (await response.json()) as { redFlags: { id: string }[] }
+    expect(body.redFlags.map((flag) => flag.id)).toContain('haemoptysis')
+  })
+
   it('returns 404, never 403, for another doctor’s consultation', async () => {
     db.owner = 'doctor-2'
     const response = await post(delta([{ speaker: 'patient', text: 'Sore throat.' }]))
