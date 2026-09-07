@@ -185,14 +185,16 @@ function renderAmbient() {
   const onTranscript = vi.fn()
   const onSwitchToManual = vi.fn()
   const onLiveChange = vi.fn()
+  const onLiveSegments = vi.fn()
   const view = render(
     <AmbientCapture
       onTranscript={onTranscript}
       onSwitchToManual={onSwitchToManual}
       onLiveChange={onLiveChange}
+      onLiveSegments={onLiveSegments}
     />,
   )
-  return { onTranscript, onSwitchToManual, onLiveChange, ...view }
+  return { onTranscript, onSwitchToManual, onLiveChange, onLiveSegments, ...view }
 }
 
 const tick = () => screen.getByRole('checkbox', { name: /agreed/i }) as HTMLInputElement
@@ -445,6 +447,31 @@ describe('listening', () => {
 
     expect(screen.getByText('batuk')).toBeTruthy()
     expect(screen.queryByText('bat')).toBeNull()
+  })
+
+  it('reports settled segments to the live panes, and never interim ones', async () => {
+    const { onLiveSegments } = await startSession()
+    onLiveSegments.mockClear()
+
+    // Interim only. The panes must not see words the patient has not finished.
+    await act(async () =>
+      socket().message({
+        tokens: [{ text: 'bat', start_ms: 0, end_ms: 300, is_final: false, speaker: 1 }],
+      }),
+    )
+    expect(onLiveSegments).not.toHaveBeenCalled()
+
+    await act(async () =>
+      socket().message({
+        tokens: [
+          { text: 'Selamat pagi', start_ms: 0, end_ms: 900, is_final: true, speaker: 1 },
+          { text: ' batu', start_ms: 900, end_ms: 1100, is_final: false, speaker: 1 },
+        ],
+      }),
+    )
+
+    const reported = onLiveSegments.mock.calls.at(-1)?.[0] as { text: string }[]
+    expect(reported.map((segment) => segment.text)).toEqual(['Selamat pagi'])
   })
 
   it('never renders a control marker', async () => {

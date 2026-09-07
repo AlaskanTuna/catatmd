@@ -171,12 +171,20 @@ export function ChecklistPanel({
   clinicalFacts,
   operational,
   evidenceLinks,
+  defaultOpen = false,
 }: {
   clinicalFacts?: ClinicalFacts
   operational?: OperationalBlock
   evidenceLinks?: EvidenceLink[]
+  /**
+   * Open while the consultation is still being captured (#219). Collapsed is
+   * right after the fact, when the note is the thing being read; during capture
+   * this panel is the patient card, and a card nobody has expanded shows the
+   * doctor nothing as it fills.
+   */
+  defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   const linkFor = (fieldId: string) => evidenceLinks?.find((entry) => entry.fieldId === fieldId)
 
   // Absence is not the same as "nothing was assessed", and conflating the two

@@ -11,6 +11,11 @@ import {
   ERASE_BATCH_LIMIT,
   EraseConsultationsInputSchema,
   type InformationGap,
+  LiveAnalysisResponseSchema,
+  LiveAnalysisStateSchema,
+  LiveFlagsResponseSchema,
+  MAX_LIVE_DELTA_CHARACTERS,
+  MAX_LIVE_DELTA_TURNS,
   type SoapNote,
   SoapNoteSchema,
   type Transcript,
@@ -19,6 +24,7 @@ import {
 import { Router } from 'express'
 import { z } from 'zod'
 import { analyseNote, buildEvidenceLinks } from '../analysis/index.js'
+import { analyseLiveWindow, foldFacts } from '../analysis/live.js'
 import { deriveConsultationTitle } from '../analysis/title.js'
 import { eraseConsultation } from '../audit/erasure.js'
 import { type AnalysisFailureReason, getAuditHistory, recordAuditEvent } from '../audit/index.js'
@@ -650,6 +656,187 @@ consultationsRouter.post('/analyze-ephemeral', async (req, res) => {
     })
 
     throw new HttpError(500, 'analysis_failed', 'Analysis could not be completed.')
+  }
+})
+
+/**
+ * One window of a running ambient consultation (#219).
+ *
+ * Bounded for a window rather than a whole consultation, which is only
+ * affordable because a cycle never carries the running transcript: docs/trd.md
+ * §20.8 adopts the fold over re-extraction, and `LiveAnalysisStateSchema` has
+ * no field a growing transcript could travel in.
+ */
+const LiveDeltaSchema = TranscriptSchema.superRefine((delta, ctx) => {
+  if (delta.turns.length > MAX_LIVE_DELTA_TURNS) {
+    ctx.addIssue({
+      code: 'custom',
+      message: `A live window may have at most ${MAX_LIVE_DELTA_TURNS} turns.`,
+    })
+  }
+  const total = delta.turns.reduce((sum, turn) => sum + turn.text.length, 0)
+  if (total > MAX_LIVE_DELTA_CHARACTERS) {
+    ctx.addIssue({
+      code: 'custom',
+      message: `A live window may be at most ${MAX_LIVE_DELTA_CHARACTERS} characters.`,
+    })
+  }
+})
+
+const LiveFlagsBodySchema = z.object({
+  delta: LiveDeltaSchema,
+  profileId: ProfileIdSchema.optional(),
+})
+
+/**
+ * The deterministic live pane: rules over one window, in-process, no model.
+ *
+ * **It writes nothing and audits nothing**, and both are deliberate. Nothing
+ * egresses and no state changes, so there is no act to record; the precedent is
+ * `GET /api/asr/live-sessions/config`, which writes no row for the same reason.
+ * The authoritative run is still `evaluateRedFlags` over the whole stored
+ * transcript at Finish, which is persisted and audited. This pass is additive
+ * and advisory: it can raise a flag earlier than Finish would, and it can never
+ * remove one.
+ *
+ * `labelsReviewed` is forced to `false` rather than read from the body, and
+ * that is a hardening rather than a formality. On a live path nobody has
+ * reviewed a speaker label yet, and the field can only ever *weaken* the
+ * engine: `asserts()` (`redflags/triggers.ts`) enables the question-denial
+ * suppression only when it is `true`. A client asserting `true` here could
+ * therefore suppress a real trigger, so the value is not the client's to send.
+ */
+consultationsRouter.post('/:id/live-flags', async (req, res) => {
+  const actor = doctorId(req)
+  await assertOwnedConsultation(req.params.id, actor)
+
+  const body = LiveFlagsBodySchema.safeParse(req.body)
+  if (!body.success) {
+    throw new HttpError(400, 'invalid_body', 'A valid live transcript window is required.')
+  }
+
+  const profile = getClinicalProfile(body.data.profileId ?? DEFAULT_PROFILE_ID)
+
+  const redFlags = evaluateRedFlags(
+    { ...body.data.delta, labelsReviewed: false },
+    profile.redFlagTriggers,
+  )
+
+  res.json(LiveFlagsResponseSchema.parse({ redFlags }))
+})
+
+const LiveAnalysisBodySchema = z.object({
+  delta: LiveDeltaSchema,
+  /** The previous cycle's result, handed straight back. `null` opens a session. */
+  previous: LiveAnalysisStateSchema.nullable(),
+  profileId: ProfileIdSchema.optional(),
+})
+
+/**
+ * The model-backed live panes: the patient card and the missing-information
+ * checklist, folded one window at a time (#219).
+ *
+ * **The ordering is `runAnalysis`'s, and for the same reason.** De-identify
+ * first, then reach the model with de-identified content only. This route is an
+ * ordinary LLM egress through `LLMClient` and gets no dispensation for being
+ * live: a window of transcript is exactly as identifying as a whole one.
+ *
+ * **It persists nothing.** No `Consultation` column is written and `status` is
+ * untouched, so a live cycle cannot move a record's lifecycle or leave a draft
+ * behind. Precedent: `POST /analyze-ephemeral`, which runs the same pipeline
+ * and writes no row.
+ *
+ * The authoritative analysis is still the one at Finish. This pass may only
+ * fill the two panes ahead of it.
+ */
+consultationsRouter.post('/:id/live-analysis', async (req, res) => {
+  const actor = doctorId(req)
+  const consultation = await assertOwnedConsultation(req.params.id, actor)
+
+  const body = LiveAnalysisBodySchema.safeParse(req.body)
+  if (!body.success) {
+    throw new HttpError(400, 'invalid_body', 'A valid live transcript window is required.')
+  }
+
+  const { delta, previous } = body.data
+  const profile = getClinicalProfile(body.data.profileId ?? DEFAULT_PROFILE_ID)
+
+  try {
+    const { text, vault, detected } = deidentifyTranscript(delta)
+
+    // Labels and a count, never the matched values (GitHub issue #15).
+    logger.info('de-identification complete', {
+      consultationId: consultation.id,
+      detectorLabels: detected,
+      detectorCount: detected.length,
+    })
+
+    /*
+     * Written on the cycle that opens the session, before the egress it
+     * records, and not repeated. See `consultation.live_analysis_started` in
+     * `audit/index.ts` for why this is session-scoped rather than per cycle.
+     */
+    if (previous === null) {
+      const llm = getLLMDescriptor()
+      await recordAuditEvent({
+        action: 'consultation.live_analysis_started',
+        actorId: actor,
+        consultationId: consultation.id,
+        metadata: {
+          profileId: profile.id,
+          versions: {
+            provider: llm.provider,
+            model: llm.model,
+            clinicalContent: getActiveClinicalVersions(profile),
+          },
+        },
+      })
+    }
+
+    const checked = await analyseLiveWindow(text, text, profile)
+    const rehydrate = (value: string) => vault.rehydrate(value)
+
+    /*
+     * Rehydrated before the fold, so the previous cycle's plain values and this
+     * one's are the same kind of string. Folding tokenised text into rehydrated
+     * text would leave `[PATIENT_1]` on screen the moment a field carried over.
+     */
+    const clinicalFacts = foldFacts(
+      previous?.clinicalFacts ?? null,
+      rehydrateAssertions(checked.clinicalFacts, rehydrate),
+    )
+    const operational = foldFacts(
+      previous?.operational ?? null,
+      rehydrateAssertions(checked.operational, rehydrate),
+    )
+
+    // Deterministic, over the merged facts. The model is never asked what is
+    // missing; see `deriveGaps` and docs/trd.md §20.8.1.
+    const gaps = deriveGaps(clinicalFacts, operational, profile.gapChecklist).map((gap) => ({
+      ...gap,
+      question: rehydrate(gap.question),
+      rationale: rehydrate(gap.rationale),
+    }))
+
+    res.json(
+      LiveAnalysisResponseSchema.parse({
+        state: { cycle: (previous?.cycle ?? 0) + 1, clinicalFacts, operational },
+        gaps,
+        discardedFieldIds: checked.discardedFieldIds,
+      }),
+    )
+  } catch (error) {
+    await recordAuditEvent({
+      action: 'consultation.live_analysis_failed',
+      actorId: actor,
+      consultationId: consultation.id,
+      metadata: { reason: classifyFailure(error) },
+    })
+
+    if (error instanceof DeidentificationError) {
+      throw new HttpError(500, 'deid_failed', 'De-identification could not be completed.')
+    }
+    throw new HttpError(500, 'analysis_failed', 'Live analysis could not be completed.')
   }
 })
 

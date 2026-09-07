@@ -66,10 +66,17 @@ export function CapturePanel({
   onCapture,
   saving,
   error,
+  onLiveSegments,
 }: {
   onCapture: (transcript: Transcript) => void
   saving: boolean
   error: string | null
+  /**
+   * Forwarded to the ambient panel so the review surface can read the
+   * consultation while it is still being spoken (#219). Optional and inert on
+   * the manual path, which has nothing live to report.
+   */
+  onLiveSegments?: (segments: readonly TranscriptSegment[]) => void
 }) {
   /*
    * The doctor arrived on a consultation page that is already scoped to one
@@ -354,6 +361,7 @@ export function CapturePanel({
                 onTranscript={applyRecording}
                 onSwitchToManual={switchToManual}
                 onLiveChange={setAmbientLive}
+                onLiveSegments={onLiveSegments}
               />
             ) : (
               <AudioCapture engine={audio.engine} transcript={text} onTranscript={applyRecording} />

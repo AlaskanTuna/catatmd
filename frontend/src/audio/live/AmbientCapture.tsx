@@ -1,6 +1,6 @@
 import type { DraftTurn, LiveAsrConfig, LiveAsrRegion } from '@shared/types'
 import { MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
-import { Loader2, Mic, Radio, Square } from 'lucide-react'
+import { Loader2, Mic, Square } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from '../../lib/api.js'
 import { Button } from '../../ui/Button.js'
@@ -99,6 +99,7 @@ export function AmbientCapture({
   onTranscript,
   onSwitchToManual,
   onLiveChange,
+  onLiveSegments,
 }: {
   onTranscript: (result: {
     text: string
@@ -110,6 +111,16 @@ export function AmbientCapture({
   onSwitchToManual: () => void
   /** Latches the panel open while a session runs, so a settings save cannot unmount it. */
   onLiveChange: (live: boolean) => void
+  /**
+   * The settled segments, as they accumulate, so the live panes can read the
+   * consultation while it is still being spoken (#219).
+   *
+   * Fires on settled tokens only, never on interim ones: provisional text is
+   * re-sent in full and rewritten as the speaker talks, and analysing it would
+   * mean sending words the patient did not finish saying. Optional, so the
+   * component is unchanged for any caller that does not want the panes.
+   */
+  onLiveSegments?: (segments: readonly TranscriptSegment[]) => void
 }) {
   const [availability, setAvailability] = useState<Availability>({ status: 'loading' })
   const [phase, setPhase] = useState<Phase>('idle')
@@ -136,6 +147,7 @@ export function AmbientCapture({
   const settled = useRef<LiveTranscript>(EMPTY_LIVE_TRANSCRIPT)
   const onTranscriptRef = useRef(onTranscript)
   const onLiveChangeRef = useRef(onLiveChange)
+  const onLiveSegmentsRef = useRef(onLiveSegments)
 
   useEffect(() => {
     agreedRef.current = agreed
@@ -144,7 +156,18 @@ export function AmbientCapture({
   useEffect(() => {
     onTranscriptRef.current = onTranscript
     onLiveChangeRef.current = onLiveChange
+    onLiveSegmentsRef.current = onLiveSegments
   })
+
+  /*
+   * Keyed on `live.final` rather than on `live`, which is what keeps the panes
+   * off the interim path: `absorb` returns the previous `final` array by
+   * reference when a message carried no settled tokens, so this does not run
+   * while provisional text is churning.
+   */
+  useEffect(() => {
+    onLiveSegmentsRef.current?.(tokensToSegments(live.final))
+  }, [live.final])
 
   const loadConfig = useCallback(() => {
     const id = attempt.current
@@ -524,7 +547,14 @@ export function AmbientCapture({
         <div className="grid gap-3">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-2 font-medium text-sm">
-              <Radio aria-hidden className="size-4 animate-pulse text-accent" />
+              {/* The same pulsing dot `AudioCapture` uses, rather than a second
+                  idiom for the same state. Both panels mean "a microphone in
+                  this room is open"; a doctor who has learned to read one
+                  should not have to learn the other, and the dot is the one
+                  already carrying that meaning. It reports that capture is
+                  running, which this component owns, not that sound is
+                  arriving, which only the meter beside it may claim. */}
+              <span aria-hidden className="size-2 animate-pulse rounded-full bg-emergency" />
               <span aria-live="polite">Listening</span>
             </span>
             <span className="tabular-nums text-ink-muted text-sm">{clock(seconds)}</span>

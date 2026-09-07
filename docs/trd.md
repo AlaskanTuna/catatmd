@@ -2528,6 +2528,66 @@ Vendor statements, read 06/09/26 and **unverified by us**: real-time audio and t
 
 ---
 
+### 20.11 The Live Panes, And Why The Note Is Not One Of Them
+
+**Status: `Built`** (#219). Ambient capture streams text; this is what the review surface does with it while the doctor is still talking.
+
+#### What Updates Live, And What Does Not
+
+| Pane                    | Source                                        | Cadence              |
+| ----------------------- | --------------------------------------------- | -------------------- |
+| **Red flags**           | `evaluateRedFlags`, deterministic, no model   | Every closed segment |
+| **Missing information** | `deriveGaps` over the merged facts, no model  | Every 12 s, at most  |
+| **Patient card**        | `live_facts` through `LLMClient`, then merged | Every 12 s, at most  |
+| **The note**            | Unchanged. `analyseNote` at Finish            | Once, at the end     |
+
+Two routes rather than one, because the cadences differ by roughly 40x and the fast pane must not wait on the slow one. Neither writes a `Consultation` column nor moves `status`; the precedent is `POST /analyze-ephemeral`.
+
+#### The Note Stays At Finish, On Evidence
+
+§20.8.1 measures every extract-then-write variant as **less grounded** than writing from the transcript: 0.971 against 0.914 to 0.946. A forced-prefix fold hands the model its own previous note plus new text, so from cycle two the note is written partly from a note. That is the same shape by another route, and it degrades the property invisibly, because the output still reads like a note written from the consultation.
+
+It also erodes the control underneath. `hasVerbatimEvidence` accepts an assertion only when its span appears in the transcript, and a note folded from a note gives that check progressively less raw transcript to match against.
+
+The attention argument points the same way. The three things a doctor can act on mid-consultation are what to ask next, what is dangerous, and who the patient is. A note is read afterwards, so a note rewriting itself while they talk is churn on the one surface nobody acts on mid-sentence, which is where §20.8.1's 13.8 retraction score lands hardest.
+
+#### No Differential Diagnosis, And The Reason Is Regulatory
+
+Researched 07/09/26 before building. The vendors that go in-encounter ship **cited evidence pulled on demand** (Abridge against NEJM, JAMA and UpToDate; Heidi's in-session ask), not a pushed differential; Ambience ships no in-visit decision support at all.
+
+The line that decides it for a Malaysian product: the **Medical Device Authority** classifies software that provides clinical recommendations, assists in diagnosis, or influences treatment decisions as **Class B minimum, possibly Class C**, which brings a licensed conformity assessment body, IEC 62304, ISO 14971, a clinical evidence summary and usability engineering. A documentation tool sits outside that. A differential generator does not. FDA's January 2026 CDS guidance keeps non-device status only where the professional can independently review the basis for a recommendation.
+
+That question belongs to **#226**, not to a UI issue. Nothing in the live panes proposes, ranks or implies a diagnosis.
+
+#### The Fold, And Why The Model Never Sees The Previous Facts
+
+Each cycle sends the new window plus the previous cycle's **state**, and `LiveAnalysisStateSchema` has no field a growing transcript could travel in. The merge is `foldFacts` in `backend/src/analysis/live.ts`: field-wise monotone, so a field that has left `NOT_ASSESSED` never slides back. An established field may still be corrected by another established value; only the slide to unknown is refused, because that is the one that would blank a line the doctor has already read.
+
+Deciding this in code rather than asking the model is the same reasoning that makes `deriveGaps` stronger than a model judge: the key set is fixed, so the merge is decidable, cheaper, and cannot be argued out of a fact.
+
+#### The One-Segment Lookback Is A Safety Requirement
+
+Each window repeats the previous window's last closed segment. `findDeniedAbility` (`redflags/triggers.ts`) is an adjacency-pair matcher reading `turns[index + 1]`, and unlike `asserts()` it does so **regardless of `labelsReviewed`**. A doctor's question closing one window with the patient's denial opening the next would be invisible to a strictly disjoint delta, and for some emergency triggers that pair is the only path that raises them at all.
+
+`backend/src/redflags/live-window.test.ts` pins it, including a test written to fail if the lookback is removed.
+
+#### Decisions A Reviewer Will Question
+
+| Decision                                           | Why                                                                                                                                                          |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `labelsReviewed` forced to `false` server-side     | Nobody has reviewed a label mid-consultation, and the field only ever _weakens_ the engine. A client must not be able to buy the question-denial suppression |
+| Audit is session-scoped, not per cycle             | ~100 cycles per consultation against `CHAIN_HEAD_ATTEMPTS = 3` would fail requests on chain contention. `asr.live_session_minted` is the shipped precedent   |
+| `live-flags` writes no audit row                   | No egress and no state change, so there is no act to record. Precedent: `GET /api/asr/live-sessions/config`                                                  |
+| Evidence spans are checked against the window only | A span must appear in the text the model was shown. A field established earlier keeps its already-checked evidence through the fold                          |
+
+#### What This Does Not Do
+
+- **No spend cap**, per-actor or global. The two limiters bound a caller, not a bill. Same open gap as `hostedAsrRateLimit`.
+- **Nothing is persisted**, so a reload loses the live panes exactly as it loses the transcript. Session resumption is still #256.
+- **The live pass is additive and advisory.** It can surface a flag earlier than Finish would; it can never remove one. `evaluateRedFlags` over the whole stored transcript at Finish stays the authoritative, persisted, audited run.
+
+---
+
 ## 21. LLM Guardrail Architecture
 
 **Status: `Built`** for the controls it describes: the primary one, the evidence-bound assertion check of §21.4, ships as `applyEvidenceCheck` in `backend/src/analysis/evidence.ts`. The design below is motivated by a measured finding, recorded first so the controls are traceable to evidence rather than to caution.

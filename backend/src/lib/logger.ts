@@ -80,6 +80,10 @@ const LLM_OPERATIONS = [
   'note_and_gaps',
   'suggestions_and_red_flags',
   'draft_turns',
+  // Ambient capture's live fold. Distinct from `clinical_facts` despite sharing
+  // its response schema, because it reads one window rather than a whole
+  // consultation and its cost shows up per cycle rather than once.
+  'live_facts',
 ] as const
 
 export type LlmOperation = (typeof LLM_OPERATIONS)[number]

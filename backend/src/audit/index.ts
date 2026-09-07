@@ -73,6 +73,32 @@ export type ConsultationAuditEvent =
       }
     }
   | { action: 'consultation.analysis_failed'; metadata: { reason: AnalysisFailureReason } }
+  /*
+   * Ambient capture's live fold, which is an LLM egress and so has to be
+   * recorded. **Session-scoped, not per cycle**, and that is a deliberate
+   * trade rather than an oversight.
+   *
+   * A twenty-minute consultation at the 12 second cadence is roughly 100
+   * cycles. `recordAuditEvent` serialises on a globally unique `prevHash` and
+   * retries a head race only `CHAIN_HEAD_ATTEMPTS` times, so 100 chained
+   * appends per consultation, with several clinicians recording at once, would
+   * exhaust that and fail requests for a reason unrelated to the request.
+   *
+   * The shipped precedent is the same shape: `asr.live_session_minted` records
+   * one key that goes on to open an unbounded number of provider connections
+   * carrying the whole consultation's audio. A session-scoped row for a
+   * session-scoped egress is the pattern this repo already accepted.
+   *
+   * The started row is written on the first cycle only, the failed row always.
+   */
+  | {
+      action: 'consultation.live_analysis_started'
+      metadata: {
+        profileId: ProfileId
+        versions: AnalysisVersions
+      }
+    }
+  | { action: 'consultation.live_analysis_failed'; metadata: { reason: AnalysisFailureReason } }
   | { action: 'consultation.edited' }
   /*
    * Its own action rather than folded into `consultation.edited`, because
