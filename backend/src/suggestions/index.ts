@@ -8,8 +8,10 @@ import type { Deidentified } from '../deid/types.js'
 import { corpusIdsFor } from '../guidelines/index.js'
 import { getLLMClient } from '../lib/llm/index.js'
 import { buildSuggestionsSystemPrompt } from './prompt.js'
+import { filterUnsafeModelSuggestions } from './safety.js'
 
 export { buildSuggestionsSystemPrompt } from './prompt.js'
+export { filterUnsafeModelSuggestions } from './safety.js'
 
 /**
  * Operation 2 (docs/trd.md §12). Runs after de-identification and never
@@ -28,12 +30,16 @@ export async function generateSuggestions(
   outOfScope: boolean
   redFlags: RedFlag[]
   suggestions: ClinicalSuggestion[]
+  suppressedSuggestionIds: string[]
 }> {
-  return getLLMClient().generate({
+  const response = await getLLMClient().generate({
     operation: 'suggestions_and_red_flags',
     system: buildSuggestionsSystemPrompt(profile),
     content,
     schema: makeSuggestionsAndRedFlagsSchema(corpusIdsFor(profile.guidelineCorpus)),
     schemaName: 'suggestions_and_red_flags',
   })
+
+  const filtered = filterUnsafeModelSuggestions(response.suggestions)
+  return { ...response, ...filtered }
 }

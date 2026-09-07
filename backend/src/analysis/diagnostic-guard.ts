@@ -13,7 +13,7 @@ const DIAGNOSTIC_PHRASING: readonly RegExp[] = [
   /\bconsistent with a diagnosis\b/i,
 ]
 
-function containsDiagnosticProse(text: string): boolean {
+export function containsDiagnosticProse(text: string): boolean {
   return DIAGNOSTIC_PHRASING.some((pattern) => pattern.test(text))
 }
 

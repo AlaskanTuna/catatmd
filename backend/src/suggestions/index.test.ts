@@ -60,7 +60,42 @@ describe('generateSuggestions — call shape', () => {
     }
     generate.mockResolvedValue(response)
 
-    await expect(generateSuggestions(content)).resolves.toEqual(response)
+    await expect(generateSuggestions(content)).resolves.toEqual({
+      ...response,
+      suppressedSuggestionIds: [],
+    })
+  })
+
+  it('filters unsafe model suggestions after the decoded response and reports ids only', async () => {
+    generate.mockResolvedValue({
+      outOfScope: false,
+      redFlags: [],
+      suggestions: [
+        {
+          id: 'unsafe-prescribing',
+          text: 'Prescribe amoxicillin 500 mg three times daily.',
+          citations: [{ guidelineId: firstCorpusId }],
+        },
+        {
+          id: 'safe-consideration',
+          text: 'Consider documenting the review interval.',
+          citations: [{ guidelineId: firstCorpusId }],
+        },
+      ],
+    })
+
+    await expect(generateSuggestions(content)).resolves.toEqual({
+      outOfScope: false,
+      redFlags: [],
+      suggestions: [
+        {
+          id: 'safe-consideration',
+          text: 'Consider documenting the review interval.',
+          citations: [{ guidelineId: firstCorpusId }],
+        },
+      ],
+      suppressedSuggestionIds: ['unsafe-prescribing'],
+    })
   })
 })
 
