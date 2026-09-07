@@ -79,6 +79,10 @@ describe('clinical profiles', () => {
         ...ACTIVE_CLINICAL_VERSIONS,
         clinicalProfile: profile.version,
       })
+      expect(versions.medicalRecordTemplate).toEqual({
+        id: 'malaysian-medical-record-v1',
+        effectiveDate: '2026-09-07',
+      })
       expect(versions.clinicalProfile).toBe(profile.version)
     }
 

@@ -294,6 +294,30 @@ export const SoapNoteSchema = z.object({
   plan: z.string(),
 })
 
+export const NoteTemplateSchema = z.enum(['soap', 'malaysian'])
+export const CaptureModeSchema = z.enum(['ambient', 'manual'])
+
+/**
+ * One canonical note that can be rendered in either supported record order.
+ *
+ * The five history fields are kept separate because a free-text SOAP
+ * Subjective cannot be split back into PC/HPC/PMH/SH/FH without guessing.
+ * Objective, Assessment and Plan stay on the same object so switching the
+ * presentation never drops the rest of the clinical record.
+ */
+export const MedicalRecordNoteSchema = z.object({
+  presentingComplaint: z.string(),
+  historyOfPresentingComplaint: z.string(),
+  pastMedicalHistory: z.string(),
+  socialHistory: z.string(),
+  familyHistory: z.string(),
+  objective: z.string(),
+  assessment: z.string(),
+  plan: z.string(),
+})
+
+export { formatSoapSubjective, NOT_ESTABLISHED, toSoapNote } from './note-templates.js'
+
 // ─── Per-field clinical assertion ────────────────────────────────────────────
 
 /**
@@ -585,6 +609,15 @@ export type EvidenceLink = z.infer<typeof EvidenceLinkSchema>
 
 export const ConsultationAnalysisSchema = z.object({
   note: SoapNoteSchema,
+  /**
+   * The canonical categorized note used by analyses created from the
+   * Malaysian medical-record template onward.
+   *
+   * Optional so consultations analysed before this field existed still parse;
+   * absence means the categorization was not recorded, never that every
+   * category was unestablished.
+   */
+  medicalRecordNote: MedicalRecordNoteSchema.optional(),
   gaps: z.array(InformationGapSchema),
   redFlags: z.array(RedFlagSchema),
   suggestions: z.array(ClinicalSuggestionSchema),
@@ -681,6 +714,16 @@ export const ConsultationTitleSchema = z
 export const ConsultationSchema = z.object({
   id: z.string(),
   status: ConsultationStatusSchema,
+  /**
+   * Additive and rollout-safe: an older API response is SOAP, which was the
+   * only presentation before this field existed.
+   */
+  noteTemplate: NoteTemplateSchema.nullish().transform((value) => value ?? 'soap'),
+  /**
+   * Additive and rollout-safe: manual was the device default before capture
+   * mode became consultation state.
+   */
+  captureMode: CaptureModeSchema.nullish().transform((value) => value ?? 'manual'),
   /*
    * Absent reads as "no title", rather than failing the parse.
    *
@@ -734,7 +777,7 @@ export const ClinicalFactsResponseSchema = z.object({
  * (docs/trd.md §12), so ordering the two would only cost wall-clock.
  */
 export const NoteAndGapsResponseSchema = z.object({
-  note: SoapNoteSchema,
+  note: MedicalRecordNoteSchema,
   /**
    * Bounded for the same reason as `medicationsDispensed`. The checklist holds
    * 29 fields, so more than 30 gaps cannot correspond to anything real, and an
@@ -1108,6 +1151,7 @@ export type DispositionInput = z.infer<typeof DispositionInputSchema>
 
 export const ConsultationDetailSchema = ConsultationSchema.extend({
   editedNote: SoapNoteSchema.nullable(),
+  editedMedicalRecordNote: MedicalRecordNoteSchema.nullish().transform((value) => value ?? null),
   approvedAt: z.coerce.date().nullable(),
   /**
    * The clinician who approved, by name, and `null` until one has.
@@ -1346,6 +1390,9 @@ export type DraftTurn = z.infer<typeof DraftTurnSchema>
 export type DraftTurnsRequest = z.infer<typeof DraftTurnsRequestSchema>
 export type DraftTurnsResponse = z.infer<typeof DraftTurnsResponseSchema>
 export type SoapNote = z.infer<typeof SoapNoteSchema>
+export type NoteTemplate = z.infer<typeof NoteTemplateSchema>
+export type CaptureMode = z.infer<typeof CaptureModeSchema>
+export type MedicalRecordNote = z.infer<typeof MedicalRecordNoteSchema>
 export type AssertionState = z.infer<typeof AssertionStateSchema>
 export type ClinicalAssertion = z.infer<typeof ClinicalAssertionSchema>
 export type ClinicalFacts = z.infer<typeof ClinicalFactsSchema>

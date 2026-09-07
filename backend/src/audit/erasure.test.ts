@@ -11,6 +11,7 @@ type ConsultationRow = {
   transcript: unknown
   analysis: unknown
   editedNote: unknown
+  editedMedicalRecordNote?: unknown
   erasedAt: Date | null
 }
 
@@ -101,6 +102,7 @@ vi.mock('../lib/prisma.js', () => {
               transcript: databaseNull(data.transcript),
               analysis: databaseNull(data.analysis),
               editedNote: databaseNull(data.editedNote),
+              editedMedicalRecordNote: databaseNull(data.editedMedicalRecordNote),
             }
             consultations.set(where.id, updated)
             return { ...updated }
@@ -137,6 +139,7 @@ beforeEach(() => {
     transcript: { turns: [{ speaker: 'patient', text: 'I am Ahmad with a cough' }] },
     analysis: { note: { subjective: 'Ahmad reports cough' } },
     editedNote: { subjective: 'Doctor note about Ahmad' },
+    editedMedicalRecordNote: { presentingComplaint: 'Ahmad has a cough' },
     erasedAt: null,
   })
 })
@@ -161,6 +164,7 @@ describe('eraseConsultation', () => {
       transcript: null,
       analysis: null,
       editedNote: null,
+      editedMedicalRecordNote: null,
       erasedAt: expect.any(Date),
     })
     expect(appended.at(-1)).toMatchObject({

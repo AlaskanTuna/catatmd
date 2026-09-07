@@ -1,5 +1,5 @@
 import { type DraftTurn, type HostedAsrResult, MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
-import { AlertTriangle, FileAudio, Loader2, Mic, Square } from 'lucide-react'
+import { AlertTriangle, FileAudio, Loader2, Mic, Pause, Play, Square } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
@@ -125,6 +125,7 @@ export const LABEL_TIMEOUT_MS = 150_000
 type Phase =
   | 'idle'
   | 'recording'
+  | 'paused'
   | 'loading-model'
   | 'transcribing'
   | 'finishing'
@@ -198,6 +199,7 @@ function estimateRemaining(done: number, total: number, elapsedMs: number): stri
 
 export function AudioCapture({
   onTranscript,
+  onBusyChange,
   engine,
   transcript,
 }: {
@@ -208,6 +210,7 @@ export function AudioCapture({
     /** Server-drafted labels, hosted path only; absent whenever labelling failed. */
     draftTurns?: readonly DraftTurn[]
   }) => void
+  onBusyChange?: (busy: boolean) => void
   /** The device's standing transcription engine, from the Audio dialog. */
   engine: 'local' | 'hosted'
   /** The transcript so far, shown under the meter while recording. */
@@ -233,6 +236,14 @@ export function AudioCapture({
   const [hostedSeconds, setHostedSeconds] = useState(0)
   /** The audio behind the current or failed run, so Try Again can rerun it. */
   const [retryBlob, setRetryBlob] = useState<Blob | null>(null)
+  const onBusyChangeRef = useRef(onBusyChange)
+  useEffect(() => {
+    onBusyChangeRef.current = onBusyChange
+  }, [onBusyChange])
+  const transitionPhase = useCallback((next: Phase) => {
+    setPhase(next)
+    onBusyChangeRef.current?.(next !== 'idle')
+  }, [])
   /**
    * Whether this patient has agreed to this recording being sent to ILMU.
    *
@@ -335,13 +346,13 @@ export function AudioCapture({
       // still reported as the failure it is.
       upload.current?.abort()
       upload.current = null
-      setPhase('idle')
+      transitionPhase('idle')
       setProgress(null)
       setChunkProgress(null)
       startedAt.current = null
       setError(message)
     },
-    [clearStall],
+    [clearStall, transitionPhase],
   )
 
   /** Rearms the silence budget. Every worker message buys another window. */
@@ -369,12 +380,12 @@ export function AudioCapture({
         case 'progress':
           watchForStall()
           setProgress(message.total > 0 ? Math.round((message.loaded / message.total) * 100) : null)
-          setPhase('loading-model')
+          transitionPhase('loading-model')
           break
         case 'ready':
           watchForStall()
           setProgress(null)
-          setPhase('transcribing')
+          transitionPhase('transcribing')
           startedAt.current = Date.now()
           break
         case 'transcribing':
@@ -390,11 +401,11 @@ export function AudioCapture({
           // would sit minutes past what Cancel already offers, and a wrong
           // one destroys a finished transcription.
           clearStall()
-          setPhase('finishing')
+          transitionPhase('finishing')
           break
         case 'result':
           clearStall()
-          setPhase('idle')
+          transitionPhase('idle')
           setProgress(null)
           setChunkProgress(null)
           startedAt.current = null
@@ -410,7 +421,7 @@ export function AudioCapture({
           // retry is cheap. A stalled or dead worker is terminated in `abort`
           // instead, and its retry rebuilds one.
           clearStall()
-          setPhase('idle')
+          transitionPhase('idle')
           setProgress(null)
           setChunkProgress(null)
           startedAt.current = null
@@ -448,7 +459,7 @@ export function AudioCapture({
     instance.onmessageerror = died
     worker.current = instance
     return instance
-  }, [abort, clearStall, watchForStall])
+  }, [abort, clearStall, transitionPhase, watchForStall])
 
   useEffect(
     () => () => {
@@ -456,6 +467,7 @@ export function AudioCapture({
       // armed, no worker left running, and a decode still in flight sees the
       // bumped attempt and builds nothing.
       attempt.current += 1
+      onBusyChangeRef.current?.(false)
       if (stall.current !== null) window.clearTimeout(stall.current)
       worker.current?.terminate()
       worker.current = null
@@ -503,7 +515,7 @@ export function AudioCapture({
   const transcribeLocal = useCallback(
     async (blob: Blob) => {
       setError(null)
-      setPhase('loading-model')
+      transitionPhase('loading-model')
       setProgress(null)
       setChunkProgress(null)
       startedAt.current = null
@@ -525,11 +537,11 @@ export function AudioCapture({
       } catch (cause) {
         if (attempt.current !== id) return
         clearStall()
-        setPhase('idle')
+        transitionPhase('idle')
         setError(cause instanceof Error ? cause.message : 'Could not read that audio.')
       }
     },
-    [clearStall, ensureWorker, watchForStall],
+    [clearStall, ensureWorker, transitionPhase, watchForStall],
   )
 
   /**
@@ -559,7 +571,7 @@ export function AudioCapture({
   const labelHostedTurns = useCallback(
     async (transcribed: string): Promise<readonly DraftTurn[] | null> => {
       if (transcribed.trim() === '' || transcribed.length > MAX_DRAFT_TEXT_CHARACTERS) return null
-      setPhase('labelling')
+      transitionPhase('labelling')
       const controller = new AbortController()
       upload.current = controller
       const bound = window.setTimeout(() => controller.abort(), LABEL_TIMEOUT_MS)
@@ -572,13 +584,13 @@ export function AudioCapture({
         if (upload.current === controller) upload.current = null
       }
     },
-    [],
+    [transitionPhase],
   )
 
   const transcribeHosted = useCallback(
     async (blob: Blob) => {
       setError(null)
-      setPhase('uploading')
+      transitionPhase('uploading')
       setProgress(null)
       setChunkProgress(null)
       startedAt.current = null
@@ -594,7 +606,7 @@ export function AudioCapture({
         result = await api.transcribeHostedAsr(blob, controller.signal)
       } catch {
         if (attempt.current !== id) return
-        setPhase('idle')
+        transitionPhase('idle')
         setError(HOSTED_FAILED_ERROR)
         return
       } finally {
@@ -610,7 +622,7 @@ export function AudioCapture({
       // Again: retrying would re-upload audio the relay already billed for.
       const draftTurns = await labelHostedTurns(result.text)
       if (attempt.current !== id) return
-      setPhase('idle')
+      transitionPhase('idle')
       setRetryBlob(null)
       onTranscriptRef.current({
         text: result.text,
@@ -619,7 +631,7 @@ export function AudioCapture({
         ...(draftTurns && draftTurns.length > 0 ? { draftTurns } : {}),
       })
     },
-    [labelHostedTurns],
+    [labelHostedTurns, transitionPhase],
   )
 
   /**
@@ -644,14 +656,14 @@ export function AudioCapture({
   const transcribe = useCallback(
     (blob: Blob) => {
       if (hostedRef.current && !agreedRef.current) {
-        setPhase('idle')
+        transitionPhase('idle')
         setRetryBlob(blob)
         setError(NOT_AGREED_ERROR)
         return
       }
       return hostedRef.current ? transcribeHosted(blob) : transcribeLocal(blob)
     },
-    [transcribeHosted, transcribeLocal],
+    [transcribeHosted, transcribeLocal, transitionPhase],
   )
 
   const start = useCallback(async () => {
@@ -696,7 +708,7 @@ export function AudioCapture({
       recorder.current = media
       setLiveStream(stream)
       setSeconds(0)
-      setPhase('recording')
+      transitionPhase('recording')
       if (hostedRef.current) {
         // Nothing local will run for this recording, so there is nothing to
         // warm. Any worker still warm from an earlier on-device run is
@@ -716,12 +728,26 @@ export function AudioCapture({
     } catch {
       setError('Microphone access was refused, or no microphone is available.')
     }
-  }, [ensureWorker, transcribe])
+  }, [ensureWorker, transcribe, transitionPhase])
 
   const stop = useCallback(() => {
     recorder.current?.stop()
     recorder.current = null
   }, [])
+
+  const pause = useCallback(() => {
+    const media = recorder.current
+    if (media?.state !== 'recording') return
+    media.pause()
+    transitionPhase('paused')
+  }, [transitionPhase])
+
+  const resume = useCallback(() => {
+    const media = recorder.current
+    if (media?.state !== 'paused') return
+    media.resume()
+    transitionPhase('recording')
+  }, [transitionPhase])
 
   const busy =
     phase === 'loading-model' ||
@@ -808,7 +834,9 @@ export function AudioCapture({
             ? 'Transcribing on this device'
             : phase === 'finishing'
               ? 'Finishing up'
-              : ''
+              : phase === 'paused'
+                ? 'Recording paused'
+                : ''
 
   return (
     <div className="flex flex-col gap-3">
@@ -872,7 +900,7 @@ export function AudioCapture({
           them equal width and aligns both edges at any width. */}
       {!thin && (
         <div className="grid gap-2">
-          {phase === 'recording' ? (
+          {phase === 'recording' || phase === 'paused' ? (
             /*
              * The recording state gets a panel rather than a changed button
              * label. While recording is the one moment the doctor is not
@@ -887,8 +915,13 @@ export function AudioCapture({
                       here: it reports that recording is running, which is
                       state this component owns, not that sound is arriving,
                       which only the meter below may claim. */}
-                  <span className="size-2 animate-pulse rounded-full bg-emergency" />
-                  Recording…
+                  <span
+                    className={cn(
+                      'size-2 rounded-full',
+                      phase === 'recording' ? 'animate-pulse bg-emergency' : 'bg-urgent',
+                    )}
+                  />
+                  {phase === 'recording' ? 'Recording…' : 'Paused'}
                 </p>
                 <span className="font-mono text-sm text-ink-muted tabular-nums">
                   {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
@@ -896,6 +929,12 @@ export function AudioCapture({
               </div>
 
               {liveStream && <InputMeter stream={liveStream} />}
+
+              {phase === 'paused' && (
+                <p className="text-xs text-ink-muted">
+                  Audio is not being added until recording resumes.
+                </p>
+              )}
 
               {/* Unlabelled: it is the only field in the panel, directly under
                   a heading that says Recording. The placeholder still says when
@@ -908,6 +947,19 @@ export function AudioCapture({
                   <span className="text-ink-muted">Text appears when you stop.</span>
                 )}
               </div>
+
+              <Button
+                className="w-full justify-center"
+                variant="neutral"
+                onClick={phase === 'paused' ? resume : pause}
+              >
+                {phase === 'paused' ? (
+                  <Play aria-hidden className="size-4" />
+                ) : (
+                  <Pause aria-hidden className="size-4" />
+                )}
+                {phase === 'paused' ? 'Resume Recording' : 'Pause Recording'}
+              </Button>
 
               <Button className="w-full justify-center" onClick={stop}>
                 <Square aria-hidden className="size-4" />
@@ -933,7 +985,7 @@ export function AudioCapture({
           */}
           {/* Hidden while recording, where it is disabled anyway: a control
               that cannot be used is a word the doctor still has to read. */}
-          {phase !== 'recording' && (
+          {phase !== 'recording' && phase !== 'paused' && (
             <label
               className={cn(
                 'inline-flex h-10 w-full items-center justify-center gap-2 rounded-control border border-line bg-sunken-soft px-4 text-sm font-medium text-ink shadow-raised transition-colors',

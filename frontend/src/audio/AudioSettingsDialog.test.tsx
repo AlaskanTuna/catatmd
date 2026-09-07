@@ -58,11 +58,9 @@ function renderDialog() {
 describe('the Audio dialog and the control it describes', () => {
   it('says consent is per patient, and is only allowed to while a per-patient control exists', () => {
     renderDialog()
-    // Two paths send audio now, and each makes this claim about its own. Both
-    // are asserted here because a claim is only allowed to stand while the
-    // control it describes exists.
+    // The engine choice is device scoped, but consent remains per patient.
     const claims = screen.getAllByText(/each patient is asked/i)
-    expect(claims).toHaveLength(2)
+    expect(claims).toHaveLength(1)
     for (const claim of claims) expect(claim.textContent).toMatch(/never remembered/i)
 
     // The other half of the same sentence, rendered from the screens the
@@ -89,17 +87,11 @@ describe('the Audio dialog and the control it describes', () => {
     expect(screen.queryByRole('checkbox')).toBeNull()
   })
 
-  it('offers ambient capture, and says it sends nothing on its own', () => {
+  it('does not own consultation-scoped Capture Mode', () => {
     renderDialog()
 
-    const ambient = screen.getByRole('button', { name: /ambient/i }) as HTMLButtonElement
-    expect(ambient.disabled).toBe(false)
-
-    // The sentence that has to stay true whatever else changes here: choosing
-    // a mode is not choosing to send this patient's audio.
-    const claim = screen.getByText(/each patient is asked on the Record tab first/i)
-    expect(claim.textContent).toMatch(/never remembered/i)
-    expect(claim.textContent).toMatch(/Soniox/)
+    expect(screen.queryByRole('group', { name: 'Capture Mode' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /ambient/i })).toBeNull()
   })
 
   it('scopes the engine choice to press-to-record, which is the only path it governs', () => {

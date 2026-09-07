@@ -16,16 +16,6 @@
  */
 
 /**
- * `ambient` streams the whole consultation as it happens (#268); `manual` is
- * press-to-record. The Record tab shows one panel or the other, and both work,
- * which is the property #254 exists to protect: a stored `ambient` once blocked
- * the tab and claimed the room was being listened to while nothing listened,
- * taking away the only working capture and putting nothing in its place. A mode
- * whose provider is unconfigured now says so and offers one click back.
- */
-export type CaptureMode = 'ambient' | 'manual'
-
-/**
  * Which transcription engine a **press-to-record** recording uses. Hosted is
  * the ILMU relay. Ambient capture does not read this: it always streams to the
  * provider the API names, because that is the only one with a live socket.
@@ -33,7 +23,6 @@ export type CaptureMode = 'ambient' | 'manual'
 export type TranscriptionEngine = 'local' | 'hosted'
 
 export type AudioSettings = {
-  mode: CaptureMode
   /** `deviceId` of the chosen input, or null for the system default. */
   deviceId: string | null
   suppressNoise: boolean
@@ -49,13 +38,6 @@ export type AudioSettings = {
 }
 
 export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
-  /*
-   * Manual is the default, matching on-device transcription being the default:
-   * the quieter behaviour is the one a doctor gets without choosing. Ambient
-   * capture sends audio off the device by design, so it is never where a doctor
-   * lands without asking for it.
-   */
-  mode: 'manual',
   deviceId: null,
   suppressNoise: true,
   /*
@@ -80,7 +62,6 @@ export function loadAudioSettings(): AudioSettings {
     if (typeof parsed !== 'object' || parsed === null) return DEFAULT_AUDIO_SETTINGS
     const value = parsed as Partial<AudioSettings>
     return {
-      mode: value.mode === 'ambient' ? 'ambient' : 'manual',
       deviceId: typeof value.deviceId === 'string' ? value.deviceId : null,
       suppressNoise: value.suppressNoise !== false,
       boostQuietSpeech: value.boostQuietSpeech === true,

@@ -35,6 +35,16 @@ vi.mock('../analysis/index.js', async (importOriginal) => ({
       assessment: 'Acute upper respiratory tract infection.',
       plan: 'Symptomatic relief. Review if worsening.',
     },
+    medicalRecordNote: {
+      presentingComplaint: '[PATIENT_1] reports cough and sore throat.',
+      historyOfPresentingComplaint: 'Symptoms for two days.',
+      pastMedicalHistory: '',
+      socialHistory: '',
+      familyHistory: '',
+      objective: 'Temperature 38.9. Chest clear.',
+      assessment: 'Acute upper respiratory tract infection.',
+      plan: 'Symptomatic relief. Review if worsening.',
+    },
     // Now persisted and returned, so it has to satisfy `ClinicalFactsSchema`.
     // `evidence` carries a vault token deliberately: this suite exists to prove
     // none of it reaches the log drain.

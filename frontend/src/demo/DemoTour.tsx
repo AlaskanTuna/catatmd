@@ -336,6 +336,8 @@ async function runEphemeral(): Promise<ConsultationDetail> {
   return {
     id: DEMO_CONSULTATION_ID,
     status: 'awaiting_review',
+    noteTemplate: 'soap',
+    captureMode: 'manual',
     // Unnamed, so the tour's consultation renders through the same timestamp
     // fallback a real un-analysed one does. Deriving a title here would mean
     // running the composer on ephemeral analysis the tour never persists.
@@ -345,6 +347,7 @@ async function runEphemeral(): Promise<ConsultationDetail> {
     transcript: fixture.transcript,
     analysis,
     editedNote: null,
+    editedMedicalRecordNote: null,
     approvedAt: null,
     approvedBy: null,
     // The tour's consultation is ephemeral and belongs to no registered patient.

@@ -18,6 +18,16 @@ vi.mock('../analysis/index.js', async (importOriginal) => ({
       assessment: 'Likely viral URTI',
       plan: 'Fluids and rest',
     },
+    medicalRecordNote: {
+      presentingComplaint: '[PATIENT_1] reports a cough',
+      historyOfPresentingComplaint: 'Cough duration not established',
+      pastMedicalHistory: '',
+      socialHistory: '[PATIENT_1] does not smoke',
+      familyHistory: '',
+      objective: 'Chest clear',
+      assessment: 'Likely viral URTI',
+      plan: 'Fluids and rest',
+    },
     // Shaped like the real thing: assertions nested under groups, and an array
     // of them under `medicationsDispensed`. `evidence` is a verbatim span from
     // the de-identified transcript, so it carries a vault token by construction.
@@ -275,7 +285,29 @@ const AI_NOTE = {
   assessment: 'AI assessment',
   plan: 'AI plan',
 }
-const ANALYSIS = { note: AI_NOTE, gaps: [], redFlags: [], suggestions: [] }
+const AI_MEDICAL_RECORD = {
+  presentingComplaint: 'Cough.',
+  historyOfPresentingComplaint: 'Three days.',
+  pastMedicalHistory: '',
+  socialHistory: 'Does not smoke.',
+  familyHistory: '',
+  objective: 'AI objective',
+  assessment: 'AI assessment',
+  plan: 'AI plan',
+}
+const ANALYSIS = {
+  note: AI_NOTE,
+  medicalRecordNote: AI_MEDICAL_RECORD,
+  gaps: [],
+  redFlags: [],
+  suggestions: [],
+}
+const LEGACY_ANALYSIS = {
+  note: AI_NOTE,
+  gaps: [],
+  redFlags: [],
+  suggestions: [],
+}
 
 /**
  * Each call presents a distinct client IP. The analyze limiter is per-IP and
@@ -581,8 +613,107 @@ describe('renaming a consultation', () => {
 })
 
 describe('state machine — patch', () => {
-  it('accepts an edit while awaiting_review', async () => {
+  it('projects a missing template column forward as SOAP', async () => {
     seed('awaiting_review', { analysis: ANALYSIS })
+
+    const res = await call('GET', '/api/consultations/c1')
+    const { consultation } = (await res.json()) as {
+      consultation: {
+        noteTemplate?: string
+        captureMode?: string
+        editedMedicalRecordNote?: unknown
+      }
+    }
+
+    expect(consultation.noteTemplate).toBe('soap')
+    expect(consultation.captureMode).toBe('manual')
+    expect(consultation.editedMedicalRecordNote).toBeNull()
+  })
+
+  it('persists Capture Mode before transcript capture', async () => {
+    seed('draft', { transcript: null })
+
+    const res = await call('PATCH', '/api/consultations/c1', { captureMode: 'ambient' })
+    const { consultation } = (await res.json()) as {
+      consultation: { captureMode: string }
+    }
+
+    expect(res.status).toBe(200)
+    expect(consultation.captureMode).toBe('ambient')
+    expect(store.get('c1')?.captureMode).toBe('ambient')
+  })
+
+  it('locks Capture Mode once a transcript exists', async () => {
+    seed('draft')
+
+    const res = await call('PATCH', '/api/consultations/c1', { captureMode: 'ambient' })
+
+    expect(res.status).toBe(409)
+    expect(store.get('c1')?.captureMode).toBeUndefined()
+  })
+
+  it('persists template choice after approval without reopening clinical content', async () => {
+    seed('approved', { analysis: ANALYSIS, approvedAt: new Date() })
+
+    const res = await call('PATCH', '/api/consultations/c1', { noteTemplate: 'malaysian' })
+    const { consultation } = (await res.json()) as {
+      consultation: { noteTemplate: string }
+    }
+
+    expect(res.status).toBe(200)
+    expect(consultation.noteTemplate).toBe('malaysian')
+    expect(store.get('c1')?.noteTemplate).toBe('malaysian')
+    expect(audits.at(-1)).toMatchObject({
+      action: 'consultation.template_selected',
+      metadata: { template: 'malaysian' },
+    })
+  })
+
+  it('rejects an unsupported template identifier', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    const res = await call('PATCH', '/api/consultations/c1', { noteTemplate: 'free-text' })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('persists canonical edits and the SOAP projection atomically', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    const res = await call('PATCH', '/api/consultations/c1', {
+      editedMedicalRecordNote: { familyHistory: 'Mother has asthma.' },
+    })
+    const { consultation } = (await res.json()) as {
+      consultation: {
+        editedMedicalRecordNote: typeof AI_MEDICAL_RECORD
+        editedNote: typeof AI_NOTE
+      }
+    }
+
+    expect(res.status).toBe(200)
+    expect(consultation.editedMedicalRecordNote).toEqual({
+      ...AI_MEDICAL_RECORD,
+      familyHistory: 'Mother has asthma.',
+    })
+    expect(consultation.editedNote.subjective).toContain('Family History\nMother has asthma.')
+    expect(store.get('c1')).toMatchObject({
+      editedMedicalRecordNote: { familyHistory: 'Mother has asthma.' },
+      editedNote: { subjective: expect.stringContaining('Mother has asthma.') },
+    })
+  })
+
+  it('keeps canonical clinical edits locked after approval', async () => {
+    seed('approved', { analysis: ANALYSIS, approvedAt: new Date() })
+
+    const res = await call('PATCH', '/api/consultations/c1', {
+      editedMedicalRecordNote: { familyHistory: 'Mother has asthma.' },
+    })
+
+    expect(res.status).toBe(409)
+  })
+
+  it('accepts an edit while awaiting_review', async () => {
+    seed('awaiting_review', { analysis: LEGACY_ANALYSIS })
 
     const res = await call('PATCH', '/api/consultations/c1', {
       editedNote: { plan: 'Revised plan' },
@@ -593,7 +724,7 @@ describe('state machine — patch', () => {
   })
 
   it('seeds a partial first edit from the AI note, so editedNote stays complete', async () => {
-    seed('awaiting_review', { analysis: ANALYSIS })
+    seed('awaiting_review', { analysis: LEGACY_ANALYSIS })
 
     const res = await call('PATCH', '/api/consultations/c1', {
       editedNote: { plan: 'Revised plan' },
@@ -610,6 +741,17 @@ describe('state machine — patch', () => {
       assessment: 'AI assessment',
       plan: 'Revised plan',
     })
+  })
+
+  it('rejects a legacy SOAP edit when the analysis has a canonical note', async () => {
+    seed('awaiting_review', { analysis: ANALYSIS })
+
+    const res = await call('PATCH', '/api/consultations/c1', {
+      editedNote: { subjective: 'Opaque replacement' },
+    })
+
+    expect(res.status).toBe(409)
+    expect(store.get('c1')?.editedNote).toBeNull()
   })
 
   it('refuses an edit when there is no note to edit yet', async () => {
@@ -632,7 +774,7 @@ describe('state machine — patch', () => {
   )
 
   it('leaves the original AI analysis untouched when the note is edited', async () => {
-    seed('awaiting_review', { analysis: ANALYSIS })
+    seed('awaiting_review', { analysis: LEGACY_ANALYSIS })
 
     await call('PATCH', '/api/consultations/c1', { editedNote: { plan: 'Doctor plan' } })
 
@@ -933,10 +1075,16 @@ describe('POST /api/consultations/analyze-ephemeral', () => {
 
   it('returns an analysis and writes no consultation', async () => {
     const res = await call('POST', '/api/consultations/analyze-ephemeral', body(TRANSCRIPT.turns))
-    const json = (await res.json()) as { analysis: { note: { subjective: string } } }
+    const json = (await res.json()) as {
+      analysis: {
+        note: { subjective: string }
+        medicalRecordNote: { presentingComplaint: string }
+      }
+    }
 
     expect(res.status).toBe(200)
     expect(json.analysis.note.subjective).toContain('Ahmad')
+    expect(json.analysis.medicalRecordNote.presentingComplaint).toContain('Ahmad')
     expect(store.size, 'the ephemeral route must persist nothing').toBe(0)
   })
 

@@ -1,4 +1,4 @@
-import { Cpu, Mic, Radio, Server } from 'lucide-react'
+import { Cpu, Server } from 'lucide-react'
 import { type Ref, useEffect, useRef, useState } from 'react'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
@@ -6,7 +6,6 @@ import { InfoTip } from '../ui/InfoTip.js'
 import { Select } from '../ui/Select.js'
 import {
   type AudioSettings,
-  type CaptureMode,
   saveAudioSettings,
   type TranscriptionEngine,
   toConstraints,
@@ -146,63 +145,6 @@ export function AudioSettingsDialog({
         <p className="mt-0.5 text-ink-muted text-xs">
           Applies to this device, for every consultation.
         </p>
-
-        <fieldset className="mt-5">
-          <legend className="mb-2 font-semibold text-xs">Capture Mode</legend>
-          <div className="grid grid-cols-2 gap-2">
-            {(
-              [
-                {
-                  id: 'ambient',
-                  Icon: Radio,
-                  name: 'Ambient',
-                  line: 'Listens for the whole consultation.',
-                  ready: true,
-                },
-                {
-                  id: 'manual',
-                  Icon: Mic,
-                  name: 'Press To Record',
-                  line: 'One consultation at a time.',
-                  ready: true,
-                },
-              ] as const
-            ).map(({ id, Icon, name, line, ready }) => (
-              <button
-                key={id}
-                type="button"
-                disabled={!ready}
-                // Never announced as pressed while it is unavailable. A device
-                // that saved ambient before #219 exists still holds that mode,
-                // and claiming it is selected would put the screen reader and
-                // the muted styling into direct disagreement.
-                aria-pressed={ready && draft.mode === id}
-                onClick={() => setDraft({ ...draft, mode: id as CaptureMode })}
-                className={cn(
-                  'rounded-control border p-3 text-left transition-colors',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2',
-                  !ready && 'cursor-not-allowed border-line opacity-60',
-                  ready && draft.mode === id
-                    ? 'border-transparent bg-accent-soft text-accent'
-                    : ready && 'border-line hover:bg-sunken-soft',
-                )}
-              >
-                <Icon aria-hidden className="size-4" />
-                <span className="mt-1.5 block font-semibold text-sm">{name}</span>
-                <span className="block text-ink-muted text-xs">{line}</span>
-              </button>
-            ))}
-          </div>
-          {/* This tile was disabled for three weeks while nothing behind it
-              ran, because a mode that claims the room is being listened to
-              while nothing listens is worse than no mode at all (#254). It is
-              live now, and the sentence below is the one that must stay true:
-              choosing ambient still sends nothing on its own. */}
-          <p className="mt-2.5 text-ink-muted text-xs">
-            Ambient capture streams the consultation from this device to Soniox as it happens. Each
-            patient is asked on the Record tab first, and that agreement is never remembered.
-          </p>
-        </fieldset>
 
         <fieldset className="mt-5">
           <legend className="mb-2 font-semibold text-xs">Transcription Engine</legend>
