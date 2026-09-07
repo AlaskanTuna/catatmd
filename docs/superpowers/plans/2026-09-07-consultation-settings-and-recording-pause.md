@@ -198,7 +198,7 @@ git commit -m "feat(consultations): persist capture mode"
 - Produces: device-scoped `AudioSettings` containing only `deviceId`, `suppressNoise`, `boostQuietSpeech`, and `engine`.
 - Preserves: parsing of older local-storage objects by ignoring their obsolete `mode` property.
 
-- [ ] **Step 1: Write failing Audio Settings tests**
+- [x] **Step 1: Write failing Audio Settings tests**
 
 Assert that the opened Audio dialog has no Capture Mode legend or Ambient button, while retaining Transcription Engine, Microphone, and Noise Handling. Update the local-storage test to seed a legacy object with `mode: 'ambient'` and expect the loaded result not to expose `mode`.
 
@@ -208,25 +208,25 @@ expect(screen.getByRole('group', { name: 'Transcription Engine' })).toBeTruthy()
 expect(loadAudioSettings()).not.toHaveProperty('mode')
 ```
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run: `bun run --cwd frontend test -- src/audio/audio-settings.test.ts src/audio/AudioSettingsDialog.test.tsx`
 
 Expected: FAIL because Audio Settings still owns Capture Mode.
 
-- [ ] **Step 3: Remove the device-scoped mode**
+- [x] **Step 3: Remove the device-scoped mode**
 
 Delete `mode` from `AudioSettings`, `DEFAULT_AUDIO_SETTINGS`, and `loadAudioSettings`. Remove the Capture Mode fieldset and its `Radio`, `Mic`, and `CaptureMode` imports from `AudioSettingsDialog`.
 
 Keep all consent language tied to the remaining controls truthful. The dialog subtitle remains device-scoped.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run: `bun run --cwd frontend test -- src/audio/audio-settings.test.ts src/audio/AudioSettingsDialog.test.tsx`
 
 Expected: both suites pass.
 
-- [ ] **Step 5: Commit Audio Settings cleanup**
+- [x] **Step 5: Commit Audio Settings cleanup**
 
 ```bash
 git add frontend/src/audio/audio-settings.ts frontend/src/audio/audio-settings.test.ts frontend/src/audio/AudioSettingsDialog.tsx frontend/src/audio/AudioSettingsDialog.test.tsx
