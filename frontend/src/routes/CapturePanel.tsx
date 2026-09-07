@@ -362,6 +362,7 @@ export function CapturePanel({
                 onSwitchToManual={switchToManual}
                 onLiveChange={setAmbientLive}
                 onLiveSegments={onLiveSegments}
+                deviceId={audio.deviceId}
               />
             ) : (
               <AudioCapture engine={audio.engine} transcript={text} onTranscript={applyRecording} />

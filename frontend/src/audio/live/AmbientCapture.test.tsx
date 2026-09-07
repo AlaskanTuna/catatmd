@@ -181,7 +181,7 @@ async function settle() {
   })
 }
 
-function renderAmbient() {
+function renderAmbient(deviceId: string | null = null) {
   const onTranscript = vi.fn()
   const onSwitchToManual = vi.fn()
   const onLiveChange = vi.fn()
@@ -192,6 +192,7 @@ function renderAmbient() {
       onSwitchToManual={onSwitchToManual}
       onLiveChange={onLiveChange}
       onLiveSegments={onLiveSegments}
+      deviceId={deviceId}
     />,
   )
   return { onTranscript, onSwitchToManual, onLiveChange, onLiveSegments, ...view }
@@ -215,8 +216,8 @@ const recorder = () => {
 }
 
 /** Ticks consent and starts a session that is open and streaming. */
-async function startSession() {
-  const view = renderAmbient()
+async function startSession(deviceId: string | null = null) {
+  const view = renderAmbient(deviceId)
   await settle()
   await act(async () => tick().click())
   await act(async () => startButton().click())
@@ -354,6 +355,27 @@ describe('starting', () => {
 
     expect(gumCalls[0]).toEqual({
       audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: true,
+        channelCount: 1,
+      },
+    })
+  })
+
+  it('records from the microphone the doctor chose', async () => {
+    /*
+     * Found by QA on 07/09/26, not by review. On a Windows machine with a
+     * screen-capture tool installed, `audio: true` selected that tool's virtual
+     * device over the real array: the meter read Silent, the socket stayed
+     * open, and nothing reached the recogniser. The Audio dialog's Microphone
+     * select was already there and was simply not wired to this path.
+     */
+    await startSession('realtek-array-id')
+
+    expect(gumCalls[0]).toEqual({
+      audio: {
+        deviceId: { exact: 'realtek-array-id' },
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: true,

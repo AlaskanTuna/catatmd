@@ -974,7 +974,7 @@ function LivePanel({ title, live }: { title: string; live: LivePanes }) {
     return (
       <Panel title={title} count={flags.length}>
         {flags.length === 0 ? (
-          <p className="text-sm text-ink-muted">Listening. No escalation triggers so far.</p>
+          <p className="text-sm text-ink-muted">No escalation triggers so far.</p>
         ) : (
           flags.map((flag) => (
             <RedFlagCard
@@ -995,7 +995,7 @@ function LivePanel({ title, live }: { title: string; live: LivePanes }) {
   return (
     <Panel title={title} count={gaps.length}>
       {gaps.length === 0 ? (
-        <p className="text-sm text-ink-muted">Listening. Nothing outstanding so far.</p>
+        <p className="text-sm text-ink-muted">Nothing outstanding so far.</p>
       ) : (
         gaps.map((gap) => (
           <GapCard key={gap.id} gap={gap} disposition={undefined} guidelines={guidelines} />

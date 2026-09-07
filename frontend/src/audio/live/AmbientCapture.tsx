@@ -100,6 +100,7 @@ export function AmbientCapture({
   onSwitchToManual,
   onLiveChange,
   onLiveSegments,
+  deviceId,
 }: {
   onTranscript: (result: {
     text: string
@@ -121,6 +122,8 @@ export function AmbientCapture({
    * component is unchanged for any caller that does not want the panes.
    */
   onLiveSegments?: (segments: readonly TranscriptSegment[]) => void
+  /** The input chosen in the Audio dialog. `null` leaves the choice to the browser. */
+  deviceId?: string | null
 }) {
   const [availability, setAvailability] = useState<Availability>({ status: 'loading' })
   const [phase, setPhase] = useState<Phase>('idle')
@@ -312,6 +315,21 @@ export function AmbientCapture({
       // sit for a long time, and a key that expires while it does is wasted.
       microphone = await navigator.mediaDevices.getUserMedia({
         audio: {
+          /*
+           * The doctor's chosen input, honoured rather than left to the
+           * browser. Without this the Microphone select in the Audio dialog is
+           * decorative here, and the browser picks for itself: measured
+           * 07/09/26 on a Windows machine with a screen-capture tool
+           * installed, `audio: true` selected that tool's virtual device over
+           * the real array, so the meter read Silent and nothing reached the
+           * recogniser. A capture surface that quietly records the wrong
+           * device is worse than one that fails.
+           *
+           * `toConstraints` in `../audio-settings.ts` is deliberately not
+           * reused: it turns the DSP back on, and §20.6 measured that off for
+           * dictation. Only the device is taken from settings.
+           */
+          ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
           echoCancellation: false,
           noiseSuppression: false,
           autoGainControl: true,
@@ -398,7 +416,7 @@ export function AmbientCapture({
     } finally {
       if (inflight.current === controller) inflight.current = null
     }
-  }, [availability, onStreamFailure, releaseMicrophone])
+  }, [availability, deviceId, onStreamFailure, releaseMicrophone])
 
   const stop = useCallback(async () => {
     const active = recorder.current
