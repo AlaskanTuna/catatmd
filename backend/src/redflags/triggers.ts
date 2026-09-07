@@ -13,7 +13,19 @@ import type { RedFlagTrigger } from './types.js'
  *
  * Bumped whenever a trigger is added, removed, or its matcher, severity or
  * cited guidance changes. Recorded with every analysis (docs/trd.md §15).
- * **v9 changed no trigger and no wording.** It widened where the mishear
+ * **v10 adds matchers to four triggers and changes no severity, no label and
+ * no cited guidance.** Real ambient QA on 07/09/26 recorded a patient saying
+ * "this morning I was coughing out blood" against which this engine raised
+ * nothing, while the model pass set Haemoptysis Present: the deterministic
+ * floor missed what the additive layer caught, which is the inversion the
+ * engine exists to prevent. Probing found the same three causes in
+ * `haemoptysis`, `significant-dyspnoea`, `swallowing-oral-intake` and
+ * `uti-unable-to-pass-urine`, two of them emergency severity: past tense
+ * ("coughed", "couldn't"), particle choice ("up" against "out"), and a verb
+ * list applied unevenly across the patterns inside one trigger. Every fix is
+ * an appended pattern; nothing existing was widened, so no transcript that
+ * fired under v9 stops firing under v10.
+ * v9 changed no trigger and no wording. It widened where the mishear
  * expansion applies, to the ambient transcript source added by #268, and that
  * is a matcher change under the rule above even though no transcript that
  * could exist under v8 gets a different answer.
@@ -21,8 +33,8 @@ import type { RedFlagTrigger } from './types.js'
  * analysis and this list can otherwise disagree about what backed a hit.
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v9',
-  effectiveDate: '2026-09-06',
+  id: 'redflag-list-v10',
+  effectiveDate: '2026-09-07',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -162,8 +174,17 @@ const isNegated = (text: string, matchIndex: number): boolean => {
  * the polarity argument holds for all of them. The cost is accepted and
  * pinned by test: a genuinely denied negative question over-fires.
  * Over-firing is the direction this engine fails in.
+ *
+ * The past-tense contractions are here for the same reason "can'?t" is. A
+ * patient answering a negatively framed question says "No, I couldn't
+ * breathe", and reading the leading "No" as a denial of the inability that
+ * follows it suppresses an emergency trigger. The uncontracted forms need no
+ * entry: "could not breathe" already carries `\bnot\b`. Their blast radius is
+ * exactly the patterns that spell these words, because no other matcher in
+ * this file can return a span containing one.
  */
-const SPAN_CARRIES_NEGATOR = /\b(?:no|not|cannot|tak|tidak|takde|tiada)\b|can'?t|won'?t/i
+const SPAN_CARRIES_NEGATOR =
+  /\b(?:no|not|cannot|tak|tidak|takde|tiada)\b|can'?t|won'?t|couldn'?t|haven'?t|hasn'?t|hadn'?t/i
 
 const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string | null => {
   const recorded = isRecorded(transcript)
@@ -349,6 +370,34 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         // the transcript mishear hints carry those pairs instead.
         /patu[kt](?:-patu[kt])?\s+(?:sampai\s+)?(?:ber)?darah/i,
         /patu[kt](?:-patu[kt])?\s+(?:sampai\s+)?(?:keluar|ada)\s+darah/i,
+        /*
+         * Malaysian English phrasings measured missing on a real ambient
+         * consultation, 07/09/26: the patient said "this morning I was
+         * coughing out blood" and this trigger raised nothing while the model
+         * pass set Haemoptysis Present. Three causes, all visible above: the
+         * verb was fixed to the present participle, the particle to "up", and
+         * "spit" had no entry at all.
+         *
+         * Appended rather than widened, for the reason the patu[kt] block
+         * gives: widening /cough(?:ing)?\s+up\s+blood/ to (?:up|out) would let
+         * one exec land on a negated mention and spend the attempt that a
+         * genuine mention later in the same turn needs.
+         *
+         * No devoiced patu[kt] variant of the reversed form below. "patut" and
+         * "patuk" are both in the `mishears.ts` expansion table, so a recorded
+         * turn is matched a second time with "batuk" restored, and a typed turn
+         * has no ASR to mishear.
+         */
+        /cough(?:ing|ed|s)?\s+out\s+blood/i,
+        /cough(?:ed|s)\s+up\s+blood/i,
+        /spit(?:ting|ted|s)?\s+(?:up|out)\s+blood/i,
+        /blood\s+(?:when|while|whenever|every\s+time)\s+(?:i\s+)?cough/i,
+        // The Malay counterpart of the reversed English form, and the same
+        // gap: "keluar darah bila batuk" and "darah keluar masa batuk" name
+        // the blood before the cough, which every pattern above assumes comes
+        // second. The bounded gap admits the intervening verb without
+        // reaching across a clause.
+        /darah\s+[^.!?]{0,20}?(?:bila|masa|waktu|semasa)\s+(?:saya\s+)?batuk/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
     guidelineIds: NAG_SCOPE_IDS,
@@ -389,6 +438,28 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         // as the patu[kt] patterns in haemoptysis; not a Malay word, so no
         // innocent reading needs bounding.
         /\bsempuk\b/i,
+        /*
+         * Same 07/09/26 gap as haemoptysis, on the emergency trigger. The
+         * modal was fixed to the present ("can't", "cannot") and the noun
+         * phrase to "difficulty breathing", so every past-tense report and the
+         * two commonest Malaysian English variants passed straight through.
+         *
+         * Appended, never widened: /difficult(?:y)?\s+breathing/ above stays
+         * exactly as it is rather than gaining an optional "in".
+         *
+         * **"through" is excluded, and that exclusion is load-bearing.** A
+         * blocked nose is the commonest presenting complaint in the population
+         * this profile covers, so "hard to breathe through my nose" would put
+         * an emergency flag on a large share of ordinary URTI consultations.
+         * Measured: without the lookahead it fired on both nose phrasings
+         * probed. This is the same judgement the comment above already makes
+         * for Malay, where bare "sesak" is excluded because "hidung sesak" is
+         * an ordinary blocked nose, and it should read the same in English.
+         */
+        /could(?:n'?t|\s+not)\s+breathe/i,
+        /difficult(?:y|ies)?\s+in\s+breathing(?!\s+through)/i,
+        /trouble\s+breathing(?!\s+through)/i,
+        /(?:hard|difficult|tough)\s+to\s+breathe(?!\s+through)/i,
       ]) ??
       findDeniedAbility(transcript, [
         /(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat|larat)\s+(?:nak\s+)?(?:tarik\s+)?(?:ber)?na[fp]as/i,
@@ -461,6 +532,26 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /(?:tak|tidak)\s+(?:boleh|dapat|lalu)\s+(?:nak\s+)?telan/i,
         /(?:tak|tidak)\s+(?:boleh|dapat|lalu)\s+(?:nak\s+)?(?:makan|minum)/i,
         /(?:telan|makan|minum)\s+(?:pun\s+)?tak\s+(?:boleh|lalu)/i,
+        /*
+         * The 07/09/26 gap, in its third form: a verb list applied unevenly
+         * inside one trigger. "unable to" reached `swallow` but not `eat` or
+         * `drink`, and the contracted modal reached `swallow` but neither of
+         * the other two.
+         *
+         * "can't eat" is broader than the rest of this matcher and that is
+         * accepted rather than overlooked: it will fire on "can't eat spicy
+         * food". The existing /not been able to eat/ carries the same
+         * exposure, and a trigger that misses a patient who has stopped
+         * eating is the failure this engine exists to prevent. Expected
+         * firing-rate effect is stated in the PR.
+         */
+        /could(?:n'?t|\s+not)\s+swallow/i,
+        /unable\s+to\s+(?:eat|drink)/i,
+        /(?:can'?t|cannot|could(?:n'?t|\s+not))\s+(?:eat|drink)/i,
+        // The Malay half of the same unevenness: "dapat" reaches telan,
+        // makan and minum in the two patterns above but was missing from the
+        // post-posed form, so "makan pun tak dapat" raised nothing.
+        /(?:telan|makan|minum)\s+(?:pun\s+)?tak\s+dapat/i,
       ]) ??
       findDeniedAbility(transcript, [
         /(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat|lalu)\s+(?:nak\s+)?(?:telan|makan|minum)/i,
@@ -629,6 +720,32 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /(?:tak|tidak)\s+(?:boleh|dapat)\s+(?:nak\s+)?(?:kencing|buang\s+air\s+kecil)/i,
         /(?:air\s+)?kencing\s+tak\s+keluar/i,
         /kencing\s+(?:pun\s+)?tak\s+(?:boleh|lepas)/i,
+        /*
+         * The 07/09/26 gap on the second emergency trigger. Retention is
+         * reported in the past far more often than the present, because the
+         * patient is describing hours that have already passed: "couldn't
+         * pass urine since last night", "haven't passed urine since morning".
+         * Neither reached the present-tense modal list above.
+         *
+         * Appended, and the perfect form is separate from the modal form,
+         * so a negated mention cannot spend the one exec the other needs.
+         *
+         * **Both name urine explicitly after "pass", where the present-tense
+         * pattern above does not.** "Pass motion" is the everyday Malaysian
+         * English for a bowel movement, so a bare "pass" puts this emergency
+         * trigger on constipation: measured firing on "haven't passed motion
+         * for two days" before the object was required. The looser
+         * /(?:can'?t|cannot|unable\s+to)\s+(?:pass|pee|urinate)/ above carries
+         * the same hole and is deliberately left alone here, because
+         * tightening an existing pattern can only remove fires and that is the
+         * direction this engine must not move in without its own decision.
+         */
+        /could(?:n'?t|\s+not)\s+(?:pass\s+(?:any\s+)?urine|pee|urinate)/i,
+        /(?:have|has|had)(?:n'?t|\s+not)\s+(?:passed\s+(?:any\s+)?urine|peed|urinated)/i,
+        // "dapat" and "keluar" were missing from the post-posed Malay form
+        // while reaching the pre-posed one, the same unevenness as the
+        // swallowing trigger above.
+        /kencing\s+(?:pun\s+)?tak\s+(?:dapat|keluar)/i,
       ]) ??
       findDeniedAbility(transcript, [
         /(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat)\s+(?:nak\s+)?(?:kencing|buang\s+air\s+kecil)/i,
