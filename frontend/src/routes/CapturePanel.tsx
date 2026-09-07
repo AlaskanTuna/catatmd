@@ -71,6 +71,7 @@ export function CapturePanel({
   onCaptureBusyChange,
   saving,
   error,
+  onLiveSegments,
 }: {
   captureMode: CaptureMode
   onCapture: (transcript: Transcript) => void
@@ -78,6 +79,12 @@ export function CapturePanel({
   onCaptureBusyChange: (busy: boolean) => void
   saving: boolean
   error: string | null
+  /**
+   * Forwarded to the ambient panel so the review surface can read the
+   * consultation while it is still being spoken (#219). Optional and inert on
+   * the manual path, which has nothing live to report.
+   */
+  onLiveSegments?: (segments: readonly TranscriptSegment[]) => void
 }) {
   /*
    * The doctor arrived on a consultation page that is already scoped to one
@@ -359,6 +366,8 @@ export function CapturePanel({
                   setAmbientLive(live)
                   onCaptureBusyChange(live)
                 }}
+                onLiveSegments={onLiveSegments}
+                deviceId={audio.deviceId}
               />
             ) : (
               <AudioCapture

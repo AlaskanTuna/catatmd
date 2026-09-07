@@ -181,18 +181,21 @@ async function settle() {
   })
 }
 
-function renderAmbient() {
+function renderAmbient(deviceId: string | null = null) {
   const onTranscript = vi.fn()
   const onSwitchToManual = vi.fn()
   const onLiveChange = vi.fn()
+  const onLiveSegments = vi.fn()
   const view = render(
     <AmbientCapture
       onTranscript={onTranscript}
       onSwitchToManual={onSwitchToManual}
       onLiveChange={onLiveChange}
+      onLiveSegments={onLiveSegments}
+      deviceId={deviceId}
     />,
   )
-  return { onTranscript, onSwitchToManual, onLiveChange, ...view }
+  return { onTranscript, onSwitchToManual, onLiveChange, onLiveSegments, ...view }
 }
 
 const tick = () => screen.getByRole('checkbox', { name: /agreed/i }) as HTMLInputElement
@@ -213,8 +216,8 @@ const recorder = () => {
 }
 
 /** Ticks consent and starts a session that is open and streaming. */
-async function startSession() {
-  const view = renderAmbient()
+async function startSession(deviceId: string | null = null) {
+  const view = renderAmbient(deviceId)
   await settle()
   await act(async () => tick().click())
   await act(async () => startButton().click())
@@ -360,6 +363,27 @@ describe('starting', () => {
     })
   })
 
+  it('records from the microphone the doctor chose', async () => {
+    /*
+     * Found by QA on 07/09/26, not by review. On a Windows machine with a
+     * screen-capture tool installed, `audio: true` selected that tool's virtual
+     * device over the real array: the meter read Silent, the socket stayed
+     * open, and nothing reached the recogniser. The Audio dialog's Microphone
+     * select was already there and was simply not wired to this path.
+     */
+    await startSession('realtek-array-id')
+
+    expect(gumCalls[0]).toEqual({
+      audio: {
+        deviceId: { exact: 'realtek-array-id' },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: true,
+        channelCount: 1,
+      },
+    })
+  })
+
   it('falls back to the recorder default where opus is unsupported', async () => {
     FakeMediaRecorder.isTypeSupported.mockReturnValue(false)
     await startSession()
@@ -451,6 +475,31 @@ describe('listening', () => {
 
     expect(screen.getByText('batuk')).toBeTruthy()
     expect(screen.queryByText('bat')).toBeNull()
+  })
+
+  it('reports settled segments to the live panes, and never interim ones', async () => {
+    const { onLiveSegments } = await startSession()
+    onLiveSegments.mockClear()
+
+    // Interim only. The panes must not see words the patient has not finished.
+    await act(async () =>
+      socket().message({
+        tokens: [{ text: 'bat', start_ms: 0, end_ms: 300, is_final: false, speaker: 1 }],
+      }),
+    )
+    expect(onLiveSegments).not.toHaveBeenCalled()
+
+    await act(async () =>
+      socket().message({
+        tokens: [
+          { text: 'Selamat pagi', start_ms: 0, end_ms: 900, is_final: true, speaker: 1 },
+          { text: ' batu', start_ms: 900, end_ms: 1100, is_final: false, speaker: 1 },
+        ],
+      }),
+    )
+
+    const reported = onLiveSegments.mock.calls.at(-1)?.[0] as { text: string }[]
+    expect(reported.map((segment) => segment.text)).toEqual(['Selamat pagi'])
   })
 
   it('never renders a control marker', async () => {

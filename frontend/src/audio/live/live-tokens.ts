@@ -47,6 +47,28 @@ export type LiveTranscript = {
 export const EMPTY_LIVE_TRANSCRIPT: LiveTranscript = { final: [], interim: [] }
 
 /**
+ * A segment that still knows who was speaking.
+ *
+ * The recogniser diarises (`speakerDiarization: true` in
+ * `backend/src/lib/asr/soniox.ts`) and every token arrives with a speaker, but
+ * `tokensToSegments` used that only to decide where to cut and then dropped it.
+ * Carrying it is what lets the live view read as a conversation rather than one
+ * unbroken block of prose.
+ *
+ * **It is a speaker, never a role.** The provider says "1" and "2"; it does not
+ * know which of them is the doctor. Rendering a guess as "Doctor" would be a
+ * clinical claim, and this codebase treats a wrong speaker label as a safety
+ * problem rather than a cosmetic one: `asserts()` in
+ * `backend/src/redflags/triggers.ts` only reads a question-denial pair when a
+ * human has confirmed the labels, precisely because a mislabelled pair can
+ * suppress a real escalation trigger. Roles are assigned after Stop, by the
+ * existing labelling pass, and reviewed there.
+ *
+ * A superset of `TranscriptSegment`, so it is accepted anywhere one is.
+ */
+export type LiveSegment = TranscriptSegment & { speaker: string | null }
+
+/**
  * A silence long enough to read as a new utterance when the recogniser has not
  * said so itself.
  *
@@ -78,8 +100,8 @@ const tidy = (text: string): string => text.replace(/\s+/g, ' ').trim()
  * Chinese tokens carry none, so they are joined with nothing rather than with a
  * space: inserting one would put gaps inside Chinese words.
  */
-export function tokensToSegments(final: readonly LiveToken[]): TranscriptSegment[] {
-  const segments: TranscriptSegment[] = []
+export function tokensToSegments(final: readonly LiveToken[]): LiveSegment[] {
+  const segments: LiveSegment[] = []
   let group: LiveToken[] = []
 
   const close = () => {
@@ -90,7 +112,14 @@ export function tokensToSegments(final: readonly LiveToken[]): TranscriptSegment
     // A group of pure whitespace is dropped rather than emitted: an empty
     // segment would fail the caller's own reconstruction check.
     if (text && first && last) {
-      segments.push({ text, start: first.startMs / 1_000, end: last.endMs / 1_000 })
+      // A group is cut on speaker change, so every token in it shares one
+      // speaker and the first is representative of all of them.
+      segments.push({
+        text,
+        start: first.startMs / 1_000,
+        end: last.endMs / 1_000,
+        speaker: first.speaker,
+      })
     }
     group = []
   }
@@ -126,6 +155,17 @@ export function tokensToText(final: readonly LiveToken[]): string {
   return tokensToSegments(final)
     .map((segment) => segment.text)
     .join(' ')
+}
+
+/**
+ * Who is speaking the unsettled tail, so it can be shown inside the turn it
+ * belongs to rather than as a floating line beneath the conversation.
+ *
+ * Read off the first non-control token: interim tokens are re-sent in full on
+ * every message, so the tail belongs to one speaker at a time.
+ */
+export function interimSpeaker(interim: readonly LiveToken[]): string | null {
+  return interim.find((token) => !token.endpoint)?.speaker ?? null
 }
 
 /** The unsettled tail, shown muted beneath the settled text. */

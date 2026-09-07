@@ -21,8 +21,12 @@ import {
   GuidelineChunkSchema,
   type HostedAsrResult,
   HostedAsrResultSchema,
+  type LiveAnalysisResponse,
+  LiveAnalysisResponseSchema,
+  type LiveAnalysisState,
   type LiveAsrConfig,
   LiveAsrConfigSchema,
+  LiveFlagsResponseSchema,
   type LiveSession,
   LiveSessionSchema,
   type MedicalRecordNote,
@@ -35,6 +39,7 @@ import {
   type PatientListItem,
   PatientListItemSchema,
   PatientSchema,
+  type RedFlag,
   type SoapNote,
   type Transcript,
   type UpdatePatientInput,
@@ -350,6 +355,43 @@ export const api = {
     request('/asr/live-sessions', LiveSessionSchema, {
       method: 'POST',
       body: JSON.stringify({ consent: true }),
+      signal,
+    }),
+
+  /**
+   * The deterministic live pane: red flags over one window of a running
+   * ambient consultation (#219).
+   *
+   * Runs no model, so it is the surface that can feel immediate. Called on
+   * every closed segment, which is why it has a limiter of its own and why the
+   * caller drops a cycle rather than queueing when one is already in flight.
+   */
+  liveFlags: (consultationId: string, delta: Transcript, signal: AbortSignal): Promise<RedFlag[]> =>
+    request(`/consultations/${consultationId}/live-flags`, LiveFlagsResponseSchema, {
+      method: 'POST',
+      body: JSON.stringify({ delta }),
+      signal,
+    }).then((r) => r.redFlags),
+
+  /**
+   * The model-backed live panes: the patient card and the missing-information
+   * checklist (#219).
+   *
+   * **`previous` is the whole of what the last cycle returned, handed straight
+   * back.** The running transcript is deliberately not part of it: the API
+   * folds the delta into the previous state rather than re-reading the
+   * consultation, so each cycle costs one window rather than a growing
+   * transcript (docs/trd.md §20.8).
+   */
+  liveAnalysis: (
+    consultationId: string,
+    delta: Transcript,
+    previous: LiveAnalysisState | null,
+    signal: AbortSignal,
+  ): Promise<LiveAnalysisResponse> =>
+    request(`/consultations/${consultationId}/live-analysis`, LiveAnalysisResponseSchema, {
+      method: 'POST',
+      body: JSON.stringify({ delta, previous }),
       signal,
     }),
 

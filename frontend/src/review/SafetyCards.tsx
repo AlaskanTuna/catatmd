@@ -276,7 +276,13 @@ export function RedFlagCard({
 }: {
   flag: RedFlag
   disposition: Disposition | undefined
-  onDecide: (decision: DispositionInput) => void
+  /**
+   * Omitted while a consultation is still being captured (#219). There is
+   * nothing to record a disposition against yet: `PATCH /consultations/:id`
+   * gates the clinical fields on `awaiting_review` and the record is still
+   * `draft`, so an enabled control would offer an action the API refuses.
+   */
+  onDecide?: (decision: DispositionInput) => void
   guidelines: GuidelineChunk[]
 }) {
   const severity = SEVERITY[flag.severity]
@@ -314,16 +320,18 @@ export function RedFlagCard({
           </div>
         </div>
 
-        <div className="mt-3">
-          <DispositionControl
-            findingId={flag.id}
-            disposition={disposition}
-            onDecide={onDecide}
-            acknowledgeLabel="Acknowledge"
-            guidelineIds={flag.guidelineIds}
-            guidelines={guidelines}
-          />
-        </div>
+        {onDecide && (
+          <div className="mt-3">
+            <DispositionControl
+              findingId={flag.id}
+              disposition={disposition}
+              onDecide={onDecide}
+              acknowledgeLabel="Acknowledge"
+              guidelineIds={flag.guidelineIds}
+              guidelines={guidelines}
+            />
+          </div>
+        )}
       </div>
     </Card>
   )
@@ -364,7 +372,8 @@ export function GapCard({
 }: {
   gap: InformationGap
   disposition: Disposition | undefined
-  onDecide: (decision: DispositionInput) => void
+  /** Omitted during live capture, for the reason `RedFlagCard` gives. */
+  onDecide?: (decision: DispositionInput) => void
   guidelines: GuidelineChunk[]
 }) {
   const reviewed = disposition !== undefined
@@ -389,15 +398,17 @@ export function GapCard({
           <p className="mt-1 text-sm text-ink-muted">{gap.rationale}</p>
         </div>
       </div>
-      <div className="mt-3">
-        <DispositionControl
-          findingId={gap.id}
-          disposition={disposition}
-          onDecide={onDecide}
-          acknowledgeLabel="Mark Reviewed"
-          guidelines={guidelines}
-        />
-      </div>
+      {onDecide && (
+        <div className="mt-3">
+          <DispositionControl
+            findingId={gap.id}
+            disposition={disposition}
+            onDecide={onDecide}
+            acknowledgeLabel="Mark Reviewed"
+            guidelines={guidelines}
+          />
+        </div>
+      )}
     </div>
   )
 }

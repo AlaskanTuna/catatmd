@@ -56,6 +56,24 @@ describe('absorb', () => {
   })
 })
 
+describe('tokensToSegments speaker attribution', () => {
+  it('carries the speaker off the tokens that formed the group', () => {
+    // The recogniser diarises, and the live view needs the label to read as a
+    // conversation. It was previously used to cut groups and then discarded.
+    const segments = tokensToSegments([
+      token('Any fever?', { speaker: '1' }),
+      token(' Yes, since Tuesday.', { speaker: '2', startMs: 2_000, endMs: 3_000 }),
+    ])
+
+    expect(segments.map((segment) => segment.speaker)).toEqual(['1', '2'])
+  })
+
+  it('leaves the speaker null when the recogniser does not diarise', () => {
+    const segments = tokensToSegments([token('Hello there.', { speaker: null })])
+    expect(segments[0]?.speaker).toBeNull()
+  })
+})
+
 describe('tokensToSegments', () => {
   it('keeps one speaker talking without a pause as a single segment', () => {
     const segments = tokensToSegments(run(['Good', ' morning', ' doctor']))
