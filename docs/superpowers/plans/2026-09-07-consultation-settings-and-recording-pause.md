@@ -35,7 +35,7 @@
 - Produces: rollout-safe `Consultation.captureMode: CaptureMode`, defaulting an absent response to `manual`.
 - Produces: Prisma `CaptureMode` enum and `Consultation.captureMode @default(manual)`.
 
-- [ ] **Step 1: Write failing shared-contract tests**
+- [x] **Step 1: Write failing shared-contract tests**
 
 Add assertions to `shared/src/note-templates.test.ts`:
 
@@ -54,13 +54,13 @@ const consultation = ConsultationSchema.parse({
 expect(consultation.captureMode).toBe('manual')
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: `bun run --cwd shared test -- src/note-templates.test.ts`
 
 Expected: FAIL because `CaptureModeSchema` and `Consultation.captureMode` do not exist.
 
-- [ ] **Step 3: Implement the shared and database contract**
+- [x] **Step 3: Implement the shared and database contract**
 
 In `shared/src/index.ts`, place the enum beside `NoteTemplateSchema`, add the rollout-safe field beside `noteTemplate`, and export the inferred type:
 
@@ -89,7 +89,7 @@ CREATE TYPE "CaptureMode" AS ENUM ('ambient', 'manual');
 ADD COLUMN "captureMode" "CaptureMode" NOT NULL DEFAULT 'manual',
 ```
 
-- [ ] **Step 4: Regenerate Prisma and verify GREEN**
+- [x] **Step 4: Regenerate Prisma and verify GREEN**
 
 Run: `bun run prisma:generate`
 
@@ -97,7 +97,7 @@ Run: `bun run --cwd shared test -- src/note-templates.test.ts`
 
 Expected: Prisma generation succeeds and the focused shared tests pass.
 
-- [ ] **Step 5: Commit the contract**
+- [x] **Step 5: Commit the contract**
 
 ```bash
 git add shared/src/index.ts shared/src/note-templates.test.ts prisma/schema.prisma prisma/migrations/20260907000000_add_note_template/migration.sql

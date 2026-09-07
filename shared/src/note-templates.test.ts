@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CaptureModeSchema,
+  ConsultationSchema,
   MedicalRecordNoteSchema,
   NOT_ESTABLISHED,
   NoteTemplateSchema,
@@ -22,6 +24,24 @@ describe('medical-record note templates', () => {
     expect(NoteTemplateSchema.safeParse('soap').success).toBe(true)
     expect(NoteTemplateSchema.safeParse('malaysian').success).toBe(true)
     expect(NoteTemplateSchema.safeParse('free-text').success).toBe(false)
+  })
+
+  it('accepts only supported capture modes and projects older responses to manual', () => {
+    expect(CaptureModeSchema.safeParse('ambient').success).toBe(true)
+    expect(CaptureModeSchema.safeParse('manual').success).toBe(true)
+    expect(CaptureModeSchema.safeParse('continuous').success).toBe(false)
+
+    const consultation = ConsultationSchema.parse({
+      id: 'c1',
+      status: 'draft',
+      title: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      transcript: null,
+      analysis: null,
+    })
+
+    expect(consultation.captureMode).toBe('manual')
   })
 
   it('requires every canonical clinical section', () => {

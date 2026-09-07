@@ -295,6 +295,7 @@ export const SoapNoteSchema = z.object({
 })
 
 export const NoteTemplateSchema = z.enum(['soap', 'malaysian'])
+export const CaptureModeSchema = z.enum(['ambient', 'manual'])
 
 /**
  * One canonical note that can be rendered in either supported record order.
@@ -718,6 +719,11 @@ export const ConsultationSchema = z.object({
    * only presentation before this field existed.
    */
   noteTemplate: NoteTemplateSchema.nullish().transform((value) => value ?? 'soap'),
+  /**
+   * Additive and rollout-safe: manual was the device default before capture
+   * mode became consultation state.
+   */
+  captureMode: CaptureModeSchema.nullish().transform((value) => value ?? 'manual'),
   /*
    * Absent reads as "no title", rather than failing the parse.
    *
@@ -1385,6 +1391,7 @@ export type DraftTurnsRequest = z.infer<typeof DraftTurnsRequestSchema>
 export type DraftTurnsResponse = z.infer<typeof DraftTurnsResponseSchema>
 export type SoapNote = z.infer<typeof SoapNoteSchema>
 export type NoteTemplate = z.infer<typeof NoteTemplateSchema>
+export type CaptureMode = z.infer<typeof CaptureModeSchema>
 export type MedicalRecordNote = z.infer<typeof MedicalRecordNoteSchema>
 export type AssertionState = z.infer<typeof AssertionStateSchema>
 export type ClinicalAssertion = z.infer<typeof ClinicalAssertionSchema>
