@@ -433,11 +433,11 @@ git commit -m "feat(audio): pause manual recording"
 - Produces: developer-facing contract for per-consultation Capture Mode, transcript locking, device-setting separation, and manual pause behavior.
 - Produces: updated PR #272 and a Vercel preview built from a clean archive of the final PR commit.
 
-- [ ] **Step 1: Update canonical documentation**
+- [x] **Step 1: Update canonical documentation**
 
 Update the Consultation data table, PATCH contract, migration description, capture-mode ownership, Audio Settings description, and manual recording state machine in `docs/trd.md`. Keep migration ordering explicit.
 
-- [ ] **Step 2: Format and run static verification**
+- [x] **Step 2: Format and run static verification**
 
 Run: `bun run lint`
 
@@ -447,7 +447,7 @@ Run: `bunx prettier --check docs/trd.md docs/superpowers/specs/2026-09-07-consul
 
 Expected: all commands pass, apart from already documented unrelated repository-wide lint warnings.
 
-- [ ] **Step 3: Run complete behavioral verification**
+- [x] **Step 3: Run complete behavioral verification**
 
 Run: `bun run test`
 
@@ -455,9 +455,9 @@ Run: `bun run build`
 
 Expected: all workspace tests and both production builds pass.
 
-- [ ] **Step 4: Run UI and safety audits**
+- [x] **Step 4: Run UI and safety audits**
 
-Run: `npx react-doctor@latest . --verbose --scope changed`
+Run: `npx react-doctor@latest --verbose --scope changed`
 
 Run: `npx impeccable detect`
 
@@ -465,7 +465,7 @@ Run: `bun run --cwd backend test -- src/lib/logger.leak.test.ts src/lib/llm/no-s
 
 Expected: no new actionable UI findings, no Impeccable findings, no note content in logs, and no provider-egress change.
 
-- [ ] **Step 5: Commit documentation and verification updates**
+- [x] **Step 5: Commit documentation and verification updates**
 
 ```bash
 git add docs/trd.md docs/superpowers/plans/2026-09-07-consultation-settings-and-recording-pause.md
