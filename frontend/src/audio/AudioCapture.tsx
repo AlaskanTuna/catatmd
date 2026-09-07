@@ -198,6 +198,7 @@ function estimateRemaining(done: number, total: number, elapsedMs: number): stri
 
 export function AudioCapture({
   onTranscript,
+  onBusyChange,
   engine,
   transcript,
 }: {
@@ -208,6 +209,7 @@ export function AudioCapture({
     /** Server-drafted labels, hosted path only; absent whenever labelling failed. */
     draftTurns?: readonly DraftTurn[]
   }) => void
+  onBusyChange?: (busy: boolean) => void
   /** The device's standing transcription engine, from the Audio dialog. */
   engine: 'local' | 'hosted'
   /** The transcript so far, shown under the meter while recording. */
@@ -233,6 +235,9 @@ export function AudioCapture({
   const [hostedSeconds, setHostedSeconds] = useState(0)
   /** The audio behind the current or failed run, so Try Again can rerun it. */
   const [retryBlob, setRetryBlob] = useState<Blob | null>(null)
+
+  useEffect(() => onBusyChange?.(phase !== 'idle'), [onBusyChange, phase])
+  useEffect(() => () => onBusyChange?.(false), [onBusyChange])
   /**
    * Whether this patient has agreed to this recording being sent to ILMU.
    *

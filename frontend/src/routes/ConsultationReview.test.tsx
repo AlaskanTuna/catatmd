@@ -66,6 +66,13 @@ vi.mock('../copilot/CatatAI.js', () => ({
 }))
 vi.mock('../review/ApproveBar.js', () => ({ ApproveBar: () => null }))
 vi.mock('../review/ChecklistPanel.js', () => ({ ChecklistPanel: () => null }))
+vi.mock('./CapturePanel.js', () => ({
+  CapturePanel: ({ onCaptureBusyChange }: { onCaptureBusyChange: (busy: boolean) => void }) => (
+    <button type="button" onClick={() => onCaptureBusyChange(true)}>
+      Mock Capture Busy
+    </button>
+  ),
+}))
 vi.mock('../review/NoteEditor.js', () => ({
   NoteEditor: ({ note }: { note: { subjective: string } }) => <p>{note.subjective}</p>,
 }))
@@ -105,6 +112,7 @@ const APPROVED = {
   id: 'consultation-1',
   status: 'approved' as const,
   noteTemplate: 'soap' as const,
+  captureMode: 'manual' as const,
   title: 'Acute cough',
   createdAt: new Date('2026-08-27T06:00:00.000Z'),
   updatedAt: new Date('2026-08-27T06:00:00.000Z'),
@@ -182,7 +190,17 @@ describe('approved note copy', () => {
 })
 
 describe('consultation note template', () => {
+  const originalShowModal = HTMLDialogElement.prototype.showModal
+  const originalClose = HTMLDialogElement.prototype.close
+
   beforeEach(() => {
+    HTMLDialogElement.prototype.showModal = function showModal() {
+      this.open = true
+    }
+    HTMLDialogElement.prototype.close = function close() {
+      this.open = false
+      this.dispatchEvent(new Event('close'))
+    }
     vi.mocked(api.getConsultation).mockReset()
     vi.mocked(api.getConsultation).mockResolvedValue(APPROVED as never)
     vi.mocked(api.guidelines).mockResolvedValue([])
@@ -194,15 +212,31 @@ describe('consultation note template', () => {
     })
   })
 
-  it('persists a switch to the Malaysian layout and renders its ordered headings', async () => {
-    vi.mocked(api.patch).mockResolvedValue({ ...APPROVED, noteTemplate: 'malaysian' } as never)
+  afterEach(() => {
+    HTMLDialogElement.prototype.showModal = originalShowModal
+    HTMLDialogElement.prototype.close = originalClose
+  })
+
+  it('moves the layout control out of Clinical Note and saves both changed settings', async () => {
+    vi.mocked(api.patch).mockResolvedValue({
+      ...APPROVED,
+      noteTemplate: 'malaysian',
+      captureMode: 'ambient',
+    } as never)
     setup()
 
-    fireEvent.click(await screen.findByRole('radio', { name: 'Malaysian Medical Record' }))
+    await screen.findByRole('heading', { name: 'Clinical Note' })
+    expect(screen.queryByRole('radio', { name: 'Malaysian Medical Record' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Consultation Settings' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Malaysian Medical Record' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Ambient' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
 
     await waitFor(() =>
       expect(api.patch).toHaveBeenCalledWith('consultation-1', {
         noteTemplate: 'malaysian',
+        captureMode: 'ambient',
       }),
     )
     expect(await screen.findByRole('heading', { name: 'Family History' })).toBeTruthy()
@@ -260,18 +294,34 @@ describe('consultation note template', () => {
     expect(screen.queryByRole('heading', { name: 'Subjective' })).toBeNull()
   })
 
-  it('surfaces a template save failure without changing the selected layout', async () => {
+  it('opens Consultation Settings while awaiting review', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'awaiting_review',
+      approvedAt: null,
+      approvedBy: null,
+    } as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Consultation Settings' }))
+
+    expect(screen.getByRole('dialog', { name: 'Consultation Settings' })).toBeTruthy()
+  })
+
+  it('surfaces a settings save failure inline without changing the selected layout', async () => {
     vi.mocked(api.patch).mockRejectedValue(new Error('Unsupported by deployed API'))
     setup()
 
-    fireEvent.click(await screen.findByRole('radio', { name: 'Malaysian Medical Record' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Consultation Settings' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Malaysian Medical Record' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
 
-    await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith(
-        'That change could not be saved. Nothing was changed.',
-      ),
-    )
-    expect(screen.getByRole('radio', { name: 'SOAP' }).getAttribute('aria-checked')).toBe('true')
+    expect((await screen.findByRole('alert')).textContent).toMatch(/could not be saved/i)
+    expect(screen.getByRole('dialog', { name: 'Consultation Settings' })).toBeTruthy()
+    expect(
+      screen.getByRole('radio', { name: 'Malaysian Medical Record' }).getAttribute('aria-checked'),
+    ).toBe('true')
+    expect(toastError).not.toHaveBeenCalled()
   })
 
   it('renders an existing SOAP-only edit instead of hiding it behind canonical AI text', async () => {
@@ -301,6 +351,50 @@ describe('consultation note template', () => {
       ),
     )
     expect(screen.getAllByText('Not recorded by this analysis version')).toHaveLength(5)
+  })
+})
+
+describe('consultation hero actions', () => {
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'draft',
+      analysis: null,
+      approvedAt: null,
+      approvedBy: null,
+      transcript: {
+        source: 'paste',
+        labelsReviewed: true,
+        turns: [{ speaker: 'patient', text: 'Cough for three days.' }],
+      },
+    } as never)
+  })
+
+  it('shows no routine information tooltip beside an enabled Analyse action', async () => {
+    setup()
+
+    expect(await screen.findByRole('button', { name: 'Analyse Consultation' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'What happens when you analyse' })).toBeNull()
+  })
+
+  it('disables Consultation Settings while capture owns unsent audio', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'draft',
+      analysis: null,
+      approvedAt: null,
+      approvedBy: null,
+    } as never)
+    setup()
+
+    const settings = await screen.findByRole<HTMLButtonElement>('button', {
+      name: 'Consultation Settings',
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Mock Capture Busy' }))
+
+    expect(settings.disabled).toBe(true)
   })
 })
 

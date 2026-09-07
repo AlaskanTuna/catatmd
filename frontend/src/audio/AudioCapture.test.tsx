@@ -191,12 +191,21 @@ async function settle() {
   })
 }
 
-function renderCapture(engine: 'local' | 'hosted' = 'local', transcript = '') {
+function renderCapture(
+  engine: 'local' | 'hosted' = 'local',
+  transcript = '',
+  onBusyChange = vi.fn(),
+) {
   const onTranscript = vi.fn()
   const view = render(
-    <AudioCapture onTranscript={onTranscript} engine={engine} transcript={transcript} />,
+    <AudioCapture
+      onTranscript={onTranscript}
+      onBusyChange={onBusyChange}
+      engine={engine}
+      transcript={transcript}
+    />,
   )
-  return { onTranscript, ...view }
+  return { onTranscript, onBusyChange, ...view }
 }
 
 function pickFile() {
@@ -269,6 +278,21 @@ const consentBox = () => screen.getByRole('checkbox', { name: /agreed/i }) as HT
  * until someone agrees.
  */
 const agree = () => fireEvent.click(consentBox())
+
+describe('capture ownership reporting', () => {
+  it('reports recording as busy and returns to idle after cancellation', async () => {
+    const onBusyChange = vi.fn()
+    renderCapture('local', '', onBusyChange)
+
+    expect(onBusyChange).toHaveBeenLastCalledWith(false)
+    await startRecording()
+    expect(onBusyChange).toHaveBeenLastCalledWith(true)
+
+    await stopRecording()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onBusyChange).toHaveBeenLastCalledWith(false)
+  })
+})
 
 describe('the silence budget', () => {
   it('terminates a worker that stays silent and points at typing or pasting', async () => {

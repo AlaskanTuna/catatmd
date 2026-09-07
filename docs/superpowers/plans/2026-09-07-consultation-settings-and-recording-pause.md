@@ -256,7 +256,7 @@ git commit -m "refactor(audio): keep device settings device scoped"
 - Changes: `CapturePanel({ captureMode, onCaptureModeChange, onCaptureBusyChange, ... })`.
 - Changes: `AudioCapture` reports every non-idle phase through `onBusyChange(active: boolean)`.
 
-- [ ] **Step 1: Write failing dialog and route interaction tests**
+- [x] **Step 1: Write failing dialog and route interaction tests**
 
 The dialog tests must open the native dialog and prove:
 
@@ -279,13 +279,13 @@ The route tests must prove the old selector is absent from the Clinical Note sec
 
 Add an `AudioCapture` test that observes `onBusyChange(true)` when recording starts and `onBusyChange(false)` when the component returns to idle. This callback is what prevents a hero-level mode switch from unmounting a recorder that owns unsent audio.
 
-- [ ] **Step 2: Run focused UI tests and verify RED**
+- [x] **Step 2: Run focused UI tests and verify RED**
 
 Run: `bun run --cwd frontend test -- src/review/ConsultationSettingsDialog.test.tsx src/routes/ConsultationReview.test.tsx src/routes/CapturePanel.test.tsx`
 
 Expected: FAIL because the dialog, hero gear, and consultation-owned Capture Mode do not exist.
 
-- [ ] **Step 3: Implement the dialog**
+- [x] **Step 3: Implement the dialog**
 
 Build a native dialog using the existing Audio/Help dialog patterns. Keep `NoteTemplateSelector` reusable inside the dialog by allowing its outer margin and `layered` context to be supplied rather than duplicating its option vocabulary.
 
@@ -302,7 +302,7 @@ const changes: ConsultationSettingsPatch = {
 
 Save is disabled when `Object.keys(changes).length === 0` or `saving` is true. Cancel resets the draft and closes. Render the supplied error inline with `role="alert"`.
 
-- [ ] **Step 4: Make ConsultationReview own the settings mutation**
+- [x] **Step 4: Make ConsultationReview own the settings mutation**
 
 Add the gear immediately after the workflow CTA group. Remove the note-column selector. Keep only conditional workflow tips: missing transcript, analysis failure, approval confirmation, or unacknowledged red flags.
 
@@ -320,17 +320,17 @@ const settings = useMutation({
 
 The stored path calls `api.patch`; the ephemeral path merges both closed-set fields in memory. Pass `captureModeLocked={detail.transcript !== null}`.
 
-- [ ] **Step 5: Make CapturePanel consume the consultation mode**
+- [x] **Step 5: Make CapturePanel consume the consultation mode**
 
 Replace `audio.mode` with the `captureMode` prop. `switchToManual` calls `onCaptureModeChange('manual')`; it no longer writes device storage. Add `onBusyChange` to `AudioCapture` and report `phase !== 'idle'` through it. Bubble that callback and Ambient Capture's existing `onLiveChange` through `onCaptureBusyChange` so the hero settings button is temporarily disabled while unsent audio is owned by a recorder, worker, upload, or stream.
 
-- [ ] **Step 6: Run focused UI tests and verify GREEN**
+- [x] **Step 6: Run focused UI tests and verify GREEN**
 
 Run: `bun run --cwd frontend test -- src/review/ConsultationSettingsDialog.test.tsx src/routes/ConsultationReview.test.tsx src/routes/CapturePanel.test.tsx`
 
 Expected: all suites pass with no React warnings.
 
-- [ ] **Step 7: Commit the settings experience**
+- [x] **Step 7: Commit the settings experience**
 
 ```bash
 git add frontend/src/review frontend/src/routes/ConsultationReview.tsx frontend/src/routes/ConsultationReview.test.tsx frontend/src/routes/CapturePanel.tsx frontend/src/routes/CapturePanel.test.tsx frontend/src/audio/AudioCapture.tsx frontend/src/audio/AudioCapture.test.tsx

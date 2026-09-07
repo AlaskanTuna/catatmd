@@ -10,15 +10,19 @@ export function NoteTemplateSelector({
   value,
   saving,
   onChange,
+  className,
+  legend = 'Note Format',
 }: {
   value: NoteTemplate
   saving: boolean
   onChange: (template: NoteTemplate) => void
+  className?: string
+  legend?: string
 }) {
   return (
-    <fieldset className="mb-3" data-print="hide" disabled={saving}>
+    <fieldset className={cn('mb-3', className)} data-print="hide" disabled={saving}>
       <legend className="mb-1.5 text-2xs font-semibold uppercase tracking-wider text-ink-muted">
-        Note Format
+        {legend}
       </legend>
       <div
         role="radiogroup"
