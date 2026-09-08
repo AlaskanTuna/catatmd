@@ -399,14 +399,14 @@ export function ConsultationReview() {
   const onApproved = (next: ConsultationDetail) => {
     invalidate(next)
     /*
-     * The recording is released the moment the note is approved (#293).
+     * Approval deliberately does not touch the recording (#293).
      *
-     * That is the whole retention rule, and it is deliberate rather than
-     * incidental: the audio exists to let the doctor check the transcript
-     * before standing behind it, and approval is the doctor saying they have.
-     * Past that point the note is the record and the audio is only exposure.
+     * It was released here while the audio lived only in memory. Now that it is
+     * stored, the retention window is what bounds it, matching what Abridge and
+     * Nuance DAX both do: a doctor who has signed a note is exactly the person
+     * a colleague or a patient comes back to with a question about it, and
+     * having signed is not a reason to lose the ability to check.
      */
-    audio.release()
     toast.success('Note approved. This record is now final.')
   }
 

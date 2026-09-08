@@ -7,6 +7,8 @@ import { clientIp } from './middleware/client-ip.js'
 import { errorHandler } from './middleware/error-handler.js'
 import {
   analyzeRateLimit,
+  audioReadRateLimit,
+  audioWriteRateLimit,
   draftTurnsRateLimit,
   ephemeralAnalyzeRateLimit,
   eraseRateLimit,
@@ -111,6 +113,13 @@ export function createApp() {
   // (#219). Flags run the rules engine in-process and spend no model budget, so
   // they get a cadence-sized allowance; the fold is an LLM call and gets a
   // small one that cannot borrow from, or exhaust, the Finish analysis above.
+  // The consultation recording (#293). The write carries up to 25 MB and is the
+  // only way the audio store grows, so it gets the tightest bucket here; the
+  // read is looser because playing a sentence back repeatedly is the behaviour
+  // the feature exists for. Separate buckets, so reading cannot exhaust the
+  // allowance to store the next recording.
+  app.put('/api/consultations/:id/audio', audioWriteRateLimit)
+  app.get('/api/consultations/:id/audio', audioReadRateLimit)
   app.post('/api/consultations/:id/live-flags', liveFlagsRateLimit)
   app.post('/api/consultations/:id/live-analysis', liveAnalysisRateLimit)
 

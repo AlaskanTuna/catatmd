@@ -138,6 +138,9 @@ vi.mock('../lib/prisma.js', () => {
           },
         ),
       },
+      consultationAudio: {
+        deleteMany: vi.fn(async () => ({ count: 0 })),
+      },
       consultation: {
         findFirst: vi.fn(
           async ({ where }: { where: Record<string, unknown> }) =>

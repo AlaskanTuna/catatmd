@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client'
+import { purgeAudio } from '../audio/index.js'
 import { assertOwnedConsultation, assertOwnedPatient } from '../lib/authz.js'
 import { prisma } from '../lib/prisma.js'
 import { recordAuditEvent } from './index.js'
@@ -23,6 +24,18 @@ export async function eraseConsultation(consultationId: string, actorId: string)
       erasedAt: new Date(),
     },
   })
+
+  /*
+   * The recording goes too, and it is a real delete rather than a tombstone
+   * (#293). The clinical columns are nulled in place because `AuditEvent`
+   * chains on the consultation id and the row has to survive; the audio has no
+   * such tie, so an emptied shell would buy nothing and a row that is gone
+   * cannot be read back by a query that forgot a filter.
+   *
+   * Before the erasure event, so a trail showing `consultation.erased` is
+   * never a trail where a voice recording quietly survived.
+   */
+  await purgeAudio(consultationId, actorId)
 
   await recordAuditEvent({
     action: 'consultation.erased',

@@ -34,6 +34,9 @@ const race = vi.hoisted(() => ({ beforePatientUpdate: null as (() => void) | nul
 const consultations = new Map<string, ConsultationRow>()
 const patients = new Map<string, PatientRow>()
 const appended: AuditChainRow[] = []
+// Recordings are keyed by consultation id and hold nothing else: the tests care
+// only that erasure destroys the row, never what was in it (#293).
+const recordings = new Set<string>()
 
 vi.mock('../lib/prisma.js', () => {
   const databaseNull = (value: unknown) =>
@@ -73,6 +76,11 @@ vi.mock('../lib/prisma.js', () => {
             return { ...updated }
           },
         ),
+      },
+      consultationAudio: {
+        deleteMany: vi.fn(async ({ where }: { where: { consultationId: string } }) => ({
+          count: recordings.delete(where.consultationId) ? 1 : 0,
+        })),
       },
       consultation: {
         findFirst: vi.fn(
@@ -120,6 +128,7 @@ vi.mock('../lib/prisma.js', () => {
 beforeEach(() => {
   consultations.clear()
   patients.clear()
+  recordings.clear()
   appended.length = 0
   race.beforePatientUpdate = null
   patients.set('patient-1', {
@@ -362,5 +371,52 @@ describe('erasePatient', () => {
     expect(erased).toContain('late-visit')
     expect(consultations.get('late-visit')?.transcript).toBeNull()
     expect(consultations.get('late-visit')?.erasedAt).not.toBeNull()
+  })
+})
+
+/*
+ * Erasure has to reach the recording too (#293).
+ *
+ * The clinical columns are nulled in place because `AuditEvent` chains on the
+ * consultation id and the row must survive to keep the chain verifiable. Audio
+ * has no such tie, so it is deleted outright: a tombstoned recording would be a
+ * voice sitting in a table that a query with a missing filter could still read
+ * back, which is the failure erasure exists to prevent.
+ */
+describe('erasing a consultation with a recording', () => {
+  it('destroys the recording, not just the text', async () => {
+    recordings.add('consult-1')
+
+    await eraseConsultation('consult-1', 'doctor-1')
+
+    expect(recordings.has('consult-1')).toBe(false)
+  })
+
+  it('records the purge, so the trail shows the audio went with it', async () => {
+    recordings.add('consult-1')
+
+    await eraseConsultation('consult-1', 'doctor-1')
+
+    const actions = appended.map((row) => row.action)
+    expect(actions).toContain('consultation.audio_purged')
+    // Before the erasure event, so a trail showing `consultation.erased` is
+    // never one where a recording quietly survived.
+    expect(actions.indexOf('consultation.audio_purged')).toBeLessThan(
+      actions.indexOf('consultation.erased'),
+    )
+  })
+
+  it('writes no purge event for a consultation that never had a recording', async () => {
+    await eraseConsultation('consult-1', 'doctor-1')
+
+    expect(appended.map((row) => row.action)).not.toContain('consultation.audio_purged')
+  })
+
+  it('takes the recording with a patient cascade too', async () => {
+    recordings.add('consult-1')
+
+    await erasePatient('patient-1', 'doctor-1')
+
+    expect(recordings.has('consult-1')).toBe(false)
   })
 })

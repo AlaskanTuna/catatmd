@@ -26,11 +26,18 @@ import {
   TranscriptSchema,
   toSoapNote,
 } from '@shared/types'
-import { Router } from 'express'
+import express, { Router } from 'express'
 import { z } from 'zod'
 import { analyseNote, buildEvidenceLinks } from '../analysis/index.js'
 import { analyseLiveWindow, foldFacts, foldOperational } from '../analysis/live.js'
 import { deriveConsultationTitle } from '../analysis/title.js'
+import {
+  audioRetentionEnabled,
+  MAX_AUDIO_BYTES,
+  readAudio,
+  storeAudio,
+  sweepExpiredAudio,
+} from '../audio/index.js'
 import { eraseConsultation } from '../audit/erasure.js'
 import { type AnalysisFailureReason, getAuditHistory, recordAuditEvent } from '../audit/index.js'
 import {
@@ -1360,6 +1367,102 @@ consultationsRouter.post('/:id/approve', async (req, res) => {
  * cost one rate-limit token rather than N, and because the ordering below has
  * to be decided server-side.
  */
+/*
+ * The consultation recording (#293).
+ *
+ * Audio in, nothing out but a receipt; audio out, nothing in. Both scope
+ * through `assertOwnedConsultation`, so a caller can only ever reach a
+ * recording filed against their own consultation, and a consultation that does
+ * not exist or is erased answers 404 like every other route here rather than
+ * confirming it once existed.
+ *
+ * **This is not a de-identification path and cannot be one.** A voice is an
+ * identifier in its own right, so there is nothing to tokenise and no gate to
+ * pass. What bounds it instead is the same trio the ASR egresses use: an
+ * explicit size cap, a limiter, and an audit row per outcome. The recording
+ * never leaves this API and never reaches a provider.
+ */
+const rawAudio = express.raw({
+  type: 'audio/*',
+  limit: MAX_AUDIO_BYTES,
+  // Audio is already compressed, so an inflated `Content-Encoding` body would
+  // let a small request force a large allocation. Same reasoning as the relay.
+  inflate: false,
+})
+
+consultationsRouter.put('/:id/audio', rawAudio, async (req, res) => {
+  const actor = doctorId(req)
+
+  // Checked before the consultation is resolved: with no retention period
+  // adopted there is no answer to give about any consultation, and refusing
+  // here keeps the fail-closed decision in one obvious place.
+  if (!audioRetentionEnabled()) {
+    throw new HttpError(
+      503,
+      'audio_retention_unset',
+      'Recording storage is disabled until a retention period is configured.',
+    )
+  }
+
+  const consultation = await assertOwnedConsultation(req.params.id, actor)
+
+  const contentType = req.get('content-type')
+  if (!contentType || !req.is('audio/*')) {
+    throw new HttpError(415, 'unsupported_media_type', 'An audio/* content type is required.')
+  }
+  if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+    throw new HttpError(400, 'invalid_body', 'A non-empty audio body is required.')
+  }
+
+  // Copied into a plain view rather than passed as the Express Buffer: Prisma's
+  // Bytes input is an ArrayBuffer-backed Uint8Array, and a Buffer may sit on a
+  // pooled or shared one.
+  const { expiresAt } = await storeAudio(
+    consultation.id,
+    actor,
+    new Uint8Array(req.body),
+    contentType,
+  )
+
+  /*
+   * The sweep rides here rather than on a schedule, because this is the only
+   * route that makes the store grow and the project has no scheduler. It runs
+   * after the store so a failure to tidy can never lose the recording that was
+   * just accepted, and its own failure is not the caller's problem: the upload
+   * succeeded, and the next one will sweep again.
+   */
+  void sweepExpiredAudio().catch(() => {})
+
+  res.json({ expiresAt })
+})
+
+consultationsRouter.get('/:id/audio', async (req, res) => {
+  const actor = doctorId(req)
+  const consultation = await assertOwnedConsultation(req.params.id, actor)
+
+  const recording = await readAudio(consultation.id)
+  // 404 covers both "never stored" and "window has closed". They are the same
+  // answer to the caller, and distinguishing them would say when a consultation
+  // was recorded to someone who is no longer allowed to hear it.
+  if (recording === null) {
+    throw new HttpError(404, 'not_found', 'No recording is available for this consultation.')
+  }
+
+  await recordAuditEvent({
+    action: 'consultation.audio_served',
+    actorId: actor,
+    consultationId: consultation.id,
+  })
+
+  res.setHeader('Content-Type', recording.mimeType)
+  res.setHeader('Content-Length', recording.data.length)
+  // Never cached anywhere but the tab that asked. This is PHI, and a shared or
+  // disk cache would put a voice recording somewhere nothing in this system
+  // can reach to erase it.
+  res.setHeader('Cache-Control', 'no-store')
+  res.send(recording.data)
+})
+
 consultationsRouter.post('/erase', async (req, res) => {
   const parsed = EraseConsultationsInputSchema.safeParse(req.body)
   if (!parsed.success) {

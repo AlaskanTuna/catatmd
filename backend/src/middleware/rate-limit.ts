@@ -283,3 +283,47 @@ export const settingsWriteRateLimit = rateLimit({
     error: { code: 'rate_limited', message: 'Too many settings updates. Please retry shortly.' },
   },
 })
+
+/**
+ * Per-IP limiter for `PUT /api/consultations/:id/audio` (#293).
+ *
+ * Not a cost control: nothing outward is called. It bounds a write that can
+ * carry 25 MB, which makes it the largest body the clinical surface accepts and
+ * the cheapest way to fill a database. Five a minute matches
+ * `hostedAsrRateLimit`, which bounds the same recording arriving by the other
+ * route, so one doctor finishing recordings sees the same allowance whichever
+ * path their audio took.
+ */
+export const audioWriteRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: { code: 'rate_limited', message: 'Too many recording uploads. Please retry shortly.' },
+  },
+})
+
+/**
+ * Per-IP limiter for `GET /api/consultations/:id/audio` (#293).
+ *
+ * Looser than the write because playing back is the behaviour the feature
+ * exists to encourage, and a doctor checking several sentences across a
+ * consultation legitimately fetches more than once. Still bounded, because each
+ * response can be megabytes and the route is the only one on the clinical
+ * surface where that is true.
+ *
+ * Its own bucket, so reading a recording can neither be funded by, nor exhaust,
+ * the allowance to store the next one.
+ */
+export const audioReadRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: { code: 'rate_limited', message: 'Too many recording requests. Please retry shortly.' },
+  },
+})
