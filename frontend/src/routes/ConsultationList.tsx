@@ -91,6 +91,9 @@ export function ConsultationList() {
   // Erasing rows can shrink the filtered list out from under a page number, and
   // rendering an empty page is the failure the clamp is there to avoid.
   const currentPage = clampPage(page, pageCount)
+  // Written back, so a list that later grows again stays where the doctor
+  // last was rather than jumping to the page the stale number still names.
+  if (currentPage !== page) setPage(currentPage)
   const pageRows = paginate(consultations, currentPage, PAGE_SIZE)
 
   // Derived from the rows rather than read straight out of state, so a
