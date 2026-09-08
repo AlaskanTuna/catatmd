@@ -113,6 +113,8 @@ export function AmbientCapture({
     segments: readonly TranscriptSegment[]
     source: 'asr_live'
     draftTurns?: readonly DraftTurn[]
+    /** The consultation's audio, for playing a sentence back in review (#293). */
+    audio?: Blob
   }) => void
   /** Returns the Record tab to press-to-record, and remembers that choice. */
   onSwitchToManual: () => void
@@ -238,6 +240,21 @@ export function AmbientCapture({
   const inflight = useRef<AbortController | null>(null)
   /** True once the doctor has pressed stop, so no other path may deliver. */
   const stopping = useRef(false)
+  /**
+   * The consultation's audio, accumulated so the doctor can hear a sentence
+   * back while reviewing the transcript (#293).
+   *
+   * **This is not a new egress.** Every one of these chunks is already being
+   * sent to the recogniser as it is produced; the change is that a reference is
+   * kept as well as sent, so the recording still exists once the words come
+   * back. Nothing uploads it, and `session-audio.ts` holds the result in memory
+   * only.
+   *
+   * The first chunk carries the container header, so the array is only ever
+   * assembled whole. Slicing off a later chunk gives an undecodable file.
+   */
+  const chunks = useRef<Blob[]>([])
+  const mime = useRef<string>('')
   const settled = useRef<LiveTranscript>(EMPTY_LIVE_TRANSCRIPT)
   const onTranscriptRef = useRef(onTranscript)
   const onLiveChangeRef = useRef(onLiveChange)
@@ -355,11 +372,18 @@ export function AmbientCapture({
       }
     }
 
+    const recording =
+      chunks.current.length > 0
+        ? new Blob(chunks.current, ...(mime.current ? [{ type: mime.current }] : []))
+        : undefined
+    chunks.current = []
+
     onTranscriptRef.current({
       text,
       segments,
       source: 'asr_live',
       ...(draftTurns && draftTurns.length > 0 ? { draftTurns } : {}),
+      ...(recording ? { audio: recording } : {}),
     })
     setPhase('idle')
   }, [])
@@ -397,6 +421,11 @@ export function AmbientCapture({
     stopping.current = false
     setLive(EMPTY_LIVE_TRANSCRIPT)
     settled.current = EMPTY_LIVE_TRANSCRIPT
+    // Cleared with the transcript, not after delivery: a session that failed
+    // to start must never leave the previous consultation's audio behind for
+    // this one to hand over as its own.
+    chunks.current = []
+    mime.current = ''
     setSeconds(0)
     const id = attempt.current
 
@@ -468,8 +497,11 @@ export function AmbientCapture({
             : new MediaRecorder(microphone)
           media.ondataavailable = (event) => {
             if (attempt.current !== id) return
-            if (event.data.size > 0) opened.send(event.data)
+            if (event.data.size === 0) return
+            opened.send(event.data)
+            chunks.current.push(event.data)
           }
+          mime.current = media.mimeType
           recorder.current = media
           media.start(TIMESLICE_MS)
           setMicStream(microphone)

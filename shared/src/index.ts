@@ -31,12 +31,33 @@ export const SpeakerSchema = z.enum(['doctor', 'patient'])
 export const MAX_TRANSCRIPT_TURNS = 600
 export const MAX_TURN_CHARACTERS = 4_000
 
-export const TranscriptTurnSchema = z.object({
-  speaker: SpeakerSchema,
-  text: z.string().min(1).max(MAX_TURN_CHARACTERS),
-  /** Seconds from consultation start, when the source provides timing. */
-  offsetSeconds: z.number().nonnegative().optional(),
-})
+export const TranscriptTurnSchema = z
+  .object({
+    speaker: SpeakerSchema,
+    text: z.string().min(1).max(MAX_TURN_CHARACTERS),
+    /** Seconds from consultation start, when the source provides timing. */
+    offsetSeconds: z.number().nonnegative().optional(),
+    /**
+     * Where this turn's audio ends, for a source that closed the segment.
+     *
+     * Only ever present alongside `offsetSeconds`, and absent far more often
+     * than it is present: Whisper leaves the final segment open, and a line
+     * split out of the middle of a segment has no start of its own to end.
+     *
+     * It exists so playback stops at the end of the sentence the doctor asked
+     * for instead of running on into the next one. Absence means "not known",
+     * so a caller plays to the end of the recording rather than guessing a
+     * duration, the same way an absent `offsetSeconds` never renders as 0:00.
+     */
+    endSeconds: z.number().nonnegative().optional(),
+  })
+  .refine(
+    (turn) =>
+      turn.offsetSeconds === undefined ||
+      turn.endSeconds === undefined ||
+      turn.endSeconds >= turn.offsetSeconds,
+    { message: 'endSeconds must not precede offsetSeconds', path: ['endSeconds'] },
+  )
 
 /**
  * How the transcript was produced. Client-asserted and unverifiable by the API
@@ -580,6 +601,27 @@ export const RedFlagSchema = z.object({
    * is more honest than hiding it.
    */
   guidelineIds: z.array(z.string()).optional(),
+  /**
+   * Where in the transcript this flag's evidence was found, so the doctor can
+   * hear it rather than take it on trust (#293).
+   *
+   * **Display metadata, and nothing else.** It is resolved server-side by
+   * locating the evidence span in the transcript, exactly as `EvidenceLink` is,
+   * and it may never influence whether a flag appears, its severity, or its
+   * order. A flag whose span cannot be placed in exactly one turn simply has
+   * none and renders as it always did.
+   *
+   * Server-populated like `ruleId` and `guidelineIds`: the model never supplies
+   * it, because `makeSuggestionsAndRedFlagsSchema` omits it from the schema the
+   * model answers against.
+   */
+  evidenceLink: z
+    .object({
+      speaker: SpeakerSchema,
+      offsetSeconds: z.number().nonnegative().optional(),
+      endSeconds: z.number().nonnegative().optional(),
+    })
+    .optional(),
 })
 
 // ─── Citations ───────────────────────────────────────────────────────────────
@@ -618,6 +660,8 @@ export const EvidenceLinkSchema = z.object({
   evidence: z.string(),
   speaker: SpeakerSchema.optional(),
   offsetSeconds: z.number().nonnegative().optional(),
+  /** Copied from the located turn, so playback can stop where the turn does. */
+  endSeconds: z.number().nonnegative().optional(),
 })
 export type EvidenceLink = z.infer<typeof EvidenceLinkSchema>
 
@@ -816,12 +860,22 @@ export const NoteAndGapsResponseSchema = z.object({
  * Red flags returned here are candidates only: `source` is pinned to `'model'`
  * and `ruleId` is absent, so a model response is structurally incapable of
  * impersonating a deterministic rule hit.
+ *
+ * `evidenceLink` is omitted for the same class of reason. It says where in the
+ * recording a finding can be heard, and a model that could assert it could
+ * point a doctor at a moment that says something else, or at nothing at all.
+ * It is resolved from the transcript afterwards, never accepted from a model.
  */
 export const makeSuggestionsAndRedFlagsSchema = (corpusIds: readonly [string, ...string[]]) =>
   z.object({
     outOfScope: z.boolean(),
     redFlags: z.array(
-      RedFlagSchema.omit({ source: true, ruleId: true, guidelineIds: true }).extend({
+      RedFlagSchema.omit({
+        source: true,
+        ruleId: true,
+        guidelineIds: true,
+        evidenceLink: true,
+      }).extend({
         source: z.literal('model'),
       }),
     ),

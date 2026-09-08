@@ -6,6 +6,7 @@ import type {
 } from '@shared/types'
 import { ChevronRight, Quote } from 'lucide-react'
 import { useState } from 'react'
+import { timestamp } from '../lib/clock.js'
 import { cn } from '../lib/cn.js'
 import { AssertionStateBadge } from '../ui/AssertionState.js'
 import { Card } from '../ui/Card.js'
@@ -13,9 +14,6 @@ import { Card } from '../ui/Card.js'
 /** Field keys are camelCase in the contract; doctors do not read camelCase. */
 const humanise = (key: string) =>
   key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase())
-
-const timestamp = (seconds: number) =>
-  `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
 
 /**
  * One checklist row, and its evidence when the field has any (issue #10, AC7).

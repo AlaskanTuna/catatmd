@@ -405,7 +405,13 @@ async function runAnalysis(
    * confidently wrong attribution on a clinical record is worse than an absent
    * one, and "which of these two turns" is not a question this can answer.
    */
-  const attribute = (span: string) => {
+  const attribute = (
+    span: string,
+  ): {
+    speaker?: Transcript['turns'][number]['speaker']
+    offsetSeconds?: number
+    endSeconds?: number
+  } => {
     const needle = span.replace(/\s+/g, ' ').trim().toLowerCase()
     if (needle.length === 0) return {}
     const hits = transcript.turns.filter((turn) =>
@@ -416,6 +422,12 @@ async function runAnalysis(
     return {
       speaker: turn.speaker,
       ...(turn.offsetSeconds === undefined ? {} : { offsetSeconds: turn.offsetSeconds }),
+      // Only ever alongside a start, matching the turn it was copied from: an
+      // end with nothing to seek from cannot be played, and the pair is what
+      // `TranscriptTurnSchema` orders against.
+      ...(turn.offsetSeconds === undefined || turn.endSeconds === undefined
+        ? {}
+        : { endSeconds: turn.endSeconds }),
     }
   }
 
@@ -447,11 +459,27 @@ async function runAnalysis(
       question: rehydrate(gap.question),
       rationale: rehydrate(gap.rationale),
     })),
-    redFlags: mergeRedFlags(ruleFlags, suggestionResult.redFlags).map((flag) => ({
-      ...flag,
-      label: rehydrate(flag.label),
-      evidence: rehydrate(flag.evidence),
-    })),
+    /*
+     * `mergeRedFlags` is still a bare concat, and this map still runs after it
+     * on whatever it returned. Nothing here filters, reorders, dedupes or
+     * re-ranks: it rehydrates the two text fields and attaches where the
+     * evidence was heard, so a doctor can play the sentence that raised the
+     * flag rather than take it on trust (#293).
+     *
+     * `attribute` returns nothing for a span it cannot place in exactly one
+     * turn, and a flag with no link renders exactly as it did before. A flag's
+     * presence, severity and order never depend on any of this.
+     */
+    redFlags: mergeRedFlags(ruleFlags, suggestionResult.redFlags).map((flag) => {
+      const evidence = rehydrate(flag.evidence)
+      const { speaker, ...timing } = attribute(evidence)
+      return {
+        ...flag,
+        label: rehydrate(flag.label),
+        evidence,
+        ...(speaker === undefined ? {} : { evidenceLink: { speaker, ...timing } }),
+      }
+    }),
     // The reviewed checklist, surfaced rather than discarded. Without these
     // the UI cannot render a `NOT_ASSESSED` it was never sent, and docs/prd.md
     // §10's "unestablished, never absent" requirement has nothing to display

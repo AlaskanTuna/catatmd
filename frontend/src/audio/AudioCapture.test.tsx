@@ -367,7 +367,12 @@ describe('the silence budget', () => {
       vi.advanceTimersByTime(STALL_TIMEOUT_MS * 2)
     })
 
-    expect(onTranscript).toHaveBeenCalledWith({ text: 'hello', segments: [], source: 'asr_local' })
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: 'hello',
+      segments: [],
+      source: 'asr_local',
+      audio: expect.any(Blob),
+    })
     expect(screen.queryByRole('alert')).toBeNull()
     expect(worker.terminate).not.toHaveBeenCalled()
   })
@@ -586,6 +591,7 @@ describe('prewarming the speech model', () => {
       text: 'paused capture',
       segments: [],
       source: 'asr_local',
+      audio: expect.any(Blob),
     })
   })
 
@@ -651,7 +657,12 @@ describe('prewarming the speech model', () => {
     spawned().reply({ type: 'ready' })
     screen.getAllByText(/transcribing on this device/i)
     spawned().reply({ type: 'result', text: 'hello', segments: [] })
-    expect(onTranscript).toHaveBeenCalledWith({ text: 'hello', segments: [], source: 'asr_local' })
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: 'hello',
+      segments: [],
+      source: 'asr_local',
+      audio: expect.any(Blob),
+    })
   })
 
   it('stays silent when the prewarm fails, and still transcribes on stop', async () => {
@@ -672,6 +683,7 @@ describe('prewarming the speech model', () => {
       text: 'recovered',
       segments: [],
       source: 'asr_local',
+      audio: expect.any(Blob),
     })
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -696,6 +708,7 @@ describe('prewarming the speech model', () => {
       text: 'second worker',
       segments: [],
       source: 'asr_local',
+      audio: expect.any(Blob),
     })
   })
 
@@ -722,6 +735,7 @@ describe('prewarming the speech model', () => {
       text: 'late recovery',
       segments: [],
       source: 'asr_local',
+      audio: expect.any(Blob),
     })
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -1028,6 +1042,7 @@ describe('the recording fork', () => {
       text: 'hosted text',
       segments: [],
       source: 'asr_hosted',
+      audio: expect.any(Blob),
     })
   })
 })
@@ -1172,6 +1187,7 @@ describe('hosted draft-turn labelling', () => {
       text: 'hosted text',
       segments: [],
       source: 'asr_hosted',
+      audio: expect.any(Blob),
       draftTurns: SAMPLE_TURNS,
     })
     expect(startButton().disabled).toBe(false)
@@ -1191,6 +1207,7 @@ describe('hosted draft-turn labelling', () => {
       text: 'hosted text',
       segments: [],
       source: 'asr_hosted',
+      audio: expect.any(Blob),
     })
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -1214,6 +1231,7 @@ describe('hosted draft-turn labelling', () => {
       text: 'hosted text',
       segments: [],
       source: 'asr_hosted',
+      audio: expect.any(Blob),
     })
     expect(screen.queryByRole('alert')).toBeNull()
   })
@@ -1244,7 +1262,12 @@ describe('hosted draft-turn labelling', () => {
     await stopRecording()
 
     expect(draftHostedTurns).not.toHaveBeenCalled()
-    expect(onTranscript).toHaveBeenCalledWith({ text: '', segments: [], source: 'asr_hosted' })
+    expect(onTranscript).toHaveBeenCalledWith({
+      text: '',
+      segments: [],
+      source: 'asr_hosted',
+      audio: expect.any(Blob),
+    })
   })
 
   it('never calls the labelling client for a relay result over the request bound', async () => {
@@ -1261,6 +1284,7 @@ describe('hosted draft-turn labelling', () => {
       text: oversized,
       segments: [],
       source: 'asr_hosted',
+      audio: expect.any(Blob),
     })
   })
 
