@@ -234,9 +234,30 @@ and the measurement it rested on both retire (settled 15/08/26).
 
 ### While Capture Is Running
 
-The three panels are the **review** layout. During capture the screen drops to
-two, and both changes are about what a doctor can read in the two seconds they
-can spare while looking at a patient.
+The three panels are the **review** layout. During capture the conversation
+takes the screen, and the two-panel layout below is what it docks back to.
+Every choice here is about what a doctor can read in the two seconds they can
+spare while looking at a patient.
+
+**The theatre is the primary capture surface** (#287). Pressing Record opens the
+conversation in a full-viewport `<dialog>`: transcript on the left as the only
+scroller, `LivePrompter` beside it at 380px. The hero, the page and its chrome
+go behind the scrim, so the height arithmetic below stops applying rather than
+being tuned.
+
+| Behaviour  | Rule                                                                    |
+| ---------- | ----------------------------------------------------------------------- |
+| Opens      | By itself, when capture starts. Never a control the doctor has to find  |
+| Escape     | Docks, never stops. The socket stays open and the session keeps running |
+| Docked     | Falls back to the two-panel layout below, prompter still on screen      |
+| After Stop | Closes. `View Conversation` reopens the settled transcript, read only   |
+
+**It is a `<dialog>` rather than a fixed panel** for the reason "Glass inside
+glass is always flat" gives: `showModal()` promotes it to the top layer, outside
+every backdrop root, and hands over focus trapping, Escape and inertness of the
+page behind at no cost.
+
+The docked layout, which is also what runs below `lg`:
 
 | Panel          | During capture           | Why                                                        |
 | -------------- | ------------------------ | ---------------------------------------------------------- |
@@ -251,9 +272,22 @@ settled review overflows the page by 234px and hides 264px of the rail below the
 fold, which is where a rule hit at position one of thirty-two actually sits. The
 prompter's red-flag section is permanent, above the fold, and first.
 
-**The prompter is push, never pull.** It is not a `<dialog>` and it is never
-modal. A pop-up the doctor has to open is the tabs rule again in another shape:
-a warning behind a click is a warning nobody opens mid-consultation.
+**The prompter is push, never pull.** A warning behind a click is a warning
+nobody opens mid-consultation, which is the tabs rule in another shape.
+
+This rule is about **reachability, not markup**, and the difference now matters.
+The conversation opens into a `<dialog>` when capture starts (#287) and the
+prompter travels inside it, rather than staying on a page behind the scrim.
+Two constraints preserve the original guarantee:
+
+| Constraint                      | What it means                                                                              |
+| ------------------------------- | ------------------------------------------------------------------------------------------ |
+| The theatre opens itself        | Nothing to find and nothing to press. The doctor never opens the surface holding the flags |
+| The flags go where the words go | Prompter inside the theatre while it is open, in its own column while it is docked         |
+
+The earlier wording said the prompter "is not a `<dialog>` and is never modal".
+That was the mechanism, written down in place of the reason. Wherever the
+conversation is, the flags are beside it, and that is the property to protect.
 
 **Three prompts, and the cap is the design.** A panel holding twenty-seven gaps
 scrolls exactly like a rail holding twenty-seven. The rest sit behind the shared
@@ -266,9 +300,10 @@ prompts, so the glass-is-chrome-only rule applies to it in full.
 rail was: on a narrow screen "visible without scrolling" can only mean first in
 source order.
 
-**The column ceiling is `calc(100vh-26rem)` during capture, against
+**The column ceiling is `calc(100vh-26rem)` while capture is docked, against
 `calc(100vh-13rem)` for review, and the difference is measured rather than
-guessed.** At 1440x900 the band above the grid is 292px and the page's own
+guessed.** It governs the docked fallback only; the theatre has no page above
+it to subtract. At 1440x900 the band above the grid is 292px and the page's own
 bottom padding is 121px, so a 692px column overflows the viewport by 234px.
 That is survivable while reading a note, because the columns are sticky and
 settle after one scroll. It is not survivable while talking, which was the
@@ -299,6 +334,10 @@ live pane and the settled transcript.
 - **Consecutive turns from one speaker drop the chip and the timestamp**, and
   tighten by 8px. That grouping is what makes it read as a conversation rather
   than a log with a label on every line.
+- **The pane follows the newest turn, but only from the bottom.** A doctor who
+  has scrolled up to re-read something said a minute ago is not yanked back down
+  by the next word the patient says; following resumes through an explicit
+  "Jump to latest", and the pane never claims to be current while it is not.
 - **Sides are not roles during capture.** The recogniser numbers speakers and
   roles are assigned after Stop, so an id that swaps mid-consultation moves the
   conversation bodily across the pane. That is louder than a chip changing text,

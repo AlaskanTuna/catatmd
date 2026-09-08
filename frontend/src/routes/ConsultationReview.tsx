@@ -12,7 +12,7 @@ import type {
 } from '@shared/types'
 import { MedicalRecordNoteSchema, toSoapNote } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Printer, Settings2, Sparkles } from 'lucide-react'
+import { Copy, Maximize2, Printer, Settings2, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, Navigate, useParams } from 'react-router-dom'
@@ -131,11 +131,108 @@ function FindingsPanel({
   )
 }
 
+/**
+ * The settled transcript, wherever it is asked for.
+ *
+ * One implementation rather than two. It renders in the transcript column and
+ * again in the dialog the doctor reopens after Stop, and this file already
+ * carried a second copy of the live pane's two-sided grammar; a third is how
+ * they start disagreeing about what a turn looks like.
+ */
+function SettledConversation({
+  turns,
+}: {
+  turns: readonly { key: string; speaker: string; text: string }[]
+}) {
+  return (
+    <ol className="flex flex-col gap-3">
+      {turns.map((turn, index) => {
+        const opensTurn = turns[index - 1]?.speaker !== turn.speaker
+        const doctor = turn.speaker === 'doctor'
+        return (
+          <li
+            key={turn.key}
+            className={cn(
+              // Same two-sided rule as the live pane, and the same reason for
+              // the two caps: this is 380px in the column, fluid during
+              // capture and wide in the dialog, so 62% would break a line
+              // every three words in the narrow case.
+              'flex flex-col max-w-[88%] @lg:max-w-[62%]',
+              doctor ? 'items-start self-start' : 'items-end self-end',
+              !opensTurn && '-mt-2',
+            )}
+          >
+            {opensTurn && (
+              <span className="mb-1 block">
+                <span
+                  className={cn(
+                    'rounded-pill px-2 py-0.5 text-2xs font-medium',
+                    doctor ? 'bg-surface text-ink-muted' : 'bg-accent-soft text-accent',
+                  )}
+                >
+                  {doctor ? 'Doctor' : 'Patient'}
+                </span>
+              </span>
+            )}
+            <p
+              className={cn(
+                'rounded-card px-3 py-2 text-ink text-sm leading-relaxed',
+                doctor ? 'bg-surface' : 'bg-accent-soft',
+              )}
+            >
+              {turn.text}
+            </p>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
 export function ConsultationReview() {
   const { id = '' } = useParams()
   const queryClient = useQueryClient()
   const [showTranscript, setShowTranscript] = useState(false)
   const [captureBusy, setCaptureBusy] = useState(false)
+  /*
+   * The conversation shows in its own full-viewport dialog while capture runs
+   * (#287). Held here rather than inside `AmbientCapture` because this
+   * component decides where the safety panel goes: the companion column while
+   * the theatre is docked, inside the theatre while it is open, never both.
+   *
+   * Deliberately not persisted. `.claude/rules/security.md` keeps
+   * `localStorage` to the theme key, and a remembered "docked" would quietly
+   * reintroduce the clipped pane this exists to replace.
+   */
+  const [conversationExpanded, setConversationExpanded] = useState(false)
+  /*
+   * The settled conversation, reopened after Stop (#287). The live theatre
+   * belongs to `AmbientCapture` because that is where the tokens are; once the
+   * transcript is saved the record is here, so this one belongs here.
+   */
+  const [showConversation, setShowConversation] = useState(false)
+  const conversationDialog = useRef<HTMLDialogElement>(null)
+
+  useEffect(() => {
+    const node = conversationDialog.current
+    if (!node) return
+    /*
+     * Guarded because jsdom implements neither `showModal` nor `close`. The
+     * `open` attribute is what the UA stylesheet keys on, so the fallback still
+     * lifts the contents out of `display: none` and into the accessibility
+     * tree, which is the part of the difference a test can see.
+     */
+    if (!showConversation) {
+      if (typeof node.close === 'function') node.close()
+      else node.removeAttribute('open')
+      return
+    }
+    if (typeof node.showModal === 'function') node.showModal()
+    else node.setAttribute('open', '')
+    // Same reason as the overflow dialog below: `showModal()` autofocuses
+    // before conditionally rendered children exist.
+    node.querySelector('button')?.focus()
+  }, [showConversation])
   const transcriptRef = useRef<HTMLElement>(null)
   const settingsDialog = useRef<HTMLDialogElement>(null)
 
@@ -461,6 +558,31 @@ export function ConsultationReview() {
     key: `${position}-${turn.speaker}`,
   }))
 
+  /*
+   * Built once and rendered in exactly one of two places: the companion column
+   * while the conversation is docked, or inside the theatre while it is open.
+   *
+   * One element, one mount. A panel carrying red flags must never exist twice
+   * in the accessibility tree, and rendering the same element in both places
+   * would create two live instances rather than move one.
+   */
+  const livePrompter = (
+    <LivePrompter
+      live={live.panes}
+      onShowAll={() =>
+        setOverflow({
+          title: 'Missing Information',
+          findings: [...live.panes.gaps]
+            .sort((a, b) => GAP_PRIORITY_ORDER[a.priority] - GAP_PRIORITY_ORDER[b.priority])
+            .map((gap) => ({
+              id: gap.id,
+              node: <GapCard gap={gap} disposition={undefined} guidelines={[]} />,
+            })),
+        })
+      }
+    />
+  )
+
   return (
     // The bottom padding clears the sticky bar, which is in flow and would
     // otherwise sit on top of the last thing in the tallest column.
@@ -750,9 +872,27 @@ export function ConsultationReview() {
           data-tour="transcript"
           data-print="hide"
         >
-          <h2 id="transcript-heading" className="mb-2 text-sm font-semibold">
-            Transcript
-          </h2>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 id="transcript-heading" className="text-sm font-semibold">
+              Transcript
+            </h2>
+            {/*
+              The way back into the conversation once it is settled. The column
+              is 380px and the transcript is the one thing on this page that is
+              read rather than scanned, so it gets a surface of its own on
+              demand instead of a taller column nobody asked for.
+            */}
+            {detail.transcript && (
+              <Button
+                size="sm"
+                variant="neutral"
+                icon={<Maximize2 aria-hidden className="size-3.5" />}
+                onClick={() => setShowConversation(true)}
+              >
+                View Conversation
+              </Button>
+            )}
+          </div>
           {/* The column itself scrolls from `lg` up, so the inner cap is
               released there rather than nesting one scrollbar inside another.
               Below `lg` the column is uncapped and this is what stops a long
@@ -778,47 +918,7 @@ export function ConsultationReview() {
                 with the ground. That is `surface` here and `sunken` in the
                 live pane, because the two grounds are the other way round.
               */}
-              <ol className="flex flex-col gap-3">
-                {keyedTurns.map((turn, index) => {
-                  const opensTurn = keyedTurns[index - 1]?.speaker !== turn.speaker
-                  const doctor = turn.speaker === 'doctor'
-                  return (
-                    <li
-                      key={turn.key}
-                      className={cn(
-                        // Same two-sided rule as the live pane, and the same
-                        // reason for the two caps: this column is 380px here
-                        // and fluid during capture, so 62% would break a line
-                        // every three words in the narrow case.
-                        'flex flex-col max-w-[88%] @lg:max-w-[62%]',
-                        doctor ? 'items-start self-start' : 'items-end self-end',
-                        !opensTurn && '-mt-2',
-                      )}
-                    >
-                      {opensTurn && (
-                        <span className="mb-1 block">
-                          <span
-                            className={cn(
-                              'rounded-pill px-2 py-0.5 text-2xs font-medium',
-                              doctor ? 'bg-surface text-ink-muted' : 'bg-accent-soft text-accent',
-                            )}
-                          >
-                            {doctor ? 'Doctor' : 'Patient'}
-                          </span>
-                        </span>
-                      )}
-                      <p
-                        className={cn(
-                          'rounded-card px-3 py-2 text-ink text-sm leading-relaxed',
-                          doctor ? 'bg-surface' : 'bg-accent-soft',
-                        )}
-                      >
-                        {turn.text}
-                      </p>
-                    </li>
-                  )
-                })}
-              </ol>
+              <SettledConversation turns={keyedTurns} />
             </div>
           ) : (
             <Card className="flex flex-col p-4">
@@ -835,7 +935,19 @@ export function ConsultationReview() {
                 onCapture={(transcript) => capture.mutate(transcript)}
                 onLiveSegments={live.absorb}
                 onCaptureModeChange={(captureMode: CaptureMode) => patch.mutate({ captureMode })}
+                /*
+                 * Deliberately does not open the theatre. This fires for
+                 * press-to-record as well, which has no live conversation and
+                 * so no dialog to put the safety panel in: opening from here
+                 * withheld the companion column during a manual recording and
+                 * left the prompter nowhere at all. `AmbientCapture` asks for
+                 * the theatre itself, when its own session starts.
+                 */
                 onCaptureBusyChange={setCaptureBusy}
+                conversationExpanded={conversationExpanded}
+                onConversationExpandedChange={setConversationExpanded}
+                prompter={livePrompter}
+                patientName={detail.patient?.name ?? undefined}
               />
             </Card>
           )}
@@ -851,22 +963,9 @@ export function ConsultationReview() {
           scrolling" can mean anything there. That is the rule the rail
           followed and the reason it never became a tab.
         */}
-        {captureBusy && (
+        {captureBusy && !conversationExpanded && (
           <section className="order-1 min-w-0 lg:sticky lg:top-6 lg:order-2 lg:max-h-[calc(100vh-26rem)] lg:overflow-y-auto lg:pr-1">
-            <LivePrompter
-              live={live.panes}
-              onShowAll={() =>
-                setOverflow({
-                  title: 'Missing Information',
-                  findings: [...live.panes.gaps]
-                    .sort((a, b) => GAP_PRIORITY_ORDER[a.priority] - GAP_PRIORITY_ORDER[b.priority])
-                    .map((gap) => ({
-                      id: gap.id,
-                      node: <GapCard gap={gap} disposition={undefined} guidelines={[]} />,
-                    })),
-                })
-              }
-            />
+            {livePrompter}
           </section>
         )}
 
@@ -1101,6 +1200,41 @@ export function ConsultationReview() {
               {overflow.findings.map((finding) => (
                 <div key={finding.id}>{finding.node}</div>
               ))}
+            </div>
+          </div>
+        )}
+      </dialog>
+
+      {/*
+        The settled conversation on a surface worth reading it on (#287).
+
+        Read only, deliberately. The transcript is the record the note was
+        written from, and this is a way to go back to it, not a second place to
+        edit it.
+      */}
+      <dialog
+        ref={conversationDialog}
+        data-print="hide"
+        onClose={() => setShowConversation(false)}
+        aria-labelledby="conversation-title"
+        className="glass-panel m-auto h-[min(85vh,48rem)] w-[min(56rem,calc(100vw-2rem))] max-w-none rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
+      >
+        {showConversation && (
+          <div className="flex h-full flex-col">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-6 py-4">
+              <h2 id="conversation-title" className="font-display text-lg font-semibold">
+                Conversation
+                <span className="ml-2 text-sm font-normal text-ink-muted">
+                  {count(keyedTurns.length, 'turn')}
+                </span>
+              </h2>
+              {/* First in the DOM, and so the one the open effect focuses. */}
+              <Button size="sm" variant="neutral" onClick={() => setShowConversation(false)}>
+                Close
+              </Button>
+            </div>
+            <div className="@container min-h-0 flex-1 overflow-y-auto bg-sunken p-6">
+              <SettledConversation turns={keyedTurns} />
             </div>
           </div>
         )}
