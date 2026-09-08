@@ -515,14 +515,14 @@ describe('analyse output', () => {
           citations: [{ guidelineId: 'g1' }],
         },
       ],
-      suppressedSuggestionIds: ['unsafe-prescribing'],
+      suppressedSuggestionIds: ['model-suggestion-1'],
     })
 
     await call('POST', '/api/consultations/c1/analyze')
 
     const completed = audits.find((audit) => audit.action === 'consultation.analysis_completed')
     expect(completed?.metadata).toMatchObject({
-      suppressedSuggestionIds: ['unsafe-prescribing'],
+      suppressedSuggestionIds: ['model-suggestion-1'],
     })
     expect(JSON.stringify(completed?.metadata)).not.toContain('Prescribe amoxicillin')
     expect(JSON.stringify(completed?.metadata)).not.toContain('Ahmad')

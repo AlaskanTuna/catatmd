@@ -94,8 +94,28 @@ describe('generateSuggestions — call shape', () => {
           citations: [{ guidelineId: firstCorpusId }],
         },
       ],
-      suppressedSuggestionIds: ['unsafe-prescribing'],
+      suppressedSuggestionIds: ['model-suggestion-1'],
     })
+  })
+
+  it('replaces a rejected model-authored id with a server-generated suppression id', async () => {
+    const unsafeId = '[PATIENT_1] reports burning urination and a new fever.'
+    generate.mockResolvedValue({
+      outOfScope: false,
+      redFlags: [],
+      suggestions: [
+        {
+          id: unsafeId,
+          text: 'Prescribe nitrofurantoin.',
+          citations: [{ guidelineId: firstCorpusId }],
+        },
+      ],
+    })
+
+    const result = await generateSuggestions(content)
+
+    expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1'])
+    expect(JSON.stringify(result.suppressedSuggestionIds)).not.toContain(unsafeId)
   })
 })
 

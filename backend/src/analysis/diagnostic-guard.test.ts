@@ -38,6 +38,22 @@ describe('stripDiagnosticProse (docs/prd.md §10)', () => {
     expect(result.note.plan).toBe('P')
   })
 
+  it.each(['This is pneumonia.', 'Findings are consistent with acute cystitis.'])(
+    'recognises the diagnostic conclusion %s',
+    (assessment) => {
+      const result = stripDiagnosticProse(note(assessment), [])
+
+      expect(result.note.assessment).toBe('')
+      expect(result.suppressedFieldIds).toEqual(['note.assessment'])
+    },
+  )
+
+  it('does not treat ordinary non-clinical phrasing as a diagnostic conclusion', () => {
+    const input = note('This is important to clarify at follow-up.')
+
+    expect(stripDiagnosticProse(input, []).note.assessment).toBe(input.assessment)
+  })
+
   it('drops a gap whose rationale implies a differential, keeping the others', () => {
     const result = stripDiagnosticProse(note(''), [
       gap('g1', 'Any exposure history?', 'Differential includes bacterial pharyngitis.'),

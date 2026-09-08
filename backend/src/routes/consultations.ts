@@ -49,6 +49,7 @@ import { logger, timeStage } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
 import { evaluateRedFlags, mergeRedFlags } from '../redflags/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
+import type { SuppressedSuggestionId } from '../suggestions/safety.js'
 
 export const consultationsRouter = Router()
 
@@ -369,7 +370,7 @@ async function runAnalysis(
   analysis: ConsultationAnalysis
   detected: readonly string[]
   discardedFieldIds: readonly string[]
-  suppressedSuggestionIds: readonly string[]
+  suppressedSuggestionIds: readonly SuppressedSuggestionId[]
 }> {
   const { text, vault, detected } = await timeStage('deidentification', () =>
     deidentifyTranscript(transcript),
@@ -675,7 +676,7 @@ consultationsRouter.post('/analyze-ephemeral', async (req, res) => {
   const profile = getClinicalProfile(body.data.profileId ?? DEFAULT_PROFILE_ID)
 
   try {
-    const { analysis, detected, discardedFieldIds } = await runAnalysis(
+    const { analysis, detected, discardedFieldIds, suppressedSuggestionIds } = await runAnalysis(
       body.data.transcript,
       profile,
     )
@@ -687,6 +688,7 @@ consultationsRouter.post('/analyze-ephemeral', async (req, res) => {
       metadata: {
         detected,
         discardedFieldIds,
+        suppressedSuggestionIds,
         profileId: profile.id,
         versions: {
           provider: llm.provider,

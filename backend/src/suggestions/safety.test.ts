@@ -29,11 +29,17 @@ describe('filterUnsafeModelSuggestions', () => {
   it('suppresses diagnostic conclusions in suggestion text', () => {
     const result = filterUnsafeModelSuggestions([
       suggestion('diagnostic', 'Diagnosis: acute bronchitis.'),
+      suggestion('asserted-diagnostic', 'This is pneumonia.'),
+      suggestion('consistent-diagnostic', 'Findings are consistent with acute cystitis.'),
       suggestion('safe', 'Consider documenting the review interval.'),
     ])
 
     expect(result.suggestions.map(({ id }) => id)).toEqual(['safe'])
-    expect(result.suppressedSuggestionIds).toEqual(['diagnostic'])
+    expect(result.suppressedSuggestionIds).toEqual([
+      'model-suggestion-1',
+      'model-suggestion-2',
+      'model-suggestion-3',
+    ])
   })
 
   it('suppresses diagnostic language in every defined citation quote', () => {
@@ -46,7 +52,19 @@ describe('filterUnsafeModelSuggestions', () => {
     ])
 
     expect(result.suggestions.map(({ id }) => id)).toEqual(['safe'])
-    expect(result.suppressedSuggestionIds).toEqual(['quoted-diagnostic'])
+    expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1'])
+  })
+
+  it.each([
+    'Prescribe nitrofurantoin.',
+    'Start aspirin.',
+    'Give insulin.',
+    'The clinician should administer salbutamol.',
+  ])('suppresses the autonomous medication order %s', (text) => {
+    const result = filterUnsafeModelSuggestions([suggestion('model-authored-id', text)])
+
+    expect(result.suggestions).toEqual([])
+    expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1'])
   })
 
   it('suppresses autonomous medication orders and bare dose regimens', () => {
@@ -57,7 +75,7 @@ describe('filterUnsafeModelSuggestions', () => {
     ])
 
     expect(result.suggestions.map(({ id }) => id)).toEqual(['safe'])
-    expect(result.suppressedSuggestionIds).toEqual(['order', 'regimen'])
+    expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1', 'model-suggestion-2'])
   })
 
   it('suppresses named medication orders without a dose', () => {
@@ -67,7 +85,22 @@ describe('filterUnsafeModelSuggestions', () => {
     ])
 
     expect(result.suggestions.map(({ id }) => id)).toEqual(['safe'])
-    expect(result.suppressedSuggestionIds).toEqual(['named-order'])
+    expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1'])
+  })
+
+  it.each([
+    'Do not prescribe antibiotics routinely.',
+    'Consider prescribing antibiotics only if indicated.',
+    'Do not start aspirin routinely.',
+    'Consider starting insulin only if indicated.',
+    'The clinician should not administer salbutamol routinely.',
+    'Prescribing antibiotics is not routinely recommended.',
+    'What dose of amoxicillin 500 mg is the patient currently taking?',
+  ])('retains the non-autonomous medication wording %s', (text) => {
+    const result = filterUnsafeModelSuggestions([suggestion('safe-model-id', text)])
+
+    expect(result.suggestions.map(({ id }) => id)).toEqual(['safe-model-id'])
+    expect(result.suppressedSuggestionIds).toEqual([])
   })
 
   it('suppresses an unsafe citation quote without recording its prose', () => {
@@ -76,7 +109,15 @@ describe('filterUnsafeModelSuggestions', () => {
     ])
 
     expect(result.suggestions).toEqual([])
-    expect(result.suppressedSuggestionIds).toEqual(['quoted-regimen'])
+    expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1'])
     expect(JSON.stringify(result)).not.toContain('500 mg')
+  })
+
+  it('never carries a model-authored identifier into suppression metadata', () => {
+    const unsafeId = '[PATIENT_1] reports burning urination and a new fever.'
+    const result = filterUnsafeModelSuggestions([suggestion(unsafeId, 'Prescribe nitrofurantoin.')])
+
+    expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1'])
+    expect(JSON.stringify(result.suppressedSuggestionIds)).not.toContain(unsafeId)
   })
 })

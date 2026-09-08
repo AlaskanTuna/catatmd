@@ -11,6 +11,8 @@ const DIAGNOSTIC_PHRASING: readonly RegExp[] = [
   /\bimpression\s*:/i,
   /\bdifferential\b/i,
   /\bconsistent with a diagnosis\b/i,
+  /\b(?:findings?|presentation|clinical picture)\s+(?:is|are)\s+(?:most\s+)?(?:consistent with|suggestive of|indicative of)\b/i,
+  /\b(?:this|it)\s+(?:is|appears to be|represents)\s+(?:an?\s+)?(?:case of\s+)?(?:acute\s+|chronic\s+)?(?:[a-z]+(?:itis|osis|emia)|[a-z][a-z -]*(?:infection|syndrome|disease)|pneumonia|influenza|covid(?:-19)?|cancer|asthma|copd|urti|uti)\b/i,
 ]
 
 export function containsDiagnosticProse(text: string): boolean {
