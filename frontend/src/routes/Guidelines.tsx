@@ -1,4 +1,4 @@
-import type { GuidelineChunk } from '@shared/types'
+import type { GuidelineChunk, GuidelineDocument } from '@shared/types'
 import { useQuery } from '@tanstack/react-query'
 import { ExternalLink, Search, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -53,12 +53,33 @@ function matches(guideline: GuidelineChunk, query: string) {
     .every((term) => haystack.includes(term))
 }
 
+function matchesDocument(document: GuidelineDocument, query: string) {
+  const haystack = `${document.title} ${document.publisher}`.toLowerCase()
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((term) => haystack.includes(term))
+}
+
+const formatIngested = (value: Date) =>
+  new Intl.DateTimeFormat('en-MY', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(value)
+
 export function Guidelines() {
   const guidelines = useQuery({ queryKey: ['guidelines'], queryFn: api.guidelines })
+  const documents = useQuery({
+    queryKey: ['guideline-documents'],
+    queryFn: api.guidelineDocuments,
+  })
   const [query, setQuery] = useState('')
   const [publisher, setPublisher] = useState(ALL_PUBLISHERS)
 
   const all = useMemo(() => guidelines.data ?? [], [guidelines.data])
+  const allDocuments = useMemo(() => documents.data ?? [], [documents.data])
 
   const publishers = useMemo(
     () => [
@@ -82,6 +103,13 @@ export function Guidelines() {
 
   const groups = groupByPublisher(filtered)
   const filtering = query.trim() !== '' || publisher !== ALL_PUBLISHERS
+
+  /* The one search box covers both lists: a reader checking where a cited
+     span could have come from is asking the same question of each. */
+  const filteredDocuments = useMemo(
+    () => allDocuments.filter((document) => matchesDocument(document, query)),
+    [allDocuments, query],
+  )
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -227,6 +255,63 @@ export function Guidelines() {
           ))}
         </>
       )}
+
+      <section className="mt-10" aria-labelledby="cpg-documents-heading">
+        <h2 id="cpg-documents-heading" className="text-base font-semibold">
+          Malaysian Clinical Practice Guidelines
+        </h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          Retrieved per consultation from the ingested CPG library; the assistant may cite a span
+          only when it was retrieved for that consultation.
+        </p>
+
+        {documents.isPending && (
+          <div className="mt-4 flex flex-col gap-2">
+            {[0, 1].map((key) => (
+              <Skeleton key={key} className="h-20 w-full rounded-card" />
+            ))}
+          </div>
+        )}
+
+        {documents.data && allDocuments.length === 0 && (
+          <p className="mt-4 text-sm text-ink-muted">No CPG documents ingested yet.</p>
+        )}
+
+        {documents.data && allDocuments.length > 0 && filteredDocuments.length === 0 && (
+          <p className="mt-4 text-sm text-ink-muted">No CPG documents match that search.</p>
+        )}
+
+        {filteredDocuments.length > 0 && (
+          <div className="mt-4 flex flex-col gap-2">
+            {filteredDocuments.map((document) => (
+              <Card key={document.id} className="p-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h3 className="font-semibold leading-snug">{document.title}</h3>
+                  <span className="text-sm text-ink-muted">{document.year}</span>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <span className="text-2xs text-ink-muted">{document.publisher}</span>
+                  <span className="text-2xs text-ink-muted">{document.pageCount} pages</span>
+                  <span className="text-2xs text-ink-muted">{document.chunkCount} chunks</span>
+                  <span className="text-2xs text-ink-muted">
+                    Ingested {formatIngested(document.ingestedAt)}
+                  </span>
+                  <a
+                    href={document.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-accent transition-colors hover:text-accent-hover"
+                  >
+                    Source
+                    <ExternalLink aria-hidden className="size-3.5" />
+                  </a>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   )
 }
