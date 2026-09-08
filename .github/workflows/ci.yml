@@ -32,7 +32,9 @@ jobs:
     # which is the point of them. It is never the shared Supabase instance.
     services:
       postgres:
-        image: postgres:16-alpine
+        # pgvector's official image: the guideline retrieval migration runs
+        # CREATE EXTENSION vector, which stock postgres cannot satisfy (#304).
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci
