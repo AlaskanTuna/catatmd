@@ -71,6 +71,21 @@ const EnvSchema = z.object({
   SONIOX_REGION: LiveAsrRegionSchema.default('us'),
   SONIOX_RT_MODEL: z.string().default('stt-rt-v5'),
 
+  // How long a consultation recording is kept so the doctor can check what the
+  // recogniser wrote (#293).
+  //
+  // **Deliberately without a default, and the feature is off while it is
+  // unset.** security.md forbids inventing a retention period: the clinic data
+  // controller adopts one, and substituting a number here would turn a decision
+  // nobody made into the behaviour of the system. Absent means no recording is
+  // ever stored, which is the safe direction to fail for the one kind of PHI
+  // that cannot be de-identified.
+  //
+  // No upper bound is imposed for the same reason. The number is the
+  // controller's to choose; .env.example carries the market comparison rather
+  // than a rule.
+  AUDIO_RETENTION_HOURS: z.coerce.number().int().positive().optional(),
+
   // Verbosity only. No level widens what may be written: redaction in
   // lib/logger.ts is unconditional, so there is no debug flag that unlocks raw
   // content (GitHub issue #15, non-goals).

@@ -21,6 +21,23 @@ vi.mock('../demo/DemoTour.js', () => ({
   useDemoTour: () => ({ ephemeral: null, updateEphemeral: vi.fn() }),
 }))
 
+/*
+ * Hoisted out of the mock factory rather than written inline in it (#293).
+ *
+ * Biome's TSX parser cannot parse an arrow function inside this particular
+ * object literal: the `ApiError: class extends Error {}` entry below makes it
+ * re-read the whole thing as a destructuring pattern, and it then reports a
+ * syntax error on that line rather than on the arrow. Defining the two mocks
+ * here keeps the factory arrow-free and the file parseable.
+ */
+const audioApi = vi.hoisted(() => ({
+  // The review page looks for a stored recording on mount. Null is the
+  // ordinary answer for every consultation in these fixtures: none was
+  // recorded, so none of them offers playback.
+  get: vi.fn(() => Promise.resolve(null)),
+  put: vi.fn(() => Promise.resolve({ expiresAt: new Date() })),
+}))
+
 vi.mock('../lib/api.js', () => ({
   ApiError: class extends Error {},
   api: {
@@ -29,6 +46,8 @@ vi.mock('../lib/api.js', () => ({
     patch: vi.fn(),
     analyze: vi.fn(),
     approve: vi.fn(),
+    getConsultationAudio: audioApi.get,
+    putConsultationAudio: audioApi.put,
   },
 }))
 

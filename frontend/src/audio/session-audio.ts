@@ -9,7 +9,12 @@
  * and sanctions in-memory state that dies on reload. So this is a module
  * variable and an object URL, deliberately, and
  * `no-stray-audio-persistence.test.ts` fails the build if that ever changes.
- * Nothing here uploads, and playback is a local blob, so this adds no egress.
+ *
+ * **This module still writes nothing to disk, but the recording is no longer
+ * browser-only.** `use-transcript-audio.ts` uploads it to our own API, which
+ * holds it for the configured retention window (#293, `backend/src/audio/`).
+ * So this is a cache in front of that store, not the only copy, and the claim
+ * that playback adds no egress is no longer true of the feature as a whole.
  *
  * Module scope rather than component state because `CapturePanel` unmounts the
  * moment a transcript exists, which is exactly when the review that needs the
@@ -20,7 +25,11 @@
  *
  * **One recording at a time.** A consultation is minutes of audio, and holding
  * several would be a real amount of memory for no gain: a doctor reviews one
- * consultation at a time. Keeping a second releases the first.
+ * consultation at a time. Keeping a second releases the first, which is the
+ * only way anything is released: there is no explicit drop, because the store
+ * is a cache in front of `GET /api/consultations/:id/audio` rather than the
+ * only copy. What actually destroys a recording is erasure or the retention
+ * window, both server-side (`backend/src/audio/`).
  */
 
 let held: { consultationId: string; url: string } | undefined
@@ -41,18 +50,6 @@ export function keepRecording(consultationId: string, blob: Blob): void {
 /** The object URL for this consultation's audio, if it is the one being held. */
 export function recordingUrl(consultationId: string): string | undefined {
   return held?.consultationId === consultationId ? held.url : undefined
-}
-
-/**
- * Releases the recording, if the named consultation is the one holding it.
- *
- * Called when the note is approved, when the consultation is erased, and on
- * unmount. Revoking matters: an object URL keeps its blob alive for the life of
- * the document, so dropping the reference without revoking would leak the whole
- * recording until the tab closed.
- */
-export function dropRecording(consultationId: string): void {
-  if (held?.consultationId === consultationId) release()
 }
 
 function release(): void {

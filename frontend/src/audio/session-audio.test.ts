@@ -65,33 +65,6 @@ describe('session audio', () => {
     expect(recordingUrl('c2')).toBe('blob:test/2')
   })
 
-  it('revokes on drop, so approval actually releases the audio', async () => {
-    const { dropRecording, keepRecording, recordingUrl } = await freshStore()
-    keepRecording('c1', audio())
-    dropRecording('c1')
-
-    expect(revoked).toEqual(['blob:test/1'])
-    expect(recordingUrl('c1')).toBeUndefined()
-  })
-
-  it('ignores a drop naming a different consultation', async () => {
-    const { dropRecording, keepRecording, recordingUrl } = await freshStore()
-    keepRecording('c1', audio())
-    dropRecording('c2')
-
-    expect(revoked).toEqual([])
-    expect(recordingUrl('c1')).toBe('blob:test/1')
-  })
-
-  it('is safe to drop twice', async () => {
-    const { dropRecording, keepRecording } = await freshStore()
-    keepRecording('c1', audio())
-    dropRecording('c1')
-    dropRecording('c1')
-
-    expect(revoked).toEqual(['blob:test/1'])
-  })
-
   it('replacing the same consultation still revokes the old url', async () => {
     const { keepRecording, recordingUrl } = await freshStore()
     keepRecording('c1', audio())

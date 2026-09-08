@@ -120,6 +120,23 @@ export type ConsultationAuditEvent =
    */
   | { action: 'consultation.renamed' }
   | { action: 'consultation.erased' }
+  /**
+   * The consultation recording (#293), which is PHI of a kind no other event
+   * here touches: a voice cannot be de-identified, so these rows are the only
+   * server-side record that it existed and when it stopped existing.
+   *
+   * `bytes` and `retentionHours` are configuration and size, never content.
+   * There is deliberately no event for *playing* a recording back beyond the
+   * served row: a doctor checking their own consultation repeatedly is the
+   * behaviour this feature exists to encourage, not something to make them
+   * feel watched for.
+   */
+  | {
+      action: 'consultation.audio_stored'
+      metadata: { bytes: number; retentionHours: number }
+    }
+  | { action: 'consultation.audio_served' }
+  | { action: 'consultation.audio_purged' }
   | { action: 'redflag.acknowledged'; metadata: { redFlagId: string } }
   | { action: 'gap.reviewed'; metadata: { gapId: string } }
   /*
@@ -213,6 +230,23 @@ export type EphemeralAuditEvent =
     }
 
 /**
+ * The retention sweep, which is the first event here with no actor (#293).
+ *
+ * **That absence is the honest shape, not an oversight.** Every other event
+ * records something a person did to a record they can reach. This one records a
+ * clock closing a window across every doctor's recordings at once, and
+ * attributing it to whoever happened to trigger the sweep would put one
+ * doctor's id against the destruction of another's audio. `computeAuditHash`
+ * already folds a missing actor in as an empty string, so the chain is
+ * unaffected.
+ *
+ * It exists because the retention period is only a control if something
+ * enforces it and the enforcement is visible. `count` is a number of rows,
+ * never which ones.
+ */
+export type SystemAuditEvent = { action: 'audio.swept'; metadata: { count: number } }
+
+/**
  * Short failure categories for `asr.hosted_relay_failed`. A closed set, never
  * the raw error text: on this path an upstream response body is a transcript.
  */
@@ -294,6 +328,7 @@ export type AuditEventInput =
   | SettingsAuditEvent
   | EphemeralAuditEvent
   | AsrAuditEvent
+  | SystemAuditEvent
 
 /**
  * How many times an append may lose the race for the chain head before giving
@@ -340,9 +375,14 @@ export async function recordAuditEvent(
     | (PatientAuditEvent & { actorId: string })
     | (SettingsAuditEvent & { actorId: string })
     | (EphemeralAuditEvent & { actorId: string })
-    | (AsrAuditEvent & { actorId: string }),
+    | (AsrAuditEvent & { actorId: string })
+    // No `actorId`: see `SystemAuditEvent`. This is the clock acting, not a person.
+    | SystemAuditEvent,
 ): Promise<void> {
-  const { action, actorId } = event
+  const { action } = event
+  // Read the same way `consultationId` is, because the retention sweep carries
+  // neither: it is the clock acting rather than a person (see SystemAuditEvent).
+  const actorId = 'actorId' in event ? event.actorId : undefined
   const consultationId = 'consultationId' in event ? event.consultationId : undefined
   const metadata = 'metadata' in event ? event.metadata : undefined
 
@@ -359,7 +399,10 @@ export async function recordAuditEvent(
           prevHash: head?.hash ?? AUDIT_CHAIN_GENESIS,
           id: randomUUID(),
           action,
-          actorId,
+          // `?? null` for the sweep, which has no actor. `computeAuditHash`
+          // folds null and undefined to the same empty string, so this changes
+          // no existing row's hash.
+          actorId: actorId ?? null,
           consultationId: consultationId ?? null,
           createdAt: new Date(),
         }
