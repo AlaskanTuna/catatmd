@@ -13,12 +13,16 @@ const EMBEDDING_QUERY_MAX_CHARS = 6000
 /**
  * Relevance floors, applied per leg before fusion. Without them retrieval
  * always returns `limit` chunks, relevant or not, and the citation constraint
- * would then guarantee only that an id exists, not that it applies. Cosine
- * similarity below 0.4 on text-embedding-v4 is background noise between
- * unrelated clinical prose; ts_rank_cd below 0.05 is a single incidental term.
+ * would then guarantee only that an id exists, not that it applies.
+ *
+ * Calibrated 09/09/26 against the four scoped CPGs with three fixture
+ * transcripts: whole-transcript cosine on text-embedding-v4 sits at 0.41 to
+ * 0.52 for on-topic spans and below 0.42 for foreword and author pages;
+ * ts_rank_cd over the OR query steps by roughly 0.1 per matching term, so 0.2
+ * demands at least two of the transcript's terms in the span.
  */
-const SEMANTIC_FLOOR = 0.4
-const LEXICAL_FLOOR = 0.05
+const SEMANTIC_FLOOR = 0.42
+const LEXICAL_FLOOR = 0.2
 
 export interface RetrievalOptions {
   /** Only documents tagged with this profile in the manifest are searched. */

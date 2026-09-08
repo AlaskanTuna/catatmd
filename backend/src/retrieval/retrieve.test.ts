@@ -161,8 +161,8 @@ describe('retrieveGuidelines', () => {
     queryRaw
       .mockResolvedValueOnce([{ count: 3 }])
       .mockResolvedValueOnce([
-        { id: 'lex1', score: 0.2 },
-        { id: 'weak-lex', score: 0.01 },
+        { id: 'lex1', score: 0.4 },
+        { id: 'weak-lex', score: 0.1 },
       ])
       .mockResolvedValueOnce([
         { id: 'sem1', score: 0.62 },
@@ -181,8 +181,8 @@ describe('retrieveGuidelines', () => {
   it('returns nothing when every candidate is below the floors', async () => {
     queryRaw
       .mockResolvedValueOnce([{ count: 3 }])
-      .mockResolvedValueOnce([{ id: 'weak-lex', score: 0.01 }])
-      .mockResolvedValueOnce([{ id: 'weak-sem', score: 0.2 }])
+      .mockResolvedValueOnce([{ id: 'weak-lex', score: 0.1 }])
+      .mockResolvedValueOnce([{ id: 'weak-sem', score: 0.3 }])
     embed.mockResolvedValueOnce([[0.1, 0.2, 0.3]])
 
     const result = await retrieveGuidelines(content, { profileId: 'adult-acute-urti' })
