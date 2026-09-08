@@ -1,4 +1,4 @@
-import type { Transcript } from '@shared/types'
+import type { Transcript, TranscriptTurn } from '@shared/types'
 import type { ProfileId } from '../clinical-profiles/types.js'
 import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
 import { type Expansion, expandMishears, isRecorded, originalSpan } from './mishears.js'
@@ -13,6 +13,14 @@ import type { RedFlagTrigger } from './types.js'
  *
  * Bumped whenever a trigger is added, removed, or its matcher, severity or
  * cited guidance changes. Recorded with every analysis (docs/trd.md §15).
+ * **v11 adds a conditional-advice suppression to the span-returning paths
+ * and changes no trigger, no severity, no label and no cited guidance.** A
+ * doctor's closing safety-netting advice is a statement, so `asserts()`
+ * read it as asserting every symptom it names ("come back if you become
+ * breathless"), and advice appended to nearly every consultation re-raised
+ * findings the patient had already denied. The suppression reads the
+ * second-person advisory shape of the sentence the match sits in;
+ * `safety-netting.test.ts` pins the boundary.
  * **v10 adds matchers to four triggers and changes no severity, no label and
  * no cited guidance.** Real ambient QA on 07/09/26 recorded a patient saying
  * "this morning I was coughing out blood" against which this engine raised
@@ -33,8 +41,8 @@ import type { RedFlagTrigger } from './types.js'
  * analysis and this list can otherwise disagree about what backed a hit.
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v10',
-  effectiveDate: '2026-09-07',
+  id: 'redflag-list-v11',
+  effectiveDate: '2026-09-08',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -159,6 +167,88 @@ const isNegated = (text: string, matchIndex: number): boolean => {
 }
 
 /**
+ * The conditional-advice markers, in the English and Malay a Malaysian
+ * consultation closes with: a second-person conditional ("if you", "kalau
+ * awak"), or a return instruction whose condition follows the verb ("come
+ * back if", "datang balik kalau"). Tested only against the sentence up to
+ * the match, so a marker that follows the symptom cannot suppress it.
+ */
+const SAFETY_NETTING =
+  /\b(?:if|should|in\s+case)\s+you\b|\b(?:come\s+back|go\s+back|return\s+(?:to|here|straight|immediately)|go\s+to\s+(?:the\s+)?(?:hospital|emergency|ed|clinic|klinik)|seek\s+(?:help|care|attention|treatment)|call\s+(?:me|us|the\s+clinic)|see\s+a\s+doctor)\b[^.!?]*?\b(?:if|when|should)\b|\b(?:kalau|jika|sekiranya|jikalau)\s+(?:awak|anda|kamu|encik|puan|cik|you)\b|\bdatang\s+(?:balik|semula)\b[^.!?]*?\b(?:kalau|jika)\b/i
+
+/**
+ * A clause reads as a condition when a conditional head precedes the match
+ * inside it ("go to hospital if you cannot breathe"), or when it continues a
+ * list of conditions with "or" ("or you cannot swallow"). "and" continues
+ * one only when it brings a head of its own ("and if the fever persists"):
+ * "and you look breathless" is an observation appended to advice, and stays
+ * a flag.
+ */
+const CLAUSE_IS_CONDITION =
+  /^\s*(?:or|atau)\b|\b(?:if|when|should|in\s+case|unless|kalau|jika|sekiranya|jikalau)\b/i
+
+/**
+ * Words that mark the clause holding the match as a report of the present
+ * rather than a condition for the future: a first person ("now I cannot
+ * swallow"), or a present-tense anchor ("you look breathless right now").
+ * Either one keeps the flag, whatever precedes it in the sentence.
+ */
+const CLAUSE_REPORTS_PRESENT =
+  /\b(?:i|i'm|i've|i\s+am|my|me|saya|aku|now|right\s+now|currently|at\s+the\s+moment|already|since|today|tonight|this\s+morning|yesterday|sekarang|sudah|dah|tadi|semalam)\b/i
+
+/**
+ * How far back a marker may sit from the match. Recorded transcripts can
+ * arrive without terminal punctuation, and without a cap one "come back if"
+ * would govern an entire unpunctuated turn.
+ */
+const SAFETY_NETTING_WINDOW = 120
+
+/**
+ * A doctor's closing advice names the watched symptoms without asserting
+ * them: "come back if you become breathless" is conditional and addressed
+ * to the patient, and advice of this shape ends nearly every consultation,
+ * so the mention alone cannot stand for the finding.
+ *
+ * Three things bound it, each answering a false negative review found. The
+ * window is the sentence (a semicolon ends one), capped, so an unpunctuated
+ * recording cannot hand one marker the whole turn. The clause holding the
+ * match must itself read as a condition and carry no first-person or
+ * present-tense anchor, which is what separates "or you cannot swallow"
+ * from ", and you look breathless" and from ", and now I cannot swallow".
+ * And the caller keeps scanning after a suppressed match, so a genuine
+ * second mention in the same turn still fires.
+ *
+ * The `speaker === 'doctor'` gate is not label-safe on its own: a turn
+ * mislabelled as the doctor could gain a suppression here, which is why the
+ * clause tests do not depend on the label at all. The residue that remains
+ * is a mislabelled patient or carer reporting in the second or third person
+ * inside a conditional clause with no present-tense anchor, and an
+ * unpunctuated recording whose report shares one clause with the advice.
+ * Both are accepted and pinned in `safety-netting.test.ts`.
+ */
+const isSafetyNetting = (turn: TranscriptTurn, matchIndex: number): boolean => {
+  if (turn.speaker !== 'doctor') return false
+  const text = turn.text
+  const sentenceStart =
+    Math.max(
+      text.lastIndexOf('.', matchIndex - 1),
+      text.lastIndexOf('!', matchIndex - 1),
+      text.lastIndexOf('?', matchIndex - 1),
+      text.lastIndexOf(';', matchIndex - 1),
+      matchIndex - SAFETY_NETTING_WINDOW - 1,
+    ) + 1
+  const prefix = text.slice(sentenceStart, matchIndex)
+  if (!SAFETY_NETTING.test(prefix)) return false
+  const clauseStart = sentenceStart + prefix.lastIndexOf(',') + 1
+  const rest = /[.!?,;]/.exec(text.slice(matchIndex))
+  const clauseEnd = rest === null ? text.length : matchIndex + rest.index
+  return (
+    CLAUSE_IS_CONDITION.test(text.slice(clauseStart, matchIndex)) &&
+    !CLAUSE_REPORTS_PRESENT.test(text.slice(clauseStart, clauseEnd))
+  )
+}
+
+/**
  * A span that carries its own negator asserts the inability it names:
  * "cannot swallow", "tak boleh telan", "kencing tak keluar". Around such a
  * span, negation words flip meaning rather than deny it. A negator before it
@@ -209,19 +299,32 @@ const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string |
 
     for (const pattern of patterns) {
       for (const pass of passes) {
-        const match = pattern.exec(pass.text)
-        if (match === null) continue
-        const span =
-          pass.expansion === null
-            ? match[0]
-            : originalSpan(turn.text, pass.expansion, match.index, match[0].length)
-        const at =
-          pass.expansion === null
-            ? match.index
-            : (pass.expansion.origin[match.index] ?? match.index)
+        // Global clone so a match suppressed as safety-netting advice does not
+        // spend the pattern's only exec on this turn (a later genuine mention
+        // in the same turn must still be seen).
+        const scanner = new RegExp(
+          pattern.source,
+          pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
+        )
+        let match = scanner.exec(pass.text)
+        while (match !== null) {
+          const span =
+            pass.expansion === null
+              ? match[0]
+              : originalSpan(turn.text, pass.expansion, match.index, match[0].length)
+          const at =
+            pass.expansion === null
+              ? match.index
+              : (pass.expansion.origin[match.index] ?? match.index)
 
-        if (SPAN_CARRIES_NEGATOR.test(match[0])) return span
-        if (asserts(transcript, index) && !isNegated(turn.text, at)) return span
+          if (!isSafetyNetting(turn, at)) {
+            if (SPAN_CARRIES_NEGATOR.test(match[0])) return span
+            if (asserts(transcript, index) && !isNegated(turn.text, at)) return span
+            break
+          }
+          if (match[0].length === 0) scanner.lastIndex += 1
+          match = scanner.exec(pass.text)
+        }
       }
     }
   }

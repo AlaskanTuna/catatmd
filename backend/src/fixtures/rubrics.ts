@@ -64,7 +64,10 @@ export const FIXTURE_RUBRICS: readonly FixtureRubric[] = [
      *
      * `significant-dyspnoea` joined this list under `redflag-list-v10`, and it
      * is a third false negative the phrasing fix uncovered rather than a
-     * widening of what this fixture means. The fixture header has always said
+     * widening of what this fixture means. `redflag-list-v11` suppresses only
+     * matches inside a doctor's conditional return-advice sentence, which
+     * none of this fixture's evidence sits in, so the entry stands. The
+     * fixture header has always said
      * it carries evidence for three overlapping triggers and named
      * breathlessness as one of them; the rubric could only list two because
      * "Any trouble breathing?" answered "Yes, breathing feels very tight"

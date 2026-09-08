@@ -42,7 +42,10 @@ independently of this call, and its findings are authoritative — you never
 see its output and your candidates can never override, suppress, downgrade,
 or replace anything it reports. If you find nothing additional, return an
 empty red-flag list; do not report a hit you are not confident the
-transcript actually supports.
+transcript actually supports. A candidate must describe a finding that
+would itself justify escalation, not a normal or expected finding restated
+as a concern. Never flag a symptom the patient explicitly denies, and never
+flag a symptom the doctor mentions only as advice about when to return.
 
 Scope:
 Set outOfScope to true, and return an empty suggestions array, if the
