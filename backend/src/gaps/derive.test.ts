@@ -1,7 +1,7 @@
 import type { ClinicalAssertion, ClinicalFacts, OperationalBlock } from '@shared/types'
 import { ClinicalFactsSchema, OperationalBlockSchema } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { GAP_CHECKLIST } from './checklist.js'
+import { ALL_GAP_CHECKLIST, GAP_CHECKLIST, GAP_CHECKLIST_VERSION } from './checklist.js'
 import { deriveGaps } from './derive.js'
 
 const notAssessed = (): ClinicalAssertion => ({ state: 'NOT_ASSESSED' })
@@ -39,7 +39,7 @@ describe('deriveGaps — purity', () => {
 })
 
 describe('deriveGaps — assertion-state gating', () => {
-  it('raises a gap naming the missing record for a NOT_ASSESSED field, never phrased as an instruction', () => {
+  it('raises a gap as a neutral next-question prompt for a NOT_ASSESSED field', () => {
     const facts = emptyFacts()
     facts.symptoms.haemoptysis = notAssessed()
 
@@ -47,12 +47,11 @@ describe('deriveGaps — assertion-state gating', () => {
     const gap = gaps.find((g) => g.id === 'haemoptysis')
 
     expect(gap).toBeDefined()
-    // Names what the record does not contain.
-    expect(gap?.question).toMatch(/record does not/i)
-    // Never tells the doctor what to ask or conclude.
-    const instructionalPhrasing = /\b(you (should|did not|must)|ask (the|about)|consider|please)\b/i
-    expect(gap?.question).not.toMatch(instructionalPhrasing)
-    expect(gap?.rationale).not.toMatch(instructionalPhrasing)
+    expect(gap?.question).toBe('Has the patient reported any blood in their sputum (haemoptysis)?')
+    expect(gap?.question).not.toMatch(/record does not/i)
+    const accusatoryPhrasing = /\b(you (should|did not|must)|consider|please)\b/i
+    expect(gap?.question).not.toMatch(accusatoryPhrasing)
+    expect(gap?.rationale).not.toMatch(accusatoryPhrasing)
   })
 
   it('raises a gap for UNKNOWN as well as NOT_ASSESSED', () => {
@@ -120,6 +119,23 @@ describe('gap text never implies a diagnosis', () => {
     it(`"${entry.id}" question and rationale do not state or imply a diagnosis`, () => {
       expect(entry.question).not.toMatch(diagnosticPhrasing)
       expect(entry.rationale).not.toMatch(diagnosticPhrasing)
+    })
+  }
+})
+
+describe('gap checklist v4 question wording', () => {
+  it('uses the effective v4 checklist artefact', () => {
+    expect(GAP_CHECKLIST_VERSION).toEqual({
+      id: 'gap-checklist-v4',
+      effectiveDate: '2026-09-08',
+    })
+  })
+
+  for (const entry of ALL_GAP_CHECKLIST) {
+    it(`phrases ${entry.id} as a neutral question`, () => {
+      expect(entry.question).toMatch(/\?$/)
+      expect(entry.question).not.toMatch(/record does not/i)
+      expect(entry.question).not.toMatch(/\b(you (should|did not|must)|consider|please)\b/i)
     })
   }
 })

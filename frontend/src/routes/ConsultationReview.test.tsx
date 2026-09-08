@@ -373,6 +373,7 @@ describe('consultation hero actions', () => {
   beforeEach(() => {
     vi.mocked(api.getConsultation).mockReset()
     vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.analyze).mockReset()
     vi.mocked(api.getConsultation).mockResolvedValue({
       ...APPROVED,
       status: 'draft',
@@ -392,6 +393,39 @@ describe('consultation hero actions', () => {
 
     expect(await screen.findByRole('button', { name: 'Analyse Consultation' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'What happens when you analyse' })).toBeNull()
+  })
+
+  it('keeps the missing-transcript explanation inside the Analyse action boundary', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'draft',
+      analysis: null,
+      approvedAt: null,
+      approvedBy: null,
+    } as never)
+    setup()
+
+    const analyse = await screen.findByRole('button', { name: 'Analyse Consultation' })
+    const tip = screen.getByRole('button', { name: 'Why this is not available yet' })
+    const wrapper = analyse.parentElement
+
+    expect(tip.parentElement?.parentElement).toBe(wrapper)
+    expect(wrapper?.className).toContain('relative')
+    expect(wrapper?.className).toContain('inline-flex')
+    expect(analyse.contains(tip)).toBe(false)
+  })
+
+  it('uses the large action dimensions consistently after approval', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue(APPROVED as never)
+    setup()
+
+    const settings = await screen.findByRole('button', { name: 'Consultation Settings' })
+    const copy = screen.getByRole('button', { name: 'Copy Note' })
+    const exportAction = screen.getByRole('button', { name: 'Export' })
+
+    expect(copy.className).toContain('h-12')
+    expect(exportAction.className).toContain('h-12')
+    expect(settings.className).toContain('h-12')
   })
 
   it('disables Consultation Settings while capture owns unsent audio', async () => {

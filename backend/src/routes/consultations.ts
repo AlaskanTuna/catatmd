@@ -49,6 +49,7 @@ import { logger, timeStage } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
 import { evaluateRedFlags, mergeRedFlags } from '../redflags/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
+import type { SuppressedSuggestionId } from '../suggestions/safety.js'
 
 export const consultationsRouter = Router()
 
@@ -88,12 +89,19 @@ function dispositionsFor(
   }))
 }
 
+function persistedProfileId(analysis: Prisma.JsonValue | null) {
+  if (analysis === null || typeof analysis !== 'object' || Array.isArray(analysis)) return undefined
+
+  const parsed = ProfileIdSchema.safeParse((analysis as Record<string, unknown>).profileId)
+  return parsed.success ? parsed.data : undefined
+}
+
 function toDetail(
   row: Consultation,
   approvedBy: string | null = null,
   patient: { id: string; name: string | null } | null = null,
 ) {
-  return ConsultationDetailSchema.parse({
+  const detail = ConsultationDetailSchema.parse({
     id: row.id,
     status: row.status,
     // `?? null` for the same reason the JSON columns below carry it: a row
@@ -121,6 +129,20 @@ function toDetail(
     ),
     gapDispositions: dispositionsFor(row.gapDispositions, row.reviewedGapIds, row.updatedAt),
   })
+
+  /*
+   * `profileId` predates the shared detail schema and lives inside the
+   * analysis JSON rather than as a column. Preserve this one validated key so
+   * CatatAI can select the same corpus as the analysis; legacy analyses keep
+   * the schema's ordinary shape and therefore use its default profile.
+   */
+  const profileId = persistedProfileId(row.analysis)
+  if (profileId === undefined || detail.analysis === null) return detail
+
+  return {
+    ...detail,
+    analysis: { ...detail.analysis, profileId },
+  }
 }
 
 /**
@@ -348,6 +370,7 @@ async function runAnalysis(
   analysis: ConsultationAnalysis
   detected: readonly string[]
   discardedFieldIds: readonly string[]
+  suppressedSuggestionIds: readonly SuppressedSuggestionId[]
 }> {
   const { text, vault, detected } = await timeStage('deidentification', () =>
     deidentifyTranscript(transcript),
@@ -454,7 +477,12 @@ async function runAnalysis(
     ),
   }
 
-  return { analysis, detected, discardedFieldIds: noteResult.discardedFieldIds }
+  return {
+    analysis,
+    detected,
+    discardedFieldIds: noteResult.discardedFieldIds,
+    suppressedSuggestionIds: suggestionResult.suppressedSuggestionIds ?? [],
+  }
 }
 
 consultationsRouter.post('/:id/analyze', async (req, res) => {
@@ -495,7 +523,7 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
   })
 
   try {
-    const { analysis, detected, discardedFieldIds } = await runAnalysis(
+    const { analysis, detected, discardedFieldIds, suppressedSuggestionIds } = await runAnalysis(
       transcript.data,
       profile,
       consultation.id,
@@ -539,20 +567,22 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
     )
 
     const llm = getLLMDescriptor()
+    const completionMetadata = {
+      detected,
+      discardedFieldIds,
+      suppressedSuggestionIds,
+      profileId: profile.id,
+      versions: {
+        provider: llm.provider,
+        model: llm.model,
+        clinicalContent: getActiveClinicalVersions(profile),
+      },
+    }
     await recordAuditEvent({
       action: 'consultation.analysis_completed',
       actorId: actor,
       consultationId: consultation.id,
-      metadata: {
-        detected,
-        discardedFieldIds,
-        profileId: profile.id,
-        versions: {
-          provider: llm.provider,
-          model: llm.model,
-          clinicalContent: getActiveClinicalVersions(profile),
-        },
-      },
+      metadata: completionMetadata,
     })
 
     res.json({ consultation: await toDetailWithApprover(updated) })
@@ -646,7 +676,7 @@ consultationsRouter.post('/analyze-ephemeral', async (req, res) => {
   const profile = getClinicalProfile(body.data.profileId ?? DEFAULT_PROFILE_ID)
 
   try {
-    const { analysis, detected, discardedFieldIds } = await runAnalysis(
+    const { analysis, detected, discardedFieldIds, suppressedSuggestionIds } = await runAnalysis(
       body.data.transcript,
       profile,
     )
@@ -658,6 +688,7 @@ consultationsRouter.post('/analyze-ephemeral', async (req, res) => {
       metadata: {
         detected,
         discardedFieldIds,
+        suppressedSuggestionIds,
         profileId: profile.id,
         versions: {
           provider: llm.provider,

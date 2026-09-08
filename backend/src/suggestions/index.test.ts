@@ -60,7 +60,62 @@ describe('generateSuggestions — call shape', () => {
     }
     generate.mockResolvedValue(response)
 
-    await expect(generateSuggestions(content)).resolves.toEqual(response)
+    await expect(generateSuggestions(content)).resolves.toEqual({
+      ...response,
+      suppressedSuggestionIds: [],
+    })
+  })
+
+  it('filters unsafe model suggestions after the decoded response and reports ids only', async () => {
+    generate.mockResolvedValue({
+      outOfScope: false,
+      redFlags: [],
+      suggestions: [
+        {
+          id: 'unsafe-prescribing',
+          text: 'Prescribe amoxicillin 500 mg three times daily.',
+          citations: [{ guidelineId: firstCorpusId }],
+        },
+        {
+          id: 'safe-consideration',
+          text: 'Consider documenting the review interval.',
+          citations: [{ guidelineId: firstCorpusId }],
+        },
+      ],
+    })
+
+    await expect(generateSuggestions(content)).resolves.toEqual({
+      outOfScope: false,
+      redFlags: [],
+      suggestions: [
+        {
+          id: 'safe-consideration',
+          text: 'Consider documenting the review interval.',
+          citations: [{ guidelineId: firstCorpusId }],
+        },
+      ],
+      suppressedSuggestionIds: ['model-suggestion-1'],
+    })
+  })
+
+  it('replaces a rejected model-authored id with a server-generated suppression id', async () => {
+    const unsafeId = '[PATIENT_1] reports burning urination and a new fever.'
+    generate.mockResolvedValue({
+      outOfScope: false,
+      redFlags: [],
+      suggestions: [
+        {
+          id: unsafeId,
+          text: 'Prescribe nitrofurantoin.',
+          citations: [{ guidelineId: firstCorpusId }],
+        },
+      ],
+    })
+
+    const result = await generateSuggestions(content)
+
+    expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1'])
+    expect(JSON.stringify(result.suppressedSuggestionIds)).not.toContain(unsafeId)
   })
 })
 

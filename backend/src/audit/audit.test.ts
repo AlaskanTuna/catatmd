@@ -82,12 +82,13 @@ describe('recordAuditEvent', () => {
     expect(lastWrite().data.metadata).toBeUndefined()
   })
 
-  it('records detector labels, discarded field ids and version stamps on completion', async () => {
+  it('records detector labels, discarded and suppressed ids, and version stamps on completion', async () => {
     await write({
       action: 'consultation.analysis_completed',
       metadata: {
         detected: ['NRIC', 'NAME'],
         discardedFieldIds: ['fever', 'cough_duration'],
+        suppressedSuggestionIds: ['model-suggestion-1'],
         profileId: 'adult-acute-urti',
         versions: {
           provider: 'qwen',
@@ -100,6 +101,7 @@ describe('recordAuditEvent', () => {
     expect(lastWrite().data.metadata).toEqual({
       detected: ['NRIC', 'NAME'],
       discardedFieldIds: ['fever', 'cough_duration'],
+      suppressedSuggestionIds: ['model-suggestion-1'],
       profileId: 'adult-acute-urti',
       versions: {
         provider: 'qwen',
@@ -143,6 +145,7 @@ describe('recordAuditEvent', () => {
         metadata: {
           detected: ['NRIC'],
           discardedFieldIds: ['fever'],
+          suppressedSuggestionIds: ['model-suggestion-1'],
           profileId: 'adult-acute-urti',
           versions: {
             provider: 'qwen',
