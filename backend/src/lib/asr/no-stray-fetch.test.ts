@@ -44,7 +44,7 @@ const SCANNED_DIR = 'backend/src'
 /**
  * The complete, intended inventory of outbound `fetch` calls in the API.
  *
- * Two entries, and they are not the same kind of thing.
+ * Three entries, and they are not the same kind of thing.
  *
  * `ilmu.ts` is the audio egress the rule names: `transcribeWithIlmu` posts a
  * recording. `soniox.ts` carries no audio at all, and is here because it mints
@@ -57,6 +57,10 @@ const SCANNED_DIR = 'backend/src'
  * repo-wide provider-SDK inventory is pinned at one, inside `lib/llm/`, and
  * `no-stray-provider-sdk.test.ts` names both vendors so a shortcut trips it.
  *
+ * `scripts/ingest-cpg.ts` is an operator-run script, not a request path: it
+ * uploads a guideline PDF the operator downloaded to the project's private
+ * Supabase Storage bucket. No patient data exists in that process (#220).
+ *
  * Adding an entry here is the reviewable decision this test exists to force:
  * every one is a new path by which data leaves the API without passing the
  * de-identification gate, which raw audio structurally cannot pass.
@@ -64,6 +68,7 @@ const SCANNED_DIR = 'backend/src'
 const EXPECTED_FETCH_CALLS: ReadonlyMap<string, number> = new Map([
   ['backend/src/lib/asr/ilmu.ts', 1],
   ['backend/src/lib/asr/soniox.ts', 1],
+  ['backend/src/scripts/ingest-cpg.ts', 1],
 ])
 
 function sourceFiles(): string[] {
