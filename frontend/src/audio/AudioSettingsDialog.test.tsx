@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AudioCapture } from './AudioCapture.js'
@@ -42,9 +42,16 @@ afterEach(cleanup)
  * not implement. The attribute is what the UA stylesheet keys on, which is the
  * only part of the difference these assertions can see.
  */
-function renderDialog() {
+function renderDialog(ambient = false) {
   const ref = createRef<HTMLDialogElement>()
-  render(<AudioSettingsDialog ref={ref} settings={DEFAULT_AUDIO_SETTINGS} onApply={vi.fn()} />)
+  render(
+    <AudioSettingsDialog
+      ref={ref}
+      settings={DEFAULT_AUDIO_SETTINGS}
+      onApply={vi.fn()}
+      ambient={ambient}
+    />,
+  )
   act(() => ref.current?.setAttribute('open', ''))
 }
 
@@ -88,10 +95,16 @@ describe('the Audio dialog and the control it describes', () => {
   })
 
   it('does not own consultation-scoped Capture Mode', () => {
-    renderDialog()
+    for (const ambient of [false, true]) {
+      cleanup()
+      renderDialog(ambient)
 
-    expect(screen.queryByRole('group', { name: 'Capture Mode' })).toBeNull()
-    expect(screen.queryByRole('button', { name: /ambient/i })).toBeNull()
+      // Reading the mode is not owning it. Naming the running engine must not
+      // grow a second place to change the mode, which would let this dialog
+      // and the hero's Consultation Settings disagree about one record.
+      expect(screen.queryByRole('group', { name: 'Capture Mode' })).toBeNull()
+      expect(screen.queryByRole('button', { name: /ambient/i })).toBeNull()
+    }
   })
 
   it('scopes the engine choice to press-to-record, which is the only path it governs', () => {
@@ -100,6 +113,50 @@ describe('the Audio dialog and the control it describes', () => {
     // Ambient always uses the streaming provider, so an engine picker that
     // silently did nothing there would be a claim the app does not honour.
     expect(screen.getByText(/applies to press to record/i)).toBeTruthy()
+  })
+
+  /*
+   * The sentence tested above shipped, and was still not enough: it sat under
+   * two cards that both read as live, so a doctor mid-ambient consultation
+   * could read "the audio never leaves this device" off a card governing
+   * nothing while the room was being streamed (#289). The list now names the
+   * engine that is running, and these pin both halves of that.
+   */
+  it('names the streaming engine while the consultation is ambient', () => {
+    renderDialog(true)
+
+    expect(screen.getByText(/soniox \(streaming\)/i)).toBeTruthy()
+    expect(screen.getByText('In Use')).toBeTruthy()
+
+    // Stated, not offered. Ambient streams to Soniox whatever is selected
+    // below, so a control here would be one that does nothing.
+    expect(screen.getByText(/soniox \(streaming\)/i).closest('button')).toBeNull()
+  })
+
+  it('leaves the press-to-record engines usable while the consultation is ambient', () => {
+    renderDialog(true)
+
+    // The engine is a device preference that governs every other consultation,
+    // and governs this one the moment the doctor switches back, so naming the
+    // running engine must not strand it.
+    const hosted = screen.getByRole('button', { name: /^ILMU/ })
+    expect(hosted.getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(hosted)
+    expect(screen.getByRole('button', { name: /^ILMU/ }).getAttribute('aria-pressed')).toBe('true')
+    expect(
+      screen.getByRole('button', { name: /^On this device/ }).getAttribute('aria-pressed'),
+    ).toBe('false')
+  })
+
+  it('keeps the streaming engine off the press-to-record path', () => {
+    renderDialog()
+
+    // Press-to-record never opens a socket, so naming a running Soniox engine
+    // there would be the same class of untrue claim in the other direction.
+    // The scoping sentence below the list still names Soniox, and must: it is
+    // what tells the reader the list does not cover every path.
+    expect(screen.queryByText(/soniox \(streaming\)/i)).toBeNull()
+    expect(screen.getByText(/ambient capture always uses soniox/i)).toBeTruthy()
   })
 
   it('claims no label review, which was removed with the review gate', () => {

@@ -614,7 +614,15 @@ export function AmbientCapture({
         <div className="grid gap-1.5">
           <div className="flex items-center gap-1.5">
             <span className="font-medium text-sm">Not listening</span>
-            <InfoTip label="About ambient capture">
+            {/* `layered` because the transcript column is a scroll box from `lg`
+                up, and `overflow-y: auto` drags `overflow-x` to `auto` with it,
+                so an in-flow panel is clipped on the right. The column is 380px
+                and this panel is 288px anchored 110px in, so it was losing the
+                end of every line. Left-aligned, which is the default: this
+                column is the leftmost one, so the panel has the whole page to
+                open into, while right-aligning it would push it off the far
+                side of the viewport. */}
+            <InfoTip label="About ambient capture" layered>
               The whole consultation is transcribed as it happens. Speakers are labelled
               automatically afterwards, so check the transcript before you submit it.
             </InfoTip>

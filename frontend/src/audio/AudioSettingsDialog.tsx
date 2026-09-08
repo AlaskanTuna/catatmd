@@ -1,4 +1,4 @@
-import { Cpu, Server } from 'lucide-react'
+import { Cpu, Radio, Server } from 'lucide-react'
 import { type Ref, useEffect, useRef, useState } from 'react'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
@@ -99,15 +99,27 @@ function Toggle({
  * The engine choice is the half that belongs here: it names where the audio
  * goes rather than whether it may go, and the hosted option states that in its
  * own copy.
+ *
+ * **`ambient` is read, never written.** The mode is the consultation's, set in
+ * the hero's Consultation Settings, and this dialog does not own it. It is
+ * taken as a prop only so the list can say which engine is actually running:
+ * the two options below are press-to-record's, and a doctor mid-ambient
+ * consultation was otherwise reading "the audio never leaves this device" off a
+ * card that governs nothing while the room was being streamed (#289). A
+ * sentence under the list said so already and was not enough, because two live
+ * looking cards outrank a muted line.
  */
 export function AudioSettingsDialog({
   ref,
   settings,
   onApply,
+  ambient,
 }: {
   ref: Ref<HTMLDialogElement>
   settings: AudioSettings
   onApply: (next: AudioSettings) => void
+  /** True while the Record tab is showing the ambient panel. */
+  ambient: boolean
 }) {
   const [draft, setDraft] = useState(settings)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
@@ -149,6 +161,46 @@ export function AudioSettingsDialog({
         <fieldset className="mt-5">
           <legend className="mb-2 font-semibold text-xs">Transcription Engine</legend>
           <div className="grid gap-2">
+            {/*
+              First, and not a control. Ambient streams to Soniox whatever is
+              picked below, so this states what is running rather than offering
+              a choice: no button, no `aria-pressed`, nothing to press that
+              would do nothing.
+
+              Bordered as well as tinted, which the selected card below is not.
+              Both are green and they mean different things, so the fill alone
+              read as two live engines: this one is running, and that one is the
+              press-to-record choice for when it is not. `border-accent/30` on
+              `accent-soft` is the same emphasis `ApproveBar` uses.
+
+              It names the provider but not the region or the model, which the
+              ILMU option does name. Both come from `api.liveAsrConfig()`, which
+              `AmbientCapture` holds; a second copy here would be a residency
+              claim made by a component that cannot see the socket, and this
+              dialog has already shipped a claim that outlived what it
+              described. The Record tab's consent disclosure keeps that job, and
+              the sentence below points at it.
+            */}
+            {ambient && (
+              <div className="flex gap-2.5 rounded-card border border-accent/30 bg-accent-soft p-3 text-left">
+                <div className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="font-semibold text-sm">Soniox (streaming)</span>
+                    <span className="rounded-pill bg-surface px-2 py-0.5 font-medium text-2xs text-accent">
+                      In Use
+                    </span>
+                  </span>
+                  <span className="mt-0.5 block text-ink-muted text-xs">
+                    The audio leaves this device as it happens. Set by this consultation's Capture
+                    Mode, and the Record tab names where it is processed.
+                  </span>
+                </div>
+                <Radio aria-hidden className="mt-0.5 size-4 shrink-0" />
+                {/* Holds the column the tips below occupy, so all three icons
+                    line up rather than this one sitting 30px further out. */}
+                <span aria-hidden className="size-5 shrink-0" />
+              </div>
+            )}
             {ENGINES.map((engine) => {
               const selected = draft.engine === engine.id
               return (
