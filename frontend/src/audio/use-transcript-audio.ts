@@ -51,6 +51,15 @@ export function useTranscriptAudio(consultationId: string) {
       .getConsultationAudio(consultationId)
       .then((recording) => {
         if (!current || recording === null) return
+        /*
+         * A recording captured while this fetch was in flight wins. `current`
+         * only tracks unmount and a change of consultation, so without this a
+         * slow GET could land after `keep()` stored a fresh take and replace it
+         * with the older stored copy, revoking the new one's URL on the way.
+         * The doctor would then be checking a sentence against the wrong audio,
+         * which is worse than having none.
+         */
+        if (recordingUrl(consultationId) !== undefined) return
         keepRecording(consultationId, recording)
         setSrc(recordingUrl(consultationId))
       })

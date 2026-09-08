@@ -328,6 +328,7 @@ export type AuditEventInput =
   | SettingsAuditEvent
   | EphemeralAuditEvent
   | AsrAuditEvent
+  | SystemAuditEvent
 
 /**
  * How many times an append may lose the race for the chain head before giving

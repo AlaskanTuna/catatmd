@@ -36,9 +36,22 @@ vi.mock('../lib/prisma.js', () => ({
           return create
         },
       ),
-      findUnique: vi.fn(
-        async ({ where }: { where: { consultationId: string } }) =>
-          rows.get(where.consultationId) ?? null,
+      /*
+       * Honours the `expiresAt` filter rather than ignoring it, because that
+       * filter is the control being tested: `readAudio` puts the clock in the
+       * WHERE clause so an expired recording never leaves Postgres, and a mock
+       * that returned the row regardless would pass whether or not the real
+       * query still carried the condition.
+       */
+      findFirst: vi.fn(
+        async ({ where }: { where: { consultationId: string; expiresAt?: { gt: Date } } }) => {
+          const row = rows.get(where.consultationId)
+          if (row === undefined) return null
+          if (where.expiresAt && row.expiresAt.getTime() <= where.expiresAt.gt.getTime()) {
+            return null
+          }
+          return row
+        },
       ),
       deleteMany: vi.fn(
         async ({ where }: { where: { consultationId?: string; expiresAt?: { lte: Date } } }) => {

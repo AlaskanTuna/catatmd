@@ -9,7 +9,12 @@
  * and sanctions in-memory state that dies on reload. So this is a module
  * variable and an object URL, deliberately, and
  * `no-stray-audio-persistence.test.ts` fails the build if that ever changes.
- * Nothing here uploads, and playback is a local blob, so this adds no egress.
+ *
+ * **This module still writes nothing to disk, but the recording is no longer
+ * browser-only.** `use-transcript-audio.ts` uploads it to our own API, which
+ * holds it for the configured retention window (#293, `backend/src/audio/`).
+ * So this is a cache in front of that store, not the only copy, and the claim
+ * that playback adds no egress is no longer true of the feature as a whole.
  *
  * Module scope rather than component state because `CapturePanel` unmounts the
  * moment a transcript exists, which is exactly when the review that needs the

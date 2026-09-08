@@ -1,5 +1,6 @@
 import { recordAuditEvent } from '../audit/index.js'
 import { env } from '../config/env.js'
+import { logger } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
 
 /**
@@ -81,13 +82,24 @@ export async function storeAudio(
  */
 export async function readAudio(
   consultationId: string,
-): Promise<{ data: Buffer; mimeType: string } | null> {
-  const row = await prisma.consultationAudio.findUnique({
-    where: { consultationId },
-    select: { data: true, mimeType: true, expiresAt: true },
+): Promise<{ data: Uint8Array; mimeType: string } | null> {
+  /*
+   * The clock is in the WHERE clause, not in a comparison afterwards. Reading
+   * the row first and discarding it would pull up to 25 MB out of Postgres for
+   * a recording nobody may have, and the index on `expiresAt` exists precisely
+   * so the expired case never touches the bytes.
+   *
+   * `findFirst` rather than `findUnique`, because a unique lookup cannot carry
+   * a second condition.
+   */
+  const row = await prisma.consultationAudio.findFirst({
+    where: { consultationId, expiresAt: { gt: new Date() } },
+    select: { data: true, mimeType: true },
   })
-  if (row === null || row.expiresAt.getTime() <= Date.now()) return null
-  return { data: Buffer.from(row.data), mimeType: row.mimeType }
+  if (row === null) return null
+  // Returned as-is. `res.send` accepts a Uint8Array, and `Buffer.from` here
+  // would copy a buffer the driver has already materialised, doubling the peak.
+  return { data: row.data, mimeType: row.mimeType }
 }
 
 /**
@@ -130,6 +142,19 @@ export async function sweepExpiredAudio(): Promise<number> {
   })
   if (count === 0) return 0
 
-  await recordAuditEvent({ action: 'audio.swept', metadata: { count } })
+  /*
+   * The delete has already happened by here, so a failing audit write would
+   * mean recordings destroyed with nothing saying so. Reported rather than
+   * swallowed: allowlisted fields only, never the error text, and never which
+   * consultations were swept.
+   */
+  try {
+    await recordAuditEvent({ action: 'audio.swept', metadata: { count } })
+  } catch (error) {
+    logger.warn('audio sweep audit failed', {
+      outcome: 'error',
+      errorName: error instanceof Error ? error.name : 'Error',
+    })
+  }
   return count
 }

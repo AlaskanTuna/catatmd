@@ -113,6 +113,8 @@ export function createApp() {
   // (#219). Flags run the rules engine in-process and spend no model budget, so
   // they get a cadence-sized allowance; the fold is an LLM call and gets a
   // small one that cannot borrow from, or exhaust, the Finish analysis above.
+  app.post('/api/consultations/:id/live-flags', liveFlagsRateLimit)
+  app.post('/api/consultations/:id/live-analysis', liveAnalysisRateLimit)
   // The consultation recording (#293). The write carries up to 25 MB and is the
   // only way the audio store grows, so it gets the tightest bucket here; the
   // read is looser because playing a sentence back repeatedly is the behaviour
@@ -120,8 +122,6 @@ export function createApp() {
   // allowance to store the next recording.
   app.put('/api/consultations/:id/audio', audioWriteRateLimit)
   app.get('/api/consultations/:id/audio', audioReadRateLimit)
-  app.post('/api/consultations/:id/live-flags', liveFlagsRateLimit)
-  app.post('/api/consultations/:id/live-analysis', liveAnalysisRateLimit)
 
   // ── Clinical routers ─────────────────────────────────────────────────────
   // These inherit the session guard and the analyze limiter above, and must

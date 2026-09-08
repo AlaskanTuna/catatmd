@@ -26,18 +26,12 @@ import {
   TranscriptSchema,
   toSoapNote,
 } from '@shared/types'
-import express, { Router } from 'express'
+import { type RequestHandler, Router } from 'express'
 import { z } from 'zod'
 import { analyseNote, buildEvidenceLinks } from '../analysis/index.js'
 import { analyseLiveWindow, foldFacts, foldOperational } from '../analysis/live.js'
 import { deriveConsultationTitle } from '../analysis/title.js'
-import {
-  audioRetentionEnabled,
-  MAX_AUDIO_BYTES,
-  readAudio,
-  storeAudio,
-  sweepExpiredAudio,
-} from '../audio/index.js'
+import { audioRetentionEnabled, readAudio, storeAudio, sweepExpiredAudio } from '../audio/index.js'
 import { eraseConsultation } from '../audit/erasure.js'
 import { type AnalysisFailureReason, getAuditHistory, recordAuditEvent } from '../audit/index.js'
 import {
@@ -54,6 +48,7 @@ import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
 import { logger, timeStage } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
+import { inFlightGate, parseAudioBody } from '../middleware/audio-body.js'
 import { evaluateRedFlags, mergeRedFlags } from '../redflags/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
 import type { SuppressedSuggestionId } from '../suggestions/safety.js'
@@ -1382,86 +1377,148 @@ consultationsRouter.post('/:id/approve', async (req, res) => {
  * explicit size cap, a limiter, and an audit row per outcome. The recording
  * never leaves this API and never reaches a provider.
  */
-const rawAudio = express.raw({
-  type: 'audio/*',
-  limit: MAX_AUDIO_BYTES,
-  // Audio is already compressed, so an inflated `Content-Encoding` body would
-  // let a small request force a large allocation. Same reasoning as the relay.
-  inflate: false,
+/**
+ * Every gate runs before a single byte of body is read, and the order is the
+ * point.
+ *
+ * `routes/asr.ts` established it and states why: a deployment that will refuse
+ * the request must not first buffer 25 MB it is going to discard. The same
+ * applies to a caller who does not own the consultation. Getting this backwards
+ * lets any authenticated caller, and self-service sign-up has no email
+ * verification, force a 25 MB allocation against a record they cannot reach.
+ */
+function requireAudioRetention(refusal: HttpError): RequestHandler {
+  return (_req, _res, next) => {
+    if (!audioRetentionEnabled()) {
+      next(refusal)
+      return
+    }
+    next()
+  }
+}
+
+/**
+ * A writer is told storage is switched off, because that is actionable: the
+ * operator can adopt a period. A reader is told there is no recording, because
+ * from their side there is not one and the reason is not their business.
+ */
+const RETENTION_REFUSES_WRITE = new HttpError(
+  503,
+  'audio_retention_unset',
+  'Recording storage is disabled until a retention period is configured.',
+)
+const RETENTION_REFUSES_READ = new HttpError(
+  404,
+  'not_found',
+  'No recording is available for this consultation.',
+)
+
+/**
+ * Ownership resolved ahead of the body, so an unowned `:id` costs a 404 and not
+ * 25 MB of heap. The handler does not resolve it again: past this point
+ * `req.params.id` is known to name a consultation this caller owns.
+ */
+const requireOwnedConsultation: RequestHandler<{ id: string }> = async (req, _res, next) => {
+  await assertOwnedConsultation(req.params.id, doctorId(req))
+  next()
+}
+
+/**
+ * Both directions share one bound, because they share one heap. Two at a time
+ * matches `MAX_CONCURRENT_RELAYS` and for the same reason: the worst case is
+ * roughly twice the body per request, once for the buffer and once for the copy
+ * on the way to or from Postgres.
+ */
+const audioSlot = inFlightGate({
+  limit: 2,
+  code: 'audio_busy',
+  message: 'Recording storage is busy. Retry shortly.',
 })
 
-consultationsRouter.put('/:id/audio', rawAudio, async (req, res) => {
-  const actor = doctorId(req)
+consultationsRouter.put(
+  '/:id/audio',
+  requireAudioRetention(RETENTION_REFUSES_WRITE),
+  audioSlot,
+  requireOwnedConsultation,
+  parseAudioBody,
+  async (req, res) => {
+    const actor = doctorId(req)
 
-  // Checked before the consultation is resolved: with no retention period
-  // adopted there is no answer to give about any consultation, and refusing
-  // here keeps the fail-closed decision in one obvious place.
-  if (!audioRetentionEnabled()) {
-    throw new HttpError(
-      503,
-      'audio_retention_unset',
-      'Recording storage is disabled until a retention period is configured.',
+    const contentType = req.get('content-type')
+    if (!contentType || !req.is('audio/*')) {
+      throw new HttpError(415, 'unsupported_media_type', 'An audio/* content type is required.')
+    }
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      throw new HttpError(400, 'invalid_body', 'A non-empty audio body is required.')
+    }
+
+    // `req.params.id` rather than a second `assertOwnedConsultation`: the
+    // middleware above already resolved it, and re-resolving would be a second
+    // query answering a question that is settled.
+    const consultationId = req.params.id
+
+    // Copied into a plain view rather than passed as the Express Buffer: Prisma's
+    // Bytes input is an ArrayBuffer-backed Uint8Array, and a Buffer may sit on a
+    // pooled or shared one.
+    const { expiresAt } = await storeAudio(
+      consultationId,
+      actor,
+      new Uint8Array(req.body),
+      contentType,
     )
-  }
 
-  const consultation = await assertOwnedConsultation(req.params.id, actor)
+    /*
+     * The sweep rides here because this is the only route that makes the store
+     * grow, and the project has no scheduler to hang one on. It runs after the
+     * store so a failure to tidy can never lose the recording just accepted.
+     *
+     * **This is not a complete retention mechanism and the comment must not
+     * claim otherwise.** A deployment that stops uploading never sweeps again,
+     * and one that unsets the retention period is refused above before reaching
+     * here, so its stored recordings are frozen rather than drained. Tracked
+     * separately; `readAudio` refusing anything expired is what keeps the
+     * promise true in the meantime.
+     */
+    void sweepExpiredAudio().catch(() => {})
 
-  const contentType = req.get('content-type')
-  if (!contentType || !req.is('audio/*')) {
-    throw new HttpError(415, 'unsupported_media_type', 'An audio/* content type is required.')
-  }
-  if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
-    throw new HttpError(400, 'invalid_body', 'A non-empty audio body is required.')
-  }
+    res.json({ expiresAt })
+  },
+)
 
-  // Copied into a plain view rather than passed as the Express Buffer: Prisma's
-  // Bytes input is an ArrayBuffer-backed Uint8Array, and a Buffer may sit on a
-  // pooled or shared one.
-  const { expiresAt } = await storeAudio(
-    consultation.id,
-    actor,
-    new Uint8Array(req.body),
-    contentType,
-  )
+consultationsRouter.get(
+  '/:id/audio',
+  // The same switch the write path checks. Withdrawing the retention decision
+  // has to stop recordings being served, not merely stop new ones arriving, or
+  // it is half a switch.
+  requireAudioRetention(RETENTION_REFUSES_READ),
+  audioSlot,
+  requireOwnedConsultation,
+  async (req, res) => {
+    const actor = doctorId(req)
+    const consultationId = req.params.id
 
-  /*
-   * The sweep rides here rather than on a schedule, because this is the only
-   * route that makes the store grow and the project has no scheduler. It runs
-   * after the store so a failure to tidy can never lose the recording that was
-   * just accepted, and its own failure is not the caller's problem: the upload
-   * succeeded, and the next one will sweep again.
-   */
-  void sweepExpiredAudio().catch(() => {})
+    const recording = await readAudio(consultationId)
+    // 404 covers both "never stored" and "window has closed". They are the same
+    // answer to the caller, and distinguishing them would say when a consultation
+    // was recorded to someone who is no longer allowed to hear it.
+    if (recording === null) {
+      throw new HttpError(404, 'not_found', 'No recording is available for this consultation.')
+    }
 
-  res.json({ expiresAt })
-})
+    await recordAuditEvent({
+      action: 'consultation.audio_served',
+      actorId: actor,
+      consultationId,
+    })
 
-consultationsRouter.get('/:id/audio', async (req, res) => {
-  const actor = doctorId(req)
-  const consultation = await assertOwnedConsultation(req.params.id, actor)
-
-  const recording = await readAudio(consultation.id)
-  // 404 covers both "never stored" and "window has closed". They are the same
-  // answer to the caller, and distinguishing them would say when a consultation
-  // was recorded to someone who is no longer allowed to hear it.
-  if (recording === null) {
-    throw new HttpError(404, 'not_found', 'No recording is available for this consultation.')
-  }
-
-  await recordAuditEvent({
-    action: 'consultation.audio_served',
-    actorId: actor,
-    consultationId: consultation.id,
-  })
-
-  res.setHeader('Content-Type', recording.mimeType)
-  res.setHeader('Content-Length', recording.data.length)
-  // Never cached anywhere but the tab that asked. This is PHI, and a shared or
-  // disk cache would put a voice recording somewhere nothing in this system
-  // can reach to erase it.
-  res.setHeader('Cache-Control', 'no-store')
-  res.send(recording.data)
-})
+    res.setHeader('Content-Type', recording.mimeType)
+    // Never cached anywhere but the tab that asked. This is PHI, and a shared or
+    // disk cache would put a voice recording somewhere nothing in this system
+    // can reach to erase it.
+    res.setHeader('Cache-Control', 'no-store')
+    res.send(recording.data)
+  },
+)
 
 consultationsRouter.post('/erase', async (req, res) => {
   const parsed = EraseConsultationsInputSchema.safeParse(req.body)

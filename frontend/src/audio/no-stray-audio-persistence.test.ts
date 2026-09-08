@@ -43,13 +43,20 @@ const PERSISTENCE = /\b(localStorage|sessionStorage|indexedDB|showSaveFilePicker
 const MAY_PERSIST = new Set(['audio-settings.ts'])
 
 /**
- * Sending a recording anywhere. The two audio egresses this app has are the
- * ILMU relay in `AudioCapture` and the Soniox socket in `live/`, both of which
- * predate this rule and are governed by `.claude/rules/security.md`; what must
- * never appear is a *third* one carrying the retained blob, which is what an
- * upload of `session-audio`'s contents would be.
+ * Where a recording may be sent, pinned as an inventory rather than as a ban.
+ *
+ * **This used to assert that nothing under `audio/` uploaded at all, and it
+ * went on passing after #293 added exactly that.** The pattern looked for the
+ * word "upload" and the call is named `putConsultationAudio`, so a guard whose
+ * whole job was to notice a new egress quietly stopped noticing. A named test
+ * that is wrong is worse than no test, because the next reader trusts it.
+ *
+ * An inventory cannot fail that way. Storing the recording is now deliberate
+ * and bounded by the retention window in `backend/src/audio/`; what must still
+ * never appear is a second module sending one.
  */
-const UPLOAD = /\b(?:api\.[A-Za-z]*[Uu]pload|uploadRecording|putObject|createUpload)\b/
+const SENDS_AUDIO = /\bapi\.(putConsultationAudio|getConsultationAudio)\b/
+const MAY_SEND_AUDIO = new Set(['use-transcript-audio.ts'])
 
 function sourceFiles(dir: string): string[] {
   const found: string[] = []
@@ -93,17 +100,33 @@ describe('audio is never persisted', () => {
   })
 
   it.each(files.map((path) => [path.slice(AUDIO_DIR.length + 1), path] as const))(
-    '%s adds no new upload of a retained recording',
-    (_name, path) => {
+    '%s sends the recording nowhere unless it is the one module allowed to',
+    (name, path) => {
       const hits = readFileSync(path, 'utf8')
         .split('\n')
         .map((line, index) => [index + 1, line] as const)
         .filter(([, line]) => !/^\s*(\/\/|\*|\/\*)/.test(line))
-        .filter(([, line]) => UPLOAD.test(line))
+        .filter(([, line]) => SENDS_AUDIO.test(line))
 
-      expect(hits, `${path} looks like a new audio egress`).toEqual([])
+      const allowed = MAY_SEND_AUDIO.has(name.replaceAll('\\', '/'))
+      expect(allowed ? [] : hits, `${path} is a second audio egress`).toEqual([])
     },
   )
+
+  it('names the one module that may send a recording, so the list is reviewable', () => {
+    expect([...MAY_SEND_AUDIO]).toEqual(['use-transcript-audio.ts'])
+  })
+
+  /*
+   * The guard has to actually fire. Its predecessor passed green against a real
+   * upload for a whole PR because its pattern missed the call's name, so the
+   * pattern is now tested against the call it exists to notice.
+   */
+  it('matches the calls it is written to notice', () => {
+    expect(SENDS_AUDIO.test('void api.putConsultationAudio(consultationId, blob)')).toBe(true)
+    expect(SENDS_AUDIO.test('await api.getConsultationAudio(consultationId)')).toBe(true)
+    expect(SENDS_AUDIO.test('const detail = await api.approve(id)')).toBe(false)
+  })
 
   it('keeps the retained recording in exactly one module', () => {
     const holders = sourceFiles(AUDIO_DIR).filter((path) =>
