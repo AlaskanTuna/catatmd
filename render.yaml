@@ -48,6 +48,22 @@ services:
         sync: false
       - key: SONIOX_REGION
         value: us
+      # Consultation audio retention (#293). How many hours a recording is kept
+      # so the doctor can play back the sentence behind a transcript turn.
+      #
+      # `sync: false` and deliberately no value, which is not the same as
+      # forgetting one. Filling this in is the clinic data controller adopting a
+      # retention period, and .claude/rules/security.md forbids the code
+      # inventing one; a number here would make that decision in version control
+      # on everyone's behalf. Unset is a real state and fails closed: nothing is
+      # ever stored, the write answers 503 and the read 404.
+      #
+      # Declared anyway, because a variable that exists only in a dashboard is a
+      # variable nobody knows to set. .env.example carries the vendor comparison
+      # (Abridge and Nuance DAX 30 days, Nabla 14) and docs/dpia.md carries the
+      # open MMC cl.19 question that the choice turns on.
+      - key: AUDIO_RETENTION_HOURS
+        sync: false
       - key: DEID_FAIL_CLOSED
         value: 'true'
       # Verbosity only. No level widens what may be written: redaction in
