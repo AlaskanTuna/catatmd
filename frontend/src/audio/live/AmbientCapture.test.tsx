@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../lib/api.js'
 import { AmbientCapture, TIMESLICE_MS } from './AmbientCapture.js'
@@ -274,14 +274,27 @@ describe('availability', () => {
 })
 
 describe('the idle explainer', () => {
-  it('opens its tip clear of the column, which clips anything in flow', async () => {
+  it('shows the mode, title-cases the idle status, and keeps the speaker-label tip portalled', async () => {
     renderAmbient()
     await settle()
 
-    await act(async () => screen.getByRole('button', { name: /about ambient capture/i }).click())
+    expect(screen.getByText('Not Listening')).toBeTruthy()
+    const summary = screen.getByText('Ambient Capture transcribes the consultation as it happens.')
+    expect(summary).toBeTruthy()
+
+    // The language-tuning helper is gone.
+    expect(screen.queryByText(/Other languages are untested here/i)).toBeNull()
+    expect(screen.queryByText(/tuned for/i)).toBeNull()
+
+    const tipTrigger = screen.getByRole('button', { name: /about speaker labels/i })
+    await act(async () => tipTrigger.click())
 
     const tip = screen.getByRole('tooltip')
-    expect(tip.textContent).toMatch(/check the transcript before you submit it/i)
+    expect(tip.textContent).toMatch(/Speaker labels are automatic\. Check them before submitting\./)
+    expect(tip.textContent).not.toMatch(
+      /GPU|CDN|model weights|segment timing|voice model|Other languages are untested here/i,
+    )
+
     /*
      * The transcript column scrolls from `lg` up, and `overflow-y: auto` drags
      * `overflow-x` to `auto` with it, so an in-flow panel is cut off on the
@@ -290,6 +303,18 @@ describe('the idle explainer', () => {
      * this pins the mechanism that avoids it.
      */
     expect(tip.parentElement).toBe(document.body)
+  })
+
+  it('keeps the consent gate directly after the idle summary', async () => {
+    renderAmbient()
+    await settle()
+
+    const summary = screen.getByText('Ambient Capture transcribes the consultation as it happens.')
+    const gate = summary.parentElement?.nextElementSibling
+    expect(gate).toBeTruthy()
+    expect(gate?.textContent).toMatch(/leaves this device/i)
+    expect(gate?.textContent).toMatch(/Soniox/)
+    expect(within(gate as HTMLElement).getByRole('checkbox', { name: /agreed/i })).toBeTruthy()
   })
 })
 
@@ -304,16 +329,12 @@ describe('consent', () => {
     expect(disclosure.textContent).toMatch(/never receives the audio/i)
   })
 
-  it('states which languages are covered and that the rest are untested', async () => {
+  it('does not list tuned or untested languages in the idle panel', async () => {
     renderAmbient()
     await settle()
 
-    const line = screen.getByText(/tuned for/i)
-    expect(line.textContent).toMatch(/Malay/)
-    expect(line.textContent).toMatch(/English/)
-    expect(line.textContent).toMatch(/Chinese/)
-    expect(line.textContent).toMatch(/Tamil/)
-    expect(line.textContent).toMatch(/untested/i)
+    expect(screen.queryByText(/Other languages are untested here/i)).toBeNull()
+    expect(screen.queryByText(/tuned for/i)).toBeNull()
   })
 
   it('mints nothing until this patient has agreed', async () => {

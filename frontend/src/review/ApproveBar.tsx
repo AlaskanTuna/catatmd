@@ -121,7 +121,7 @@ export function ApproveBar({
             label="What approving does"
             layered
           >
-            You are taking responsibility for this note. It cannot be edited afterwards.
+            Approval finalises this note. It cannot be edited later.
           </InfoTip>
         ) : (
           unacknowledgedCount > 0 && (
@@ -131,9 +131,7 @@ export function ApproveBar({
               tone="warning"
               layered
             >
-              {unacknowledgedCount} red flag{unacknowledgedCount === 1 ? '' : 's'} not yet
-              acknowledged. You can still approve; the count is here so the choice is informed, not
-              prevented.
+              {`${unacknowledgedCount} red flag${unacknowledgedCount === 1 ? ' still needs' : 's still need'} review. You can still approve.`}
             </InfoTip>
           )
         )}

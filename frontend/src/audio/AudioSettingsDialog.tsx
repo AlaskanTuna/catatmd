@@ -28,15 +28,13 @@ const ENGINES: {
     id: 'local',
     name: 'On this device (whisper-small · WebGPU)',
     Icon: Cpu,
-    detail:
-      'Runs in this browser on the GPU where one is available, and falls back to the CPU where it is not. The model weights are downloaded once from a public CDN and then cached; that request carries no audio, no transcript and no identifier, because it happens before any of them exist. Tuned for English and Manglish. A consultation held mainly in Malay can come back rewritten in English rather than transcribed, which is the case the other option exists for.',
+    detail: 'Runs on this device. Audio is not uploaded.',
   },
   {
     id: 'hosted',
     name: 'ILMU (Malaysia) · ilmu-asr-v4.2',
     Icon: Server,
-    detail:
-      'The audio leaves this device. An early-access service: on our scripted Malay consultation it kept code-switched sentences intact, but sometimes hardened the first consonant of a Malay clinical word, hearing batuk as patut and demam as teman, so check those words when you review the draft. We have not agreed separate retention or training terms with ILMU, so their standard early-access terms apply. The returned text is de-identified before the note model drafts the Doctor and Patient labels, which are applied unreviewed and marked as such so the red-flag engine will not trust them, and your choice is recorded in the audit trail. Handled under the PDPA as amended in 2024, under which voice is biometric data and therefore sensitive personal data requiring explicit consent.',
+    detail: 'Sends audio to ILMU in Malaysia. Review the transcript carefully.',
   },
 ]
 
@@ -134,11 +132,6 @@ export function AudioSettingsDialog({
       .catch(() => setDevices([]))
   }, [])
 
-  const close = () => {
-    self.current?.close()
-    if (ref && typeof ref === 'object' && ref.current) ref.current.close()
-  }
-
   return (
     <dialog
       ref={(node) => {
@@ -148,6 +141,7 @@ export function AudioSettingsDialog({
       }}
       data-print="hide"
       aria-labelledby="audio-title"
+      onClose={() => setDraft(settings)}
       className="glass-panel m-auto w-[28rem] max-w-[calc(100vw-2rem)] rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
     >
       <div className="p-6">
@@ -273,24 +267,24 @@ export function AudioSettingsDialog({
             checked={draft.suppressNoise}
             onChange={(next) => setDraft({ ...draft, suppressNoise: next })}
             label="Suppress Room Noise"
-            detail="Filters steady background sound such as fans, air-conditioning and corridor noise. Turn it off if speech is being clipped at the start or end of sentences, which happens when the filter mistakes a quiet voice for background."
+            detail="Reduces steady background noise. Turn it off if quiet speech sounds clipped."
           />
           <Toggle
             checked={draft.boostQuietSpeech}
             onChange={(next) => setDraft({ ...draft, boostQuietSpeech: next })}
             label="Boost Quiet Speech"
-            detail="Raises the input level automatically, for softly spoken or elderly patients. It lifts room noise along with the voice, so leave it off unless a patient is genuinely hard to hear."
+            detail="Makes quiet speech louder. It may also amplify room noise."
           />
         </fieldset>
 
         <div className="mt-5 flex justify-end gap-2 border-line border-t pt-4">
-          <Button onClick={close}>Cancel</Button>
+          <Button onClick={() => self.current?.close()}>Cancel</Button>
           <Button
             variant="primary"
             onClick={() => {
               saveAudioSettings(draft)
               onApply(draft)
-              close()
+              self.current?.close()
             }}
           >
             Save

@@ -4,8 +4,8 @@ import type {
   EvidenceLink,
   OperationalBlock,
 } from '@shared/types'
-import { ChevronRight, Quote } from 'lucide-react'
-import { useState } from 'react'
+import { Maximize2, Quote } from 'lucide-react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { timestamp } from '../lib/clock.js'
 import { cn } from '../lib/cn.js'
 import { AssertionStateBadge } from '../ui/AssertionState.js'
@@ -224,21 +224,32 @@ export function ChecklistPanel({
   clinicalFacts,
   operational,
   evidenceLinks,
-  defaultOpen = false,
 }: {
   clinicalFacts?: ClinicalFacts
   operational?: OperationalBlock
   evidenceLinks?: EvidenceLink[]
-  /**
-   * Open while the consultation is still being captured (#219). Collapsed is
-   * right after the fact, when the note is the thing being read; during capture
-   * this panel is the patient card, and a card nobody has expanded shows the
-   * doctor nothing as it fills.
-   */
-  defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(defaultOpen)
+  const [open, setOpen] = useState(false)
+  const dialog = useRef<HTMLDialogElement>(null)
+  const closeButton = useRef<HTMLButtonElement>(null)
+  const titleId = useId()
   const linkFor = (fieldId: string) => evidenceLinks?.find((entry) => entry.fieldId === fieldId)
+
+  /*
+   * Guarded because jsdom implements neither `showModal` nor `close` (the same
+   * pattern as ConsultationReview's conversation dialog). The `open`
+   * attribute is what the UA stylesheet keys on, so the fallback still lifts
+   * the body out of `display: none` and into the accessibility tree, which is
+   * the part of the difference a test can see.
+   */
+  useEffect(() => {
+    if (!open) return
+    const node = dialog.current
+    if (!node) return
+    if (typeof node.showModal === 'function') node.showModal()
+    else node.setAttribute('open', '')
+    closeButton.current?.focus()
+  }, [open])
 
   // Absence is not the same as "nothing was assessed", and conflating the two
   // would state the precise falsehood §10 exists to prevent.
@@ -276,87 +287,119 @@ export function ChecklistPanel({
   const assessed = entries.filter((entry) => entry.assertion.state !== 'NOT_ASSESSED').length
 
   return (
-    /*
-     * `@container`, so the two-column split below reads the panel's own
-     * rendered width rather than the viewport's. `sm:grid-cols-2` is a media
-     * query: on an ordinary 1280px laptop viewport it is always true, whatever
-     * width the three-column review page has actually left this card, and this
-     * card sits in the narrowest of the three. Measured against the real
-     * rendered checklist: a two-column row can be squeezed to ~162-175px wide,
-     * and a state badge alone needs roughly 90-98px non-negotiable width (it
-     * must never truncate a clinical state word), so two columns simply cannot
-     * fit in that space, no matter how aggressively the label and value
-     * truncate. The container query switches to two columns only once the
-     * card itself has genuinely earned the room.
-     */
-    <Card className="@container mt-5">
+    <>
       {/*
-       * The disclosure had no visual affordance at all. `aria-expanded` told a
-       * screen reader it was expandable and nothing told anyone else, so the
-       * panel read as a static header with a count beside it and the content
-       * behind it was effectively undiscoverable.
-       *
-       * The chevron is the whole fix and it is deliberately the only addition:
-       * it is the one control users already read as "this opens", it rotates
-       * rather than swapping glyph so the state change is continuous, and it
-       * needs no label because the heading beside it already names the thing.
+       * The screen surface is a card-shaped button; the checklist itself lives
+       * in the dialog below. `aria-label` pins the accessible name because the
+       * visible content also carries the count, which is not part of the name.
        */}
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-3 rounded-card p-4 text-left transition-colors hover:bg-sunken-soft"
+        onClick={() => setOpen(true)}
+        aria-label="Completeness Checklist"
         data-tour="checklist"
+        data-print="hide"
+        className="mt-5 flex w-full items-center gap-3 rounded-card bg-surface p-4 text-left shadow-card transition-colors hover:bg-sunken-soft"
       >
-        <ChevronRight
-          aria-hidden
-          className={cn(
-            'size-4 shrink-0 text-ink-muted transition-transform duration-150 ease-out-quart',
-            open && 'rotate-90',
-          )}
-        />
         <span className="flex-1 text-sm font-semibold">Completeness Checklist</span>
         <span className="shrink-0 text-xs tabular-nums text-ink-muted">
           {assessed} of {entries.length} established
         </span>
+        <Maximize2 aria-hidden className="size-4 shrink-0 text-ink-muted" />
       </button>
 
-      {/* Rendered in print regardless of the on-screen toggle: the checklist is
-          the evidence that the fields were checked, and a collapsed panel in a
-          clinical document is just an omission. */}
-      <div className={open ? 'block' : 'hidden'} data-print="block">
-        {CHECKLIST_SECTION_ORDER.map((section) => {
-          const sectionEntries = entries.filter((entry) => entry.section === section)
-          const medications = section === 'plan' ? operational.medicationsDispensed : []
-          if (sectionEntries.length === 0 && medications.length === 0) return null
+      {/*
+       * The single checklist body stays mounted inside the closed dialog:
+       * `[data-print='block']` lifts it out of `display: none` for print,
+       * where the checklist is the evidence that the fields were checked, and
+       * a collapsed panel in a clinical document is just an omission. The
+       * fixed screen height, the absolute positioning a `<dialog>` carries by
+       * default, and the scroller's overflow cap would all silently truncate
+       * that evidence on paper, so the `print:` utilities flatten all three.
+       */}
+      <dialog
+        ref={dialog}
+        data-print="block"
+        onClose={() => setOpen(false)}
+        aria-labelledby={titleId}
+        className="glass-panel m-auto h-[min(85vh,48rem)] w-[min(56rem,calc(100vw-2rem))] max-w-none rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm print:static print:h-auto print:max-h-none print:overflow-visible"
+      >
+        <div className="flex h-full flex-col">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-6 py-4">
+            <h2
+              id={titleId}
+              className="font-display text-lg font-semibold flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2"
+            >
+              <span>Completeness Checklist</span>
+              <span aria-hidden className="text-sm font-normal tabular-nums text-ink-muted">
+                {assessed} of {entries.length} established
+              </span>
+            </h2>
+            {/* `ui/Button` does not forward a ref, and this is the button the
+                open effect focuses, so it is a plain element in Button's
+                `neutral`/`sm` styling. */}
+            <button
+              ref={closeButton}
+              type="button"
+              data-print="hide"
+              onClick={() => dialog.current?.close()}
+              className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-control border border-line bg-sunken-soft px-3 text-xs font-medium text-ink shadow-raised transition-colors duration-150 ease-out-quart hover:bg-sunken active:scale-[0.97]"
+            >
+              Close
+            </button>
+          </div>
+          {/*
+           * `@container`, so the two-column grid below reads the scroller's own
+           * rendered width rather than the viewport's. `sm:grid-cols-2` is a
+           * media query: on an ordinary 1280px laptop viewport it is always
+           * true, whatever width the review page has actually left this panel.
+           * Measured against the real rendered checklist, a two-column row can
+           * be squeezed to ~162-175px wide and a state badge needs roughly
+           * 90-98px it must never give up, so two columns cannot fit in that
+           * space no matter how aggressively the label and value truncate. The
+           * container query switches only once the scroller has genuinely
+           * earned the room.
+           */}
+          <div className="@container min-h-0 flex-1 overflow-y-auto bg-sunken p-6 print:overflow-visible">
+            <div className="flex flex-col gap-4">
+              {CHECKLIST_SECTION_ORDER.map((section) => {
+                const sectionEntries = entries.filter((entry) => entry.section === section)
+                const medications = section === 'plan' ? operational.medicationsDispensed : []
+                if (sectionEntries.length === 0 && medications.length === 0) return null
 
-          return (
-            <section key={section} className="border-t border-line px-4 py-4 page-break-avoid">
-              <h3 className="mb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
-                {CHECKLIST_SECTION_LABELS[section]}
-              </h3>
-              <dl className="mt-1 grid gap-x-10 @[320px]:grid-cols-2">
-                {sectionEntries.map(({ field, fieldId, assertion }) => (
-                  <ChecklistRow
-                    key={fieldId}
-                    label={humanise(field)}
-                    assertion={assertion}
-                    link={linkFor(fieldId)}
-                  />
-                ))}
-              </dl>
-              {medications.length > 0 && (
-                <p className="mt-2 text-sm text-ink">
-                  <span className="text-ink-muted">Dispensed: </span>
-                  {medications
-                    .flatMap((medication) => (medication.value ? [medication.value] : []))
-                    .join(', ')}
-                </p>
-              )}
-            </section>
-          )
-        })}
-      </div>
-    </Card>
+                return (
+                  <section
+                    key={section}
+                    className="rounded-card border border-line bg-surface p-4 page-break-avoid"
+                  >
+                    <h3 className="mb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                      {CHECKLIST_SECTION_LABELS[section]}
+                    </h3>
+                    <dl className="mt-1 grid gap-x-10 @[320px]:grid-cols-2">
+                      {sectionEntries.map(({ field, fieldId, assertion }) => (
+                        <ChecklistRow
+                          key={fieldId}
+                          label={humanise(field)}
+                          assertion={assertion}
+                          link={linkFor(fieldId)}
+                        />
+                      ))}
+                    </dl>
+                    {medications.length > 0 && (
+                      <p className="mt-2 text-sm text-ink">
+                        <span className="text-ink-muted">Dispensed: </span>
+                        {medications
+                          .flatMap((medication) => (medication.value ? [medication.value] : []))
+                          .join(', ')}
+                      </p>
+                    )}
+                  </section>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      </dialog>
+    </>
   )
 }

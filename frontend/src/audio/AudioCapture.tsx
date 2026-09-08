@@ -872,10 +872,7 @@ export function AudioCapture({
         <p className="flex items-start gap-1.5 text-sm text-ink-muted">
           <span>Speakers are labelled automatically, so check the transcript.</span>
           <InfoTip label="About the draft speaker labels" align="right" className="mt-0.5" layered>
-            Speakers are guessed from what each sentence says and from segment timing, never from
-            the voices: no voice model runs and no speaker identification happens anywhere in this
-            product. Labels are applied as the transcript arrives; correct any of them by editing
-            the transcript before you submit it.
+            Speaker labels are automatic. Check them before submitting.
           </InfoTip>
         </p>
       )}
