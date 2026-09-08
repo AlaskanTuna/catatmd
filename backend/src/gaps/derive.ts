@@ -31,6 +31,10 @@ export function deriveGaps(
       question: entry.question,
       rationale: entry.rationale,
       priority: entry.priority,
+      source:
+        entry.source.kind === 'guideline'
+          ? { kind: 'guideline', guidelineIds: [...entry.source.guidelineIds] }
+          : { kind: 'unsourced', reason: entry.source.reason },
     })
   }
 

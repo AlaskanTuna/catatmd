@@ -10,8 +10,8 @@ import { corpusIds } from '../guidelines/corpus.js'
  * so a past set of gaps can be traced back to the checklist that produced it.
  */
 export const GAP_CHECKLIST_VERSION: ClinicalArtefactVersion = {
-  id: 'gap-checklist-v4',
-  effectiveDate: '2026-09-08',
+  id: 'gap-checklist-v5',
+  effectiveDate: '2026-09-09',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
