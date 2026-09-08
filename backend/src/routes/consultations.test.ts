@@ -108,6 +108,10 @@ vi.mock('../redflags/index.js', async (importOriginal) => ({
   ]),
 }))
 
+vi.mock('../retrieval/index.js', () => ({
+  retrieveGuidelines: vi.fn(async () => []),
+}))
+
 vi.mock('../middleware/require-session.js', () => ({
   requireSession: (req: { doctorId?: string }, _res: unknown, next: () => void) => {
     req.doctorId = 'doctor-1'

@@ -14,7 +14,7 @@ import type {
 import { MedicalRecordNoteSchema, toSoapNote } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Maximize2, Pause, Play, Printer, Settings2, Sparkles } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import type { LivePanes } from '../audio/live/use-live-panes.js'
@@ -383,6 +383,24 @@ export function ConsultationReview() {
     enabled: !isEphemeral,
   })
   const guidelines = useQuery({ queryKey: ['guidelines'], queryFn: api.guidelines })
+
+  /*
+   * What a citation id may resolve to: the curated corpus plus the CPG chunks
+   * retrieval attached to this analysis. `retrievedGuidelines` is persisted on
+   * the analysis precisely so this lookup works without re-running retrieval,
+   * which would not be reproducible.
+   *
+   * The curated corpus is listed first so an id collision keeps the curated
+   * entry. The dedupe makes that precedence a fact rather than relying on
+   * retrieved ids never overlapping the corpus.
+   */
+  const citableGuidelines = useMemo(() => {
+    const curated = guidelines.data ?? []
+    const record = isEphemeral ? tour.ephemeral : consultation.data
+    const retrieved = record?.analysis?.retrievedGuidelines ?? []
+    const curatedIds = new Set(curated.map((chunk) => chunk.id))
+    return [...curated, ...retrieved.filter((chunk) => !curatedIds.has(chunk.id))]
+  }, [guidelines.data, isEphemeral, tour.ephemeral, consultation.data])
 
   const invalidate = (next: ConsultationDetail) => {
     queryClient.setQueryData(['consultation', id], next)
@@ -1217,7 +1235,7 @@ export function ConsultationReview() {
                       flag={flag}
                       disposition={byId(detail.redFlagDispositions, flag.id)}
                       onDecide={(decision) => patch.mutate({ redFlagDispositions: [decision] })}
-                      guidelines={guidelines.data ?? []}
+                      guidelines={citableGuidelines}
                       onPlay={audio.available ? audio.play : undefined}
                       playing={audio.playing}
                     />
@@ -1236,7 +1254,7 @@ export function ConsultationReview() {
                       gap={gap}
                       disposition={byId(detail.gapDispositions, gap.id)}
                       onDecide={(decision) => patch.mutate({ gapDispositions: [decision] })}
-                      guidelines={guidelines.data ?? []}
+                      guidelines={citableGuidelines}
                     />
                   ),
                 }))}
@@ -1260,9 +1278,7 @@ export function ConsultationReview() {
                 }
                 findings={analysis.suggestions.map((suggestion) => ({
                   id: suggestion.id,
-                  node: (
-                    <SuggestionCard suggestion={suggestion} guidelines={guidelines.data ?? []} />
-                  ),
+                  node: <SuggestionCard suggestion={suggestion} guidelines={citableGuidelines} />,
                 }))}
                 onShowAll={setOverflow}
               />

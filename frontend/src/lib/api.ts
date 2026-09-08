@@ -19,6 +19,8 @@ import {
   FixtureSchema,
   type GuidelineChunk,
   GuidelineChunkSchema,
+  type GuidelineDocument,
+  GuidelineDocumentSchema,
   type HostedAsrResult,
   HostedAsrResultSchema,
   type LiveAnalysisResponse,
@@ -103,6 +105,7 @@ const PatientDetailEnvelope = z.object({ patient: PatientDetailSchema })
 const ErasePatientEnvelope = z.object({ erasure: ErasePatientResultSchema })
 const FixturesEnvelope = z.object({ fixtures: z.array(FixtureSchema) })
 const GuidelinesEnvelope = z.object({ guidelines: z.array(GuidelineChunkSchema) })
+const GuidelineDocumentsEnvelope = z.object({ documents: z.array(GuidelineDocumentSchema) })
 const NotificationsEnvelope = z.object({ notifications: z.array(NotificationItemSchema) })
 
 /**
@@ -448,6 +451,9 @@ export const api = {
 
   guidelines: (): Promise<GuidelineChunk[]> =>
     request('/guidelines', GuidelinesEnvelope).then((r) => r.guidelines),
+
+  guidelineDocuments: (): Promise<GuidelineDocument[]> =>
+    request('/guidelines/documents', GuidelineDocumentsEnvelope).then((r) => r.documents),
 
   /**
    * `database` is absent in production by design, so a missing field must be

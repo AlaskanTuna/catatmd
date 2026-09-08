@@ -1,7 +1,7 @@
 import type { Disposition, GuidelineChunk, InformationGap, RedFlag } from '@shared/types'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GapCard, RedFlagCard } from './SafetyCards.js'
+import { GapCard, RedFlagCard, SuggestionCard } from './SafetyCards.js'
 
 /**
  * The disposition control shows two buttons at rest rather than three.
@@ -252,6 +252,98 @@ describe('RedFlagCard sources panel', () => {
     fireEvent.click(screen.getByRole('button', { name: /sources/i }))
 
     expect(screen.getByText('Malaysian Ministry of Health Cough Guideline')).toBeTruthy()
+  })
+})
+
+/**
+ * Retrieved CPG chunks carry fields the curated corpus never sets: the page a
+ * span was lifted from, and an OCR flag when the page was a scan. The link has
+ * to land on that page, and the note has to say the text may carry
+ * recognition errors, because both are the provenance a doctor checks a
+ * citation against.
+ */
+describe('retrieved CPG chunks', () => {
+  const RETRIEVED: GuidelineChunk = {
+    id: 'cpg-cough-p12',
+    title: 'Management of Acute Cough in Adults',
+    publisher: 'MOH Malaysia',
+    year: 2024,
+    url: 'https://example.com/cpg-cough.pdf',
+    summary: 'A retrieved span.',
+    sourceLicence: 'All rights reserved',
+    verbatimAllowed: false,
+    documentId: 'cpg-cough',
+    page: 12,
+    ocr: true,
+  }
+
+  function openSourcesPanel(chunk: GuidelineChunk) {
+    render(
+      <RedFlagCard
+        flag={{ ...FLAG, guidelineIds: [chunk.id] }}
+        disposition={undefined}
+        onDecide={vi.fn()}
+        guidelines={[chunk]}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+  }
+
+  function openCitation(chunk: GuidelineChunk) {
+    render(
+      <SuggestionCard
+        suggestion={{
+          id: 's-1',
+          text: 'A suggestion for review.',
+          citations: [{ guidelineId: chunk.id }],
+        }}
+        guidelines={[chunk]}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: chunk.id }))
+  }
+
+  it('links a sources-panel citation to the page the span came from', () => {
+    openSourcesPanel(RETRIEVED)
+
+    const link = screen.getByRole('link', { name: 'Open source, p. 12' })
+    expect(link.getAttribute('href')).toBe('https://example.com/cpg-cough.pdf#page=12')
+  })
+
+  it('links a suggestion citation the same way', () => {
+    openCitation(RETRIEVED)
+
+    const link = screen.getByRole('link', { name: 'Open source, p. 12' })
+    expect(link.getAttribute('href')).toBe('https://example.com/cpg-cough.pdf#page=12')
+  })
+
+  it('warns when the span was recovered by OCR', () => {
+    openCitation(RETRIEVED)
+
+    expect(
+      screen.getByText('Text recovered by OCR from a scanned page; verify against the source.'),
+    ).toBeTruthy()
+  })
+
+  it('clamps a long retrieved span behind a disclosure', () => {
+    openCitation({ ...RETRIEVED, summary: 'a span of guideline text '.repeat(30) })
+
+    const toggle = screen.getByRole('button', { name: 'Show more' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+
+    fireEvent.click(toggle)
+
+    expect(screen.getByRole('button', { name: 'Show less' }).getAttribute('aria-expanded')).toBe(
+      'true',
+    )
+  })
+
+  it('renders a short summary without a toggle', () => {
+    openCitation(RETRIEVED)
+
+    expect(screen.getByText('A retrieved span.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /show more/i })).toBeNull()
   })
 })
 

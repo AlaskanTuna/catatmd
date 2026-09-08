@@ -1,8 +1,9 @@
 # Citation corpus
 
 Curated guideline chunks the model may cite, each with a stable ID. The model
-receives the whole corpus (`serialiseCorpusForPrompt` in `prompt.ts` — no
-retrieval step at this size) and may only cite an ID present in it; free-text
+receives the whole curated corpus (`serialiseCorpusForPrompt` in `prompt.ts`),
+plus any CPG chunks retrieved for the consultation (`backend/src/retrieval/`),
+and may only cite an ID present in that union; free-text
 references fail schema validation, which makes hallucinated citations
 structurally impossible rather than merely unlikely.
 

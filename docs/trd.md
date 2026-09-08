@@ -85,16 +85,16 @@ It does double duty, and both jobs are load-bearing enough that neither would ju
 
 ### Clinical Note & Analysis
 
-| Schema                       | Fields                                                                                                                                                          |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SoapNoteSchema`             | `subjective`, `objective`, `assessment`, `plan` — all `string`                                                                                                  |
-| `NoteTemplateSchema`         | `enum(['soap','malaysian'])`                                                                                                                                    |
-| `MedicalRecordNoteSchema`    | `presentingComplaint`, `historyOfPresentingComplaint`, `pastMedicalHistory`, `socialHistory`, `familyHistory`, `objective`, `assessment`, `plan` — all `string` |
-| `InformationGapSchema`       | `id: string`, `question: string`, `rationale: string`, `priority: enum(['high','medium','low'])`, `source?: GapSource`                                          |
-| `RedFlagSchema`              | `id: string`, `label: string`, `severity: enum(['emergency','urgent','advisory'])`, `evidence: string`, `source: enum(['rule','model'])`, `ruleId?: string`     |
-| `CitationSchema`             | `guidelineId: string`, `quote?: string`                                                                                                                         |
-| `ClinicalSuggestionSchema`   | `id: string`, `text: string`, `citations: Citation[]` — `.min(1)`                                                                                               |
-| `ConsultationAnalysisSchema` | `note: SoapNote`, `medicalRecordNote?: MedicalRecordNote`, `gaps: InformationGap[]`, `redFlags: RedFlag[]`, `suggestions: ClinicalSuggestion[]`                 |
+| Schema                       | Fields                                                                                                                                                                                                                                                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SoapNoteSchema`             | `subjective`, `objective`, `assessment`, `plan` — all `string`                                                                                                                                                                                                                                                |
+| `NoteTemplateSchema`         | `enum(['soap','malaysian'])`                                                                                                                                                                                                                                                                                  |
+| `MedicalRecordNoteSchema`    | `presentingComplaint`, `historyOfPresentingComplaint`, `pastMedicalHistory`, `socialHistory`, `familyHistory`, `objective`, `assessment`, `plan` — all `string`                                                                                                                                               |
+| `InformationGapSchema`       | `id: string`, `question: string`, `rationale: string`, `priority: enum(['high','medium','low'])`, `source?: GapSource`                                                                                                                                                                                        |
+| `RedFlagSchema`              | `id: string`, `label: string`, `severity: enum(['emergency','urgent','advisory'])`, `evidence: string`, `source: enum(['rule','model'])`, `ruleId?: string`                                                                                                                                                   |
+| `CitationSchema`             | `guidelineId: string`, `quote?: string`                                                                                                                                                                                                                                                                       |
+| `ClinicalSuggestionSchema`   | `id: string`, `text: string`, `citations: Citation[]` — `.min(1)`                                                                                                                                                                                                                                             |
+| `ConsultationAnalysisSchema` | `note: SoapNote`, `medicalRecordNote?: MedicalRecordNote`, `gaps: InformationGap[]`, `redFlags: RedFlag[]`, `suggestions: ClinicalSuggestion[]`, `retrievedGuidelines?: GuidelineChunk[]` (the retrieved CPG chunks offered to the model, persisted so a citation resolves without re-running retrieval; §11) |
 
 #### Note Template Projections
 
@@ -710,13 +710,83 @@ Merging them into one "Centor threshold" chunk would manufacture a consensus tha
 
 ### Candidate Set Reaching The Prompt
 
-The whole corpus (Q16) — every chunk's `id`, `title`, and `summary` — is serialised into the system prompt for the `suggestions_and_red_flags` call (§12). No retrieval step; unjustifiable complexity at 10–15 chunks.
+The whole corpus (Q16) — every chunk's `id`, `title`, and `summary` — is serialised into the system prompt for the `suggestions_and_red_flags` call (§12). This is the floor, not the ceiling: the retrieved tier below widens the candidate set per consultation, while the curated corpus reaches every call regardless.
 
 ### Schema-Enforced Rejection
 
 `ClinicalSuggestionSchema.citations[].guidelineId` is `z.string()` in the shared schema (§3) — the shared package cannot depend on a backend-only corpus. The request-time schema used for the suggestions call (§12) narrows this field to `z.enum(corpusIds)`, where `corpusIds` is the live list of chunk ids at request time. A citation naming an id outside that set fails `request.schema.safeParse()` inside `OpenAICompatibleClient.generate()` (§6, `Built`) and throws `LLMResponseError` — the suggestion never reaches the doctor. This is a schema-enforced rejection path, not a prompt instruction the model could choose to ignore.
 
-**Resolved 13/08/26** — source selection and the redistribution stance are settled above, and `verbatimAllowed` now carries the distinction in the schema rather than in a comment. §19 row 3 is closed. Two residual items are **not** settled and are deliberately not represented as such: whether a MaHTAS/MOH _Clinical Practice Guideline_ distinct from the NAG exists for URTI (the MaHTAS portal refused connection during research; the working assumption is that NAG is the operative Malaysian source), and the fact that no clinician has reviewed the summaries corrected by the 07/09/26 primary-source audit (`docs/prd.md` §12, issue #240).
+**Resolved 13/08/26** — source selection and the redistribution stance are settled above, and `verbatimAllowed` now carries the distinction in the schema rather than in a comment. §19 row 3 is closed. **Resolved 09/09/26:** the MaHTAS residual is answered. A Malaysian CPG for this territory does exist: the Academy of Medicine library lists _Management of Sore Throat_ (2003, portal file id 284), 23 years old, now ingested into the retrieved tier below alongside the NAG 2024 anchoring. One residual remains, still deliberately not represented as settled: no clinician has reviewed the summaries corrected by the 07/09/26 primary-source audit (`docs/prd.md` §12, issue #240).
+
+### Retrieved Tier: CPG Library (Built 09/09/26)
+
+A second, per-consultation corpus sits beside the curated one. `docs/README.md` ("Guardrails Against Fabrication", "Guideline Grounding: Two Tiers, One Constraint") carries the reader-facing narrative; this subsection is the implementation reference.
+
+**Why two tiers rather than one merged corpus:**
+
+- **The curated corpus is the floor.** The eleven chunks above are audited and licence-aware, and they remain the only ids the red-flag triggers (§10) and the gap checklist may cite, because deterministic artefacts need ids that survive a re-ingest.
+- **The retrieved library is the ceiling.** `corpus/cpg/manifest.json` indexes 109 CPG documents from the Academy of Medicine portal; the top chunks for each consultation join the `suggestions_and_red_flags` candidate set (§12), cited only by the model under the same `z.enum` as curated ids.
+- **Retrieved ids are not stable identifiers.** They are generated per document, page, and chunk ordinal at ingest and change on re-ingest, so nothing outside the prompt names one. The review UI resolves them from `ConsultationAnalysis.retrievedGuidelines` (§3), persisted with the analysis because re-running retrieval would not be reproducible.
+
+#### Data Model
+
+Two Prisma models, added by migrations `20260909000000_add_guideline_retrieval`, `20260909000100_add_guideline_chunk_ocr`, and `20260909000200_scope_guideline_documents`:
+
+| Model               | Columns                                                                                                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GuidelineDocument` | `id`, `title`, `publisher`, `year`, `sourceUrl`, `jurisdiction`, `sourceLicence`, `sha256`, `storagePath?`, `pageCount`, `ingestedAt`, `profiles[]`, `verbatimAllowed` |
+| `GuidelineChunk`    | `id`, `documentId` → `GuidelineDocument` (`onDelete: Cascade`), `page`, `ordinal`, `heading?`, `text`, `ocr`, `embedding vector(1024)?`, `tsv tsvector?`               |
+
+`embedding` and `tsv` are `Unsupported` to Prisma and written by raw SQL at ingest. `tsv` is a stored generated column (`to_tsvector('english', coalesce(heading, '') || ' ' || text)`) behind a GIN index, and `embedding` carries an HNSW index (`vector_cosine_ops`). `@@index([documentId, ordinal])` preserves per-document chunk order.
+
+#### Retrieval Algorithm
+
+`retrieveGuidelines(content: Deidentified, { profileId })` in `backend/src/retrieval/retrieve.ts` runs six steps:
+
+1. **Guard.** Count chunks in the requested jurisdiction (default `'MY'`) whose document is tagged with the active `profileId`; nothing in scope returns `[]` before any other work. A document with no profile tag is never retrievable, which is the default for every manifest entry until an operator scopes it.
+2. **Lexical.** `buildLexicalQuery` reduces the text to its 12 most frequent non-stopword terms (English and Malay stop lists, de-id tokens stripped) and ORs them into `to_tsquery('english')`, ranked by `ts_rank_cd` over `tsv`, top 20, then floored at `ts_rank_cd >= 0.2` (at least two query terms).
+3. **Semantic.** The content, truncated to 6,000 characters, is embedded through the gated `EmbeddingClient` (below) and matched by pgvector cosine distance (`<=>`) against `embedding`, top 20, then floored at cosine similarity `>= 0.42` (calibrated 09/09/26 on the scoped CPGs).
+4. **Fuse.** Reciprocal rank fusion over both floored lists with `k = 60`; the fused order supplies up to 6 ids. The floors are what keep the citation constraint meaningful: without them retrieval always returns six chunks, and the `z.enum` would guarantee only that an id exists, not that it applies.
+5. **Load.** `prisma.guidelineChunk.findMany` with `include: { document: true }` for the winning ids, reordered to the fused ranking.
+6. **Map.** Each row is parsed through `GuidelineChunkSchema` with `summary` set to the chunk text and `title` carrying the page (`"Document title, p. 12: heading"`), plus `documentId`, `page`, and `ocr`, so the review UI can link `url#page=N` and flag OCR spans.
+
+#### Embedding Egress
+
+`backend/src/lib/llm/embeddings.ts` exports a second egress point beside `LLMClient`, gated the same way: `embed()` accepts only `readonly Deidentified[]`. It is always Qwen regardless of `LLM_PROVIDER`, because the stored vectors were produced by one model and a query embedded by another would silently match nothing; it shares `QWEN_API_KEY` and `QWEN_BASE_URL` and selects the model from `QWEN_EMBEDDING_MODEL` (default `text-embedding-v4`).
+
+#### Failure Behaviour
+
+| Condition                              | Behaviour                                                                                                                   |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Chunk table empty for the jurisdiction | Returns `[]` before any embedding call; the analysis runs on the curated corpus                                             |
+| Embedding call fails                   | Logs `embedding_unavailable` and continues lexical-only                                                                     |
+| `retrieveGuidelines` throws            | The `/analyze` handler logs `retrieval_error` and proceeds with the curated corpus alone; analysis never fails on retrieval |
+| Nothing ranks                          | Returns `[]`; `retrievedGuidelines` is omitted from the persisted analysis rather than stored empty                         |
+
+#### Ingestion Pipeline
+
+`bun run corpus:ingest` runs `backend/src/scripts/ingest-cpg.ts`:
+
+1. **Match.** Each PDF in `corpus/cpg/raw/` (gitignored) is matched to a `corpus/cpg/manifest.json` entry by filename, falling back to first-page title text; unmatched files are skipped.
+2. **Extract.** Text is extracted per page with poppler `pdftotext -layout`. A page under 80 non-whitespace characters is treated as scanned: rendered by `pdftoppm` at 200 dpi and OCRed with Tesseract `eng+msa`, and its chunks are flagged `ocr`.
+3. **Chunk.** Within one page only, never across a page boundary, at up to 1,200 characters with 150 overlap, merging undersized fragments.
+4. **Embed And Write.** Every chunk is embedded through the same gated client (guideline text passes through `deidentify` too, so there is one rule and no exemption list) and written in a single transaction: the document's chunks are replaced, the document row upserted, and vectors set by raw SQL. An unchanged `sha256` short-circuits the file unless `--force`.
+5. **Upload.** The PDF is PUT to the private Supabase Storage bucket when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set, and `storagePath` records the object key. Skipped when they are absent.
+
+Flags: `--dry-run` (match, extract, and chunk with no writes), `--only <id>`, `--skip-upload`, `--force`. Requires poppler and Tesseract with the `eng` and `msa` language packs on the machine.
+
+#### Environment
+
+| Variable                     | Constraint       | Role                                                                          |
+| ---------------------------- | ---------------- | ----------------------------------------------------------------------------- |
+| `QWEN_EMBEDDING_MODEL`       | `string()`       | Embedding model for retrieval queries and ingest; default `text-embedding-v4` |
+| `SUPABASE_URL`               | `string().url()` | Ingest upload only; optional, the upload step is skipped when absent          |
+| `SUPABASE_SERVICE_ROLE_KEY`  | `string()`       | Ingest upload only; optional, the upload step is skipped when absent          |
+| `SUPABASE_GUIDELINES_BUCKET` | `string()`       | Ingest upload only; default `guidelines`                                      |
+
+#### Licence Status
+
+AMM/MOH reuse terms for the CPG library are unconfirmed (issue #250); every ingested document carries `sourceLicence: 'MOH-CPG-unconfirmed'`. This is a private prototype and nothing is redistributed.
 
 ---
 
@@ -776,6 +846,8 @@ Splitting the prompt was a second, unbudgeted gain: each half now carries only t
 | response schema | Proposed `z.object({ redFlags: z.array(RedFlagSchema.omit({ source: true, ruleId: true }).extend({ source: z.literal('model') })), suggestions: z.array(ClinicalSuggestionSchema.extend({ citations: z.array(CitationSchema.extend({ guidelineId: z.enum(corpusIds) })).min(1) })) })` |
 | `schemaName`    | `"suggestions_and_red_flags"`                                                                                                                                                                                                                                                          |
 | `temperature`   | Default `0.2` (§6)                                                                                                                                                                                                                                                                     |
+
+The candidate set named in the `system` row is the union of the active profile's curated corpus and the chunks `retrieveGuidelines` returned for this transcript (`generateSuggestions` concatenates `[...profile.guidelineCorpus, ...retrieved]`), and the `corpusIds` feeding the `z.enum` above are built from that union, so a retrieved chunk id is citable exactly like a curated one (§11).
 
 ### Scope Notice For Non-URTI Presentations
 
@@ -839,14 +911,15 @@ The harness prints counts and durations only, never transcript or model text.
 
 All of these were proposed here first, under this document's Q17 mandate ("the TRD proposes, the human ratifies"), and have since been ratified and built. They now live in `shared/src/index.ts`.
 
-| Schema                       | Shape                                                                                                                                                                                                                                                                                                                                                                                              |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ConsultationListItemSchema` | `id`, `status`, `createdAt`, `updatedAt` — no transcript/analysis body, for the consultation-list view (Q2)                                                                                                                                                                                                                                                                                        |
-| `ConsultationDetailSchema`   | `ConsultationSchema` (§3) extended with `editedNote: SoapNoteSchema.nullable()`, rollout-safe `editedMedicalRecordNote: MedicalRecordNoteSchema.nullable()`, approval attribution, and review dispositions                                                                                                                                                                                         |
-| `ErrorEnvelopeSchema`        | `z.object({ error: z.object({ code: z.string(), message: z.string() }) })` — uniform across every route                                                                                                                                                                                                                                                                                            |
-| `FixtureSchema`              | `id: string`, `label: string`, `transcript: Transcript` — names the shape `GET /api/fixtures` already returns, so no route response is an inline anonymous type                                                                                                                                                                                                                                    |
-| `GuidelineChunkSchema`       | Mirrors §11's `GuidelineChunk` interface (`id`, `title`, `publisher`, `year: number`, `url`, `summary`, `sourceLicence`, `verbatimAllowed: boolean`, `quote?`) — new export enabling `GET /api/guidelines`. `verbatimAllowed` must be surfaced, not stripped: the citation-detail view is where a licence-restricted chunk's absent `quote` needs explaining rather than looking like missing data |
-| `HostedAsrResultSchema`      | `{ text: z.string(), durationSeconds: z.number(), segments: z.array(HostedAsrSegmentSchema) }`, `Built` with #154. `segments` stays `[]` until the provider honours `verbose_json` (§20.3 finding 5); `HostedAsrSegmentSchema` is `{ text, start, end: number \| null }`, field-for-field with the local worker's segment so either source can feed the draft-labels gate                          |
+| Schema                       | Shape                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ConsultationListItemSchema` | `id`, `status`, `createdAt`, `updatedAt` — no transcript/analysis body, for the consultation-list view (Q2)                                                                                                                                                                                                                                                                                                                                                              |
+| `ConsultationDetailSchema`   | `ConsultationSchema` (§3) extended with `editedNote: SoapNoteSchema.nullable()`, rollout-safe `editedMedicalRecordNote: MedicalRecordNoteSchema.nullable()`, approval attribution, and review dispositions                                                                                                                                                                                                                                                               |
+| `ErrorEnvelopeSchema`        | `z.object({ error: z.object({ code: z.string(), message: z.string() }) })` — uniform across every route                                                                                                                                                                                                                                                                                                                                                                  |
+| `FixtureSchema`              | `id: string`, `label: string`, `transcript: Transcript` — names the shape `GET /api/fixtures` already returns, so no route response is an inline anonymous type                                                                                                                                                                                                                                                                                                          |
+| `GuidelineChunkSchema`       | Mirrors §11's `GuidelineChunk` interface (`id`, `title`, `publisher`, `year: number`, `url`, `summary`, `sourceLicence`, `verbatimAllowed: boolean`, `quote?`, plus `documentId?`, `page?`, `ocr?` set on retrieved CPG chunks only) — new export enabling `GET /api/guidelines`. `verbatimAllowed` must be surfaced, not stripped: the citation-detail view is where a licence-restricted chunk's absent `quote` needs explaining rather than looking like missing data |
+| `GuidelineDocumentSchema`    | `id`, `title`, `publisher`, `year: number`, `sourceUrl`, `jurisdiction`, `sourceLicence`, `pageCount`, `chunkCount`, `ingestedAt`. Backs `GET /api/guidelines/documents`, the ingested-CPG listing on the Guidelines page (§11); `sha256` and `storagePath` are ingest-side provenance and deliberately not serialised                                                                                                                                                   |
+| `HostedAsrResultSchema`      | `{ text: z.string(), durationSeconds: z.number(), segments: z.array(HostedAsrSegmentSchema) }`, `Built` with #154. `segments` stays `[]` until the provider honours `verbose_json` (§20.3 finding 5); `HostedAsrSegmentSchema` is `{ text, start, end: number \| null }`, field-for-field with the local worker's segment so either source can feed the draft-labels gate                                                                                                |
 
 ### Routes
 
@@ -1178,6 +1251,17 @@ Source: `render.yaml` (repo root).
 `envVars`: `NODE_ENV=production`; `DATABASE_URL`, `DIRECT_URL`, `BETTER_AUTH_URL`, `CORS_ORIGIN`, `QWEN_API_KEY`, `ILMU_API_KEY` all `sync: false` (set manually in the Render dashboard, never committed); `BETTER_AUTH_SECRET` uses `generateValue: true`; `LLM_PROVIDER=qwen`; `QWEN_BASE_URL` pinned to the Singapore Model Studio endpoint; `QWEN_MODEL=qwen3.7-flash`; `DEID_FAIL_CLOSED: 'true'`.
 
 `QWEN_MODEL` pins the same untested default flagged in Open #6 below — the value is already committed to the deploy config before the exact model id has been confirmed against a live Model Studio account.
+
+The retrieved tier (§11) adds four `EnvSchema` fields, all deliberately absent from `render.yaml`:
+
+| Variable                     | Constraint       | Where It Is Needed                                                                                              |
+| ---------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------- |
+| `QWEN_EMBEDDING_MODEL`       | `string()`       | Nowhere unless the model changes: the committed default `text-embedding-v4` matches the stored vectors          |
+| `SUPABASE_URL`               | `string().url()` | The machine running `bun run corpus:ingest`, for the private-bucket PDF upload; the step is skipped when absent |
+| `SUPABASE_SERVICE_ROLE_KEY`  | `string()`       | Same; the upload credential, never the running service                                                          |
+| `SUPABASE_GUIDELINES_BUCKET` | `string()`       | Same; default `guidelines`                                                                                      |
+
+The running service needs none of the `SUPABASE_*` set: citation links resolve to each document's `sourceUrl` on the AMM portal, and ingestion is a developer-machine script rather than a service path.
 
 #### `render.yaml` Is Not Authoritative For Env Vars On A Live Service
 
