@@ -148,6 +148,10 @@ let chainHead: string | null = null
 
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
+    // Erasure destroys the recording too (#293). Stubbed empty because these
+    // tests seed no audio; the delete itself is covered in
+    // audit/erasure.test.ts and audio/audio.test.ts.
+    consultationAudio: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     consultation: {
       findFirst: vi.fn(
         async ({ where }: { where: { id: string; doctorId: string; erasedAt: null } }) => {

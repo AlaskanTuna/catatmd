@@ -276,9 +276,48 @@ model Consultation {
   updatedAt  DateTime  @updatedAt
 
   auditEvents AuditEvent[]
+  audio       ConsultationAudio?
 
   @@index([doctorId, status])
   @@map("consultation")
+}
+
+/// The consultation recording, kept only while the doctor may still need it to
+/// check what the recogniser wrote (#293).
+///
+/// **The most sensitive data in this system.** A voice is an identifier in its
+/// own right, so unlike every text column this cannot be de-identified, and it
+/// must never reach a provider. It is not part of the clinical record: the
+/// approved note is. This exists so a doctor can verify a sentence before
+/// standing behind it, and it is destroyed once they have.
+///
+/// **A table of its own, not a column on `Consultation`, for two reasons.**
+/// A `Bytes` column would be pulled into every ordinary read of a consultation
+/// that did not name an explicit `select`, which is most of them, so a few MB
+/// of audio would ride along with every list and detail fetch. And erasure here
+/// is a real delete rather than the tombstone the clinical columns take: there
+/// is no audit reason to keep an emptied audio row, and a row that is gone
+/// cannot be read back by a query that forgot a filter.
+///
+/// Retention is not decided here. `expiresAt` comes from `AUDIO_RETENTION_HOURS`,
+/// which has no default: with it unset nothing is ever stored. See
+/// `backend/src/config/env.ts`.
+model ConsultationAudio {
+  /// Also the primary key: one recording per consultation, enforced by the schema.
+  consultationId String       @id
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  data     Bytes
+  /// The container it was captured in, so it can be served back as it arrived.
+  mimeType String
+
+  /// When it stops being served and becomes eligible for sweeping. Indexed
+  /// because the sweep queries on it and nothing else.
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("consultation_audio")
 }
 
 /// Append-only audit trail. Records identifiers and event types only — never

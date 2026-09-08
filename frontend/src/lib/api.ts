@@ -279,6 +279,44 @@ export const api = {
       (r) => r.consultation,
     ),
 
+  /**
+   * Stores the consultation recording, so the doctor can still check a sentence
+   * against it after the tab has been closed (#293).
+   *
+   * Raw bytes rather than JSON, because base64 would inflate a 25 MB recording
+   * past the route's own cap for nothing. The header override is deliberate:
+   * `request` defaults a body to `application/json`, and the route refuses
+   * anything that is not `audio/*`.
+   *
+   * Failure is not surfaced to the doctor. The transcript is already saved by
+   * this point, and a recording that did not store costs them the ability to
+   * play a sentence back, not the consultation. A banner here would report a
+   * problem they cannot act on in the middle of the work that matters.
+   */
+  putConsultationAudio: (id: string, recording: Blob): Promise<{ expiresAt: Date }> =>
+    request(`/consultations/${id}/audio`, z.object({ expiresAt: z.coerce.date() }), {
+      method: 'PUT',
+      body: recording,
+      headers: { 'Content-Type': recording.type || 'audio/webm' },
+    }),
+
+  /**
+   * Fetches the stored recording, or null when there is none to fetch.
+   *
+   * Bespoke rather than routed through `request`, which parses every response
+   * as JSON: this one is audio. A 404 is the ordinary answer, not an error,
+   * because it covers both "never recorded" and "the retention window closed",
+   * and neither is something to raise to a doctor reading a transcript.
+   */
+  getConsultationAudio: async (id: string): Promise<Blob | null> => {
+    const response = await fetch(`${BASE}/api/consultations/${id}/audio`, {
+      credentials: 'include',
+    })
+    if (response.status === 404) return null
+    if (!response.ok) throw new ApiError(response.status, 'audio_failed', 'Could not load audio.')
+    return response.blob()
+  },
+
   history: (id: string): Promise<AuditEvent[]> =>
     request(`/consultations/${id}/history`, HistoryEnvelope).then((r) => r.events),
 

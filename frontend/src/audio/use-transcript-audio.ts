@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { dropRecording, keepRecording, recordingUrl } from './session-audio.js'
+import { api } from '../lib/api.js'
+import { keepRecording, recordingUrl } from './session-audio.js'
 
 /**
  * Playing one transcript turn back from the consultation's own recording
@@ -12,6 +13,12 @@ import { dropRecording, keepRecording, recordingUrl } from './session-audio.js'
  * least reliable. Playing the audio behind a sentence is the only way to settle
  * it.
  *
+ * **Two sources, in that order.** The recording a capture just produced is
+ * already in memory, so it plays without a round trip. On any later visit it is
+ * fetched from the API, which holds it for the configured retention window.
+ * Absent from both is an ordinary state, not a failure: the window may have
+ * closed, storage may be switched off, or the transcript may have been typed.
+ *
  * Lives outside the review page because that page is long enough already, and
  * because the seek-and-stop behaviour is worth testing on its own.
  */
@@ -22,13 +29,44 @@ export function useTranscriptAudio(consultationId: string) {
   const [src, setSrc] = useState(() => recordingUrl(consultationId))
   const [playing, setPlaying] = useState<string | undefined>(undefined)
 
-  // A different consultation is a different recording, and the module store
-  // only ever holds one. Reading it again here is what makes navigating away
-  // and back inside the SPA keep working.
+  /*
+   * Falls back to the stored recording when memory has none, which is every
+   * visit after the one that captured it.
+   *
+   * Guarded against a consultation change mid-flight, so a slow fetch for the
+   * record the doctor just navigated away from cannot hand its audio to the one
+   * they are now looking at. A failure is swallowed: the transcript is still
+   * perfectly readable without audio, and a banner would report a problem the
+   * doctor cannot act on.
+   */
   useEffect(() => {
-    setSrc(recordingUrl(consultationId))
+    const held = recordingUrl(consultationId)
+    setSrc(held)
     setPlaying(undefined)
     stopAt.current = null
+    if (held !== undefined) return
+
+    let current = true
+    void api
+      .getConsultationAudio(consultationId)
+      .then((recording) => {
+        if (!current || recording === null) return
+        /*
+         * A recording captured while this fetch was in flight wins. `current`
+         * only tracks unmount and a change of consultation, so without this a
+         * slow GET could land after `keep()` stored a fresh take and replace it
+         * with the older stored copy, revoking the new one's URL on the way.
+         * The doctor would then be checking a sentence against the wrong audio,
+         * which is worse than having none.
+         */
+        if (recordingUrl(consultationId) !== undefined) return
+        keepRecording(consultationId, recording)
+        setSrc(recordingUrl(consultationId))
+      })
+      .catch(() => {})
+    return () => {
+      current = false
+    }
   }, [consultationId])
 
   const stop = useCallback(() => {
@@ -37,24 +75,22 @@ export function useTranscriptAudio(consultationId: string) {
     setPlaying(undefined)
   }, [])
 
-  /** Takes the recording a capture just produced, and shows it to the page. */
+  /**
+   * Takes the recording a capture just produced and stores it.
+   *
+   * Shown immediately from memory rather than waiting on the upload, so the
+   * doctor can play a sentence back the moment the transcript settles. The
+   * upload is what makes it survive the tab closing; its failure costs the
+   * later visit, not this one.
+   */
   const keep = useCallback(
     (blob: Blob) => {
       keepRecording(consultationId, blob)
       setSrc(recordingUrl(consultationId))
+      void api.putConsultationAudio(consultationId, blob).catch(() => {})
     },
     [consultationId],
   )
-
-  /**
-   * Releases the recording. Called on approval: the note is now the record, and
-   * the window in which the audio was needed to check it has closed.
-   */
-  const release = useCallback(() => {
-    stop()
-    dropRecording(consultationId)
-    setSrc(undefined)
-  }, [consultationId, stop])
 
   const play = useCallback(
     (key: string, startSeconds: number, endSeconds?: number) => {
@@ -119,7 +155,6 @@ export function useTranscriptAudio(consultationId: string) {
     playing,
     play,
     keep,
-    release,
   }
 }
 

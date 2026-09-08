@@ -5,7 +5,7 @@ import {
   LiveSessionRequestSchema,
   LiveSessionSchema,
 } from '@shared/types'
-import express, { type NextFunction, type Request, type Response, Router } from 'express'
+import { type NextFunction, type Request, type Response, Router } from 'express'
 import {
   type AsrRelayFailureReason,
   type LiveSessionFailureReason,
@@ -26,6 +26,7 @@ import {
 import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor } from '../lib/llm/index.js'
 import { logger } from '../lib/logger.js'
+import { inFlightGate, parseAudioBody } from '../middleware/audio-body.js'
 
 export const asrRouter = Router()
 
@@ -36,71 +37,23 @@ function doctorId(req: { doctorId?: string }): string {
 }
 
 /**
- * 25 MB because that is the provider's own request cap: a body it would reject
- * anyway is refused before it is buffered. `inflate: false` keeps the cap
- * honest: audio is already compressed, and an inflated `Content-Encoding`
- * body would let a tiny request force a 25 MB allocation.
- */
-const rawAudio = express.raw({ type: 'audio/*', limit: '25mb', inflate: false })
-
-/**
- * A process-wide bound on live audio buffers, which the per-caller limiter
- * cannot give: `hostedAsrRateLimit` counts requests per `clientKey` per
- * minute, so N callers could otherwise hold N x 5 x 25 MB at once on Render's
- * 512 MB instance. Two concurrent relays keeps the worst case (body plus the
- * Blob snapshot, per request) comfortably inside it; the third caller gets a
+ * The 25 MB cap, the `inflate: false` reasoning and the 413 mapping now live in
+ * `middleware/audio-body.ts`, because consultation audio storage needs exactly
+ * the same three (#293) and two copies would be two places for them to drift.
+ * The reasoning is unchanged and is documented there.
+ *
+ * Two concurrent relays keeps the worst case (body plus the Blob snapshot, per
+ * request) comfortably inside Render's 512 MB instance; the third caller gets a
  * clean 503 before any body is buffered, which beats an OOM that takes the
- * clinical routes down with it.
+ * clinical routes down with it. Its own counter rather than one shared with the
+ * storage routes, so a doctor uploading a recording can never be refused
+ * transcription, or the other way round.
  */
-const MAX_CONCURRENT_RELAYS = 2
-let relaysInFlight = 0
-
-function acquireRelaySlot(_req: Request, res: Response, next: NextFunction) {
-  if (relaysInFlight >= MAX_CONCURRENT_RELAYS) {
-    next(new HttpError(503, 'asr_unavailable', 'Hosted transcription is busy. Retry shortly.'))
-    return
-  }
-  relaysInFlight += 1
-  // 'close' fires once the response finishes or the connection drops, so the
-  // slot is released on every exit path, including a client abort mid-upload.
-  res.once('close', () => {
-    relaysInFlight -= 1
-  })
-  next()
-}
-
-/**
- * Wraps the raw parser so an oversized body maps onto the error envelope.
- * `errorHandler` has no body-parser branch, so unwrapped, `entity.too.large`
- * would surface as a generic 500 rather than a 413.
- */
-function parseAudioBody(req: Request, res: Response, next: NextFunction) {
-  rawAudio(req, res, (error?: unknown) => {
-    const parserErrorType =
-      typeof error === 'object' && error !== null && 'type' in error
-        ? (error as { type: unknown }).type
-        : undefined
-    if (parserErrorType === 'entity.too.large') {
-      next(new HttpError(413, 'audio_too_large', 'The recording exceeds the 25 MB limit.'))
-      return
-    }
-    if (parserErrorType === 'encoding.unsupported') {
-      next(
-        new HttpError(
-          415,
-          'unsupported_media_type',
-          'Compressed request bodies are not supported.',
-        ),
-      )
-      return
-    }
-    if (error) {
-      next(error)
-      return
-    }
-    next()
-  })
-}
+const acquireRelaySlot = inFlightGate({
+  limit: 2,
+  code: 'asr_unavailable',
+  message: 'Hosted transcription is busy. Retry shortly.',
+})
 
 /**
  * Feature gate ahead of the body parser: a deployment without an ILMU key

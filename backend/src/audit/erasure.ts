@@ -1,10 +1,28 @@
 import { Prisma } from '@prisma/client'
+import { purgeAudio } from '../audio/index.js'
 import { assertOwnedConsultation, assertOwnedPatient } from '../lib/authz.js'
 import { prisma } from '../lib/prisma.js'
 import { recordAuditEvent } from './index.js'
 
 export async function eraseConsultation(consultationId: string, actorId: string): Promise<void> {
   await assertOwnedConsultation(consultationId, actorId)
+
+  /*
+   * The recording goes first, and it is a real delete rather than a tombstone
+   * (#293). The clinical columns are nulled in place because `AuditEvent`
+   * chains on the consultation id and the row has to survive; audio has no such
+   * tie, so an emptied shell would buy nothing and a row that is gone cannot be
+   * read back by a query that forgot a filter.
+   *
+   * **Before the tombstone, and the order is load-bearing.** Stamping
+   * `erasedAt` first would put the consultation behind
+   * `assertOwnedConsultation`'s `erasedAt: null` filter, so a failure here
+   * would leave the recording unreachable by any erase path, with no
+   * `consultation.erased` row written either. Failing this way round instead
+   * leaves the consultation un-erased and the whole operation retryable, which
+   * is the same "safe direction to fail" `erasePatient` argues for below.
+   */
+  await purgeAudio(consultationId, actorId)
 
   await prisma.consultation.update({
     where: { id: consultationId },
