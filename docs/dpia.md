@@ -135,13 +135,25 @@ The recording behind a transcript is held so a doctor can check what the recogni
 | Property           | State                                                                                                                    |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------ |
 | Legal character    | Treated as a working artefact, not the medical record. **The approved note is the record.** See the open question below. |
-| Adoption           | `AUDIO_RETENTION_HOURS`. **Unset means nothing is ever stored**, so the feature is off until a period is adopted.        |
+| Adoption           | **720 hours (30 days), adopted 09/09/26** on the Render API service by the deployment owner. See below.                  |
 | Storage            | `consultation_audio`, a table of its own so no ordinary consultation read loads it. Never sent to any provider.          |
 | Served past expiry | Never. The read path checks the clock itself rather than trusting that a sweep ran.                                      |
 | Deletion, expiry   | `sweepExpiredAudio`, run opportunistically on upload, which is the only way the store grows. Audited as `audio.swept`.   |
 | Deletion, erasure  | A real delete, not a tombstone, ahead of `consultation.erased`. Audited as `consultation.audio_purged`.                  |
 | Deletion, approval | **None.** Approving a note does not destroy the recording; the window is what bounds it.                                 |
 | Access             | The owning doctor only, through `assertOwnedConsultation`. There is no role model, so no one else can reach it.          |
+
+**The adopted period, and what it is and is not.**
+
+| Decision       | Detail                                                                                                                                                                                |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Value in force | `AUDIO_RETENTION_HOURS=720`, that is 30 days                                                                                                                                          |
+| Adopted        | 09/09/26, set on the Render API service. Not committed to the repository: `render.yaml` declares the key `sync: false` with no value, so the number lives where the decision was made |
+| Basis          | The published window of Abridge and Nuance DAX, chosen because it is the market norm rather than a figure invented here. Nabla's is 14 days                                           |
+| Status         | **A working convention, not a legal determination.** No statute was consulted and none is cited for it                                                                                |
+| Review trigger | Any answer to the cl.19 question below, and any move from simulated to real consultation data                                                                                         |
+
+Unset remains a real state and the code still fails closed on it: nothing is stored, the write answers 503 and the read 404. Adopting a number turned the feature on; withdrawing it turns storage off and stops recordings being served, though it does not itself delete what is already stored (see the sweep's limits under Required Deletion Mechanism).
 
 **Why approval does not delete it.** Abridge and Nuance DAX both keep audio for a fixed window regardless of when the note is signed, and a doctor who has signed is exactly the person a colleague or patient returns to with a question. The alternative, deleting at approval, is tighter and is what the 2026 Frontiers policy paper recommends; it was considered and not taken. Recorded here because it is a controller-visible choice, not an implementation detail.
 
