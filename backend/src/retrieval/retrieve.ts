@@ -24,6 +24,14 @@ const EMBEDDING_QUERY_MAX_CHARS = 6000
 const SEMANTIC_FLOOR = 0.42
 const LEXICAL_FLOOR = 0.2
 
+/**
+ * Front matter scores well on any query, because a foreword names every
+ * condition the guideline covers. Excluded by heading so a doctor is never
+ * shown "Foreword, p. 2" as the evidence for a suggestion.
+ */
+const FRONT_MATTER_HEADING =
+  '(foreword|acknowledg|development group|review committee|statement of intent|table of contents|contents|abbreviation|disclosure|members|chairperson|secretariat)'
+
 export interface RetrievalOptions {
   /** Only documents tagged with this profile in the manifest are searched. */
   profileId: string
@@ -55,6 +63,7 @@ export async function retrieveGuidelines(
         FROM "guideline_chunk" c
         JOIN "guideline_document" d ON d."id" = c."documentId"
         WHERE d."jurisdiction" = ${jurisdiction} AND ${profileId} = ANY(d."profiles")
+          AND (c."heading" IS NULL OR c."heading" !~* ${FRONT_MATTER_HEADING})
           AND c."tsv" @@ to_tsquery('english', ${q})
         ORDER BY score DESC
         LIMIT ${RANK_LIMIT}
@@ -76,6 +85,7 @@ export async function retrieveGuidelines(
         FROM "guideline_chunk" c
         JOIN "guideline_document" d ON d."id" = c."documentId"
         WHERE d."jurisdiction" = ${jurisdiction} AND ${profileId} = ANY(d."profiles")
+          AND (c."heading" IS NULL OR c."heading" !~* ${FRONT_MATTER_HEADING})
           AND c."embedding" IS NOT NULL
         ORDER BY c."embedding" <=> ${vectorLiteral}::vector
         LIMIT ${RANK_LIMIT}
