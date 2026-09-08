@@ -1,3 +1,4 @@
+import type { GuidelineChunk } from '@shared/types'
 import type { ClinicalProfile } from '../clinical-profiles/index.js'
 import { serialiseCorpusForPrompt } from '../guidelines/index.js'
 
@@ -16,7 +17,10 @@ import { serialiseCorpusForPrompt } from '../guidelines/index.js'
  *   is free text — so it is stated explicitly, alongside the reminder that
  *   this call never sees or influences the rules engine's own output.
  */
-export function buildSuggestionsSystemPrompt(profile: ClinicalProfile): string {
+export function buildSuggestionsSystemPrompt(
+  profile: ClinicalProfile,
+  corpus: readonly GuidelineChunk[] = profile.guidelineCorpus,
+): string {
   return `You are assisting a Malaysian GP who is reviewing a de-identified consultation
 transcript for ${profile.scope}. Text such as "[PATIENT_1]" or "[NRIC_1]" is a
 de-identification token, not the patient's real identifier — never attempt to
@@ -56,5 +60,6 @@ false when the presentation is in scope, even if you have no suggestions to
 add.
 
 Guideline corpus (cite by the bracketed id only):
-${serialiseCorpusForPrompt(profile.guidelineCorpus)}`
+${serialiseCorpusForPrompt(corpus)}
+Chunks whose title carries a page number are retrieved spans of a Malaysian Clinical Practice Guideline; cite them by id exactly like the others, and only when the span itself supports the suggestion.`
 }

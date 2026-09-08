@@ -95,15 +95,20 @@ vi.mock('./CapturePanel.js', () => ({
 vi.mock('../review/NoteEditor.js', () => ({
   NoteEditor: ({ note }: { note: { subjective: string } }) => <p>{note.subjective}</p>,
 }))
-vi.mock('../review/SafetyCards.js', () => ({
-  // Renders its question so a test can read the order gaps come out in. The
-  // real card is covered by SafetyCards.test.tsx; what matters here is sequence.
-  GapCard: ({ gap }: { gap: { question: string } }) => <div data-testid="gap">{gap.question}</div>,
-  RedFlagCard: ({ flag }: { flag: { label: string } }) => (
-    <div data-testid="flag">{flag.label}</div>
-  ),
-  SuggestionCard: () => null,
-}))
+vi.mock('../review/SafetyCards.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../review/SafetyCards.js')>()
+  return {
+    ...actual,
+    // Renders its question so a test can read the order gaps come out in. The
+    // real card is covered by SafetyCards.test.tsx; what matters here is sequence.
+    GapCard: ({ gap }: { gap: { question: string } }) => (
+      <div data-testid="gap">{gap.question}</div>
+    ),
+    RedFlagCard: ({ flag }: { flag: { label: string } }) => (
+      <div data-testid="flag">{flag.label}</div>
+    ),
+  }
+})
 
 const livePanes = vi.hoisted(() => ({
   redFlags: [] as unknown[],
@@ -1015,5 +1020,59 @@ describe('reopening the settled conversation', () => {
 
     await screen.findByRole('heading', { name: 'Consultation Review' })
     expect(screen.queryByRole('button', { name: /view conversation/i })).toBeNull()
+  })
+})
+
+/*
+ * A suggestion may cite a retrieved CPG chunk, which exists only on the
+ * analysis that retrieved it rather than in the curated corpus. The cards are
+ * handed the union of both sets, so the citation still resolves to the chunk's
+ * title instead of silently dropping to an unresolved id chip.
+ *
+ * The real SuggestionCard renders here: a mock that resolved the citation
+ * itself would test the mock, not the union.
+ */
+describe('retrieved CPG citations', () => {
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+      analysis: {
+        ...APPROVED.analysis,
+        suggestions: [
+          {
+            id: 's-1',
+            text: 'The retrieved span may inform review.',
+            citations: [{ guidelineId: 'cpg-cough-p12' }],
+          },
+        ],
+        retrievedGuidelines: [
+          {
+            id: 'cpg-cough-p12',
+            title: 'Management of Acute Cough, p. 12',
+            publisher: 'MOH Malaysia',
+            year: 2024,
+            url: 'https://example.com/cpg-cough.pdf',
+            summary: 'A retrieved span.',
+            sourceLicence: 'All rights reserved',
+            verbatimAllowed: false,
+            documentId: 'cpg-cough',
+            page: 12,
+          },
+        ],
+      },
+    } as never)
+  })
+
+  it('resolves a citation that exists only in the retrieved set', async () => {
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'cpg-cough-p12' }))
+
+    expect(await screen.findByText('Management of Acute Cough, p. 12')).toBeTruthy()
   })
 })

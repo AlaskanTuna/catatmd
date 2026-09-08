@@ -675,6 +675,52 @@ export const EvidenceLinkSchema = z.object({
 })
 export type EvidenceLink = z.infer<typeof EvidenceLinkSchema>
 
+/**
+ * `verbatimAllowed` is legally load-bearing, not metadata: MOH NAG 2024 is
+ * all-rights-reserved and may be summarised and linked but never quoted, while
+ * the two CC-licensed sources may be. A `quote` on a chunk that forbids one is
+ * a corpus-authoring defect and fails here (docs/trd.md §11).
+ */
+export const GuidelineChunkSchema = z
+  .object({
+    id: z.string(),
+    title: z.string(),
+    publisher: z.string(),
+    year: z.number().int(),
+    url: z.string().url(),
+    /** Short, non-verbatim summary shown in the UI. */
+    summary: z.string(),
+    sourceLicence: z.string(),
+    verbatimAllowed: z.boolean(),
+    quote: z.string().optional(),
+    /** Set on retrieved CPG chunks only; the curated corpus has no pages. */
+    documentId: z.string().optional(),
+    page: z.number().int().optional(),
+    /** True when the span was OCRed from a scanned page, so it may carry recognition errors. */
+    ocr: z.boolean().optional(),
+  })
+  .refine((chunk) => chunk.verbatimAllowed || chunk.quote === undefined, {
+    path: ['quote'],
+    message: 'quote is not permitted on a chunk whose licence forbids verbatim reuse',
+  })
+
+/** One ingested guideline document, as listed on the guideline library page. */
+export const GuidelineDocumentSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  publisher: z.string(),
+  year: z.number().int(),
+  sourceUrl: z.string().url(),
+  jurisdiction: z.string(),
+  sourceLicence: z.string(),
+  pageCount: z.number().int(),
+  chunkCount: z.number().int(),
+  ingestedAt: z.coerce.date(),
+  /** Clinical profiles this document is retrievable for; empty means never. */
+  profiles: z.array(z.string()),
+  verbatimAllowed: z.boolean(),
+})
+
 // ─── Analysis envelope ───────────────────────────────────────────────────────
 
 export const ConsultationAnalysisSchema = z.object({
@@ -691,6 +737,13 @@ export const ConsultationAnalysisSchema = z.object({
   gaps: z.array(InformationGapSchema),
   redFlags: z.array(RedFlagSchema),
   suggestions: z.array(ClinicalSuggestionSchema),
+  /**
+   * CPG chunks retrieved for this consultation and offered to the model as
+   * citation candidates alongside the curated corpus. Persisted with the
+   * analysis so the review UI can resolve a citation without re-running
+   * retrieval, which would not be reproducible.
+   */
+  retrievedGuidelines: z.array(GuidelineChunkSchema).optional(),
   /**
    * The reviewed checklist, surfaced rather than discarded.
    *
@@ -1434,30 +1487,6 @@ export const FixtureSchema = z.object({
   transcript: TranscriptSchema,
 })
 
-/**
- * `verbatimAllowed` is legally load-bearing, not metadata: MOH NAG 2024 is
- * all-rights-reserved and may be summarised and linked but never quoted, while
- * the two CC-licensed sources may be. A `quote` on a chunk that forbids one is
- * a corpus-authoring defect and fails here (docs/trd.md §11).
- */
-export const GuidelineChunkSchema = z
-  .object({
-    id: z.string(),
-    title: z.string(),
-    publisher: z.string(),
-    year: z.number().int(),
-    url: z.string().url(),
-    /** Short, non-verbatim summary shown in the UI. */
-    summary: z.string(),
-    sourceLicence: z.string(),
-    verbatimAllowed: z.boolean(),
-    quote: z.string().optional(),
-  })
-  .refine((chunk) => chunk.verbatimAllowed || chunk.quote === undefined, {
-    path: ['quote'],
-    message: 'quote is not permitted on a chunk whose licence forbids verbatim reuse',
-  })
-
 // ─── Live analysis (ambient capture) ─────────────────────────────────────────
 
 /**
@@ -1603,6 +1632,7 @@ export type RetentionPolicy = z.infer<typeof RetentionPolicySchema>
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelopeSchema>
 export type Fixture = z.infer<typeof FixtureSchema>
 export type GuidelineChunk = z.infer<typeof GuidelineChunkSchema>
+export type GuidelineDocument = z.infer<typeof GuidelineDocumentSchema>
 export type CopilotRole = z.infer<typeof CopilotRoleSchema>
 export type CopilotTurn = z.infer<typeof CopilotTurnSchema>
 export type CopilotRequest = z.infer<typeof CopilotRequestSchema>

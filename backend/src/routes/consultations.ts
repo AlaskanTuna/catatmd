@@ -11,6 +11,7 @@ import {
   DispositionInputSchema,
   ERASE_BATCH_LIMIT,
   EraseConsultationsInputSchema,
+  type GuidelineChunk,
   type InformationGap,
   LiveAnalysisResponseSchema,
   LiveAnalysisStateSchema,
@@ -50,6 +51,7 @@ import { logger, timeStage } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
 import { inFlightGate, parseAudioBody } from '../middleware/audio-body.js'
 import { evaluateRedFlags, mergeRedFlags } from '../redflags/index.js'
+import { retrieveGuidelines } from '../retrieval/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
 import type { SuppressedSuggestionId } from '../suggestions/safety.js'
 
@@ -391,9 +393,23 @@ async function runAnalysis(
     evaluateRedFlags(transcript, profile.redFlagTriggers),
   )
 
-  const [noteResult, suggestionResult] = await Promise.all([
+  const [noteResult, { retrieved, result: suggestionResult }] = await Promise.all([
     timeStage('note_generation', () => analyseNote(text, text, profile)),
-    timeStage('retrieval', () => generateSuggestions(text, profile)),
+    timeStage('retrieval', async () => {
+      let retrieved: GuidelineChunk[] = []
+      try {
+        retrieved = await retrieveGuidelines(text, { profileId: profile.id })
+      } catch (error) {
+        // Retrieval widens the supplied corpus; a failure leaves the curated
+        // corpus in use rather than failing the whole analysis.
+        logger.warn('guideline retrieval failed; using the curated corpus only', {
+          errorClass: 'retrieval_error',
+          errorName: error instanceof Error ? error.name : 'unknown',
+        })
+      }
+      const result = await generateSuggestions(text, profile, retrieved)
+      return { retrieved, result }
+    }),
   ])
 
   const rehydrate = (value: string) => vault.rehydrate(value)
@@ -496,6 +512,7 @@ async function runAnalysis(
     // reader whether the corpus had nothing to say or was never consulted, which
     // is the conflation this flag exists to prevent (docs/trd.md §19 row 7).
     outOfScope: suggestionResult.outOfScope,
+    ...(retrieved.length === 0 ? {} : { retrievedGuidelines: retrieved }),
     // Built from the post-evidence-check facts, so every link is a span that
     // survived §21.4 rather than one the model asserted. Checklist fields only:
     // the note is independent prose and has no traceable provenance (#10).

@@ -88,3 +88,6 @@ evals/reports/
 
 # Screenshots are captured artefacts, regenerated rather than reviewed
 docs/screenshots/
+
+# Downloaded guideline PDFs stay out of git; the manifest beside them is tracked.
+corpus/cpg/raw/
