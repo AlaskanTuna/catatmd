@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api } from '../lib/api.js'
+import { ApiError, api } from '../lib/api.js'
 import { formatNoteForClipboard } from '../lib/note-templates.js'
 import { ConsultationReview } from './ConsultationReview.js'
 
@@ -277,6 +277,38 @@ describe('consultation note template', () => {
     expect(screen.queryByRole('button', { name: /Edit Family History/ })).toBeNull()
   })
 
+  it('re-shapes the empty Draft note the moment the format is saved', async () => {
+    const draft = {
+      ...APPROVED,
+      status: 'draft' as const,
+      analysis: null,
+      approvedAt: null,
+      approvedBy: null,
+    }
+    vi.mocked(api.getConsultation).mockResolvedValue(draft as never)
+    vi.mocked(api.patch).mockResolvedValue({
+      ...draft,
+      noteTemplate: 'malaysian',
+    } as never)
+    setup()
+
+    // With nothing analysed, the placeholder previews the shape the note will
+    // take, so the selected format has to reach it.
+    expect(await screen.findByRole('heading', { name: 'Subjective' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Presenting Complaint' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Consultation Settings' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Malaysian Medical Record' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }))
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith('consultation-1', { noteTemplate: 'malaysian' }),
+    )
+    expect(await screen.findByRole('heading', { name: 'Presenting Complaint' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Family History' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Subjective' })).toBeNull()
+  })
+
   it('persists one canonical category edit and updates its provenance', async () => {
     const awaitingReview = {
       ...APPROVED,
@@ -432,6 +464,34 @@ describe('consultation hero actions', () => {
     expect(wrapper?.className).toContain('relative')
     expect(wrapper?.className).toContain('inline-flex')
     expect(analyse.contains(tip)).toBe(false)
+  })
+
+  it('explains the missing transcript in one short sentence', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'draft',
+      analysis: null,
+      approvedAt: null,
+      approvedBy: null,
+    } as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Why this is not available yet' }))
+
+    expect(await screen.findByText('Add a transcript first.')).toBeTruthy()
+  })
+
+  it('explains a failed analysis without relaying the raw error', async () => {
+    vi.mocked(api.analyze).mockRejectedValue(
+      new ApiError(503, 'upstream_unavailable', 'Upstream node gpu-7 unreachable'),
+    )
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Analyse Consultation' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Analysis could not be completed' }))
+
+    expect(await screen.findByText('Analysis failed. Try again.')).toBeTruthy()
+    expect(screen.queryByText(/gpu-7/)).toBeNull()
   })
 
   it('uses the large action dimensions consistently after approval', async () => {

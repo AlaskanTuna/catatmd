@@ -7,6 +7,7 @@ import type {
   DispositionInput,
   GuidelineChunk,
   MedicalRecordNote,
+  NoteTemplate,
   SoapNote,
   Transcript,
 } from '@shared/types'
@@ -785,9 +786,7 @@ export function ConsultationReview() {
                       label="Analysis could not be completed"
                       tone="warning"
                     >
-                      {analyze.error instanceof ApiError
-                        ? analyze.error.message
-                        : 'Analysis could not be completed.'}
+                      Analysis failed. Try again.
                     </InfoTip>
                   ) : !detail.transcript ? (
                     <InfoTip
@@ -795,7 +794,7 @@ export function ConsultationReview() {
                       label="Why this is not available yet"
                       tone="warning"
                     >
-                      Capture the consultation first, on the left.
+                      Add a transcript first.
                     </InfoTip>
                   ) : null}
                 </div>
@@ -1128,7 +1127,7 @@ export function ConsultationReview() {
             </>
           ) : (
             <>
-              <NotePlaceholder />
+              <NotePlaceholder template={detail.noteTemplate} />
               {/*
                 The patient card fills while the doctor talks; the note does
                 not. That split is the design rather than an omission: §20.8.1
@@ -1142,7 +1141,6 @@ export function ConsultationReview() {
                 <ChecklistPanel
                   clinicalFacts={live.panes.clinicalFacts}
                   operational={live.panes.operational}
-                  defaultOpen
                 />
               )}
             </>
@@ -1401,15 +1399,30 @@ export function ConsultationReview() {
 /**
  * What the note will become, shown while it is still empty.
  *
- * The four headings are the SOAP sections in the order they will fill, so the
- * shape of the output is legible before there is any. Ruled lines rather than
- * pulsing skeletons: nothing is loading here, and a shimmer would promise work
- * in progress when the doctor has not started any.
+ * The headings are the selected format's sections in the order they will
+ * fill, so the shape of the output is legible before there is any and the
+ * empty note follows the same format switch the filled one does. Ruled lines
+ * rather than pulsing skeletons: nothing is loading here, and a shimmer would
+ * promise work in progress when the doctor has not started any.
  */
-function NotePlaceholder() {
+const PLACEHOLDER_SECTIONS: Record<NoteTemplate, readonly string[]> = {
+  soap: ['Subjective', 'Objective', 'Assessment', 'Plan'],
+  malaysian: [
+    'Presenting Complaint',
+    'History of Presenting Complaint',
+    'Past Medical History',
+    'Social History',
+    'Family History',
+    'Objective',
+    'Assessment',
+    'Plan',
+  ],
+}
+
+function NotePlaceholder({ template }: { template: NoteTemplate }) {
   return (
     <Card className="overflow-hidden p-0" data-print="hide">
-      {['Subjective', 'Objective', 'Assessment', 'Plan'].map((section) => (
+      {PLACEHOLDER_SECTIONS[template].map((section) => (
         <div key={section} className="border-b border-line/60 px-5 py-4">
           <h3 className="text-2xs font-semibold tracking-wider text-ink-muted uppercase">
             {section}

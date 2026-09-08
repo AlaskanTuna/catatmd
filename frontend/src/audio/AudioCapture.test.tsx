@@ -1368,3 +1368,23 @@ describe('the hosted-processing disclosure', () => {
     expect(line.closest('[role="tooltip"]')).toBeNull()
   })
 })
+
+describe('the speaker label tip', () => {
+  it('uses short GP-facing copy and hides implementation detail', () => {
+    renderCapture()
+
+    const tipTrigger = screen.getByRole('button', { name: /about the draft speaker labels/i })
+    fireEvent.click(tipTrigger)
+
+    const tip = screen.getByRole('tooltip')
+    expect(tip.textContent).toMatch(/Speaker labels are automatic\. Check them before submitting\./)
+    expect(tip.textContent).not.toMatch(
+      /GPU|CDN|model weights|segment timing|voice model|Other languages are untested here/i,
+    )
+
+    // The helper line still states the fact in visible copy.
+    expect(
+      screen.getByText(/Speakers are labelled automatically, so check the transcript\./i),
+    ).toBeTruthy()
+  })
+})

@@ -53,13 +53,6 @@ const REGION_LABELS: Record<LiveAsrRegion, string> = {
   in: 'India',
 }
 
-const LANGUAGE_LABELS: Record<string, string> = {
-  ms: 'Malay',
-  en: 'English',
-  zh: 'Chinese',
-  ta: 'Tamil',
-}
-
 /** Bound on the labelling pass, shared with the hosted path it reuses. */
 const LABEL_TIMEOUT_MS = 150_000
 
@@ -588,16 +581,6 @@ export function AmbientCapture({
     await deliver(settled.current)
   }, [deliver, releaseMicrophone])
 
-  const languageLine = (config: LiveAsrConfig): string => {
-    const named = config.config.languageHints
-      .map((code) => LANGUAGE_LABELS[code])
-      .filter((label): label is string => Boolean(label))
-    if (named.length === 0) return ''
-    const last = named[named.length - 1]
-    const head = named.slice(0, -1).join(', ')
-    return `Tuned for ${head ? `${head} and ${last}` : last}, including switching between them mid-sentence. Other languages are untested here.`
-  }
-
   const busy = phase === 'starting' || phase === 'finishing' || phase === 'labelling'
   const busyLabel =
     phase === 'starting'
@@ -645,7 +628,7 @@ export function AmbientCapture({
       {phase === 'idle' && (
         <div className="grid gap-1.5">
           <div className="flex items-center gap-1.5">
-            <span className="font-medium text-sm">Not listening</span>
+            <span className="font-medium text-sm">Not Listening</span>
             {/* `layered` because the transcript column is a scroll box from `lg`
                 up, and `overflow-y: auto` drags `overflow-x` to `auto` with it,
                 so an in-flow panel is clipped on the right. The column is 380px
@@ -654,12 +637,13 @@ export function AmbientCapture({
                 column is the leftmost one, so the panel has the whole page to
                 open into, while right-aligning it would push it off the far
                 side of the viewport. */}
-            <InfoTip label="About ambient capture" layered>
-              The whole consultation is transcribed as it happens. Speakers are labelled
-              automatically afterwards, so check the transcript before you submit it.
+            <InfoTip label="About speaker labels" layered>
+              Speaker labels are automatic. Check them before submitting.
             </InfoTip>
           </div>
-          <p className="text-ink-muted text-xs">{languageLine(config)}</p>
+          <p className="text-ink-muted text-xs">
+            Ambient Capture transcribes the consultation as it happens.
+          </p>
         </div>
       )}
 
