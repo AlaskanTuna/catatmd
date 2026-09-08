@@ -722,7 +722,7 @@ The whole corpus (Q16) — every chunk's `id`, `title`, and `summary` — is ser
 
 ## 12. LLM Prompt & Response Contracts
 
-**Status: `Built`.** The three operations ship in `backend/src/analysis/` and `backend/src/suggestions/`, run concurrently from `analyseNote`, and are measured at 8 of 8 runs inside the CAP-1 budget (§19 rows 8 and 19, both closed).
+**Status: `Built`.** The three operations ship in `backend/src/analysis/` and `backend/src/suggestions/`, run concurrently from `analyseNote`, and are measured at 8 of 8 runs inside the CAP-1 budget (§19 rows 8 and 19, both closed). **Re-measured 08/09/26 (#224):** the end-to-end analyse pipeline on a 4-minute synthetic consultation takes a median of 53.9 s, outside that 30 s figure and inside the 3-minute clinic envelope. See _Measured Workflow Timing_ at the end of this section.
 
 Two operations per analyse request (Q15 — decomposition by capability, not one call producing the whole `ConsultationAnalysis`). Both run after de-identification (§9) and before the rule engine's output is merged in (§10) — the model never sees the rule engine's hits, so it cannot suppress them by construction, not merely by instruction.
 
@@ -806,6 +806,30 @@ No automatic retry inside `LLMClient` (§6, `Built`) — a failure on either cal
 - **The residual risk is the tail, not the mean.** Every reduction in per-call response variance buys more headroom than any reduction in the mean. That is the reasoning behind the split, and it is the first thing to reach for if the budget comes under pressure again.
 
 ---
+
+#### Measured Workflow Timing (08/09/26, Issue #224)
+
+**Status: `Measured`.** `bun run --cwd backend bench:workflow` runs the exact `runAnalysis` stage order (`backend/src/bench/workflow.ts`) against the live Singapore endpoint on `backend/src/bench/fixture.ts`, a synthetic 75-turn, 676-word, 4.0-minute adult URTI consultation carrying a name, an NRIC and a phone number so de-identification has real work. Three sequential runs, `qwen3.7-flash`, medians:
+
+| Stage                                                  | Median     | Note                                       |
+| ------------------------------------------------------ | ---------- | ------------------------------------------ |
+| `deidentification`                                     | 13 ms      |                                            |
+| `rules`                                                | 8 ms       |                                            |
+| `note_generation` (`clinical_facts` + `note_and_gaps`) | 45.8 s     |                                            |
+| `retrieval` (`suggestions_and_red_flags`)              | 53.8 s     | Carries the serialised corpus              |
+| `llm_concurrent`                                       | 53.8 s     | The wait the doctor experiences            |
+| `rehydration`                                          | < 1 ms     |                                            |
+| **`total`**                                            | **53.9 s** | Range 53.6 to 56.4 s across the three runs |
+
+What it establishes:
+
+- **Everything outside the model costs under 25 ms.** The wait is the model, and because the two operations run concurrently the wait is the slower of the two, which is suggestions.
+- **53.9 s is inside the 3-minute envelope the client set and outside the 30 s CAP-1 budget** that §19 row 19 measured 8 of 8 runs inside on 13/08/26. That measurement was of `analyseNote` alone on that date's prompts. The prompts have since grown (profile-scoped corpus, the 34-key checklist, the Malaysian note) and the suggestions call now carries the full serialised corpus. Whether the difference is prompt size or provider load is not separated here and stays **open**.
+- **Production agrees.** The deployed `/analyze` on a 15-turn pasted transcript, same day, returned between 33 and 63 s when polled from the browser at 30 s intervals.
+- **The live path is not covered.** Red flags and gaps fill during the consultation (#274), so at Finish the doctor waits only for the note. The harness measures the record-then-analyse path.
+- **The delay is visible but not sized.** The Analyse control shows a spinner and "Analysing" for the whole wait and does not state an expected duration.
+
+The harness prints counts and durations only, never transcript or model text.
 
 ## 13. API Contracts
 

@@ -166,12 +166,13 @@ All three are on free tiers by design. Render free instances spin down when idle
 
 **Both tiers are built and running.**
 
-| Layer               | What Is Built                                                                                                                                                                                                             |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Backend**         | De-identification gate, deterministic red-flag engine, Malaysian guideline corpus, structured-extraction pipeline with its evidence-bound assertion check, gaps engine, authentication, synthetic fixtures                |
-| **Frontend**        | Consultation list, four-input capture screen, review screen carrying gap, red-flag and suggestion cards, the approval control, on-device audio capture with draft speaker labels                                          |
-| **Hosted ASR**      | Live in production behind a device engine preference plus a per-consultation consent gate, both required (#154, #155, #190, #254)                                                                                         |
-| **Ambient capture** | Building (#268). The consultation streams from the browser to Soniox as it happens, under a short-lived key the API mints; the API never receives the audio. No accuracy figure for that provider exists in this repo yet |
+| Layer                | What Is Built                                                                                                                                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Backend**          | De-identification gate, deterministic red-flag engine, Malaysian guideline corpus, structured-extraction pipeline with its evidence-bound assertion check, gaps engine, authentication, synthetic fixtures                                                               |
+| **Frontend**         | Consultation list, four-input capture screen, review screen carrying gap, red-flag and suggestion cards, the approval control, on-device audio capture with draft speaker labels                                                                                         |
+| **Hosted ASR**       | Live in production behind a device engine preference plus a per-consultation consent gate, both required (#154, #155, #190, #254)                                                                                                                                        |
+| **Analysis latency** | Measured 08/09/26 on a 4-minute synthetic consultation: 54 s median end-to-end, all of it model time. Inside the client's 3-minute envelope, outside the 30 s target recorded in August. Reproduce with `bun run --cwd backend bench:workflow` (`docs/trd.md` §12, #224) |
+| **Ambient capture**  | Building (#268). The consultation streams from the browser to Soniox as it happens, under a short-lived key the API mints; the API never receives the audio. No accuracy figure for that provider exists in this repo yet                                                |
 
 `docs/trd.md` tags every section `Built`, `Specified`, or `Open`, and never describes unwritten code as if it exists. Where implementation contradicted the specification, the TRD records which won and why rather than quietly conforming — see §3 (the assertion schema had to split in two), §5 and §7.
 
