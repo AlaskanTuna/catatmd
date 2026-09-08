@@ -297,6 +297,21 @@ describe('LLM-facing schemas convert to JSON Schema for constrained decoding', (
     expect(json).toHaveProperty('properties.gaps')
   })
 
+  it('never lets the model author gap provenance', () => {
+    const json = z.toJSONSchema(NoteAndGapsResponseSchema, { target: 'draft-7' })
+    expect(JSON.stringify(json)).not.toContain('"source"')
+    const parsed = NoteAndGapsResponseSchema.shape.gaps.safeParse([
+      {
+        id: 'x',
+        question: 'q',
+        rationale: 'r',
+        priority: 'low',
+        source: { kind: 'unsourced', reason: 'model-authored text' },
+      },
+    ])
+    expect(parsed.success && 'source' in (parsed.data[0] ?? {})).toBe(false)
+  })
+
   // The split (§19 row 19) is only worth anything if the two halves stay
   // disjoint: a key drifting back into both would restore the response size
   // the split exists to cut.

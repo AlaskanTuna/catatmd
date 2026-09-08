@@ -853,7 +853,12 @@ export const NoteAndGapsResponseSchema = z.object({
    * 29 fields, so more than 30 gaps cannot correspond to anything real, and an
    * unbounded array is where a strict-decoding loop escapes.
    */
-  gaps: z.array(InformationGapSchema).max(30),
+  /**
+   * `source` is omitted from the model-facing shape. Provenance is attached by
+   * the deterministic checklist only; a model-authored reason string would be
+   * free-text provenance shown to the doctor, which the citation rule forbids.
+   */
+  gaps: z.array(InformationGapSchema.omit({ source: true })).max(30),
 })
 
 /**
