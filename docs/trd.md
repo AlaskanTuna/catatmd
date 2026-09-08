@@ -90,7 +90,7 @@ It does double duty, and both jobs are load-bearing enough that neither would ju
 | `SoapNoteSchema`             | `subjective`, `objective`, `assessment`, `plan` — all `string`                                                                                                  |
 | `NoteTemplateSchema`         | `enum(['soap','malaysian'])`                                                                                                                                    |
 | `MedicalRecordNoteSchema`    | `presentingComplaint`, `historyOfPresentingComplaint`, `pastMedicalHistory`, `socialHistory`, `familyHistory`, `objective`, `assessment`, `plan` — all `string` |
-| `InformationGapSchema`       | `id: string`, `question: string`, `rationale: string`, `priority: enum(['high','medium','low'])`                                                                |
+| `InformationGapSchema`       | `id: string`, `question: string`, `rationale: string`, `priority: enum(['high','medium','low'])`, `source?: GapSource`                                          |
 | `RedFlagSchema`              | `id: string`, `label: string`, `severity: enum(['emergency','urgent','advisory'])`, `evidence: string`, `source: enum(['rule','model'])`, `ruleId?: string`     |
 | `CitationSchema`             | `guidelineId: string`, `quote?: string`                                                                                                                         |
 | `ClinicalSuggestionSchema`   | `id: string`, `text: string`, `citations: Citation[]` — `.min(1)`                                                                                               |

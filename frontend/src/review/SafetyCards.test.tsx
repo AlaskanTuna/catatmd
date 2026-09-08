@@ -1,7 +1,7 @@
-import type { Disposition, GuidelineChunk, RedFlag } from '@shared/types'
+import type { Disposition, GuidelineChunk, InformationGap, RedFlag } from '@shared/types'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { RedFlagCard } from './SafetyCards.js'
+import { GapCard, RedFlagCard } from './SafetyCards.js'
 
 /**
  * The disposition control shows two buttons at rest rather than three.
@@ -252,5 +252,51 @@ describe('RedFlagCard sources panel', () => {
     fireEvent.click(screen.getByRole('button', { name: /sources/i }))
 
     expect(screen.getByText('Malaysian Ministry of Health Cough Guideline')).toBeTruthy()
+  })
+})
+
+describe('GapCard sources panel', () => {
+  const GUIDELINES: GuidelineChunk[] = [
+    {
+      id: 'my-moh-2024',
+      title: 'Malaysian Ministry of Health Cough Guideline',
+      publisher: 'MOH',
+      year: 2024,
+      url: 'https://example.com/my-moh-2024',
+      summary: 'Summary',
+      sourceLicence: 'All rights reserved',
+      verbatimAllowed: false,
+    },
+  ]
+
+  const GAP: InformationGap = {
+    id: 'fever',
+    question: 'Has the patient had a fever?',
+    rationale: 'Fever status is not documented in this consultation.',
+    priority: 'medium',
+  }
+
+  function renderGap(gap: InformationGap) {
+    return render(
+      <GapCard gap={gap} disposition={undefined} onDecide={vi.fn()} guidelines={GUIDELINES} />,
+    )
+  }
+
+  it('shows the cited chunk id for a guideline-sourced gap', () => {
+    renderGap({ ...GAP, source: { kind: 'guideline', guidelineIds: ['my-moh-2024'] } })
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+
+    expect(screen.getByText('my-moh-2024')).toBeTruthy()
+    expect(screen.queryByText('No guideline citation.')).toBeNull()
+  })
+
+  it('shows the stated reason for an unsourced gap', () => {
+    renderGap({ ...GAP, source: { kind: 'unsourced', reason: 'Payer record field.' } })
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+
+    expect(screen.getByText('Payer record field.')).toBeTruthy()
+    expect(screen.queryByText('No guideline citation.')).toBeNull()
   })
 })

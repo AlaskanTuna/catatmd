@@ -84,6 +84,17 @@ describe('deriveGaps — assertion-state gating', () => {
     const checklistIds = GAP_CHECKLIST.map((entry) => entry.id).sort()
     expect(gapIds).toEqual(checklistIds)
   })
+
+  it('carries the checklist entry source onto the derived gap', () => {
+    const facts = emptyFacts()
+    facts.symptoms.fever = notAssessed()
+
+    const gaps = deriveGaps(facts, emptyOperational())
+    const gap = gaps.find((g) => g.id === 'fever')
+    const entry = GAP_CHECKLIST.find((e) => e.id === 'fever')
+
+    expect(gap?.source).toEqual(entry?.source)
+  })
 })
 
 describe('deriveGaps — urti-gap-heavy fixture path (PRD CAP-2)', () => {
@@ -123,11 +134,11 @@ describe('gap text never implies a diagnosis', () => {
   }
 })
 
-describe('gap checklist v4 question wording', () => {
-  it('uses the effective v4 checklist artefact', () => {
+describe('gap checklist v5 question wording', () => {
+  it('uses the effective v5 checklist artefact', () => {
     expect(GAP_CHECKLIST_VERSION).toEqual({
-      id: 'gap-checklist-v4',
-      effectiveDate: '2026-09-08',
+      id: 'gap-checklist-v5',
+      effectiveDate: '2026-09-09',
     })
   })
 

@@ -561,6 +561,11 @@ export const LlmOperationalBlockSchema = buildOperationalBlock(
 
 // ─── Missing clinical information ────────────────────────────────────────────
 
+export const GapSourceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('guideline'), guidelineIds: z.array(z.string()).min(1) }),
+  z.object({ kind: z.literal('unsourced'), reason: z.string().min(1) }),
+])
+
 export const InformationGapSchema = z.object({
   id: z.string(),
   /** What the doctor did not establish, phrased as a prompt to ask. */
@@ -568,6 +573,11 @@ export const InformationGapSchema = z.object({
   /** Why it matters for this presentation — shown to justify the prompt. */
   rationale: z.string(),
   priority: z.enum(['high', 'medium', 'low']),
+  /**
+   * Where the prompt comes from: corpus chunks in `backend/src/guidelines/`,
+   * or a stated reason when no chunk covers the field.
+   */
+  source: GapSourceSchema.optional(),
 })
 
 // ─── Red flags / escalation triggers ─────────────────────────────────────────
@@ -1558,6 +1568,7 @@ export type AssertionState = z.infer<typeof AssertionStateSchema>
 export type ClinicalAssertion = z.infer<typeof ClinicalAssertionSchema>
 export type ClinicalFacts = z.infer<typeof ClinicalFactsSchema>
 export type OperationalBlock = z.infer<typeof OperationalBlockSchema>
+export type GapSource = z.infer<typeof GapSourceSchema>
 export type InformationGap = z.infer<typeof InformationGapSchema>
 export type RedFlag = z.infer<typeof RedFlagSchema>
 export type Citation = z.infer<typeof CitationSchema>
