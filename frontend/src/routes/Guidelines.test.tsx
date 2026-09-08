@@ -219,4 +219,37 @@ describe('the CPG document pagination', () => {
     expect(screen.queryByText('Page 1 of 1')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
   })
+
+  it('scrolls the section heading into view when paging documents', async () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')
+    const scrollIntoViewSpy = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      value: scrollIntoViewSpy,
+      configurable: true,
+      writable: true,
+    })
+    try {
+      vi.mocked(api.guidelines).mockResolvedValue([CHUNK])
+      vi.mocked(api.guidelineDocuments).mockResolvedValue(makeDocuments(16))
+      setup()
+
+      await screen.findByText('CPG Document 1')
+
+      const cpgSection = screen.getByRole('region', {
+        name: 'Malaysian Clinical Practice Guidelines',
+      })
+      fireEvent.click(within(cpgSection).getByRole('button', { name: 'Next page' }))
+
+      expect(scrollIntoViewSpy).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' })
+      expect(scrollIntoViewSpy.mock.instances[0]).toBe(
+        screen.getByRole('heading', { name: 'Malaysian Clinical Practice Guidelines' }),
+      )
+    } finally {
+      if (originalDescriptor) {
+        Object.defineProperty(Element.prototype, 'scrollIntoView', originalDescriptor)
+      } else {
+        delete (Element.prototype as unknown as { scrollIntoView?: () => void }).scrollIntoView
+      }
+    }
+  })
 })

@@ -56,12 +56,12 @@ describe('ConsultationList categories', () => {
     vi.mocked(api.listConsultations).mockResolvedValue([])
   })
 
-  it('offers Draft, Awaiting Review and Approved, in that order, defaulting to Draft', async () => {
+  it('offers Draft, Awaiting Review and Approved, in that order, defaulting to Awaiting Review', async () => {
     vi.mocked(api.listConsultations).mockResolvedValue([row('approved', 1)])
     setup()
 
     const trigger = screen.getByRole('button', { name: 'Consultation View' })
-    expect(trigger.textContent).toContain('Draft')
+    expect(trigger.textContent).toContain('Awaiting Review')
 
     fireEvent.click(trigger)
     const options = screen.getAllByRole('option')
@@ -81,6 +81,8 @@ describe('ConsultationList categories', () => {
     ])
     setup()
 
+    pickCategory('Draft')
+
     expect(await screen.findByText('draft visit 1')).toBeTruthy()
     expect(screen.getByText('analyzing visit 1')).toBeTruthy()
     expect(screen.queryByText('awaiting_review visit 1')).toBeNull()
@@ -93,14 +95,10 @@ describe('ConsultationList categories', () => {
       ...rows('approved', 16),
     ])
     setup()
-    await screen.findByText('No drafts. Start a consultation to begin one.')
-
-    pickCategory('Awaiting Review')
 
     expect(await screen.findAllByText(/awaiting_review visit/)).toHaveLength(15)
-    expect(screen.getByText('awaiting_review visit 1')).toBeTruthy()
-    expect(screen.queryByText('awaiting_review visit 16')).toBeNull()
     expect(screen.getByText('Page 1 of 2')).toBeTruthy()
+    expect(screen.queryByText('awaiting_review visit 16')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
     expect(await screen.findByText('awaiting_review visit 16')).toBeTruthy()
@@ -127,12 +125,16 @@ describe('ConsultationList categories', () => {
     vi.mocked(api.listConsultations).mockResolvedValue([row('awaiting_review', 1)])
     setup()
 
+    pickCategory('Draft')
+
     expect(await screen.findByText('No drafts. Start a consultation to begin one.')).toBeTruthy()
   })
 
   it('says the review and approved empty sentences when those views hold no rows', async () => {
     vi.mocked(api.listConsultations).mockResolvedValue([row('draft', 1)])
     setup()
+
+    pickCategory('Draft')
     await screen.findByText('draft visit 1')
 
     pickCategory('Awaiting Review')
