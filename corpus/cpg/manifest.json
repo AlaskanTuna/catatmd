@@ -692,9 +692,7 @@
       "year": 2016,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=845",
       "file": "CPG Management of Rhinosinusitis in Adolescents & Adults.pdf",
-      "profiles": [
-        "adult-acute-urti"
-      ]
+      "profiles": ["adult-acute-urti"]
     },
     {
       "id": "amm-cpg-530",
@@ -710,9 +708,7 @@
       "year": 2003,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=284",
       "file": "management of sore throat.pdf",
-      "profiles": [
-        "adult-acute-urti"
-      ]
+      "profiles": ["adult-acute-urti"]
     },
     {
       "id": "amm-cpg-1174",
@@ -760,9 +756,7 @@
       "year": 2024,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=865",
       "file": "CPG Management of Asthma (2nd edition) v20260819.pdf",
-      "profiles": [
-        "adult-acute-urti"
-      ]
+      "profiles": ["adult-acute-urti"]
     },
     {
       "id": "amm-cpg-1077",
@@ -810,9 +804,7 @@
       "year": 2009,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=323",
       "file": "CPG Management of COPD (Second Edition).pdf",
-      "profiles": [
-        "adult-acute-urti"
-      ]
+      "profiles": ["adult-acute-urti"]
     },
     {
       "id": "amm-cpg-1109",
