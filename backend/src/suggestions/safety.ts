@@ -4,7 +4,7 @@ import { containsDiagnosticProse } from '../analysis/diagnostic-guard.js'
 const MEDICATION_TERM =
   '(?:antibiotics?|antimicrobials?|medications?|medicines?|drugs?|tablets?|capsules?|inhalers?|steroids?|nitrofurantoin|aspirin|insulin|paracetamol|ibuprofen|salbutamol|amoxicillin|[a-z]+(?:cillin|mycin|cycline|floxacin|azole|pril|sartan|olol|statin|prazole|caine|vir|mab|tadine|zine|butamol|terol))'
 
-const CLAUSE_BOUNDARY = /\s*(?:;|,\s*but\b|\bbut\b|\bhowever\b|\band then\b|[.!?]\s+)\s*/i
+const CLAUSE_BOUNDARY = /(?:\s*(?:;|,\s*but\b|\bbut\b|\bhowever\b|\band then\b)\s*|(?<=[.!?])\s+)/i
 const CONTEXT_LABEL = /^(?:plan|recommendation|treatment)\s*:\s*/i
 const INFORMATION_GATHERING = /^(?:ask|document|confirm|review|check)\s+(?:whether|if)\b/i
 const QUESTION_CONTEXT =

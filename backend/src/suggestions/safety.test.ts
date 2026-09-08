@@ -111,6 +111,7 @@ describe('filterUnsafeModelSuggestions', () => {
     'Prescribing antibiotics is not routinely recommended.',
     'What dose of amoxicillin 500 mg is the patient currently taking?',
     'Do you currently take amoxicillin?',
+    'Do you currently take amoxicillin? Confirm the recorded dose.',
     'Should the patient continue taking amoxicillin?',
     'Ask whether the patient was advised to start aspirin.',
     'Confirm whether the patient already took amoxicillin 250.5 mg.',
@@ -150,6 +151,17 @@ describe('filterUnsafeModelSuggestions', () => {
     expect(result.suggestions).toEqual([])
     expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1'])
     expect(JSON.stringify(result)).not.toContain('500 mg')
+  })
+
+  it('retains multi-sentence medication questions in citation quotes', () => {
+    const result = filterUnsafeModelSuggestions([
+      suggestion('safe-quote', 'Consider documenting the medication history.', [
+        'Do you currently take amoxicillin? Confirm the recorded dose.',
+      ]),
+    ])
+
+    expect(result.suggestions.map(({ id }) => id)).toEqual(['safe-quote'])
+    expect(result.suppressedSuggestionIds).toEqual([])
   })
 
   it('never carries a model-authored identifier into suppression metadata', () => {
