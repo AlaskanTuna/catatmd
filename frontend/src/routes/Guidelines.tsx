@@ -82,7 +82,7 @@ export function Guidelines() {
   const [publisher, setPublisher] = useState(ALL_PUBLISHERS)
   const [corpusPage, setCorpusPage] = useState(1)
   const [documentPage, setDocumentPage] = useState(1)
-  const corpusHeadingRef = useRef<HTMLHeadingElement | null>(null)
+  const corpusTopRef = useRef<HTMLParagraphElement | null>(null)
   const cpgHeadingRef = useRef<HTMLHeadingElement | null>(null)
 
   const all = useMemo(() => guidelines.data ?? [], [guidelines.data])
@@ -235,7 +235,7 @@ export function Guidelines() {
           {/* Announced politely rather than silently re-rendered: a filter that
               changes the list under a screen-reader user without saying so
               leaves them reading a page that is no longer the one they heard. */}
-          <p aria-live="polite" className="mt-3 text-sm text-ink-muted">
+          <p ref={corpusTopRef} aria-live="polite" className="mt-3 text-sm text-ink-muted">
             {filtering
               ? `Showing ${filtered.length} of ${all.length} entries`
               : `${all.length} entries`}
@@ -291,14 +291,14 @@ export function Guidelines() {
 
           {filtered.length > 0 && (
             <section aria-labelledby="corpus-pagination-heading" className="mt-6">
-              <h2 id="corpus-pagination-heading" ref={corpusHeadingRef} className="sr-only">
+              <h2 id="corpus-pagination-heading" className="sr-only">
                 Curated corpus pagination
               </h2>
               <Pagination
                 page={currentCorpusPage}
                 pageCount={corpusPageCount}
                 onPageChange={setCorpusPage}
-                scrollTo={corpusHeadingRef}
+                scrollTo={corpusTopRef}
               />
             </section>
           )}
