@@ -9,14 +9,40 @@ import { Button } from '../ui/Button.js'
 import { EmptyState, Skeleton } from '../ui/Card.js'
 import { Checkbox } from '../ui/Checkbox.js'
 import { PageHeader } from '../ui/PageHeader.js'
+import { clampPage, Pagination, paginate } from '../ui/Pagination.js'
 import { Select } from '../ui/Select.js'
 import { ConsultationRow } from './ConsultationRow.js'
 import { StartConsultationDialog } from './StartConsultationDialog.js'
 
-const VIEW_OPTIONS = [
-  { value: 'attention', label: 'Needs Attention' },
-  { value: 'all', label: 'All Consultations' },
-]
+type ConsultationView = 'draft' | 'awaiting_review' | 'approved'
+
+const CATEGORY: Record<
+  ConsultationView,
+  { label: string; empty: string; matches: (status: ConsultationStatus) => boolean }
+> = {
+  draft: {
+    label: 'Draft',
+    empty: 'No drafts. Start a consultation to begin one.',
+    matches: (status) => status === 'draft' || status === 'analyzing',
+  },
+  awaiting_review: {
+    label: 'Awaiting Review',
+    empty: 'Nothing is waiting for review.',
+    matches: (status) => status === 'awaiting_review',
+  },
+  approved: {
+    label: 'Approved',
+    empty: 'No approved consultations yet.',
+    matches: (status) => status === 'approved',
+  },
+}
+
+const VIEW_OPTIONS = (Object.keys(CATEGORY) as ConsultationView[]).map((value) => ({
+  value,
+  label: CATEGORY[value].label,
+}))
+
+const PAGE_SIZE = 15
 
 /**
  * How each status is named when counted in the erase confirmation.
@@ -39,7 +65,8 @@ export function ConsultationList() {
     queryFn: api.listConsultations,
   })
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
-  const [view, setView] = useState<'attention' | 'all'>('attention')
+  const [view, setView] = useState<ConsultationView>('draft')
+  const [page, setPage] = useState(1)
   /**
    * Which row is open for renaming, owned here rather than inside the field.
    *
@@ -55,20 +82,27 @@ export function ConsultationList() {
   // `Checkbox` component, so a wrapping label reads as having no control in it.
   const selectAllId = useId()
 
-  const consultations =
-    view === 'all'
-      ? (data ?? [])
-      : (data ?? []).filter(
-          (consultation) =>
-            consultation.status === 'draft' || consultation.status === 'awaiting_review',
-        )
+  const consultations = (data ?? []).filter((consultation) =>
+    CATEGORY[view].matches(consultation.status),
+  )
+
+  const pageCount = Math.ceil(consultations.length / PAGE_SIZE)
+  // `page` is what was last asked for; `currentPage` is what still exists.
+  // Erasing rows can shrink the filtered list out from under a page number, and
+  // rendering an empty page is the failure the clamp is there to avoid.
+  const currentPage = clampPage(page, pageCount)
+  // Written back, so a list that later grows again stays where the doctor
+  // last was rather than jumping to the page the stale number still names.
+  if (currentPage !== page) setPage(currentPage)
+  const pageRows = paginate(consultations, currentPage, PAGE_SIZE)
 
   // Derived from the rows rather than read straight out of state, so a
   // selection cannot outlive the consultation it points at. Without this, a
   // list that refreshed while the dialog was open could erase by an id the
   // doctor could no longer see.
   const selected = consultations.filter((c) => picked.has(c.id))
-  const allSelected = consultations.length > 0 && selected.length === consultations.length
+  const pageSelected = pageRows.filter((c) => picked.has(c.id))
+  const allSelected = pageRows.length > 0 && pageSelected.length === pageRows.length
 
   const erase = useMutation({
     mutationFn: () => api.eraseConsultations(selected.map((c) => c.id)),
@@ -136,9 +170,10 @@ export function ConsultationList() {
           options={VIEW_OPTIONS}
           className="w-52"
           onChange={(value) => {
-            if (value !== 'attention' && value !== 'all') return
+            if (value !== 'draft' && value !== 'awaiting_review' && value !== 'approved') return
             setView(value)
             setPicked(new Set())
+            setPage(1)
           }}
         />
 
@@ -152,14 +187,25 @@ export function ConsultationList() {
                 id={selectAllId}
                 checked={allSelected}
                 ref={(el) => {
-                  if (el) el.indeterminate = selected.length > 0 && !allSelected
+                  if (el) el.indeterminate = pageSelected.length > 0 && !allSelected
                 }}
                 onChange={() =>
-                  setPicked(allSelected ? new Set() : new Set(consultations.map((c) => c.id)))
+                  setPicked((current) => {
+                    const next = new Set(current)
+                    for (const consultation of pageRows) {
+                      if (allSelected) next.delete(consultation.id)
+                      else next.add(consultation.id)
+                    }
+                    return next
+                  })
                 }
               />
               <span aria-live="polite">
-                {selected.length === 0 ? 'Select all' : `${selected.length} selected`}
+                {selected.length === 0
+                  ? pageCount > 1
+                    ? 'Select all on this page'
+                    : 'Select all'
+                  : `${selected.length} selected`}
               </span>
             </label>
 
@@ -206,13 +252,10 @@ export function ConsultationList() {
         )}
 
         {data && data.length > 0 && consultations.length === 0 && (
-          <EmptyState
-            title="No Consultations Need Attention"
-            body="Approved filing belongs on patient profiles. Show all consultations to view the complete record."
-          />
+          <EmptyState title={CATEGORY[view].label} body={CATEGORY[view].empty} />
         )}
 
-        {consultations.map((consultation) => (
+        {pageRows.map((consultation) => (
           <ConsultationRow
             key={consultation.id}
             consultation={consultation}
@@ -225,6 +268,8 @@ export function ConsultationList() {
           />
         ))}
       </div>
+
+      <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />
 
       <StartConsultationDialog ref={startDialog} />
 

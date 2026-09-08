@@ -1,3 +1,4 @@
+import type { ConsultationListItem, ConsultationStatus } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
@@ -19,36 +20,16 @@ vi.mock('../lib/api.js', () => ({
   },
 }))
 
-const CONSULTATIONS = [
-  {
-    id: 'draft-1',
-    status: 'draft' as const,
-    title: 'Draft visit',
-    createdAt: new Date('2026-08-24T06:00:00.000Z'),
-    updatedAt: new Date('2026-08-24T06:00:00.000Z'),
-  },
-  {
-    id: 'review-1',
-    status: 'awaiting_review' as const,
-    title: 'Review visit',
-    createdAt: new Date('2026-08-25T06:00:00.000Z'),
-    updatedAt: new Date('2026-08-25T06:00:00.000Z'),
-  },
-  {
-    id: 'analysing-1',
-    status: 'analyzing' as const,
-    title: 'Analysing visit',
-    createdAt: new Date('2026-08-26T06:00:00.000Z'),
-    updatedAt: new Date('2026-08-26T06:00:00.000Z'),
-  },
-  {
-    id: 'approved-1',
-    status: 'approved' as const,
-    title: 'Filed visit',
-    createdAt: new Date('2026-08-27T06:00:00.000Z'),
-    updatedAt: new Date('2026-08-27T06:00:00.000Z'),
-  },
-]
+const row = (status: ConsultationStatus, n: number): ConsultationListItem => ({
+  id: `${status}-${n}`,
+  status,
+  title: `${status} visit ${n}`,
+  createdAt: new Date(2026, 7, n),
+  updatedAt: new Date(2026, 7, n),
+})
+
+const rows = (status: ConsultationStatus, n: number): ConsultationListItem[] =>
+  Array.from({ length: n }, (_, i) => row(status, i + 1))
 
 afterEach(cleanup)
 
@@ -64,37 +45,100 @@ function setup() {
   )
 }
 
-describe('ConsultationList work queue', () => {
+function pickCategory(label: string) {
+  fireEvent.click(screen.getByRole('button', { name: 'Consultation View' }))
+  fireEvent.click(screen.getByRole('option', { name: label }))
+}
+
+describe('ConsultationList categories', () => {
   beforeEach(() => {
     vi.mocked(api.listConsultations).mockReset()
-    vi.mocked(api.listConsultations).mockResolvedValue(CONSULTATIONS)
+    vi.mocked(api.listConsultations).mockResolvedValue([])
   })
 
-  it('defaults to drafts and consultations awaiting review', async () => {
+  it('offers Draft, Awaiting Review and Approved, in that order, defaulting to Draft', async () => {
+    vi.mocked(api.listConsultations).mockResolvedValue([row('approved', 1)])
     setup()
 
-    expect(await screen.findByText('Draft visit')).toBeTruthy()
-    expect(screen.getByText('Review visit')).toBeTruthy()
-    expect(screen.queryByText('Analysing visit')).toBeNull()
-    expect(screen.queryByText('Filed visit')).toBeNull()
+    const trigger = screen.getByRole('button', { name: 'Consultation View' })
+    expect(trigger.textContent).toContain('Draft')
+
+    fireEvent.click(trigger)
+    const options = screen.getAllByRole('option')
+    expect(options.map((option) => option.textContent)).toEqual([
+      'Draft',
+      'Awaiting Review',
+      'Approved',
+    ])
   })
 
-  it('offers a visible control to show all consultations', async () => {
+  it('shows analysing consultations under Draft', async () => {
+    vi.mocked(api.listConsultations).mockResolvedValue([
+      row('draft', 1),
+      row('analyzing', 1),
+      row('awaiting_review', 1),
+      row('approved', 1),
+    ])
     setup()
-    await screen.findByText('Draft visit')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Consultation View' }))
-    fireEvent.click(screen.getByRole('option', { name: 'All Consultations' }))
-
-    expect(screen.getByText('Analysing visit')).toBeTruthy()
-    expect(screen.getByText('Filed visit')).toBeTruthy()
+    expect(await screen.findByText('draft visit 1')).toBeTruthy()
+    expect(screen.getByText('analyzing visit 1')).toBeTruthy()
+    expect(screen.queryByText('awaiting_review visit 1')).toBeNull()
+    expect(screen.queryByText('approved visit 1')).toBeNull()
   })
 
-  it('explains where filed work belongs when nothing needs attention', async () => {
-    vi.mocked(api.listConsultations).mockResolvedValue(CONSULTATIONS.slice(3))
+  it('paginates a category at fifteen rows and resets to page one on category change', async () => {
+    vi.mocked(api.listConsultations).mockResolvedValue([
+      ...rows('awaiting_review', 16),
+      ...rows('approved', 16),
+    ])
+    setup()
+    await screen.findByText('No drafts. Start a consultation to begin one.')
+
+    pickCategory('Awaiting Review')
+
+    expect(await screen.findAllByText(/awaiting_review visit/)).toHaveLength(15)
+    expect(screen.getByText('awaiting_review visit 1')).toBeTruthy()
+    expect(screen.queryByText('awaiting_review visit 16')).toBeNull()
+    expect(screen.getByText('Page 1 of 2')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+    expect(await screen.findByText('awaiting_review visit 16')).toBeTruthy()
+    expect(screen.queryByText('awaiting_review visit 1')).toBeNull()
+    expect(screen.getByText('Page 2 of 2')).toBeTruthy()
+
+    pickCategory('Approved')
+    expect(await screen.findByText('approved visit 1')).toBeTruthy()
+    expect(screen.getByText('Page 1 of 2')).toBeTruthy()
+    expect(screen.queryByText('approved visit 16')).toBeNull()
+  })
+
+  it('hides the pagination control when a category fits on one page', async () => {
+    vi.mocked(api.listConsultations).mockResolvedValue(rows('awaiting_review', 15))
     setup()
 
-    expect(await screen.findByText('No Consultations Need Attention')).toBeTruthy()
-    expect(screen.getByText(/approved filing belongs on patient profiles/i)).toBeTruthy()
+    pickCategory('Awaiting Review')
+
+    expect(await screen.findByText('awaiting_review visit 15')).toBeTruthy()
+    expect(screen.queryByRole('navigation', { name: 'Pagination' })).toBeNull()
+  })
+
+  it('says the draft empty sentence when no drafts or analyses exist', async () => {
+    vi.mocked(api.listConsultations).mockResolvedValue([row('awaiting_review', 1)])
+    setup()
+
+    expect(await screen.findByText('No drafts. Start a consultation to begin one.')).toBeTruthy()
+  })
+
+  it('says the review and approved empty sentences when those views hold no rows', async () => {
+    vi.mocked(api.listConsultations).mockResolvedValue([row('draft', 1)])
+    setup()
+    await screen.findByText('draft visit 1')
+
+    pickCategory('Awaiting Review')
+    expect(await screen.findByText('Nothing is waiting for review.')).toBeTruthy()
+
+    pickCategory('Approved')
+    expect(await screen.findByText('No approved consultations yet.')).toBeTruthy()
   })
 })
