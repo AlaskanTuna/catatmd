@@ -21,6 +21,7 @@
     "db:status": "bunx prisma migrate status --schema prisma/schema.prisma",
     "db:seed": "bun run --cwd shared build && bunx tsx prisma/seed.ts",
     "db:seed:demo": "bun run --cwd shared build && bunx tsx prisma/seed-demo.ts",
+    "corpus:ingest": "bun run --cwd shared build && bunx tsx backend/src/scripts/ingest-cpg.ts",
     "db:studio": "bunx prisma studio --schema prisma/schema.prisma",
     "prisma:generate": "bunx prisma generate --schema prisma/schema.prisma",
     "lint": "biome check .",
