@@ -55,6 +55,27 @@ describe('ApproveBar contextual guidance', () => {
     await waitFor(() => expect(approve).toHaveBeenCalledTimes(1))
   })
 
+  it('states that approval is final, in the tip the doctor opens', async () => {
+    renderApproveBar()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve Note' }))
+    fireEvent.click(screen.getByRole('button', { name: 'What approving does' }))
+
+    expect(
+      await screen.findByText('Approval finalises this note. It cannot be edited later.'),
+    ).toBeTruthy()
+  })
+
+  it('states the outstanding count and that approval is still allowed', async () => {
+    renderApproveBar(2)
+
+    fireEvent.click(screen.getByRole('button', { name: '2 red flags not yet acknowledged' }))
+
+    expect(
+      await screen.findByText('2 red flags still need review. You can still approve.'),
+    ).toBeTruthy()
+  })
+
   it('does not show contextual guidance when approval has nothing to explain', () => {
     renderApproveBar()
 

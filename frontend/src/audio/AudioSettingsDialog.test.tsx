@@ -1,9 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { AudioCapture } from './AudioCapture.js'
 import { AudioSettingsDialog } from './AudioSettingsDialog.js'
-import { DEFAULT_AUDIO_SETTINGS } from './audio-settings.js'
+import { type AudioSettings, DEFAULT_AUDIO_SETTINGS } from './audio-settings.js'
 import { AmbientCapture } from './live/AmbientCapture.js'
 
 const liveAsrConfig = vi.hoisted(() =>
@@ -195,5 +195,150 @@ describe('the Audio dialog and the control it describes', () => {
     // The tip promised labels "you review line by line before anything enters
     // the transcript" for three days after #233 deleted that step.
     expect(screen.queryByText(/review line by line/i)).toBeNull()
+  })
+})
+
+describe('the engine tooltips', () => {
+  const forbidden =
+    /GPU|CDN|model weights|segment timing|voice model|Other languages are untested here/i
+
+  it('states the local boundary in plain language', () => {
+    renderDialog()
+
+    fireEvent.click(screen.getByRole('button', { name: /^About On this device/ }))
+    const tip = screen.getByRole('tooltip')
+    expect(tip.textContent).toMatch(/Runs on this device\./)
+    expect(tip.textContent).toMatch(/Audio is not uploaded\./)
+    expect(tip.textContent).not.toMatch(forbidden)
+  })
+
+  it('states the hosted boundary and residency in plain language', () => {
+    renderDialog()
+
+    fireEvent.click(screen.getByRole('button', { name: /^About ILMU/ }))
+    const tip = screen.getByRole('tooltip')
+    expect(tip.textContent).toMatch(/Sends audio to ILMU in Malaysia\./)
+    expect(tip.textContent).toMatch(/Review the transcript carefully\./)
+    expect(tip.textContent).not.toMatch(forbidden)
+  })
+})
+
+describe('the audio processing toggles', () => {
+  const forbidden =
+    /GPU|CDN|model weights|segment timing|voice model|Other languages are untested here/i
+
+  it('states what suppressing room noise does, and when to turn it off', () => {
+    renderDialog()
+
+    fireEvent.click(screen.getByRole('button', { name: /about suppress room noise/i }))
+    const tip = screen.getByRole('tooltip')
+    expect(tip.textContent).toBe(
+      'Reduces steady background noise. Turn it off if quiet speech sounds clipped.',
+    )
+    expect(tip.textContent).not.toMatch(forbidden)
+  })
+
+  it('states what boosting quiet speech does, and what it may also amplify', () => {
+    renderDialog()
+
+    fireEvent.click(screen.getByRole('button', { name: /about boost quiet speech/i }))
+    const tip = screen.getByRole('tooltip')
+    expect(tip.textContent).toBe('Makes quiet speech louder. It may also amplify room noise.')
+    expect(tip.textContent).not.toMatch(forbidden)
+  })
+})
+
+describe('cancelling the Audio settings dialog', () => {
+  const nativeDialog = {
+    showModal: HTMLDialogElement.prototype.showModal,
+    close: HTMLDialogElement.prototype.close,
+  }
+
+  beforeAll(() => {
+    HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+      this.open = false
+      this.dispatchEvent(new Event('close'))
+    }
+  })
+
+  afterAll(() => {
+    Object.assign(HTMLDialogElement.prototype, nativeDialog)
+  })
+
+  function open(settings: AudioSettings = DEFAULT_AUDIO_SETTINGS, ambient = false) {
+    const ref = createRef<HTMLDialogElement>()
+    const onApply = vi.fn()
+    render(
+      <AudioSettingsDialog ref={ref} settings={settings} onApply={onApply} ambient={ambient} />,
+    )
+    act(() => ref.current?.setAttribute('open', ''))
+    return { ref, onApply }
+  }
+
+  const engineButton = (name: RegExp) => screen.getByRole('button', { name })
+
+  it('discards a changed engine after Cancel, and reopening shows the saved engine', () => {
+    const saved = { ...DEFAULT_AUDIO_SETTINGS, engine: 'hosted' as const }
+    const { ref, onApply } = open(saved)
+
+    const hosted = engineButton(/^ILMU/)
+    const local = engineButton(/^On this device/)
+
+    expect(hosted.getAttribute('aria-pressed')).toBe('true')
+    expect(local.getAttribute('aria-pressed')).toBe('false')
+
+    fireEvent.click(local)
+
+    expect(hosted.getAttribute('aria-pressed')).toBe('false')
+    expect(local.getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+
+    expect(onApply).not.toHaveBeenCalled()
+
+    act(() => ref.current?.setAttribute('open', ''))
+
+    expect(hosted.getAttribute('aria-pressed')).toBe('true')
+    expect(local.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('discards a changed engine after a native close event, and reopening shows the saved engine', () => {
+    const saved = { ...DEFAULT_AUDIO_SETTINGS, engine: 'hosted' as const }
+    const { ref, onApply } = open(saved)
+
+    const local = engineButton(/^On this device/)
+    fireEvent.click(local)
+
+    const dialog = screen.getByRole('dialog') as HTMLDialogElement
+    act(() => dialog.close())
+
+    expect(onApply).not.toHaveBeenCalled()
+
+    act(() => ref.current?.setAttribute('open', ''))
+
+    const hosted = engineButton(/^ILMU/)
+    expect(hosted.getAttribute('aria-pressed')).toBe('true')
+    expect(local.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('calls the dialog close method only once when Cancel is pressed', () => {
+    const closeSpy = vi.spyOn(HTMLDialogElement.prototype, 'close')
+    open()
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+
+    expect(closeSpy).toHaveBeenCalledTimes(1)
+
+    closeSpy.mockRestore()
+  })
+
+  it('applies the selected engine when Save is pressed', () => {
+    const saved = { ...DEFAULT_AUDIO_SETTINGS, engine: 'hosted' as const }
+    const { onApply } = open(saved)
+
+    fireEvent.click(engineButton(/^On this device/))
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+
+    expect(onApply).toHaveBeenCalledWith({ ...saved, engine: 'local' })
   })
 })

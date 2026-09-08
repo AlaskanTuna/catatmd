@@ -60,6 +60,7 @@ export function CatatAI({
   const [draft, setDraft] = useState('')
   const { messages, send, stop, streaming, error, resolveProposal } = useCopilot(consultation.id)
   const dialog = useRef<HTMLDialogElement | null>(null)
+  const expandToggle = useRef<HTMLButtonElement | null>(null)
   const scroller = useRef<HTMLDivElement | null>(null)
 
   /*
@@ -90,6 +91,9 @@ export function CatatAI({
       return
     }
     dialog.current?.showModal()
+    // The button that expanded the panel unmounts with the docked panel, which
+    // would leave focus on <body>. Land it on the header's first control.
+    expandToggle.current?.focus()
   }, [expanded])
 
   useEffect(() => {
@@ -115,7 +119,7 @@ export function CatatAI({
 
   const body = (
     <>
-      <header className="flex items-center gap-2 border-line/60 border-b px-4 py-3">
+      <header className="flex shrink-0 items-center gap-3 border-b border-line px-6 py-4">
         <img
           src="/art/catatai.webp"
           alt=""
@@ -134,6 +138,7 @@ export function CatatAI({
             lines of static text (issue #179). */}
         {!demo && (
           <button
+            ref={expandToggle}
             type="button"
             onClick={() => setExpanded((value) => !value)}
             aria-label={expanded ? 'Dock the panel' : 'Expand the panel'}
@@ -157,7 +162,7 @@ export function CatatAI({
         </button>
       </header>
 
-      <div ref={scroller} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+      <div ref={scroller} className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-sunken p-4 md:p-6">
         {demo && (
           /*
            * Labelled inside the panel, not only in the coachmark, so the state
@@ -205,7 +210,7 @@ export function CatatAI({
       {/* No composer and no chips in demo mode: the surest way to guarantee the
           tour cannot reach the copilot route is to render nothing that calls
           it (issue #179). */}
-      <div className="space-y-2 border-line/60 border-t px-4 py-3">
+      <div className="space-y-2 border-t border-line bg-surface px-4 py-3">
         {demo && (
           <p className="text-center text-ink-muted text-xs">Available on a saved consultation.</p>
         )}
@@ -304,13 +309,13 @@ export function CatatAI({
           style={{ zIndex: 'var(--z-sidebar)' }}
           /*
            * `ring-1 ring-line` on top of the glass, matching the button this
-           * panel opens from. `.glass` carries a border already, but that one
+           * panel opens from. `.glass-panel` carries a border already, but that one
            * is `--color-glass-line`, a white highlight edge at 55% meant to
            * catch light on chrome; against the page it does not read as an
            * edge at all, so the docked panel had no discernible outline. The
            * ring is a real neutral line and gives it one.
            */
-          className="glass fixed right-4 bottom-4 flex h-[min(34rem,calc(100vh-2rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-float ring-1 ring-line md:right-6 md:bottom-6"
+          className="glass-panel fixed right-4 bottom-4 flex h-[min(34rem,calc(100vh-2rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-float ring-1 ring-line md:right-6 md:bottom-6"
         >
           {body}
         </div>
@@ -318,9 +323,10 @@ export function CatatAI({
 
       <dialog
         ref={dialog}
+        aria-label="CatatAI"
         data-print="hide"
         onClose={() => setExpanded(false)}
-        className="glass-panel m-auto h-[min(80vh,44rem)] w-[min(46rem,calc(100vw-2rem))] rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
+        className="glass-panel m-auto h-[min(85vh,48rem)] w-[min(56rem,calc(100vw-2rem))] max-w-none rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
       >
         {expanded && <div className="flex h-full flex-col">{body}</div>}
       </dialog>
