@@ -550,22 +550,44 @@ Port 5434 rather than 5432 because 5432 and 5433 are commonly already bound. Ove
 
 ---
 
-## 👥 Team
+<a id="contributions"></a>
 
-<table align="center">
+## 👥 Contributions
+
+Four people, two engineers and two who keep the product honest about the clinic it is for. Lanes come from the showcase handover; the work is what shipped on `main`.
+
+<div align="center">
+<table>
   <tr>
-    <td align="center" width="260">
-      <a href="https://github.com/AlaskanTuna"><img src="https://github.com/AlaskanTuna.png" width="100" alt="AlaskanTuna" /></a><br/>
-      <a href="https://github.com/AlaskanTuna"><sub><strong>@AlaskanTuna</strong></sub></a><br/>
-      <sub>Frontend, Backend, DevOps</sub>
+    <td align="center" width="25%">
+      <a href="https://github.com/AlaskanTuna"><img src="https://github.com/AlaskanTuna.png?size=100" width="96" alt="Zi Jie" /></a><br />
+      <b>Zi Jie</b><br />
+      <a href="https://github.com/AlaskanTuna">@AlaskanTuna</a>
     </td>
-    <td align="center" width="260">
-      <a href="https://github.com/Andersonnn7788"><img src="https://github.com/Andersonnn7788.png" width="100" alt="Andersonnn7788" /></a><br/>
-      <a href="https://github.com/Andersonnn7788"><sub><strong>@Andersonnn7788</strong></sub></a><br/>
-      <sub>Backend, Docs, Testing</sub>
+    <td align="center" width="25%">
+      <a href="https://github.com/Andersonnn7788"><img src="https://github.com/Andersonnn7788.png?size=100" width="96" alt="Anderson" /></a><br />
+      <b>Anderson</b><br />
+      <a href="https://github.com/Andersonnn7788">@Andersonnn7788</a>
+    </td>
+    <td align="center" width="25%">
+      <a href="https://github.com/DebbieLim98"><img src="https://github.com/DebbieLim98.png?size=100" width="96" alt="Debbie" /></a><br />
+      <b>Debbie</b><br />
+      <a href="https://github.com/DebbieLim98">@DebbieLim98</a>
+    </td>
+    <td align="center" width="25%">
+      <a href="https://github.com/WeeKen99"><img src="https://github.com/WeeKen99.png?size=100" width="96" alt="Wee Ken" /></a><br />
+      <b>Wee Ken</b><br />
+      <a href="https://github.com/WeeKen99">@WeeKen99</a>
     </td>
   </tr>
+  <tr>
+    <td align="center"><sub>The architecture and the PHI boundary, the review screen and its note templates, the consultation and patient flows, the API, hosting on Vercel, Render and Supabase, and the workflow timing.</sub></td>
+    <td align="center"><sub>Ambient capture end to end, hosted and on-device ASR with their measurements, the Malay red-flag and de-identification coverage, the guideline corpus audits, and the TRD.</sub></td>
+    <td align="center"><sub>The GP usability test with Dr. Lim and the changes it produced: question-form missing information, the Malaysian record grouping, and the model-language safety filter (#273, adopted in #284).</sub></td>
+    <td align="center"><sub>The business side: guideline licensing for AMM, NICE and Singapore MOH, the practising-GP interviews, and where CatatMD stands against Dragon Copilot and Heidi.</sub></td>
+  </tr>
 </table>
+</div>
 
 <div align="right"><a href="#top">&#8593;</a></div>
 
