@@ -47,6 +47,8 @@ function makeChunk(id: string, overrides: { page?: number; heading?: string } = 
       storagePath: null,
       pageCount: 10,
       ingestedAt: new Date(),
+      profiles: ['adult-acute-urti'],
+      verbatimAllowed: true,
     },
   }
 }
@@ -63,7 +65,7 @@ describe('retrieveGuidelines', () => {
   it('returns an empty array immediately when no chunks exist for the jurisdiction', async () => {
     queryRaw.mockResolvedValueOnce([{ count: 0 }])
 
-    const result = await retrieveGuidelines(content)
+    const result = await retrieveGuidelines(content, { profileId: 'adult-acute-urti' })
 
     expect(result).toEqual([])
     expect(queryRaw).toHaveBeenCalledTimes(1)
@@ -86,7 +88,11 @@ describe('retrieveGuidelines', () => {
 
     findMany.mockResolvedValueOnce([makeChunk('lex1'), makeChunk('sem1'), makeChunk('lex2')])
 
-    const result = await retrieveGuidelines(content, { limit: 3, jurisdiction: 'MY' })
+    const result = await retrieveGuidelines(content, {
+      profileId: 'adult-acute-urti',
+      limit: 3,
+      jurisdiction: 'MY',
+    })
 
     expect(result).toHaveLength(3)
     expect(result[0]?.id).toBe('lex1')
@@ -106,7 +112,7 @@ describe('retrieveGuidelines', () => {
 
     findMany.mockResolvedValueOnce([makeChunk('lex1')])
 
-    const result = await retrieveGuidelines(content)
+    const result = await retrieveGuidelines(content, { profileId: 'adult-acute-urti' })
 
     expect(result).toHaveLength(1)
     expect(result[0]?.id).toBe('lex1')
@@ -126,7 +132,7 @@ describe('retrieveGuidelines', () => {
 
     findMany.mockResolvedValueOnce([makeChunk('c1', { page: 5, heading: 'Antibiotics' })])
 
-    const result = await retrieveGuidelines(content)
+    const result = await retrieveGuidelines(content, { profileId: 'adult-acute-urti' })
 
     for (const chunk of result) {
       expect(GuidelineChunkSchema.safeParse(chunk).success).toBe(true)
@@ -141,7 +147,7 @@ describe('retrieveGuidelines', () => {
 
     findMany.mockResolvedValueOnce([makeChunk('c1')])
 
-    await retrieveGuidelines(content)
+    await retrieveGuidelines(content, { profileId: 'adult-acute-urti' })
 
     const [message, fields] = info.mock.calls[0] ?? ['', {}]
     expect(message).toMatch(/candidateCount=1/)
@@ -149,5 +155,48 @@ describe('retrieveGuidelines', () => {
     expect(message).toMatch(/semanticCount=0/)
     expect(fields).toMatchObject({ stage: 'retrieval', count: 1 })
     expect(fields).toHaveProperty('durationMs')
+  })
+
+  it('drops candidates under the per-leg relevance floors instead of padding to the limit', async () => {
+    queryRaw
+      .mockResolvedValueOnce([{ count: 3 }])
+      .mockResolvedValueOnce([
+        { id: 'lex1', score: 0.2 },
+        { id: 'weak-lex', score: 0.01 },
+      ])
+      .mockResolvedValueOnce([
+        { id: 'sem1', score: 0.62 },
+        { id: 'weak-sem', score: 0.31 },
+      ])
+    embed.mockResolvedValueOnce([[0.1, 0.2, 0.3]])
+    findMany.mockResolvedValueOnce([makeChunk('lex1'), makeChunk('sem1')])
+
+    const result = await retrieveGuidelines(content, { profileId: 'adult-acute-urti', limit: 6 })
+
+    const ids = findMany.mock.calls[0]?.[0]?.where?.id?.in as string[]
+    expect(ids).toEqual(['lex1', 'sem1'])
+    expect(result.map((c) => c.verbatimAllowed)).toEqual([true, true])
+  })
+
+  it('returns nothing when every candidate is below the floors', async () => {
+    queryRaw
+      .mockResolvedValueOnce([{ count: 3 }])
+      .mockResolvedValueOnce([{ id: 'weak-lex', score: 0.01 }])
+      .mockResolvedValueOnce([{ id: 'weak-sem', score: 0.2 }])
+    embed.mockResolvedValueOnce([[0.1, 0.2, 0.3]])
+
+    const result = await retrieveGuidelines(content, { profileId: 'adult-acute-urti' })
+
+    expect(result).toEqual([])
+    expect(findMany).not.toHaveBeenCalled()
+  })
+
+  it('scopes every query to the requested profile', async () => {
+    queryRaw.mockResolvedValueOnce([{ count: 0 }])
+
+    await retrieveGuidelines(content, { profileId: 'adult-acute-uncomplicated-uti' })
+
+    const values = queryRaw.mock.calls[0]?.slice(1) as unknown[]
+    expect(values).toContain('adult-acute-uncomplicated-uti')
   })
 })

@@ -379,6 +379,11 @@ model GuidelineDocument {
   sha256        String
   /// Object path in the Supabase Storage bucket, null until uploaded.
   storagePath   String?
+  /// Clinical profiles this document may be retrieved for. Empty means never:
+  /// a document is citable only where an operator has scoped it (#220).
+  profiles      String[] @default([])
+  /// Operator's licence decision from the manifest, not a code default.
+  verbatimAllowed Boolean @default(false)
   pageCount     Int
   ingestedAt    DateTime @default(now())
 

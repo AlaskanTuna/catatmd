@@ -730,23 +730,23 @@ A second, per-consultation corpus sits beside the curated one. `docs/README.md` 
 
 #### Data Model
 
-Two Prisma models, added by migrations `20260909000000_add_guideline_retrieval` and `20260909000100_add_guideline_chunk_ocr`:
+Two Prisma models, added by migrations `20260909000000_add_guideline_retrieval`, `20260909000100_add_guideline_chunk_ocr`, and `20260909000200_scope_guideline_documents`:
 
-| Model               | Columns                                                                                                                                                  |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GuidelineDocument` | `id`, `title`, `publisher`, `year`, `sourceUrl`, `jurisdiction`, `sourceLicence`, `sha256`, `storagePath?`, `pageCount`, `ingestedAt`                    |
-| `GuidelineChunk`    | `id`, `documentId` → `GuidelineDocument` (`onDelete: Cascade`), `page`, `ordinal`, `heading?`, `text`, `ocr`, `embedding vector(1024)?`, `tsv tsvector?` |
+| Model               | Columns                                                                                                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GuidelineDocument` | `id`, `title`, `publisher`, `year`, `sourceUrl`, `jurisdiction`, `sourceLicence`, `sha256`, `storagePath?`, `pageCount`, `ingestedAt`, `profiles[]`, `verbatimAllowed` |
+| `GuidelineChunk`    | `id`, `documentId` → `GuidelineDocument` (`onDelete: Cascade`), `page`, `ordinal`, `heading?`, `text`, `ocr`, `embedding vector(1024)?`, `tsv tsvector?`               |
 
 `embedding` and `tsv` are `Unsupported` to Prisma and written by raw SQL at ingest. `tsv` is a stored generated column (`to_tsvector('english', coalesce(heading, '') || ' ' || text)`) behind a GIN index, and `embedding` carries an HNSW index (`vector_cosine_ops`). `@@index([documentId, ordinal])` preserves per-document chunk order.
 
 #### Retrieval Algorithm
 
-`retrieveGuidelines(content: Deidentified)` in `backend/src/retrieval/retrieve.ts` runs six steps:
+`retrieveGuidelines(content: Deidentified, { profileId })` in `backend/src/retrieval/retrieve.ts` runs six steps:
 
-1. **Guard.** Count chunks in the requested jurisdiction (default `'MY'`); an empty table returns `[]` before any other work.
-2. **Lexical.** `buildLexicalQuery` reduces the text to its 12 most frequent non-stopword terms (English and Malay stop lists, de-id tokens stripped) and ORs them into `to_tsquery('english')`, ranked by `ts_rank_cd` over `tsv`, top 20.
-3. **Semantic.** The content, truncated to 6,000 characters, is embedded through the gated `EmbeddingClient` (below) and matched by pgvector cosine distance (`<=>`) against `embedding`, top 20.
-4. **Fuse.** Reciprocal rank fusion over both ranked lists with `k = 60`; the fused order supplies the top 6 ids.
+1. **Guard.** Count chunks in the requested jurisdiction (default `'MY'`) whose document is tagged with the active `profileId`; nothing in scope returns `[]` before any other work. A document with no profile tag is never retrievable, which is the default for every manifest entry until an operator scopes it.
+2. **Lexical.** `buildLexicalQuery` reduces the text to its 12 most frequent non-stopword terms (English and Malay stop lists, de-id tokens stripped) and ORs them into `to_tsquery('english')`, ranked by `ts_rank_cd` over `tsv`, top 20, then floored at `ts_rank_cd >= 0.05`.
+3. **Semantic.** The content, truncated to 6,000 characters, is embedded through the gated `EmbeddingClient` (below) and matched by pgvector cosine distance (`<=>`) against `embedding`, top 20, then floored at cosine similarity `>= 0.4`.
+4. **Fuse.** Reciprocal rank fusion over both floored lists with `k = 60`; the fused order supplies up to 6 ids. The floors are what keep the citation constraint meaningful: without them retrieval always returns six chunks, and the `z.enum` would guarantee only that an id exists, not that it applies.
 5. **Load.** `prisma.guidelineChunk.findMany` with `include: { document: true }` for the winning ids, reordered to the fused ranking.
 6. **Map.** Each row is parsed through `GuidelineChunkSchema` with `summary` set to the chunk text and `title` carrying the page (`"Document title, p. 12: heading"`), plus `documentId`, `page`, and `ocr`, so the review UI can link `url#page=N` and flag OCR spans.
 

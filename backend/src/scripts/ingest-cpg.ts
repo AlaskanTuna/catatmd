@@ -30,6 +30,7 @@ export interface Manifest {
   publisher: string
   jurisdiction: string
   sourceLicence: string
+  verbatimAllowed: boolean
   documents: ManifestDocument[]
 }
 
@@ -39,6 +40,7 @@ export interface ManifestDocument {
   year: number
   sourceUrl: string
   file: string | null
+  profiles: string[]
 }
 
 export interface ChunkSpec {
@@ -487,6 +489,13 @@ async function uploadPdf(documentId: string, filePath: string): Promise<string |
  */
 const GATE_PASSES = 3
 
+/**
+ * A 200-page guideline is several hundred embedding writes in one
+ * transaction, well past Prisma's five-second default. Sized for the largest
+ * CPG on the portal with headroom; the pooled connection stays open for it.
+ */
+const TRANSACTION_OPTIONS = { timeout: 10 * 60_000, maxWait: 60_000 }
+
 export function gateForEgress(text: string): Deidentified | null {
   let current = text
   for (let pass = 0; pass < GATE_PASSES; pass++) {
@@ -540,6 +549,8 @@ async function writeDocument(
         sha256,
         pageCount,
         storagePath,
+        profiles: [...doc.profiles],
+        verbatimAllowed: manifest.verbatimAllowed,
       },
       update: {
         title: doc.title,
@@ -551,6 +562,8 @@ async function writeDocument(
         sha256,
         pageCount,
         storagePath,
+        profiles: [...doc.profiles],
+        verbatimAllowed: manifest.verbatimAllowed,
         ingestedAt: new Date(),
       },
     })
@@ -571,7 +584,7 @@ async function writeDocument(
       if (id === undefined) continue
       await tx.$executeRaw`UPDATE "guideline_chunk" SET "embedding" = ${vector}::vector WHERE "id" = ${id}`
     }
-  })
+  }, TRANSACTION_OPTIONS)
 }
 
 async function processDocument(
@@ -603,7 +616,14 @@ async function processDocument(
   if (!flags.dryRun) {
     const existing = await prisma.guidelineDocument.findUnique({ where: { id: doc.id } })
     if (existing && existing.sha256 === sha256 && !flags.force) {
-      logger.info(`unchanged, skipping ${doc.id}`)
+      // Scope and licence are manifest metadata, kept in sync without a
+      // re-ingest so an operator can widen or narrow retrieval by editing one
+      // file and re-running.
+      await prisma.guidelineDocument.update({
+        where: { id: doc.id },
+        data: { profiles: [...doc.profiles], verbatimAllowed: manifest.verbatimAllowed },
+      })
+      logger.info(`unchanged, skipping ${doc.id} (scope synced)`)
       return null
     }
   }

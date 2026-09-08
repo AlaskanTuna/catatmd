@@ -10,23 +10,35 @@ const RRF_K = 60
 const RANK_LIMIT = 20
 const EMBEDDING_QUERY_MAX_CHARS = 6000
 
+/**
+ * Relevance floors, applied per leg before fusion. Without them retrieval
+ * always returns `limit` chunks, relevant or not, and the citation constraint
+ * would then guarantee only that an id exists, not that it applies. Cosine
+ * similarity below 0.4 on text-embedding-v4 is background noise between
+ * unrelated clinical prose; ts_rank_cd below 0.05 is a single incidental term.
+ */
+const SEMANTIC_FLOOR = 0.4
+const LEXICAL_FLOOR = 0.05
+
 export interface RetrievalOptions {
+  /** Only documents tagged with this profile in the manifest are searched. */
+  profileId: string
   limit?: number
   jurisdiction?: string
 }
 
 export async function retrieveGuidelines(
   content: Deidentified,
-  options: RetrievalOptions = {},
+  options: RetrievalOptions,
 ): Promise<GuidelineChunk[]> {
-  const { limit = 6, jurisdiction = 'MY' } = options
+  const { profileId, limit = 6, jurisdiction = 'MY' } = options
   const startedAt = performance.now()
 
   const [countRow] = await prisma.$queryRaw<Array<{ count: number }>>`
     SELECT count(*)::int AS count
     FROM "guideline_chunk" c
     JOIN "guideline_document" d ON d."id" = c."documentId"
-    WHERE d."jurisdiction" = ${jurisdiction}
+    WHERE d."jurisdiction" = ${jurisdiction} AND ${profileId} = ANY(d."profiles")
   `
   if (countRow?.count === 0) return []
 
@@ -38,7 +50,8 @@ export async function retrieveGuidelines(
         SELECT c."id", ts_rank_cd(c."tsv", to_tsquery('english', ${q})) AS score
         FROM "guideline_chunk" c
         JOIN "guideline_document" d ON d."id" = c."documentId"
-        WHERE d."jurisdiction" = ${jurisdiction} AND c."tsv" @@ to_tsquery('english', ${q})
+        WHERE d."jurisdiction" = ${jurisdiction} AND ${profileId} = ANY(d."profiles")
+          AND c."tsv" @@ to_tsquery('english', ${q})
         ORDER BY score DESC
         LIMIT ${RANK_LIMIT}
       `),
@@ -58,7 +71,8 @@ export async function retrieveGuidelines(
         SELECT c."id", 1 - (c."embedding" <=> ${vectorLiteral}::vector) AS score
         FROM "guideline_chunk" c
         JOIN "guideline_document" d ON d."id" = c."documentId"
-        WHERE d."jurisdiction" = ${jurisdiction} AND c."embedding" IS NOT NULL
+        WHERE d."jurisdiction" = ${jurisdiction} AND ${profileId} = ANY(d."profiles")
+          AND c."embedding" IS NOT NULL
         ORDER BY c."embedding" <=> ${vectorLiteral}::vector
         LIMIT ${RANK_LIMIT}
       `),
@@ -71,10 +85,12 @@ export async function retrieveGuidelines(
   }
 
   const scores = new Map<string, number>()
-  for (const [rank, row] of lexical.entries()) {
+  const lexicalKept = lexical.filter((row) => row.score >= LEXICAL_FLOOR)
+  const semanticKept = semantic.filter((row) => row.score >= SEMANTIC_FLOOR)
+  for (const [rank, row] of lexicalKept.entries()) {
     scores.set(row.id, (scores.get(row.id) ?? 0) + 1 / (RRF_K + rank + 1))
   }
-  for (const [rank, row] of semantic.entries()) {
+  for (const [rank, row] of semanticKept.entries()) {
     scores.set(row.id, (scores.get(row.id) ?? 0) + 1 / (RRF_K + rank + 1))
   }
 
@@ -112,7 +128,7 @@ export async function retrieveGuidelines(
         url: document.sourceUrl,
         summary: chunk.text,
         sourceLicence: document.sourceLicence,
-        verbatimAllowed: true,
+        verbatimAllowed: document.verbatimAllowed,
         documentId: chunk.documentId,
         page: chunk.page,
         ocr: chunk.ocr,

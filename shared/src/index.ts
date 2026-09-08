@@ -716,6 +716,9 @@ export const GuidelineDocumentSchema = z.object({
   pageCount: z.number().int(),
   chunkCount: z.number().int(),
   ingestedAt: z.coerce.date(),
+  /** Clinical profiles this document is retrievable for; empty means never. */
+  profiles: z.array(z.string()),
+  verbatimAllowed: z.boolean(),
 })
 
 // ─── Analysis envelope ───────────────────────────────────────────────────────

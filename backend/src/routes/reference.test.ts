@@ -48,6 +48,8 @@ describe('GET /api/guidelines/documents', () => {
         storagePath: null,
         pageCount: 3,
         ingestedAt: new Date('2026-09-02T00:00:00.000Z'),
+        profiles: ['adult-acute-urti'],
+        verbatimAllowed: true,
         _count: { chunks: 4 },
       },
       {
@@ -62,6 +64,8 @@ describe('GET /api/guidelines/documents', () => {
         storagePath: null,
         pageCount: 5,
         ingestedAt: new Date('2026-09-01T00:00:00.000Z'),
+        profiles: [],
+        verbatimAllowed: false,
         _count: { chunks: 12 },
       },
     ])

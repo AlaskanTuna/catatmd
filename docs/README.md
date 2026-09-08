@@ -398,6 +398,7 @@ The candidate corpus for cited suggestions is now two tiers, and the difference 
 | **Curated corpus (the floor)**          | 11 audited, licence-aware chunks; the only ids the red-flag triggers and the gap checklist may cite                     | Serialised into every `suggestions_and_red_flags` call     |
 | **Retrieved CPG library (the ceiling)** | Page-level spans from the Malaysian CPG library (109 documents indexed in `corpus/cpg/manifest.json`), stored as chunks | The top matches for this consultation, fused from two legs |
 
+- **Scope is a rule, not a prompt.** A CPG is retrievable only for the clinical profiles it is tagged with in the manifest, and each retrieval leg has a minimum score, so an off-topic guideline never enters the candidate set and retrieval returns nothing rather than padding to six.
 - **The ID constraint is unchanged, only widened.** `guidelineId` is still a `z.enum` built at request time, now over the union of both tiers; a citation naming anything else fails validation before the doctor sees it.
 - **Retrieval is hybrid.** A Postgres full-text leg and a pgvector embedding leg run over the ingested chunks and are fused by reciprocal rank fusion, so a wording mismatch on one leg does not lose a relevant span.
 - **Embeddings are a second gated egress.** The embedding client accepts only de-identified text and uses the same Singapore endpoint and key as completions, always Qwen, because the stored vectors were produced by one model.

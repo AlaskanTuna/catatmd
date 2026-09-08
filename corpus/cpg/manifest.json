@@ -3,769 +3,888 @@
   "publisher": "Ministry of Health Malaysia / Academy of Medicine of Malaysia",
   "jurisdiction": "MY",
   "sourceLicence": "MOH-CPG-unconfirmed",
+  "verbatimAllowed": true,
+  "verbatimAllowedNote": "Operator decision pending GitHub issue #250: spans are shown to the doctor and sent to the model in this private prototype.",
   "documents": [
     {
       "id": "amm-cpg-1125",
       "title": "Safe Use of Medication in Anaesthesia",
       "year": 2024,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1125",
-      "file": "Guidelines on Safe Use of Medication in Anaesthesia (Oct 2024).pdf"
+      "file": "Guidelines on Safe Use of Medication in Anaesthesia (Oct 2024).pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-708",
       "title": "Recommendations on Pre-Anaesthetic Assessment",
       "year": 2014,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=708",
-      "file": "CPG Recommendations on Pre-Anaesthetic Assessment.pdf"
+      "file": "CPG Recommendations on Pre-Anaesthetic Assessment.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-707",
       "title": "Recommendations For Patient Safety And Minimal Monitoring Standards During Anaesthesia And Recovery",
       "year": 2014,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=707",
-      "file": "CPG Recommendations For Patient Safety And Minimal Monitoring Standards During Anaesthesia And Recovery.pdf"
+      "file": "CPG Recommendations For Patient Safety And Minimal Monitoring Standards During Anaesthesia And Recovery.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-342",
       "title": "Management of Cancer Pain (2nd Edition)",
       "year": 2023,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=342",
-      "file": "CPG Management of Cancer Pain (2nd Edition) 20241219.pdf"
+      "file": "CPG Management of Cancer Pain (2nd Edition) 20241219.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-461",
       "title": "Management of Breast Cancer (3rd Edition)",
       "year": 2019,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=461",
-      "file": "CPG Management of Breast Cancer (3rd Ed) 20211201.pdf"
+      "file": "CPG Management of Breast Cancer (3rd Ed) 20211201.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-900",
       "title": "Management of Colorectal Carcinoma",
       "year": 2017,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=900",
-      "file": "CPG Management of Colorectal Carcinoma 2017.pdf"
+      "file": "CPG Management of Colorectal Carcinoma 2017.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-837",
       "title": "Management of Nasopharyngeal Carcinoma",
       "year": 2016,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=837",
-      "file": "CPG Management of Nasopharyngeal Carcinoma.pdf"
+      "file": "CPG Management of Nasopharyngeal Carcinoma.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-748",
       "title": "Management of Cervical Cancer (2nd Edition)",
       "year": 2015,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=748",
-      "file": "CPG Management of Cervical Cancer (Second Edition).pdf"
+      "file": "CPG Management of Cervical Cancer (Second Edition).pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-1171",
       "title": "Management of Acute Coronary Syndromes (1st Edition)",
       "year": 2026,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1171",
-      "file": "CPG Management of Acute Coronary Syndromes (1st Edition).pdf"
+      "file": "CPG Management of Acute Coronary Syndromes (1st Edition).pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-849",
       "title": "Management of Dyslipidaemia (6th Edition)",
       "year": 2023,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=849",
-      "file": "CPG Management of Dyslipidaemia (6th Edition).pdf"
+      "file": "CPG Management of Dyslipidaemia (6th Edition).pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-684",
       "title": "Management of Heart Failure (5th Edition)",
       "year": 2023,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=684",
-      "file": "CPG Management of Heart Failure (5th Edition).pdf"
+      "file": "CPG Management of Heart Failure (5th Edition).pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-1044",
       "title": "Management of Non-ST Elevation Myocardial Infaction (NSTE-ACS) (Third Edition)",
       "year": 2021,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1044",
-      "file": "CPG Management of Non-ST Elevation Myocardial Infaction (NSTE-ACS) (Third Edition) 20220627.pdf"
+      "file": "CPG Management of Non-ST Elevation Myocardial Infaction (NSTE-ACS) (Third Edition) 20220627.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-975",
       "title": "Management of Ischaemic Stroke (3rd Edition)",
       "year": 2020,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=975",
-      "file": "CPG Management of Ischaemic Stroke 3rd Edition 2020 v20230403.pdf"
+      "file": "CPG Management of Ischaemic Stroke 3rd Edition 2020 v20230403.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-683",
       "title": "Management of Acute ST Segment Elevation Myocardial Infarction (STEMI) (4th Edition)",
       "year": 2019,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=683",
-      "file": "CPG Management of Acute ST Elevation Myocardial Infarction (STEMI) (4th Ed) 2019.pdf"
+      "file": "CPG Management of Acute ST Elevation Myocardial Infarction (STEMI) (4th Ed) 2019.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-894",
       "title": "Management of Hypertension (5th Edition)",
       "year": 2018,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=894",
-      "file": "CPG Management of Hypertension (5th Edition) 2018 v3.8.pdf"
+      "file": "CPG Management of Hypertension (5th Edition) 2018 v3.8.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-886",
       "title": "Stable Coronary Artery Disease (2nd Edition)",
       "year": 2018,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=886",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-848",
       "title": "Primary & Secondary Prevention of Cardiovascular Disease 2017",
       "year": 2017,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=848",
-      "file": "CPG Primary & Secondary Prevention of CVD 2017.pdf"
+      "file": "CPG Primary & Secondary Prevention of CVD 2017.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-850",
       "title": "Prevention, Diagnosis and Management of Infective Endocarditis 2017",
       "year": 2017,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=850",
-      "file": "CPG Prevention, Diagnosis & Management of IE.pdf"
+      "file": "CPG Prevention, Diagnosis & Management of IE.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-798",
       "title": "Heart Disease in Pregnancy (2nd Edition)",
       "year": 2016,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=798",
-      "file": "CPG Heart Disease in Pregnancy 2016.pdf"
+      "file": "CPG Heart Disease in Pregnancy 2016.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-799",
       "title": "Prevention of Cardiovascular Disease in Women (2nd Edition)",
       "year": 2016,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=799",
-      "file": "CPG Prevention of CVD in Women 2016.pdf"
+      "file": "CPG Prevention of CVD in Women 2016.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-564",
       "title": "Management of Atrial Fibrillation",
       "year": 2012,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=564",
-      "file": "CPG Management of Atrial Fibrillation.pdf"
+      "file": "CPG Management of Atrial Fibrillation.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-419",
       "title": "Management of Pulmonary Arterial Hypertension (PAH)",
       "year": 2011,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=419",
-      "file": "Management of Pulmonary Arterial Hypertension (PAH).pdf"
+      "file": "Management of Pulmonary Arterial Hypertension (PAH).pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-414",
       "title": "Management of Unstable Angina/Non ST Elevation Myocardial Infarction (UA /NSTEMI)",
       "year": 2011,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=414",
-      "file": "CPG UA-NSTEMI.pdf"
+      "file": "CPG UA-NSTEMI.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-307",
       "title": "Management of Percutaneous Coronory Intervention (PCI)",
       "year": 2009,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=307",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1181",
       "title": "Dental Implant Maintenance for Prevention of Peri-Implant Diseases",
       "year": 2025,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1181",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1152",
       "title": "Management of Early Childhood Caries (3rd Edition)",
       "year": 2024,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1152",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1155",
       "title": "Antibiotic Prophylaxis in Oral and Maxillofacial Surgery for Prevention of Surgical Site Infection (3rd Edition)",
       "year": 2024,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1155",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-281",
       "title": "Management of Anterior Crossbite in the Mixed Dentition (3rd Edition)",
       "year": 2023,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=281",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1123",
       "title": "Management of Hypodontia (2nd Edition)",
       "year": 2023,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1123",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-263",
       "title": "Management of Unerupted and Impacted Third Molar Tooth",
       "year": 2021,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=263",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-429",
       "title": "Management of Avulsed Permanent Anterior Teeth (3rd Edition)",
       "year": 2019,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=429",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-965",
       "title": "Management of Mandibular Condyle Fractures",
       "year": 2019,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=965",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-857",
       "title": "Management of Periodontal Abscess (2nd Edition)",
       "year": 2017,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=857",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-851",
       "title": "Management of Acute Orofacial Infection of Odontogenic Origin in Children (1st Edition)",
       "year": 2016,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=851",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-813",
       "title": "Management of Palatally Ectopic Canine (2nd Edition)",
       "year": 2016,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=813",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-806",
       "title": "Management of Unerupted Maxillary Incisor (2nd Edition)",
       "year": 2015,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=806",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-770",
       "title": "Management of Ameloblastoma",
       "year": 2015,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=770",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-629",
       "title": "Management of Chronic Periodontitis (2nd Edition)",
       "year": 2012,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=629",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-630",
       "title": "Orthodontic Management of Developmentally Missing Incisors",
       "year": 2012,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=630",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-261",
       "title": "Management of Unilateral Condylar Fracture of the Mandible",
       "year": 2005,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=261",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-273",
       "title": "Management of Obesity (2nd Edition)",
       "year": 2023,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=273",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-763",
       "title": "Management of Type 2 Diabetes Mellitus (6th Edition)",
       "year": 2020,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=763",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-967",
       "title": "Management of Thyroid Disorders",
       "year": 2019,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=967",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-868",
       "title": "Management of Diabetes in Pregnancy",
       "year": 2017,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=868",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-803",
       "title": "Management of Type 1 Diabetes Mellitus in Children and Adolescents",
       "year": 2016,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=803",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-388",
       "title": "The Use of Growth Hormone In Children and Adults",
       "year": 2010,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=388",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1179",
       "title": "Management of Inflammatory Bowel Disease",
       "year": 2025,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1179",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1079",
       "title": "Management of Chronic Hepatitis B in Adults",
       "year": 2022,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1079",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-963",
       "title": "Management of Chronic Hepatitis C in Adults",
       "year": 2019,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=963",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-252",
       "title": "Management of Acute Variceal Bleeding",
       "year": 2007,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=252",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-275",
       "title": "Management of Non-Variceal Upper Gastrointestinal Bleeding",
       "year": 2003,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=275",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1172",
       "title": "Management of Myeloproliferative Neoplasms (2nd Edition)",
       "year": 2025,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1172",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1135",
       "title": "Management of Thalassaemia (2nd Edition)",
       "year": 2024,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1135",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-922",
       "title": "Management of Haemophilia",
       "year": 2018,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=922",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-612",
       "title": "Prevention and Treatment of Venous Thrombosis",
       "year": 2013,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=612",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-559",
       "title": "Management of Transfusion Dependent Thalassaemia",
       "year": 2009,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=559",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-256",
       "title": "Management of Immune Thrombocytopenic Purpura",
       "year": 2006,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=256",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-268",
       "title": "Diagnosis and Management Chronic Myeloproliferative Disorders",
       "year": 2004,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=268",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-269",
       "title": "Management of Dengue Fever in Children (2nd Edition)",
       "year": 2020,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=269",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-756",
       "title": "Management of Dengue Infection in Adults (3rd Edition)",
       "year": 2015,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=756",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-308",
       "title": "Management of HIV Infection in Children",
       "year": 2008,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=308",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-246",
       "title": "Management of HIV Infection in Pregnant Women",
       "year": 2008,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=246",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1133",
       "title": "Management of Erectile Dysfunction",
       "year": 2024,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1133",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1059",
       "title": "Management of Menopause in Malaysia",
       "year": 2022,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1059",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-272",
       "title": "Management of Menorrhagia",
       "year": 2004,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=272",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-365",
       "title": "Hormone Therapy during Menopause in Malaysian Women",
       "year": 2010,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=365",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-676",
       "title": "Management of Bipolar Disorder (2nd Edition)",
       "year": 2024,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=676",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-290",
       "title": "Management of Schizophrenia (2nd Edition)",
       "year": 2021,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=290",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1021",
       "title": "Management of Dementia (3rd edition)",
       "year": 2021,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1021",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-291",
       "title": "Management of Attention Deficit Hyperactive Disorder (ADHD) in Children and Adolescent (2nd Edition)",
       "year": 2020,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=291",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-250",
       "title": "Management of Major Depressive Disorder (2nd edition)",
       "year": 2019,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=250",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-674",
       "title": "Management of Autism Spectrum Disorder in Children and Adolescents",
       "year": 2014,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=674",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1162",
       "title": "Conservative Kidney Management for Advanced Chronic Kidney Disease (1st Edition)",
       "year": 2025,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1162",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-898",
       "title": "Management of Chronic Kidney Disease (2nd Edition)",
       "year": 2018,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=898",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-271",
       "title": "Diabetic Nephropathy",
       "year": 2004,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=271",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1164",
       "title": "Management of Spontaneous Intracerebral Haemorrhage 2025 (1st Edition)",
       "year": 2025,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1164",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-779",
       "title": "Early Management of Head Injury in Adults",
       "year": 2015,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=779",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-749",
       "title": "Management of Multiple Sclerosis",
       "year": 2015,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=749",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1093",
       "title": "Management of Retinopathy of Prematurity (2nd Edition)",
       "year": 2023,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1093",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-878",
       "title": "Management of Glaucoma (2nd Edition)",
       "year": 2017,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=878",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-656",
       "title": "Screening of Diabetic Retinopathy",
       "year": 2011,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=656",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-653",
       "title": "Management of Post-Operative Infectious Endophthalmitis",
       "year": 2006,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=653",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-655",
       "title": "Retinopathy of Prematurity",
       "year": 2005,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=655",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1107",
       "title": "Management of Geriatric Hip Fracture",
       "year": 2023,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1107",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-920",
       "title": "Management of Diabetic Foot (2nd Edition)",
       "year": 2018,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=920",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-845",
       "title": "Management of Rhinosinusitis in Adolescents and Adults",
       "year": 2016,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=845",
-      "file": "CPG Management of Rhinosinusitis in Adolescents & Adults.pdf"
+      "file": "CPG Management of Rhinosinusitis in Adolescents & Adults.pdf",
+      "profiles": [
+        "adult-acute-urti"
+      ]
     },
     {
       "id": "amm-cpg-530",
       "title": "Management of Otitis Media with Effusion in Children",
       "year": 2012,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=530",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-284",
       "title": "Management of Sore Throat",
       "year": 2003,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=284",
-      "file": "management of sore throat.pdf"
+      "file": "management of sore throat.pdf",
+      "profiles": [
+        "adult-acute-urti"
+      ]
     },
     {
       "id": "amm-cpg-1174",
       "title": "Management of Foreign Body Ingestion in Children",
       "year": 2025,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1174",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-705",
       "title": "Management of Neonatal Jaundice (2nd Ed)",
       "year": 2014,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=705",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-260",
       "title": "Withholding and Withdrawing of Life Support in Children",
       "year": 2005,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=260",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-265",
       "title": "Rational Antibiotic Utilisation in Selected Paediatric Conditions",
       "year": 2004,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=265",
-      "file": "rational antibiotic utilisation in selected paediatric conditons.pdf"
+      "file": "rational antibiotic utilisation in selected paediatric conditons.pdf",
+      "profiles": []
     },
     {
       "id": "amm-cpg-286",
       "title": "Management of Postnatal Corticosteroids for the Prevention of Chronic Lung Disease In Preterm Infants",
       "year": 2003,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=286",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-865",
       "title": "Management of Asthma in Adults (2nd Edition)",
       "year": 2024,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=865",
-      "file": "CPG Management of Asthma (2nd edition) v20260819.pdf"
+      "file": "CPG Management of Asthma (2nd edition) v20260819.pdf",
+      "profiles": [
+        "adult-acute-urti"
+      ]
     },
     {
       "id": "amm-cpg-1077",
       "title": "Management of Obstructive Sleep Apnoea",
       "year": 2022,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1077",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-567",
       "title": "Management of Tuberculosis (4th Edition)",
       "year": 2021,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=567",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1012",
       "title": "Management of E-cigarette or Vaping Product Use-Associated Lung Injury (EVALI)",
       "year": 2021,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1012",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-839",
       "title": "Management of Drug Resistant Tuberculosis",
       "year": 2016,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=839",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-834",
       "title": "Treatment of Tobacco Use Disorder",
       "year": 2016,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=834",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-323",
       "title": "Management of Chronic Obstructive Pulmonary Disease (2nd Edition)",
       "year": 2009,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=323",
-      "file": "CPG Management of COPD (Second Edition).pdf"
+      "file": "CPG Management of COPD (Second Edition).pdf",
+      "profiles": [
+        "adult-acute-urti"
+      ]
     },
     {
       "id": "amm-cpg-1109",
       "title": "Management of Systemic Lupus Erythematosus",
       "year": 2023,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1109",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-847",
       "title": "Management of Osteoporosis (3rd Edition)",
       "year": 2022,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=847",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1045",
       "title": "Management of Gout (2nd Edition)",
       "year": 2021,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1045",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-951",
       "title": "Management of Rheumatoid Arthritis",
       "year": 2019,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=951",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-647",
       "title": "Management of Osteoarthritis (2nd Edition)",
       "year": 2013,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=647",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-617",
       "title": "Management of Psoriasis (2nd Edition)",
       "year": 2024,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=617",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-473",
       "title": "Management of Acne Vulgaris (2nd Edition)",
       "year": 2022,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=473",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-883",
       "title": "Management of Atopic Eczema",
       "year": 2017,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=883",
-      "file": null
+      "file": null,
+      "profiles": []
     },
     {
       "id": "amm-cpg-1160",
       "title": "Management of Abdominal Trauma in Adults",
       "year": 2025,
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1160",
-      "file": null
+      "file": null,
+      "profiles": []
     }
   ]
 }

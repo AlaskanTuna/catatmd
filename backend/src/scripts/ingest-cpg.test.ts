@@ -15,12 +15,14 @@ function manifest(): {
   publisher: string
   jurisdiction: string
   sourceLicence: string
+  verbatimAllowed: boolean
   documents: {
     id: string
     title: string
     year: number
     sourceUrl: string
     file: string | null
+    profiles: string[]
   }[]
 } {
   return {
@@ -28,6 +30,7 @@ function manifest(): {
     publisher: 'Test Publisher',
     jurisdiction: 'MY',
     sourceLicence: 'test',
+    verbatimAllowed: true,
     documents: [
       {
         id: 'amm-cpg-284',
@@ -35,6 +38,7 @@ function manifest(): {
         year: 2003,
         sourceUrl: 'https://www.acadmed.org.my/view_file.cfm?fileid=284',
         file: null,
+        profiles: [],
       },
       {
         id: 'amm-cpg-342',
@@ -42,6 +46,7 @@ function manifest(): {
         year: 2023,
         sourceUrl: 'https://www.acadmed.org.my/view_file.cfm?fileid=342',
         file: null,
+        profiles: [],
       },
       {
         id: 'amm-cpg-748',
@@ -49,6 +54,7 @@ function manifest(): {
         year: 2015,
         sourceUrl: 'https://www.acadmed.org.my/view_file.cfm?fileid=748',
         file: null,
+        profiles: [],
       },
     ],
   }

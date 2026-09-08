@@ -398,7 +398,7 @@ async function runAnalysis(
     timeStage('retrieval', async () => {
       let retrieved: GuidelineChunk[] = []
       try {
-        retrieved = await retrieveGuidelines(text)
+        retrieved = await retrieveGuidelines(text, { profileId: profile.id })
       } catch (error) {
         // Retrieval widens the supplied corpus; a failure leaves the curated
         // corpus in use rather than failing the whole analysis.
