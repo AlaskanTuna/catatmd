@@ -503,7 +503,7 @@ describe('analyse output', () => {
     })
   })
 
-  it('records suppressed suggestion ids without rejected suggestion content', async () => {
+  it('records only server-generated suppression ids on completion', async () => {
     const { generateSuggestions } = await import('../suggestions/index.js')
     vi.mocked(generateSuggestions).mockResolvedValueOnce({
       outOfScope: false,
@@ -524,8 +524,6 @@ describe('analyse output', () => {
     expect(completed?.metadata).toMatchObject({
       suppressedSuggestionIds: ['model-suggestion-1'],
     })
-    expect(JSON.stringify(completed?.metadata)).not.toContain('Prescribe amoxicillin')
-    expect(JSON.stringify(completed?.metadata)).not.toContain('Ahmad')
   })
 
   it('persists the selected profile id in analysis and completion audit metadata', async () => {

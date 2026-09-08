@@ -5,7 +5,7 @@ import { filterUnsafeModelSuggestions } from './safety.js'
 const suggestion = (
   id: string,
   text: string,
-  quotes: readonly (string | undefined)[] = [],
+  quotes: readonly (string | undefined)[] = [undefined],
 ): ClinicalSuggestion => ({
   id,
   text,
@@ -57,8 +57,11 @@ describe('filterUnsafeModelSuggestions', () => {
 
   it.each([
     'Prescribe nitrofurantoin.',
+    'Plan: prescribe nitrofurantoin.',
     'Start aspirin.',
     'Give insulin.',
+    'Take amoxicillin.',
+    'Use the salbutamol inhaler.',
     'The clinician should administer salbutamol.',
   ])('suppresses the autonomous medication order %s', (text) => {
     const result = filterUnsafeModelSuggestions([suggestion('model-authored-id', text)])
@@ -71,11 +74,16 @@ describe('filterUnsafeModelSuggestions', () => {
     const result = filterUnsafeModelSuggestions([
       suggestion('order', 'Prescribe amoxicillin 500 mg three times daily.'),
       suggestion('regimen', 'Amoxicillin 500 mg three times daily.'),
+      suggestion('colon-regimen', 'Paracetamol: 500 mg three times daily.'),
       suggestion('safe', 'Consider documenting the review interval.'),
     ])
 
     expect(result.suggestions.map(({ id }) => id)).toEqual(['safe'])
-    expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1', 'model-suggestion-2'])
+    expect(result.suppressedSuggestionIds).toEqual([
+      'model-suggestion-1',
+      'model-suggestion-2',
+      'model-suggestion-3',
+    ])
   })
 
   it('suppresses named medication orders without a dose', () => {
@@ -96,11 +104,24 @@ describe('filterUnsafeModelSuggestions', () => {
     'The clinician should not administer salbutamol routinely.',
     'Prescribing antibiotics is not routinely recommended.',
     'What dose of amoxicillin 500 mg is the patient currently taking?',
+    'Ask whether the patient was advised to start aspirin.',
   ])('retains the non-autonomous medication wording %s', (text) => {
     const result = filterUnsafeModelSuggestions([suggestion('safe-model-id', text)])
 
     expect(result.suggestions.map(({ id }) => id)).toEqual(['safe-model-id'])
     expect(result.suppressedSuggestionIds).toEqual([])
+  })
+
+  it('does not let a safe clause hide an autonomous order that follows it', () => {
+    const result = filterUnsafeModelSuggestions([
+      suggestion(
+        'mixed-model-id',
+        'Do not prescribe antibiotics routinely, but start amoxicillin now.',
+      ),
+    ])
+
+    expect(result.suggestions).toEqual([])
+    expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1'])
   })
 
   it('suppresses an unsafe citation quote without recording its prose', () => {
