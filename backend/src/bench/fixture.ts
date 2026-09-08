@@ -1,0 +1,100 @@
+import type { Speaker, Transcript, TranscriptTurn } from '@shared/types'
+
+const TURNS: readonly { speaker: Speaker; text: string }[] = [
+  { speaker: 'doctor', text: 'Good morning, Encik Arif. How can I help you today?' },
+  { speaker: 'patient', text: 'Good morning, doctor.' },
+  { speaker: 'patient', text: 'I have cough and sore throat already five days, lah.' },
+  { speaker: 'doctor', text: 'Five days already. Is it getting worse or better?' },
+  { speaker: 'patient', text: 'About the same, doctor. Not worse, but also not better.' },
+  { speaker: 'doctor', text: 'Is the cough dry, or do you bring up phlegm?' },
+  { speaker: 'patient', text: 'Sometimes got phlegm, whitish colour, not a lot.' },
+  { speaker: 'doctor', text: 'Any fever that you have noticed?' },
+  { speaker: 'patient', text: 'Yes, low fever on and off. Yesterday was 37.8 degrees.' },
+  { speaker: 'doctor', text: 'Any runny nose or blocked nose?' },
+  { speaker: 'patient', text: 'Runny nose also got, since day two of the cough.' },
+  { speaker: 'doctor', text: 'I need to confirm your details for the record.' },
+  { speaker: 'patient', text: 'Sure, my name is Arif bin Mohamad.' },
+  { speaker: 'patient', text: 'My NRIC number is 880712-17-3456, doctor.' },
+  { speaker: 'doctor', text: 'Thank you. Your mobile number for our records?' },
+  { speaker: 'patient', text: 'My mobile number is 013-456 7890, same as before.' },
+  { speaker: 'doctor', text: 'And this is Klinik Harmoni, correct?' },
+  { speaker: 'patient', text: 'Yes, I came to Klinik Harmoni this morning.' },
+  { speaker: 'doctor', text: 'Any shortness of breath when you walk or lie down?' },
+  { speaker: 'patient', text: 'No, my breathing is okay so far, doctor.' },
+  { speaker: 'doctor', text: 'Any chest pain, especially when you cough?' },
+  { speaker: 'patient', text: 'No chest pain at all, even when I cough hard.' },
+  { speaker: 'doctor', text: 'Have you coughed up blood, or seen blood in phlegm?' },
+  { speaker: 'patient', text: 'No blood, just normal whitish phlegm sometimes.' },
+  { speaker: 'doctor', text: 'Are you able to swallow food and drinks normally?' },
+  { speaker: 'patient', text: 'Can swallow, doctor, just a bit painful when very dry.' },
+  { speaker: 'doctor', text: 'How much water or fluid are you drinking per day?' },
+  { speaker: 'patient', text: 'I drink about six to eight glasses of water a day.' },
+  { speaker: 'doctor', text: 'Do you smoke, or have you ever smoked?' },
+  { speaker: 'patient', text: 'No, doctor, I do not smoke and never smoked before.' },
+  { speaker: 'doctor', text: 'Any history of asthma, wheezing, or chronic lung problem?' },
+  { speaker: 'patient', text: 'No asthma, no wheezing, and no chronic lung problem.' },
+  { speaker: 'doctor', text: 'Any known allergy to medication, like penicillin?' },
+  { speaker: 'patient', text: 'No known drug allergy, doctor, nothing that I know of.' },
+  { speaker: 'doctor', text: 'What about your work and your living situation?' },
+  { speaker: 'patient', text: 'I work in an office in Petaling Jaya, five days a week.' },
+  { speaker: 'doctor', text: 'Do you live with family or do you live alone?' },
+  { speaker: 'patient', text: 'I live with my wife and my young son at home.' },
+  { speaker: 'doctor', text: 'Anyone at home or work been sick recently?' },
+  { speaker: 'patient', text: 'My son also had cough and runny nose last week.' },
+  { speaker: 'doctor', text: 'Let me check your temperature first, Encik Arif.' },
+  { speaker: 'doctor', text: 'The temperature is 37.4 degrees Celsius, a bit warm.' },
+  { speaker: 'doctor', text: 'Now let me look at your throat. Open wide, please.' },
+  { speaker: 'doctor', text: 'Your throat looks red, but I do not see any exudate.' },
+  { speaker: 'doctor', text: 'I will listen to your chest now. Take a deep breath.' },
+  { speaker: 'doctor', text: 'Chest sounds clear on both sides. No wheeze heard.' },
+  { speaker: 'doctor', text: 'Let me feel your neck for any lumps or nodes.' },
+  { speaker: 'doctor', text: 'No neck lumps and no enlarged lymph nodes.' },
+  { speaker: 'doctor', text: 'Does the cough wake you up at night?' },
+  { speaker: 'patient', text: 'Yes, the first two nights were quite bad, doctor.' },
+  { speaker: 'doctor', text: 'Have you taken any medication from pharmacy so far?' },
+  { speaker: 'patient', text: 'I took Panadol and some cough syrup from the pharmacy.' },
+  { speaker: 'doctor', text: 'That is reasonable. This looks like a viral infection.' },
+  { speaker: 'patient', text: 'Is it serious, doctor? Do I need antibiotics?' },
+  { speaker: 'doctor', text: 'At this stage, there are no signs of bacterial chest infection.' },
+  { speaker: 'patient', text: 'So I do not need antibiotics, doctor?' },
+  { speaker: 'doctor', text: 'For now, no antibiotics. We will use symptomatic treatment.' },
+  { speaker: 'patient', text: 'What medications will you give me, doctor?' },
+  { speaker: 'doctor', text: 'Paracetamol for the fever and throat discomfort, plus lozenges.' },
+  { speaker: 'doctor', text: 'And a cough syrup to help with the cough at night.' },
+  { speaker: 'patient', text: 'How often should I take the medicine, doctor?' },
+  { speaker: 'doctor', text: 'Paracetamol 500mg, one tablet four times a day when needed.' },
+  { speaker: 'doctor', text: 'Cough syrup 10ml three times a day, especially before sleep.' },
+  { speaker: 'doctor', text: 'Use the lozenges whenever your throat feels uncomfortable.' },
+  { speaker: 'patient', text: 'Can I get an MC, doctor? I need to rest tomorrow.' },
+  { speaker: 'doctor', text: 'Yes, I will give you one day of medical certificate.' },
+  { speaker: 'doctor', text: 'Please rest at home tomorrow and drink plenty of water.' },
+  { speaker: 'doctor', text: 'Come back if you become breathless or find breathing hard.' },
+  { speaker: 'doctor', text: 'Also return if high fever lasts more than three days.' },
+  { speaker: 'doctor', text: 'Or if you cannot swallow, or if the cough gets much worse.' },
+  { speaker: 'doctor', text: 'If chest pain or blood in phlegm happens, come back sooner.' },
+  { speaker: 'patient', text: 'Okay doctor, I will rest and drink more water.' },
+  { speaker: 'doctor', text: 'Take the medicine after food, and avoid smoking areas.' },
+  { speaker: 'patient', text: 'Thank you very much, doctor.' },
+  { speaker: 'doctor', text: 'You are welcome, Encik Arif. Take care and get well soon.' },
+]
+
+const OFFSET_BASE = 2.8
+const OFFSET_PER_CHAR = 1 / 100
+const MAX_OFFSET_INTERVAL = 4.0
+
+let running = 0
+const turns: TranscriptTurn[] = []
+for (const { speaker, text } of TURNS) {
+  turns.push({
+    speaker,
+    text,
+    offsetSeconds: Number(running.toFixed(1)),
+  })
+  running += Math.min(MAX_OFFSET_INTERVAL, OFFSET_BASE + text.length * OFFSET_PER_CHAR)
+}
+
+export const BENCH_TRANSCRIPT: Transcript = {
+  source: 'fixture',
+  labelsReviewed: true,
+  turns,
+}
