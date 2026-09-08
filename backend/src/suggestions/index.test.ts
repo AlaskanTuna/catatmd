@@ -1,3 +1,4 @@
+import type { GuidelineChunk } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { generate } = vi.hoisted(() => ({ generate: vi.fn() }))
@@ -154,6 +155,41 @@ describe('generateSuggestions — schema-enforced citation rejection (docs/trd.m
     })
 
     expect(result.success).toBe(true)
+  })
+
+  it('accepts a retrieved chunk id and rejects a foreign id', async () => {
+    const retrievedId = 'retrieved-cpg-p3'
+    const retrievedChunk: GuidelineChunk = {
+      id: retrievedId,
+      title: 'Clinical Practice Guideline, p. 3: Antibiotics',
+      publisher: 'MOH',
+      year: 2024,
+      url: 'https://example.com/cpg',
+      summary: 'Summary text.',
+      sourceLicence: 'MOH-ARR',
+      verbatimAllowed: true,
+      documentId: 'doc-1',
+      page: 3,
+    }
+
+    await generateSuggestions(content, getClinicalProfile(), [retrievedChunk])
+    const [request] = generate.mock.calls.at(-1) as [GenerateRequest<unknown>]
+
+    expect(request.system).toContain(retrievedId)
+
+    const accepted = request.schema.safeParse({
+      outOfScope: false,
+      redFlags: [],
+      suggestions: [{ id: 's1', text: 'x', citations: [{ guidelineId: retrievedId }] }],
+    })
+    expect(accepted.success).toBe(true)
+
+    const rejected = request.schema.safeParse({
+      outOfScope: false,
+      redFlags: [],
+      suggestions: [{ id: 's2', text: 'x', citations: [{ guidelineId: 'foreign-id' }] }],
+    })
+    expect(rejected.success).toBe(false)
   })
 
   it('rejects a suggestion with zero citations', async () => {
