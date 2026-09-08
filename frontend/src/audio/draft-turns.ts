@@ -31,6 +31,8 @@ export type DraftLine = {
   speaker: TranscriptTurn['speaker']
   text: string
   offsetSeconds?: number
+  /** Where this line's audio ends, when the segment it came from was closed. */
+  endSeconds?: number
   /**
    * Set when the server labelled the rest of the transcript but not this span,
    * so `speaker` is a placeholder rather than a guess with anything behind it.
@@ -206,7 +208,16 @@ export function segmentsToDraft(
       // Only the line that opens a segment carries its start time: a split
       // line's true offset inside the segment is unknown, and a fabricated
       // one would assert a wrong time in the evidence trace.
-      if (options.withOffsets && part === 0) line.offsetSeconds = segment.start
+      //
+      // The end time rides on the same condition and adds one of its own.
+      // Whisper leaves the final segment open (`end` null), and a segment that
+      // never closed cannot say where its audio stops; playback falls back to
+      // running to the end of the recording, which is true, rather than to a
+      // guessed duration, which would not be.
+      if (options.withOffsets && part === 0) {
+        line.offsetSeconds = segment.start
+        if (segment.end !== null) line.endSeconds = segment.end
+      }
       lines.push(line)
     }
   }
@@ -218,6 +229,72 @@ export function draftToTurns(draft: readonly DraftLine[]): TranscriptTurn[] {
   return draft.map((line) => {
     const turn: TranscriptTurn = { speaker: line.speaker, text: line.text }
     if (line.offsetSeconds !== undefined) turn.offsetSeconds = line.offsetSeconds
+    // Never without a start. An end alone cannot be seeked to, and the pair is
+    // what `TranscriptTurnSchema` orders against.
+    if (line.offsetSeconds !== undefined && line.endSeconds !== undefined) {
+      turn.endSeconds = line.endSeconds
+    }
     return turn
+  })
+}
+
+/**
+ * Puts the timing a live capture already measured back onto the turns the
+ * labelling pass drafted (#293).
+ *
+ * The ambient path has both halves and was throwing one away. Soniox reports a
+ * start and end per token, which `tokensToSegments` groups into segments; the
+ * labelling pass then re-splits the same words into better turns and returns
+ * text alone. Preferring those labels meant discarding real measured timing,
+ * so the settled transcript carried none and nothing could be played back.
+ *
+ * The two agree on the words, because the labelling pass re-slices every turn
+ * from its input rather than rewriting it (`backend/src/draft-turns/`), so a
+ * forward scan over the concatenated segments locates each turn in order. A
+ * turn takes the start of the first segment it touches and the end of the last.
+ *
+ * **A turn that cannot be located gets no timing at all.** That is the same
+ * rule `segmentsToDraft` applies to split lines, and it matters more here: a
+ * wrong offset would play the doctor a different sentence from the one they
+ * clicked, which either casts doubt on a correct transcription or confirms an
+ * incorrect one.
+ */
+export function timeDraftLines(
+  lines: readonly DraftLine[],
+  segments: readonly TranscriptSegment[],
+): DraftLine[] {
+  if (segments.length === 0) return [...lines]
+
+  // One haystack, plus the segment each character belongs to. Built once:
+  // per-line rescanning would be quadratic on a long consultation.
+  let haystack = ''
+  const owner: number[] = []
+  for (const [index, segment] of segments.entries()) {
+    const text = normalise(segment.text)
+    if (text === '') continue
+    if (haystack !== '') {
+      haystack += ' '
+      owner.push(index)
+    }
+    haystack += text
+    for (let i = 0; i < text.length; i += 1) owner.push(index)
+  }
+  const hay = haystack.toLowerCase()
+
+  let cursor = 0
+  return lines.map((line) => {
+    const needle = normalise(line.text).toLowerCase()
+    if (needle === '') return line
+    const at = hay.indexOf(needle, cursor)
+    if (at === -1) return line
+    cursor = at + needle.length
+
+    const first = segments[owner[at] ?? -1]
+    const last = segments[owner[cursor - 1] ?? -1]
+    if (first === undefined || last === undefined) return line
+
+    const timed: DraftLine = { ...line, offsetSeconds: first.start }
+    if (last.end !== null) timed.endSeconds = last.end
+    return timed
   })
 }

@@ -97,3 +97,62 @@ describe('serialiseTurns', () => {
     expect(turn?.offsetSeconds).toBe(3)
   })
 })
+
+/*
+ * The end time has to survive the textarea, because the textarea is the only
+ * editing surface and everything is re-parsed out of it before submission
+ * (#293). A field that serialises but does not parse is a field that silently
+ * never reaches the API.
+ */
+describe('turn end times', () => {
+  it('round-trips a start and an end', () => {
+    const turns = [
+      { speaker: 'doctor' as const, text: 'Any fever?', offsetSeconds: 4, endSeconds: 9 },
+    ]
+    expect(parseTranscript(serialiseTurns(turns))).toEqual(turns)
+  })
+
+  it('parses a range line', () => {
+    expect(parseTranscript('Doctor [0:04-0:09]: Any fever?')).toEqual([
+      { speaker: 'doctor', text: 'Any fever?', offsetSeconds: 4, endSeconds: 9 },
+    ])
+  })
+
+  it('still parses a start-only line, so older transcripts keep working', () => {
+    expect(parseTranscript('Doctor [0:04]: Any fever?')).toEqual([
+      { speaker: 'doctor', text: 'Any fever?', offsetSeconds: 4 },
+    ])
+  })
+
+  it('writes no range when the turn has no end', () => {
+    expect(serialiseTurns([{ speaker: 'doctor', text: 'Any fever?', offsetSeconds: 4 }])).toBe(
+      'Doctor [0:04]: Any fever?',
+    )
+  })
+
+  it('ceils the end so a whole-second stamp never clips the last word', () => {
+    expect(
+      serialiseTurns([
+        { speaker: 'patient', text: 'Since yesterday.', offsetSeconds: 4.2, endSeconds: 9.1 },
+      ]),
+    ).toBe('Patient [0:04-0:10]: Since yesterday.')
+  })
+
+  it('drops an end that precedes its start rather than trusting a hand edit', () => {
+    expect(parseTranscript('Doctor [0:30-0:10]: Any fever?')).toEqual([
+      { speaker: 'doctor', text: 'Any fever?', offsetSeconds: 30 },
+    ])
+  })
+
+  it('ignores an end with no start, which cannot be seeked to', () => {
+    expect(parseTranscript('Doctor: Any fever? [0:04-0:09]')).toEqual([
+      { speaker: 'doctor', text: 'Any fever? [0:04-0:09]' },
+    ])
+  })
+
+  it('crosses the minute boundary in both halves', () => {
+    expect(parseTranscript('Patient [1:05-2:00]: Sakit tekak.')).toEqual([
+      { speaker: 'patient', text: 'Sakit tekak.', offsetSeconds: 65, endSeconds: 120 },
+    ])
+  })
+})

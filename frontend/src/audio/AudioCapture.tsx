@@ -209,6 +209,12 @@ export function AudioCapture({
     source: 'asr_local' | 'asr_hosted'
     /** Server-drafted labels, hosted path only; absent whenever labelling failed. */
     draftTurns?: readonly DraftTurn[]
+    /**
+     * The recording these words came from, so the doctor can hear a sentence
+     * back while reviewing it (#293). Handed over rather than held here: this
+     * component is unmounted by the time the review happens.
+     */
+    audio?: Blob
   }) => void
   onBusyChange?: (busy: boolean) => void
   /** The device's standing transcription engine, from the Audio dialog. */
@@ -236,6 +242,17 @@ export function AudioCapture({
   const [hostedSeconds, setHostedSeconds] = useState(0)
   /** The audio behind the current or failed run, so Try Again can rerun it. */
   const [retryBlob, setRetryBlob] = useState<Blob | null>(null)
+  /**
+   * The audio the run in flight is transcribing, kept so it can be handed over
+   * with the words it produced (#293).
+   *
+   * A ref rather than state: the worker answers on a message handler that
+   * closes over nothing, and re-rendering on a value nothing draws would be a
+   * render per recording for no reason. It is deliberately not `retryBlob`,
+   * which is cleared on success precisely because there is nothing left to
+   * retry.
+   */
+  const recorded = useRef<Blob | null>(null)
   const onBusyChangeRef = useRef(onBusyChange)
   useEffect(() => {
     onBusyChangeRef.current = onBusyChange
@@ -414,7 +431,9 @@ export function AudioCapture({
             text: message.text,
             segments: message.segments,
             source: 'asr_local',
+            ...(recorded.current ? { audio: recorded.current } : {}),
           })
+          recorded.current = null
           break
         case 'error':
           // The worker survives an inference error with the model warm, so a
@@ -629,7 +648,9 @@ export function AudioCapture({
         segments: result.segments,
         source: 'asr_hosted',
         ...(draftTurns && draftTurns.length > 0 ? { draftTurns } : {}),
+        ...(recorded.current ? { audio: recorded.current } : {}),
       })
+      recorded.current = null
     },
     [labelHostedTurns, transitionPhase],
   )
@@ -661,6 +682,7 @@ export function AudioCapture({
         setError(NOT_AGREED_ERROR)
         return
       }
+      recorded.current = blob
       return hostedRef.current ? transcribeHosted(blob) : transcribeLocal(blob)
     },
     [transcribeHosted, transcribeLocal, transitionPhase],

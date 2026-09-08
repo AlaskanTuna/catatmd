@@ -6,8 +6,18 @@ import type {
   InformationGap,
   RedFlag,
 } from '@shared/types'
-import { AlertTriangle, Check, CircleAlert, HelpCircle, Info, ShieldCheck } from 'lucide-react'
+import {
+  AlertTriangle,
+  Check,
+  CircleAlert,
+  HelpCircle,
+  Info,
+  Pause,
+  Play,
+  ShieldCheck,
+} from 'lucide-react'
 import { useState } from 'react'
+import { spokenTimestamp } from '../lib/clock.js'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
 import { Card } from '../ui/Card.js'
@@ -273,9 +283,22 @@ export function RedFlagCard({
   disposition,
   onDecide,
   guidelines,
+  onPlay,
+  playing,
 }: {
   flag: RedFlag
   disposition: Disposition | undefined
+  /**
+   * Plays the sentence that raised this flag (#293).
+   *
+   * A red flag is the highest-stakes thing on this screen and it rests on one
+   * quoted span, so being able to hear that span is worth more here than
+   * anywhere else on the page. Absent when the session holds no recording, or
+   * when the span could not be placed in exactly one turn.
+   */
+  onPlay?: (key: string, offsetSeconds: number, endSeconds?: number) => void
+  /** The key currently playing, so this card can show it is the one. */
+  playing?: string
   /**
    * Omitted while a consultation is still being captured (#219). There is
    * nothing to record a disposition against yet: `PATCH /consultations/:id`
@@ -287,6 +310,16 @@ export function RedFlagCard({
 }) {
   const severity = SEVERITY[flag.severity]
   const acknowledged = disposition !== undefined
+  /*
+   * Playable only when the span was placed in exactly one turn *and* that turn
+   * carried timing. Both halves are resolved server-side and either can be
+   * absent, so a flag with no way to be heard keeps the plain quote it has
+   * always had rather than gaining a control that would go nowhere.
+   */
+  const heardAt = flag.evidenceLink?.offsetSeconds
+  const audible = heardAt !== undefined && onPlay !== undefined
+  const key = `flag-${flag.id}`
+  const sounding = playing === key
 
   return (
     <Card className="overflow-hidden" data-tour={`flag-${flag.severity}`}>
@@ -313,10 +346,41 @@ export function RedFlagCard({
               <ProvenanceMark source={flag.source} />
             </div>
             <h3 className="mt-1 text-sm font-semibold text-ink">{flag.label}</h3>
-            <p className="mt-1 text-sm text-ink-muted">
-              <span className="font-medium text-ink">Heard:</span> &ldquo;{unquote(flag.evidence)}
-              &rdquo;
-            </p>
+            {audible ? (
+              /*
+               * The quote itself is the control, so the doctor presses the
+               * words they are questioning. `-mx-1 px-1` keeps the text on the
+               * same left edge as the heading above it: a control that indented
+               * its own quote would break the card's one text column.
+               */
+              <button
+                type="button"
+                onClick={() => onPlay(key, heardAt, flag.evidenceLink?.endSeconds)}
+                aria-label={`${sounding ? 'Stop' : 'Play'} what was heard, ${spokenTimestamp(heardAt)} in`}
+                className={cn(
+                  'group -mx-1 mt-1 flex items-start gap-1.5 rounded-control px-1 py-0.5 text-left text-sm text-ink-muted transition-colors hover:bg-sunken',
+                  sounding && 'bg-sunken',
+                )}
+              >
+                <span className="min-w-0">
+                  <span className="font-medium text-ink">Heard:</span> &ldquo;
+                  {unquote(flag.evidence)}&rdquo;
+                </span>
+                {sounding ? (
+                  <Pause aria-hidden className="mt-1 size-3 shrink-0 text-accent" />
+                ) : (
+                  <Play
+                    aria-hidden
+                    className="mt-1 size-3 shrink-0 text-accent opacity-45 transition-opacity group-hover:opacity-100"
+                  />
+                )}
+              </button>
+            ) : (
+              <p className="mt-1 text-sm text-ink-muted">
+                <span className="font-medium text-ink">Heard:</span> &ldquo;{unquote(flag.evidence)}
+                &rdquo;
+              </p>
+            )}
           </div>
         </div>
 

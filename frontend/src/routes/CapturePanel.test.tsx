@@ -268,7 +268,9 @@ describe('CapturePanel record flow', () => {
     setup()
     fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-    expect(textarea.value).toBe('Doctor [0:00]: Any fever?\nPatient [0:02]: Yesterday quite hot.')
+    expect(textarea.value).toBe(
+      'Doctor [0:00-0:02]: Any fever?\nPatient [0:02-0:05]: Yesterday quite hot.',
+    )
   })
 
   it('enables Use This Transcript as soon as a recording lands', () => {
@@ -290,7 +292,7 @@ describe('CapturePanel record flow', () => {
     fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe(
-      'Doctor [0:00]: Any fever?\nPatient [0:02]: Yesterday quite hot.\n' +
+      'Doctor [0:00-0:02]: Any fever?\nPatient [0:02-0:05]: Yesterday quite hot.\n' +
         'Doctor: Any fever?\nPatient: Yesterday quite hot.',
     )
   })
@@ -315,7 +317,7 @@ describe('CapturePanel record flow', () => {
     fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     expect(textarea.value).toBe(
-      'Doctor [0:00]: Any fever?\nPatient [0:03]: Yesterday quite hot.\n' +
+      'Doctor [0:00-0:02]: Any fever?\nPatient [0:03-0:05]: Yesterday quite hot.\n' +
         'Doctor: Any fever?\nPatient: Yesterday quite hot.',
     )
   })
