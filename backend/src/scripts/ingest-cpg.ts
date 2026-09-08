@@ -376,16 +376,28 @@ export function chunkPage(
   return { chunks: keep, nextOrdinal: startOrdinal + keep.length }
 }
 
+const EXEC_OPTIONS = { maxBuffer: 256 * 1024 * 1024 }
+
+/**
+ * One entry per physical page, empty string included: a scanned page has no
+ * text layer, and dropping it would shift every later page number, which is
+ * the provenance a doctor clicks through to. `pdfinfo` is the authority on
+ * the count; the form-feed split only fills it in.
+ */
 export async function extractText(filePath: string): Promise<string[]> {
-  const { stdout } = await execFile('pdftotext', ['-layout', filePath, '-'])
-  return stdout
-    .split('\f')
-    .map((p: string) => p.trim())
-    .filter((p: string) => p.length > 0)
+  const info = await execFile('pdfinfo', [filePath], EXEC_OPTIONS)
+  const pageCount = Number(/Pages:\s+(\d+)/.exec(info.stdout)?.[1] ?? 0)
+  const { stdout } = await execFile('pdftotext', ['-layout', filePath, '-'], EXEC_OPTIONS)
+  const pages = stdout.split('\f').map((p: string) => p.trim())
+  return Array.from({ length: pageCount }, (_, i) => pages[i] ?? '')
 }
 
 export async function extractFirstPageText(filePath: string): Promise<string> {
-  const { stdout } = await execFile('pdftotext', ['-layout', '-f', '1', '-l', '1', filePath, '-'])
+  const { stdout } = await execFile(
+    'pdftotext',
+    ['-layout', '-f', '1', '-l', '1', filePath, '-'],
+    EXEC_OPTIONS,
+  )
   return stdout.trim()
 }
 
@@ -395,19 +407,28 @@ export async function ocrPage(
   tmpDir: string,
 ): Promise<string> {
   const prefix = path.join(tmpDir, 'page')
-  await execFile('pdftoppm', [
-    '-r',
-    '200',
-    '-f',
-    String(pageNumber),
-    '-l',
-    String(pageNumber),
-    '-png',
-    filePath,
-    prefix,
-  ])
-  const pngPath = `${prefix}-${pageNumber}.png`
-  const { stdout } = await execFile('tesseract', [pngPath, 'stdout', '-l', 'eng+msa', '--psm', '1'])
+  await execFile(
+    'pdftoppm',
+    [
+      '-singlefile',
+      '-r',
+      '200',
+      '-f',
+      String(pageNumber),
+      '-l',
+      String(pageNumber),
+      '-png',
+      filePath,
+      prefix,
+    ],
+    EXEC_OPTIONS,
+  )
+  const pngPath = `${prefix}.png`
+  const { stdout } = await execFile(
+    'tesseract',
+    [pngPath, 'stdout', '-l', 'eng+msa', '--psm', '1'],
+    EXEC_OPTIONS,
+  )
   return stdout.trim()
 }
 
@@ -659,7 +680,9 @@ async function main(): Promise<void> {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   main().catch((error) => {
-    logger.error('ingest failed', { errorName: error instanceof Error ? error.name : 'unknown' })
+    logger.error(`ingest failed: ${error instanceof Error ? error.message : 'unknown'}`, {
+      errorName: error instanceof Error ? error.name : 'unknown',
+    })
     process.exit(1)
   })
 }
