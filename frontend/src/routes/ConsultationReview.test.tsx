@@ -854,4 +854,87 @@ describe('the note column while capture runs', () => {
     expect(classes()).toContain('hidden')
     expect(classes().filter((klass) => klass.startsWith('lg:'))).toEqual([])
   })
+
+  /*
+   * The mocked CapturePanel reports busy without ever asking for the theatre,
+   * which is exactly the shape of the press-to-record path: no live
+   * conversation, so no dialog to hold the safety panel.
+   *
+   * Withholding the companion column on `captureBusy` alone left the prompter
+   * with nowhere to render during a manual recording. The rail is hidden by
+   * then, so the prompter is the only thing that can carry a red flag.
+   */
+  it('keeps the safety panel in its own column when nothing opened the theatre', async () => {
+    setup()
+    await screen.findByRole('heading', { name: 'Clinical Note' })
+
+    // "Ask Next" belongs to the prompter alone; the rail has no such panel.
+    expect(screen.queryByText('Ask Next')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mock Capture Busy' }))
+
+    expect(screen.getByText('Ask Next')).toBeTruthy()
+  })
+})
+
+/**
+ * Issue #287. The transcript column is 380px, and the transcript is the one
+ * thing on this page that is read rather than scanned. Once the consultation
+ * is over the doctor can put it back on a surface worth reading it on.
+ */
+describe('reopening the settled conversation', () => {
+  const WITH_TRANSCRIPT = {
+    ...APPROVED,
+    transcript: {
+      source: 'paste',
+      labelsReviewed: true,
+      turns: [
+        { speaker: 'doctor', text: 'Any blood when you cough?' },
+        { speaker: 'patient', text: 'Once or twice, small amount only.' },
+      ],
+    },
+  }
+
+  const conversation = () => document.querySelector('dialog[aria-labelledby="conversation-title"]')
+
+  beforeEach(() => {
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.getConsultation).mockResolvedValue(WITH_TRANSCRIPT as never)
+  })
+
+  it('opens the conversation on its own surface, and closes again', async () => {
+    setup()
+
+    const open = await screen.findByRole('button', { name: /view conversation/i })
+    expect(conversation()?.hasAttribute('open')).toBe(false)
+
+    fireEvent.click(open)
+
+    const dialog = conversation()
+    expect(dialog?.hasAttribute('open')).toBe(true)
+    expect(dialog?.textContent).toContain('2 turns')
+    expect(dialog?.textContent).toContain('Any blood when you cough?')
+    // Roles are real here, not speaker numbers: `draftHostedTurns` has run by
+    // the time a transcript is settled.
+    expect(dialog?.textContent).toContain('Doctor')
+    expect(dialog?.textContent).toContain('Patient')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+    expect(conversation()?.hasAttribute('open')).toBe(false)
+  })
+
+  it('offers nothing to reopen before there is a transcript', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'draft',
+      analysis: null,
+      transcript: null,
+    } as never)
+    setup()
+
+    await screen.findByRole('heading', { name: 'Consultation Review' })
+    expect(screen.queryByRole('button', { name: /view conversation/i })).toBeNull()
+  })
 })

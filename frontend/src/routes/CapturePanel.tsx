@@ -6,7 +6,7 @@ import type {
   TranscriptTurn,
 } from '@shared/types'
 import { FileUp, Mic, Settings2, Type } from 'lucide-react'
-import { type ChangeEvent, useRef, useState } from 'react'
+import { type ChangeEvent, type ReactNode, useRef, useState } from 'react'
 import { AudioCapture } from '../audio/AudioCapture.js'
 import { AudioSettingsDialog } from '../audio/AudioSettingsDialog.js'
 import { type AudioSettings, loadAudioSettings } from '../audio/audio-settings.js'
@@ -72,6 +72,10 @@ export function CapturePanel({
   saving,
   error,
   onLiveSegments,
+  conversationExpanded,
+  onConversationExpandedChange,
+  prompter,
+  patientName,
 }: {
   captureMode: CaptureMode
   onCapture: (transcript: Transcript) => void
@@ -85,6 +89,15 @@ export function CapturePanel({
    * the manual path, which has nothing live to report.
    */
   onLiveSegments?: (segments: readonly TranscriptSegment[]) => void
+  /**
+   * Forwarded to the ambient panel, which owns the conversation dialog because
+   * it owns the live transcript. This component only carries them across; the
+   * state and the prompter element both belong to the review page (#287).
+   */
+  conversationExpanded?: boolean
+  onConversationExpandedChange?: (expanded: boolean) => void
+  prompter?: ReactNode
+  patientName?: string
 }) {
   /*
    * The doctor arrived on a consultation page that is already scoped to one
@@ -368,6 +381,10 @@ export function CapturePanel({
                 }}
                 onLiveSegments={onLiveSegments}
                 deviceId={audio.deviceId}
+                conversationExpanded={conversationExpanded}
+                onConversationExpandedChange={onConversationExpandedChange}
+                prompter={prompter}
+                patientName={patientName}
               />
             ) : (
               <AudioCapture

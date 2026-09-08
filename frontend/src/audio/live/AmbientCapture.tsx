@@ -1,7 +1,7 @@
 import type { DraftTurn, LiveAsrConfig, LiveAsrRegion } from '@shared/types'
 import { MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
-import { Loader2, Mic, Square } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Loader2, Maximize2, Mic, Minimize2, Square } from 'lucide-react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from '../../lib/api.js'
 import { Button } from '../../ui/Button.js'
 import { InfoTip } from '../../ui/InfoTip.js'
@@ -103,6 +103,10 @@ export function AmbientCapture({
   onLiveChange,
   onLiveSegments,
   deviceId,
+  conversationExpanded = false,
+  onConversationExpandedChange,
+  prompter,
+  patientName,
 }: {
   onTranscript: (result: {
     text: string
@@ -126,6 +130,28 @@ export function AmbientCapture({
   onLiveSegments?: (segments: readonly TranscriptSegment[]) => void
   /** The input chosen in the Audio dialog. `null` leaves the choice to the browser. */
   deviceId?: string | null
+  /**
+   * Whether the conversation is showing in its own full-viewport dialog (#287).
+   *
+   * Owned by the review page rather than here, because the page has to know:
+   * it renders the prompter into the companion column when the theatre is
+   * docked, and passes the same element in as `prompter` when it is open, so
+   * exactly one instance of a panel carrying red flags is ever mounted.
+   */
+  conversationExpanded?: boolean
+  onConversationExpandedChange?: (expanded: boolean) => void
+  /**
+   * The live safety panel, rendered inside the theatre.
+   *
+   * A slot rather than a component this file builds, because the panes it reads
+   * come from `useLivePanes` on the review page while the transcript comes from
+   * this component's own socket state. Passing the element down is what lets the
+   * two sit side by side without lifting the capture state out of here, which
+   * would remount the socket.
+   */
+  prompter?: ReactNode
+  /** Shown in the theatre's title bar, so the doctor knows whose room this is. */
+  patientName?: string
 }) {
   const [availability, setAvailability] = useState<Availability>({ status: 'loading' })
   const [phase, setPhase] = useState<Phase>('idle')
@@ -134,6 +160,69 @@ export function AmbientCapture({
   const [error, setError] = useState<string | null>(null)
   const [seconds, setSeconds] = useState(0)
   const [micStream, setMicStream] = useState<MediaStream | null>(null)
+  const conversationDialog = useRef<HTMLDialogElement>(null)
+
+  /*
+   * The theatre is only ever open while the room is actually being heard, so
+   * the page's request and this component's phase both have to agree. That also
+   * means a session ending closes it without the page having to remember to.
+   */
+  const expanded = conversationExpanded && phase === 'listening'
+
+  /*
+   * The theatre is asked for here rather than from the page's capture-busy
+   * callback, because that callback also fires for press-to-record, which has
+   * no live conversation and therefore no dialog to hold the safety panel.
+   * Opening from there withheld the companion column during a manual recording
+   * and left the prompter with nowhere to render at all.
+   *
+   * Keyed on `phase`, so docking mid-consultation is not undone: nothing
+   * re-fires until the session itself starts or ends.
+   */
+  const onConversationExpandedChangeRef = useRef(onConversationExpandedChange)
+  useEffect(() => {
+    onConversationExpandedChangeRef.current = onConversationExpandedChange
+  })
+
+  useEffect(() => {
+    onConversationExpandedChangeRef.current?.(phase === 'listening')
+  }, [phase])
+
+  /*
+   * Push, not pull. It opens when capture starts rather than waiting to be
+   * asked, because a doctor mid-consultation will not stop to press Expand, and
+   * a pane nobody expands is the clipped window this replaced.
+   *
+   * Escape still closes it, and closing docks rather than stops: the inline
+   * capture layout underneath keeps the safety panel on screen, so no path
+   * leaves a red flag unreachable.
+   */
+  useEffect(() => {
+    const node = conversationDialog.current
+    if (!node) return
+    /*
+     * `showModal` and `close` are guarded because jsdom implements neither, the
+     * same reason `LiveConversation` guards `scrollTo`. Falling back to the
+     * `open` attribute is not a no-op: it is what the UA stylesheet keys on, so
+     * the contents leave `display: none` and enter the accessibility tree,
+     * which is the part of the difference a test can see. Real browsers take
+     * the first branch and get the top layer, focus trap and Escape with it.
+     */
+    if (!expanded) {
+      if (typeof node.close === 'function') node.close()
+      else node.removeAttribute('open')
+      return
+    }
+    if (typeof node.showModal === 'function') node.showModal()
+    else node.setAttribute('open', '')
+    /*
+     * `showModal()` runs its autofocus pass before conditionally rendered
+     * children have mounted, so focus lands on the dialog itself and the first
+     * Tab goes nowhere useful. Same fix, and same reason, as the overflow
+     * dialog in `ConsultationReview`.
+     */
+    node.querySelector('button')?.focus()
+  }, [expanded])
 
   /*
    * Bumped on every stop, failure and unmount. Every async continuation below
@@ -579,23 +668,43 @@ export function AmbientCapture({
             </span>
             <span className="tabular-nums text-ink-muted text-sm">{clock(seconds)}</span>
             <InputMeter stream={micStream ?? undefined} />
+            {onConversationExpandedChange && !expanded && (
+              <button
+                type="button"
+                onClick={() => onConversationExpandedChange(true)}
+                className="ml-auto inline-flex items-center gap-1.5 rounded-control px-2 py-1 font-medium text-ink-muted text-xs transition-colors hover:bg-sunken hover:text-ink"
+              >
+                <Maximize2 aria-hidden className="size-3.5" />
+                Expand
+              </button>
+            )}
           </div>
 
-          <LiveConversation
-            segments={tokensToSegments(live.final)}
-            interim={interimText(live.interim)}
-            interimSpeaker={interimSpeaker(live.interim)}
-          />
-
           {/*
-            Says out loud what the chips above deliberately do not claim. The
-            recogniser separates voices but does not know which is the doctor,
-            and a doctor who reads "Speaker 2" without this line may reasonably
-            wonder whether the system has failed to work something out.
+            Withheld while the theatre is open rather than rendered twice. Two
+            mounted copies of the conversation would read as two conversations
+            to a screen reader, and the second scroller would follow speech
+            nobody is looking at.
           */}
-          <p className="text-2xs text-ink-muted">
-            Speakers are numbered while recording. Roles are assigned when you stop.
-          </p>
+          {!expanded && (
+            <>
+              <LiveConversation
+                segments={tokensToSegments(live.final)}
+                interim={interimText(live.interim)}
+                interimSpeaker={interimSpeaker(live.interim)}
+              />
+
+              {/*
+                Says out loud what the chips above deliberately do not claim. The
+                recogniser separates voices but does not know which is the doctor,
+                and a doctor who reads "Speaker 2" without this line may reasonably
+                wonder whether the system has failed to work something out.
+              */}
+              <p className="text-2xs text-ink-muted">
+                Speakers are numbered while recording. Roles are assigned when you stop.
+              </p>
+            </>
+          )}
 
           <div>
             <Button variant="primary" onClick={() => void stop()}>
@@ -604,6 +713,96 @@ export function AmbientCapture({
             </Button>
           </div>
         </div>
+      )}
+
+      {/*
+        The theatre (#287).
+
+        A native `<dialog>` rather than a fixed div, for the reason
+        `docs/DESIGN.md` gives at "Glass inside glass is always flat": an element
+        with `backdrop-filter` establishes a backdrop root and a descendant may
+        only sample inside it, so a panel nested in the capture card would frost
+        against a flat fill. `showModal()` promotes this to the top layer, which
+        is outside every backdrop root, and hands over focus trapping, Escape
+        and inertness of the page behind for free.
+
+        The panel is glass because it is chrome; everything inside it that
+        carries clinical text stays on an opaque surface.
+      */}
+      {onConversationExpandedChange && (
+        <dialog
+          ref={conversationDialog}
+          onClose={() => onConversationExpandedChange(false)}
+          aria-label="Consultation conversation"
+          data-print="hide"
+          className="glass-panel m-auto h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-none rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
+        >
+          {expanded && (
+            <div className="flex h-full flex-col">
+              <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-line border-b px-5 py-3.5">
+                <div className="min-w-0">
+                  <p className="truncate font-display font-semibold text-base leading-tight">
+                    {patientName ?? 'Consultation'}
+                  </p>
+                  {/*
+                    The processor and its region are named in the consent gate,
+                    which is where a disclosure belongs. Repeating them in a
+                    title bar the doctor reads mid-consultation is noise, and
+                    the owner asked for the short form here.
+                  */}
+                  <p className="text-ink-muted text-xs">Ambient scribe</p>
+                </div>
+
+                <div className="ml-auto flex items-center gap-3">
+                  <span className="flex items-center gap-2 font-medium text-sm">
+                    <span aria-hidden className="size-2 animate-pulse rounded-full bg-emergency" />
+                    <span>Listening</span>
+                  </span>
+                  <span className="tabular-nums text-ink-muted text-sm">{clock(seconds)}</span>
+                  <InputMeter stream={micStream ?? undefined} />
+                  <button
+                    type="button"
+                    onClick={() => onConversationExpandedChange(false)}
+                    aria-label="Dock the conversation"
+                    title="Dock"
+                    className="inline-flex size-8 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-sunken hover:text-ink"
+                  >
+                    <Minimize2 aria-hidden className="size-4" />
+                  </button>
+                  <Button variant="primary" onClick={() => void stop()}>
+                    <Square aria-hidden className="size-4" />
+                    Stop and Finish
+                  </Button>
+                </div>
+              </header>
+
+              {/*
+                The prompter is first in source order below `lg`, the same rule
+                the safety rail follows on the review screen: on a narrow screen
+                "visible without scrolling" can only mean first.
+              */}
+              <div className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+                <div className="order-2 flex min-h-0 flex-col gap-2 lg:order-1">
+                  <LiveConversation
+                    fill
+                    segments={tokensToSegments(live.final)}
+                    interim={interimText(live.interim)}
+                    interimSpeaker={interimSpeaker(live.interim)}
+                  />
+                  <p className="text-2xs text-ink-muted">
+                    Speakers are numbered while recording. Roles are assigned when you stop.
+                  </p>
+                </div>
+
+                {prompter && (
+                  <div className="order-1 min-h-0 overflow-y-auto lg:order-2 lg:pr-1">
+                    {prompter}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </dialog>
       )}
     </div>
   )

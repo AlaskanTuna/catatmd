@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../../lib/cn.js'
 import type { LiveSegment } from './live-tokens.js'
 
@@ -119,11 +119,22 @@ export function LiveConversation({
   segments,
   interim,
   interimSpeaker,
+  fill = false,
 }: {
   segments: readonly LiveSegment[]
   /** The unsettled tail. Rewritten on every message, so never given a timestamp. */
   interim: string
   interimSpeaker: string | null
+  /**
+   * Fill the height the parent offers, rather than bounding itself.
+   *
+   * The inline pane sits inside the capture Card, which is not a
+   * height-constrained flex chain, so a percentage height would collapse and it
+   * has to carry its own cap. The theatre hands it a real box, and `60vh`
+   * inside a full-viewport dialog would strand the newest turn halfway up the
+   * screen with empty space under it.
+   */
+  fill?: boolean
 }) {
   const scroller = useRef<HTMLDivElement>(null)
   /*
@@ -132,9 +143,18 @@ export function LiveConversation({
    * yanked back down by the next word the patient says.
    */
   const [pinned, setPinned] = useState(true)
+  /*
+   * The same fact in a ref, because the effect below needs to read it without
+   * depending on it. `setPinned(true)` while already `true` is a React
+   * bail-out: no re-render, no effect. With `pinned` as the only dependency
+   * that bail-out stranded the follow behaviour completely. The effect ran once
+   * on mount, never again as speech arrived, and could not be re-armed, so the
+   * pane froze at the first turn while "Jump to latest" stayed hidden, because
+   * `pinned` never became false either.
+   */
+  const pinnedRef = useRef(true)
 
-  useEffect(() => {
-    if (!pinned) return
+  const stickToBottom = useCallback(() => {
     const node = scroller.current
     if (!node) return
     /*
@@ -150,13 +170,48 @@ export function LiveConversation({
     } else {
       node.scrollTop = node.scrollHeight
     }
-  }, [pinned])
+  }, [])
+
+  /** The last conversation state this actually followed, so churn is ignored. */
+  const followed = useRef('')
+
+  useEffect(() => {
+    /*
+     * Derived inside the effect rather than outside it, because the effect has
+     * to genuinely read what it depends on. Three things count as the
+     * conversation changing: a turn appended, the closing turn extended, and
+     * the unsettled tail rewritten.
+     *
+     * The comparison is what makes depending on `segments` safe.
+     * `tokensToSegments` rebuilds the array on every render of the capture
+     * panel, so without it this would fire on renders carrying no new speech
+     * and fight a smooth scroll already in flight. And a content dependency is
+     * what makes it fire at all: appending to an overflow container raises no
+     * scroll event and changes no state of its own.
+     */
+    const tail = `${segments.length}:${segments[segments.length - 1]?.text ?? ''}:${interim}`
+    if (tail === followed.current) return
+    followed.current = tail
+
+    if (!pinnedRef.current) return
+    stickToBottom()
+  }, [segments, interim, stickToBottom])
 
   const onScroll = () => {
     const node = scroller.current
     if (!node) return
     // A slack of a few pixels, because smooth scrolling lands fractionally short.
-    setPinned(node.scrollHeight - node.scrollTop - node.clientHeight < 24)
+    const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 24
+    pinnedRef.current = atBottom
+    setPinned(atBottom)
+  }
+
+  const jumpToLatest = () => {
+    pinnedRef.current = true
+    setPinned(true)
+    // Scrolled here rather than left to the effect, which would not re-run if
+    // `pinned` was already true and no new speech has arrived since.
+    stickToBottom()
   }
 
   const last = segments[segments.length - 1]
@@ -164,18 +219,24 @@ export function LiveConversation({
     interim !== '' && last !== undefined && interimSpeaker === last.speaker
 
   return (
-    <div className="relative">
+    <div className={cn('relative', fill && 'flex min-h-0 flex-1 flex-col')}>
       {/*
-        Bounded rather than `flex-1`: this sits inside the capture Card, which
-        is not a height-constrained flex chain, so a percentage height would
-        collapse. `60vh` keeps the Stop control reachable without scrolling on a
-        laptop, and the floor stops the pane snapping shorter as the first turns
-        arrive. Roughly double the 256px it replaced.
+        Bounded rather than `flex-1` by default: this sits inside the capture
+        Card, which is not a height-constrained flex chain, so a percentage
+        height would collapse. `60vh` keeps the Stop control reachable without
+        scrolling on a laptop, and the floor stops the pane snapping shorter as
+        the first turns arrive. Roughly double the 256px it replaced.
+
+        `fill` is the theatre, where the parent is a real flex box and the cap
+        would be the thing making the pane too short instead of too tall.
       */}
       <div
         ref={scroller}
         onScroll={onScroll}
-        className="@container max-h-[min(60vh,32rem)] min-h-48 overflow-y-auto rounded-card bg-surface p-4 shadow-card"
+        className={cn(
+          '@container overflow-y-auto rounded-card bg-surface p-4 shadow-card',
+          fill ? 'min-h-0 flex-1' : 'max-h-[min(60vh,32rem)] min-h-48',
+        )}
       >
         {segments.length === 0 && interim === '' ? (
           <p className="text-ink-muted text-sm">Text appears as the consultation is spoken.</p>
@@ -219,7 +280,7 @@ export function LiveConversation({
       {!pinned && (
         <button
           type="button"
-          onClick={() => setPinned(true)}
+          onClick={jumpToLatest}
           className="absolute right-4 bottom-4 rounded-pill bg-ink px-3 py-1.5 font-medium text-2xs text-surface shadow-card"
         >
           Jump to latest
