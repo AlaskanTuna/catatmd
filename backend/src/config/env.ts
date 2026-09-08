@@ -45,6 +45,12 @@ const EnvSchema = z.object({
   // Retrieval embeddings share the Qwen key and Singapore endpoint (#220).
   QWEN_EMBEDDING_MODEL: z.string().default('text-embedding-v4'),
 
+  // Supabase Storage for the downloaded CPG PDFs (#220). Optional: ingestion
+  // still indexes text without them and simply skips the upload.
+  SUPABASE_URL: z.string().url().optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  SUPABASE_GUIDELINES_BUCKET: z.string().default('guidelines'),
+
   GEMINI_API_KEY: z.string().optional(),
   GEMINI_MODEL: z.string().default('gemini-3.5-flash-lite'),
 

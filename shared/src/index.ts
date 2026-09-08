@@ -686,11 +686,27 @@ export const GuidelineChunkSchema = z
     /** Set on retrieved CPG chunks only; the curated corpus has no pages. */
     documentId: z.string().optional(),
     page: z.number().int().optional(),
+    /** True when the span was OCRed from a scanned page, so it may carry recognition errors. */
+    ocr: z.boolean().optional(),
   })
   .refine((chunk) => chunk.verbatimAllowed || chunk.quote === undefined, {
     path: ['quote'],
     message: 'quote is not permitted on a chunk whose licence forbids verbatim reuse',
   })
+
+/** One ingested guideline document, as listed on the guideline library page. */
+export const GuidelineDocumentSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  publisher: z.string(),
+  year: z.number().int(),
+  sourceUrl: z.string().url(),
+  jurisdiction: z.string(),
+  sourceLicence: z.string(),
+  pageCount: z.number().int(),
+  chunkCount: z.number().int(),
+  ingestedAt: z.coerce.date(),
+})
 
 // ─── Analysis envelope ───────────────────────────────────────────────────────
 
@@ -1597,6 +1613,7 @@ export type RetentionPolicy = z.infer<typeof RetentionPolicySchema>
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelopeSchema>
 export type Fixture = z.infer<typeof FixtureSchema>
 export type GuidelineChunk = z.infer<typeof GuidelineChunkSchema>
+export type GuidelineDocument = z.infer<typeof GuidelineDocumentSchema>
 export type CopilotRole = z.infer<typeof CopilotRoleSchema>
 export type CopilotTurn = z.infer<typeof CopilotTurnSchema>
 export type CopilotRequest = z.infer<typeof CopilotRequestSchema>

@@ -398,6 +398,8 @@ model GuidelineChunk {
   ordinal    Int
   heading    String?
   text       String
+  /// True when the page had no text layer and the text came from Tesseract.
+  ocr        Boolean @default(false)
   embedding  Unsupported("vector(1024)")?
   tsv        Unsupported("tsvector")?
 
