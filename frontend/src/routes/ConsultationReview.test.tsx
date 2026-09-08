@@ -765,3 +765,59 @@ describe('the live panes during ambient capture', () => {
     expect(screen.queryByText(NOTE.subjective)).toBeNull()
   })
 })
+
+/**
+ * Issue #282. `hidden` appended to the note column did nothing above `lg`:
+ * Tailwind emits its `lg:flex` inside a `min-width:1024px` block that comes
+ * after the base `hidden` rule, and `cn()` keeps both because a variant makes
+ * them different utilities. Measured on production at 1440x900, the column
+ * carried `hidden` and computed `display: flex`, which wrapped the two-column
+ * capture grid onto a second row and overflowed the page by 738px.
+ *
+ * This asserts the resolved class list rather than a computed style, because a
+ * computed style here would pass rather than fail: the suite runs on jsdom with
+ * `css` unset, so Tailwind never compiles into the run, and jsdom does not
+ * evaluate `@media` rules into the cascade either way. `cn()` runs
+ * tailwind-merge, so `className` is already the winning set, which is the
+ * closest honest proxy. The computed value belongs to a browser check against
+ * the shipped stylesheet.
+ */
+describe('the note column while capture runs', () => {
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'draft',
+      analysis: null,
+      approvedAt: null,
+      approvedBy: null,
+    } as never)
+    // The moment capture starts, before it has said anything. `livePanes` is
+    // module state the block above mutates, and a leftover flag would render
+    // the prompter's severity chip through a `SafetyCards` mock that has no
+    // `SEVERITY` to give it.
+    livePanes.redFlags = []
+    livePanes.gaps = []
+    livePanes.answered = []
+    livePanes.clinicalFacts = null
+    livePanes.operational = null
+    livePanes.hasContent = false
+  })
+
+  it('withholds every lg utility while capturing, so none can outrank hidden', async () => {
+    setup()
+
+    const note = (await screen.findByRole('heading', { name: 'Clinical Note' })).closest('section')
+    const classes = () => note?.className.split(/\s+/) ?? []
+
+    // The review layout, which Stop has to bring back intact.
+    expect(classes()).toContain('lg:flex')
+    expect(classes()).not.toContain('hidden')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mock Capture Busy' }))
+
+    expect(classes()).toContain('hidden')
+    expect(classes().filter((klass) => klass.startsWith('lg:'))).toEqual([])
+  })
+})
