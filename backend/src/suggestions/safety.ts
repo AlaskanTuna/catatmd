@@ -4,12 +4,14 @@ import { containsDiagnosticProse } from '../analysis/diagnostic-guard.js'
 const MEDICATION_TERM =
   '(?:antibiotics?|antimicrobials?|medications?|medicines?|drugs?|tablets?|capsules?|inhalers?|steroids?|nitrofurantoin|aspirin|insulin|paracetamol|ibuprofen|salbutamol|amoxicillin|[a-z]+(?:cillin|mycin|cycline|floxacin|azole|pril|sartan|olol|statin|prazole|caine|vir|mab|tadine|zine|butamol|terol))'
 
-const CLAUSE_BOUNDARY = /\s*(?:;|,\s*but\b|\bbut\b|\bhowever\b|\band then\b)\s*/i
+const CLAUSE_BOUNDARY = /\s*(?:;|,\s*but\b|\bbut\b|\bhowever\b|\band then\b|[.!?]\s+)\s*/i
 const CONTEXT_LABEL = /^(?:plan|recommendation|treatment)\s*:\s*/i
 const INFORMATION_GATHERING = /^(?:ask|document|confirm|review|check)\s+(?:whether|if)\b/i
+const QUESTION_CONTEXT =
+  /^(?:what|which|when|where|who|how|do|does|did|is|are|was|were|has|have|had|can|could|would|should)\b/i
 const SAFE_MEDICATION_CONTEXT =
-  /^(?:(?:do not|don't|avoid|consider)\s+(?:recommend(?:ing)?\s+)?(?:prescribe|prescribing|start|starting|give|giving|administer|administering|dispense|dispensing)|(?:the clinician|the doctor|you)\s+(?:should|must|needs? to)\s+not\s+(?:prescribe|start|give|administer|dispense))\b/i
-const DIRECT_PRESCRIBING_ORDER = /^(?:please\s+)?prescribe\b/i
+  /^(?:(?:do not|don't|avoid|consider)\s+(?:recommend(?:ing)?\s+)?(?:prescribe|prescribing|rx|start|starting|give|giving|administer|administering|dispense|dispensing|take|taking|use|using)|(?:the clinician|the doctor|you)\s+(?:should|must|needs? to)\s+not\s+(?:prescribe|rx|start|give|administer|dispense|take|use))\b/i
+const DIRECT_PRESCRIBING_ORDER = /^(?:please\s+)?(?:prescribe|rx)\b/i
 const MEDICATION_ACTION_ORDER = new RegExp(
   `\\b(?:start|give|administer|dispense|take|use)\\b[\\s\\S]{0,40}\\b${MEDICATION_TERM}\\b`,
   'i',
@@ -24,25 +26,23 @@ const BARE_DOSE_REGIMEN = new RegExp(
 )
 
 function containsUnsafeMedicationProse(text: string): boolean {
-  const sentences = text.match(/[^.!?]+[.!?]?/g) ?? [text]
+  return text.split(CLAUSE_BOUNDARY).some((clause) => {
+    const candidate = clause.trim().replace(CONTEXT_LABEL, '')
+    if (
+      INFORMATION_GATHERING.test(candidate) ||
+      QUESTION_CONTEXT.test(candidate) ||
+      SAFE_MEDICATION_CONTEXT.test(candidate)
+    ) {
+      return false
+    }
 
-  return sentences.some((sentence) => {
-    if (sentence.trim().endsWith('?')) return false
-
-    return sentence.split(CLAUSE_BOUNDARY).some((clause) => {
-      const candidate = clause.trim().replace(CONTEXT_LABEL, '')
-      if (INFORMATION_GATHERING.test(candidate) || SAFE_MEDICATION_CONTEXT.test(candidate)) {
-        return false
-      }
-
-      return (
-        DIRECT_PRESCRIBING_ORDER.test(candidate) ||
-        MEDICATION_ACTION_ORDER.test(candidate) ||
-        MODAL_MEDICATION_ORDER.test(candidate) ||
-        RECOMMENDED_MEDICATION_ORDER.test(candidate) ||
-        BARE_DOSE_REGIMEN.test(candidate)
-      )
-    })
+    return (
+      DIRECT_PRESCRIBING_ORDER.test(candidate) ||
+      MEDICATION_ACTION_ORDER.test(candidate) ||
+      MODAL_MEDICATION_ORDER.test(candidate) ||
+      RECOMMENDED_MEDICATION_ORDER.test(candidate) ||
+      BARE_DOSE_REGIMEN.test(candidate)
+    )
   })
 }
 

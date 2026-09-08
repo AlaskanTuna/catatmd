@@ -57,6 +57,7 @@ describe('filterUnsafeModelSuggestions', () => {
 
   it.each([
     'Prescribe nitrofurantoin.',
+    'Rx amoxicillin.',
     'Plan: prescribe nitrofurantoin.',
     'Start aspirin.',
     'Give insulin.',
@@ -100,11 +101,14 @@ describe('filterUnsafeModelSuggestions', () => {
     'Do not prescribe antibiotics routinely.',
     'Consider prescribing antibiotics only if indicated.',
     'Do not start aspirin routinely.',
+    'Do not take amoxicillin.',
+    'Do not use antibiotics routinely.',
     'Consider starting insulin only if indicated.',
     'The clinician should not administer salbutamol routinely.',
     'Prescribing antibiotics is not routinely recommended.',
     'What dose of amoxicillin 500 mg is the patient currently taking?',
     'Ask whether the patient was advised to start aspirin.',
+    'Confirm whether the patient already took amoxicillin 250.5 mg.',
   ])('retains the non-autonomous medication wording %s', (text) => {
     const result = filterUnsafeModelSuggestions([suggestion('safe-model-id', text)])
 
@@ -118,6 +122,15 @@ describe('filterUnsafeModelSuggestions', () => {
         'mixed-model-id',
         'Do not prescribe antibiotics routinely, but start amoxicillin now.',
       ),
+    ])
+
+    expect(result.suggestions).toEqual([])
+    expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1'])
+  })
+
+  it('does not let a trailing question hide an earlier autonomous order', () => {
+    const result = filterUnsafeModelSuggestions([
+      suggestion('mixed-model-id', 'Take amoxicillin now; do you understand?'),
     ])
 
     expect(result.suggestions).toEqual([])
