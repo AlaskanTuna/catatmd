@@ -187,7 +187,9 @@ async function settle() {
   })
 }
 
-function renderAmbient(deviceId: string | null = null) {
+type AmbientProps = Parameters<typeof AmbientCapture>[0]
+
+function renderAmbient(deviceId: string | null = null, extra: Partial<AmbientProps> = {}) {
   const onTranscript = vi.fn()
   const onSwitchToManual = vi.fn()
   const onLiveChange = vi.fn()
@@ -199,6 +201,7 @@ function renderAmbient(deviceId: string | null = null) {
       onLiveChange={onLiveChange}
       onLiveSegments={onLiveSegments}
       deviceId={deviceId}
+      {...extra}
     />,
   )
   return { onTranscript, onSwitchToManual, onLiveChange, onLiveSegments, ...view }
@@ -222,8 +225,8 @@ const recorder = () => {
 }
 
 /** Ticks consent and starts a session that is open and streaming. */
-async function startSession(deviceId: string | null = null) {
-  const view = renderAmbient(deviceId)
+async function startSession(deviceId: string | null = null, extra: Partial<AmbientProps> = {}) {
+  const view = renderAmbient(deviceId, extra)
   await settle()
   await act(async () => tick().click())
   await act(async () => startButton().click())
@@ -740,5 +743,80 @@ describe('unmounting mid-session', () => {
     expect(onTranscript).not.toHaveBeenCalled()
     expect(onLiveChange).toHaveBeenLastCalledWith(false)
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+/**
+ * The theatre (#287).
+ *
+ * The transcript used to be read through whatever height was left under the
+ * review page's hero card, which `docs/DESIGN.md` bounds at
+ * `calc(100vh-26rem)`. It now opens into its own dialog, and the safety panel
+ * goes with it rather than staying behind on a page nobody can see.
+ */
+describe('the conversation theatre', () => {
+  const theatre = () => document.querySelector('dialog')
+  const speakerNote = () => screen.queryAllByText(/Speakers are numbered while recording/)
+
+  const props = (onChange = vi.fn()) => ({
+    conversationExpanded: true,
+    onConversationExpandedChange: onChange,
+    prompter: <p>Ask about TB contact history.</p>,
+    patientName: 'Rahman bin Abdullah',
+  })
+
+  it('opens once the room is being heard, and brings the safety panel with it', async () => {
+    await startSession(null, props())
+
+    const dialog = theatre()
+    expect(dialog?.hasAttribute('open')).toBe(true)
+    expect(dialog?.textContent).toContain('Rahman bin Abdullah')
+    // The prompter is inside the dialog, not stranded on the page behind it.
+    // A red flag the doctor cannot see is the failure this layout exists to
+    // avoid, and it is the reason the panel travels rather than staying put.
+    expect(dialog?.textContent).toContain('Ask about TB contact history.')
+  })
+
+  it('stays shut until there is something to show', async () => {
+    renderAmbient(null, props())
+    await settle()
+
+    expect(theatre()?.hasAttribute('open')).toBe(false)
+    expect(theatre()?.textContent).toBe('')
+  })
+
+  it('mounts exactly one conversation, never two', async () => {
+    await startSession(null, props())
+
+    // Both copies carry this line, so counting it counts the panes. Two would
+    // read as two conversations to a screen reader, and the hidden one would
+    // scroll to follow speech nobody is looking at.
+    expect(speakerNote()).toHaveLength(1)
+    expect(theatre()?.textContent).toContain('Speakers are numbered while recording')
+  })
+
+  it('docks without stopping the session', async () => {
+    const onChange = vi.fn()
+    const { onLiveChange } = await startSession(null, props(onChange))
+
+    await act(async () => {
+      screen.getByRole('button', { name: 'Dock the conversation' }).click()
+    })
+
+    expect(onChange).toHaveBeenCalledWith(false)
+    // Docking is a view change. The socket is still open, which is what makes
+    // Escape a safe way out of a modal covering a live consultation.
+    expect(onLiveChange).not.toHaveBeenCalledWith(false)
+  })
+
+  it('keeps the processor and its region in the consent gate, not the title bar', async () => {
+    await startSession(null, props())
+
+    // The owner asked for the short form in the dialog header. The disclosure
+    // itself is a data-residency consent statement and stays whole: this test
+    // exists so trimming the header cannot quietly trim the consent too.
+    expect(theatre()?.textContent).toContain('Ambient scribe')
+    expect(theatre()?.textContent).not.toMatch(/Soniox/)
+    expect(document.body.textContent).toMatch(/Soniox/)
   })
 })
