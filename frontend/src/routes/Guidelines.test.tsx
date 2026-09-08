@@ -35,6 +35,8 @@ const URTI_DOCUMENT: GuidelineDocument = {
   pageCount: 88,
   chunkCount: 412,
   ingestedAt: new Date('2026-09-01T00:00:00.000Z'),
+  profiles: ['adult-acute-urti'],
+  verbatimAllowed: true,
 }
 
 const SORE_THROAT_DOCUMENT: GuidelineDocument = {
