@@ -65,6 +65,9 @@ import { cn } from '../lib/cn.js'
  * dialog in `routes/ConsultationReview.tsx` is exactly that shape: putting a
  * `layered` tip inside one would track the wrong offset.
  */
+/** Breathing room kept between a portalled panel and the viewport edge. */
+const EDGE_GUTTER_PX = 12
+
 export function InfoTip({
   label,
   children,
@@ -186,10 +189,22 @@ export function InfoTip({
         style: {
           position: 'fixed',
           top: below ? rect.bottom + 6 : rect.top - 6,
-          // Right-aligned to the trigger so a panel near the right edge of a
-          // narrow column cannot grow off the side of the viewport.
+          // Anchored to whichever edge of the trigger `align` names, so the
+          // panel opens away from the side it was placed against.
           left: align === 'left' ? rect.left : undefined,
           right: align === 'left' ? undefined : window.innerWidth - rect.right,
+          /*
+           * Bounded by the room that actually exists in the direction it opens,
+           * because anchoring alone does not provide any. `max-w-[80vw]`
+           * measures the viewport rather than the distance from the trigger to
+           * its edge, so a left-aligned panel two thirds of the way across the
+           * screen still ran off the side: at 390px the ambient tip lost the
+           * end of every line, which is the same defect one viewport down from
+           * the one #289 reported. Narrower than `w-72` only when there is not
+           * room for `w-72`, so nothing that fits today moves.
+           */
+          maxWidth:
+            (align === 'left' ? window.innerWidth - rect.left : rect.right) - EDGE_GUTTER_PX,
         },
       })
     }

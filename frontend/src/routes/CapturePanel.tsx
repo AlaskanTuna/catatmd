@@ -345,7 +345,16 @@ export function CapturePanel({
         </button>
       </div>
 
-      <AudioSettingsDialog ref={audioDialog} settings={audio} onApply={setAudio} />
+      {/* `showAmbient`, not `captureMode`, so the dialog names the engine
+          behind the panel actually on screen: the latch keeps a running
+          session mounted through a record update, and the two must not
+          disagree while audio is leaving the device. */}
+      <AudioSettingsDialog
+        ref={audioDialog}
+        settings={audio}
+        onApply={setAudio}
+        ambient={showAmbient}
+      />
 
       {/* Centred in the leftover room rather than pinned under the tabs: the
           card grows to the column's floor, and capture is the one thing on

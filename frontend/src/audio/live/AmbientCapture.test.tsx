@@ -273,6 +273,26 @@ describe('availability', () => {
   })
 })
 
+describe('the idle explainer', () => {
+  it('opens its tip clear of the column, which clips anything in flow', async () => {
+    renderAmbient()
+    await settle()
+
+    await act(async () => screen.getByRole('button', { name: /about ambient capture/i }).click())
+
+    const tip = screen.getByRole('tooltip')
+    expect(tip.textContent).toMatch(/check the transcript before you submit it/i)
+    /*
+     * The transcript column scrolls from `lg` up, and `overflow-y: auto` drags
+     * `overflow-x` to `auto` with it, so an in-flow panel is cut off on the
+     * right and the doctor read "so check th" (#289). Portalled to the body,
+     * nothing above it can clip it. jsdom cannot see the clipping itself, so
+     * this pins the mechanism that avoids it.
+     */
+    expect(tip.parentElement).toBe(document.body)
+  })
+})
+
 describe('consent', () => {
   it('names the provider, the region, and that our server never holds the audio', async () => {
     renderAmbient()
