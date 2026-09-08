@@ -855,11 +855,25 @@ export function ConsultationReview() {
 
         <section
           className={cn(
-            'order-2 min-w-0 lg:sticky lg:top-6 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
+            'order-2 min-w-0',
             // Hidden, never unmounted: the note placeholder and its live
             // checklist keep their state across the capture, and Stop brings
             // them straight back rather than rebuilding them.
-            captureBusy && 'hidden',
+            //
+            // The layout is withheld rather than overridden, because `hidden`
+            // appended to it does nothing above `lg` (#282). Tailwind emits
+            // `lg:flex` into a `min-width: 64rem` block later in the same
+            // `@layer utilities` as the base `hidden` rule, so above `lg` it
+            // wins on order, and `cn()` cannot collapse the pair because a
+            // variant makes them different utilities rather than a conflict.
+            // Measured on production at 1440x900: the column carried `hidden`
+            // and computed `display: flex`, which put a third item in the
+            // two-column capture grid, wrapped it onto a second row, and
+            // overflowed the page by 738px mid-consultation. The rail below
+            // never had this, because its `flex` carries no variant.
+            captureBusy
+              ? 'hidden'
+              : 'lg:sticky lg:top-6 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
           )}
           aria-labelledby="note-heading"
           data-print="expand"
