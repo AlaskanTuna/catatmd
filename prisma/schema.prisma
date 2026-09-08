@@ -363,3 +363,44 @@ enum PatientGender {
   female
   other
 }
+
+// ─── Guideline retrieval (#220, #225) ────────────────────────────────────────
+
+/// One ingested guideline document, today a Malaysian CPG from the Academy of
+/// Medicine portal. Holds provenance only; the text lives in its chunks.
+model GuidelineDocument {
+  id            String   @id
+  title         String
+  publisher     String
+  year          Int
+  sourceUrl     String
+  jurisdiction  String
+  sourceLicence String
+  sha256        String
+  /// Object path in the Supabase Storage bucket, null until uploaded.
+  storagePath   String?
+  pageCount     Int
+  ingestedAt    DateTime @default(now())
+
+  chunks GuidelineChunk[]
+
+  @@map("guideline_document")
+}
+
+/// A retrievable span of a guideline document. `embedding` and `tsv` are
+/// written by raw SQL in the ingestion script, since Prisma cannot type them;
+/// `tsv` is a generated column (see the migration).
+model GuidelineChunk {
+  id         String  @id
+  documentId String
+  document   GuidelineDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  page       Int
+  ordinal    Int
+  heading    String?
+  text       String
+  embedding  Unsupported("vector(1024)")?
+  tsv        Unsupported("tsvector")?
+
+  @@index([documentId, ordinal])
+  @@map("guideline_chunk")
+}

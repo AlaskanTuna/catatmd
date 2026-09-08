@@ -2,6 +2,11 @@ import { env } from '../../config/env.js'
 import { OpenAICompatibleClient } from './openai-compatible.js'
 import type { LLMClient, LLMProvider } from './types.js'
 
+export {
+  EMBEDDING_DIMENSIONS,
+  type EmbeddingClient,
+  getEmbeddingClient,
+} from './embeddings.js'
 export type { GenerateRequest, LLMClient, LLMProvider } from './types.js'
 export { LLMResponseError } from './types.js'
 

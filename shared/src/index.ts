@@ -665,6 +665,33 @@ export const EvidenceLinkSchema = z.object({
 })
 export type EvidenceLink = z.infer<typeof EvidenceLinkSchema>
 
+/**
+ * `verbatimAllowed` is legally load-bearing, not metadata: MOH NAG 2024 is
+ * all-rights-reserved and may be summarised and linked but never quoted, while
+ * the two CC-licensed sources may be. A `quote` on a chunk that forbids one is
+ * a corpus-authoring defect and fails here (docs/trd.md §11).
+ */
+export const GuidelineChunkSchema = z
+  .object({
+    id: z.string(),
+    title: z.string(),
+    publisher: z.string(),
+    year: z.number().int(),
+    url: z.string().url(),
+    /** Short, non-verbatim summary shown in the UI. */
+    summary: z.string(),
+    sourceLicence: z.string(),
+    verbatimAllowed: z.boolean(),
+    quote: z.string().optional(),
+    /** Set on retrieved CPG chunks only; the curated corpus has no pages. */
+    documentId: z.string().optional(),
+    page: z.number().int().optional(),
+  })
+  .refine((chunk) => chunk.verbatimAllowed || chunk.quote === undefined, {
+    path: ['quote'],
+    message: 'quote is not permitted on a chunk whose licence forbids verbatim reuse',
+  })
+
 // ─── Analysis envelope ───────────────────────────────────────────────────────
 
 export const ConsultationAnalysisSchema = z.object({
@@ -681,6 +708,13 @@ export const ConsultationAnalysisSchema = z.object({
   gaps: z.array(InformationGapSchema),
   redFlags: z.array(RedFlagSchema),
   suggestions: z.array(ClinicalSuggestionSchema),
+  /**
+   * CPG chunks retrieved for this consultation and offered to the model as
+   * citation candidates alongside the curated corpus. Persisted with the
+   * analysis so the review UI can resolve a citation without re-running
+   * retrieval, which would not be reproducible.
+   */
+  retrievedGuidelines: z.array(GuidelineChunkSchema).optional(),
   /**
    * The reviewed checklist, surfaced rather than discarded.
    *
@@ -1418,30 +1452,6 @@ export const FixtureSchema = z.object({
   label: z.string(),
   transcript: TranscriptSchema,
 })
-
-/**
- * `verbatimAllowed` is legally load-bearing, not metadata: MOH NAG 2024 is
- * all-rights-reserved and may be summarised and linked but never quoted, while
- * the two CC-licensed sources may be. A `quote` on a chunk that forbids one is
- * a corpus-authoring defect and fails here (docs/trd.md §11).
- */
-export const GuidelineChunkSchema = z
-  .object({
-    id: z.string(),
-    title: z.string(),
-    publisher: z.string(),
-    year: z.number().int(),
-    url: z.string().url(),
-    /** Short, non-verbatim summary shown in the UI. */
-    summary: z.string(),
-    sourceLicence: z.string(),
-    verbatimAllowed: z.boolean(),
-    quote: z.string().optional(),
-  })
-  .refine((chunk) => chunk.verbatimAllowed || chunk.quote === undefined, {
-    path: ['quote'],
-    message: 'quote is not permitted on a chunk whose licence forbids verbatim reuse',
-  })
 
 // ─── Live analysis (ambient capture) ─────────────────────────────────────────
 
