@@ -167,11 +167,13 @@ export function AudioSettingsDialog({
               a choice: no button, no `aria-pressed`, nothing to press that
               would do nothing.
 
-              Bordered as well as tinted, which the selected card below is not.
-              Both are green and they mean different things, so the fill alone
-              read as two live engines: this one is running, and that one is the
-              press-to-record choice for when it is not. `border-accent/30` on
-              `accent-soft` is the same emphasis `ApproveBar` uses.
+              While this row is showing, it is the only filled card in the list.
+              A green fill here means one thing, that the engine is running, and
+              the selected card below drops to an outline for as long as that is
+              true: it is the press-to-record choice for when this stops, not a
+              second live engine. Bordering this one and tinting both was tried
+              first (#290) and was too quiet to carry the difference, because
+              the fill is what the eye reads (#291).
 
               It names the provider but not the region or the model, which the
               ILMU option does name. Both come from `api.liveAsrConfig()`, which
@@ -208,7 +210,9 @@ export function AudioSettingsDialog({
                   key={engine.id}
                   className={cn(
                     'flex gap-2.5 rounded-card border p-3 text-left transition-colors',
-                    selected ? 'border-transparent bg-accent-soft' : 'border-line',
+                    !selected && 'border-line',
+                    selected && ambient && 'border-accent',
+                    selected && !ambient && 'border-transparent bg-accent-soft',
                   )}
                 >
                   <button
