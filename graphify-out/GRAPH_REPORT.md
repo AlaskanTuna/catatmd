@@ -1,16 +1,16 @@
-# Graph Report - retrieval  (2026-09-09)
+# Graph Report - rag-retrieval  (2026-09-09)
 
 ## Corpus Check
-- 311 files · ~355,845 words
+- 318 files · ~359,863 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2365 nodes · 3891 edges · 179 communities (155 shown, 24 thin omitted)
-- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 49 edges (avg confidence: 0.66)
+- 2391 nodes · 3944 edges · 176 communities (157 shown, 19 thin omitted)
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 50 edges (avg confidence: 0.66)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `af956edc`
+- Built from commit: `a022f932`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -20,7 +20,7 @@
 - includes
 - src/index.ts
 - devDependencies
-- llm/index.ts
+- Deidentified
 - AudioCapture.test.tsx
 - devDependencies
 - shared/package.json
@@ -59,10 +59,10 @@
 - 13. Success Metrics
 - 6. Scope
 - audit/index.ts
-- analysis/index.ts
+- live.ts
 - CatatAI.tsx
 - cn
-- CapturePanel.tsx
+- draft-turns.ts
 - logger.ts
 - consultations.ts
 - ilmu.ts
@@ -90,17 +90,17 @@
 - asr.test.ts
 - 20.2 Draft Speaker Labels: Measured, Gated, Not Diarisation
 - frontend/package.json
-- PatientList.tsx
+- Button
 - no-stray-provider-sdk.test.ts
 - consultations.test.ts
-- Guidelines.tsx
+- retrieve.ts
 - shared/tsconfig.typecheck.json
 - no-stray-dev-references.test.ts
 - no-stray-clinical-constants.test.ts
 - no-stray-brand-casts.test.ts
 - StartConsultationDialog.tsx
 - error-handler.ts
-- ConsultationReview.test.tsx
+- MedicalRecordNoteEditor.tsx
 - no-stray-approval.test.ts
 - backend/tsconfig.typecheck.json
 - 25. Review Copilot Tool-Call Behaviour
@@ -113,7 +113,7 @@
 - AudioCapture.tsx
 - acceptance/safety.test.ts
 - no-stray-audit-writes.test.ts
-- health.ts
+- safety.ts
 - 22. Observability & Privacy-Safe Logging
 - 23. Clinic EHR Integration Interface
 - asr.ts
@@ -121,7 +121,7 @@
 - notifications.test.ts
 - 20.4 The Consent Gate (Resolves §19 Row 18)
 - 24. Frontend Rendering Constraints
-- CursorGlow
+- llm/index.ts
 - workspaces
 - 20.3 Measured Finding: Hosted `ilmu-asr-v4.2` Against The Shipped Local Path
 - 20.6 Capture Constraints: Dictation DSP Off (Addendum To §20.3)
@@ -137,15 +137,15 @@
 - react-markdown
 - @types/react
 - openai-compatible.test.ts
-- use-segment-recorder.ts
+- use-segment-recorder.test.ts
 - overrides
 - settings.test.ts
 - soniox-stream.ts
-- use-segment-recorder.test.ts
-- transcribe.worker.ts
+- App.tsx
+- protocol.ts
 - CapturePanel.test.tsx
 - asr-live-sessions.test.ts
-- audio-settings.ts
+- AudioSettingsDialog.tsx
 - src/note-templates.test.ts
 - consultations-live-analysis.test.ts
 - no-stray-transformers.test.ts
@@ -153,12 +153,12 @@
 - 20.10 Ambient Capture On Soniox, Browser-Direct, Under An API-Minted Key
 - 20.9 Ambient Capture On ILMU, And The Mechanism Behind 20.8's Post-Correction Row
 - no-stray-websocket.test.ts
-- MedicalRecordNoteEditor.tsx
+- CapturePanel.tsx
 - 20.7 Live Ambient Capture: Mechanism, Models, And The Accuracy Chain
 - 20.8 How This Design Compares To Industry Practice
-- WorkerResponse
+- ConsultationSettingsDialog.tsx
 - use-live-panes.test.ts
-- ConsultationRow.tsx
+- manifest.json
 - consultations-audio.test.ts
 - consultations-live-flags.test.ts
 - 20.11 The Live Panes, And Why The Note Is Not One Of Them
@@ -168,13 +168,11 @@
 - FakeWebSocket
 - FakeWebSocket
 - backend/package.json
-- LiveConversation.test.tsx
+- LiveConversation.tsx
 - no-stray-audio-persistence.test.ts
-- LivePrompter.test.tsx
-- FakeMediaRecorder
-- token
-- FakeAudioContext
-- ApproveBar.test.tsx
+- live-prompt.test.ts
+- Button.tsx
+- reference.test.ts
 - cors
 - dotenv
 - express
@@ -190,7 +188,7 @@
 6. `Button()` - 23 edges
 7. `scripts` - 21 edges
 8. `recordAuditEvent()` - 18 edges
-9. `Deidentified` - 17 edges
+9. `Deidentified` - 18 edges
 10. `main()` - 17 edges
 
 ## Surprising Connections (you probably didn't know these)
@@ -202,8 +200,8 @@
   backend/src/lib/asr/ilmu.ts → frontend/src/ui/RenameField.test.tsx
 - `CapturePanel()` --indirect_call--> `live()`  [INFERRED]
   frontend/src/routes/CapturePanel.tsx → backend/src/redflags/live-window.test.ts
-- `AmbientCapture()` --indirect_call--> `recording()`  [INFERRED]
-  frontend/src/audio/live/AmbientCapture.tsx → backend/src/routes/consultations-audio.test.ts
+- `buildLexicalQuery()` --indirect_call--> `token()`  [INFERRED]
+  backend/src/retrieval/query.ts → frontend/src/audio/live/live-tokens.test.ts
 
 ## Import Cycles
 - 2-file cycle: `shared/src/index.ts -> shared/src/note-templates.ts -> shared/src/index.ts`
@@ -211,7 +209,7 @@
 ## Hyperedges (group relationships)
 - **PHI Boundary Components** — backend_src_deid, backend_src_lib_llm [EXTRACTED 1.00]
 
-## Communities (179 total, 24 thin omitted)
+## Communities (176 total, 19 thin omitted)
 
 ### Community 0 - "scripts"
 Cohesion: 0.10
@@ -227,19 +225,19 @@ Nodes (40): files, includes, formatter, enabled, indentStyle, indentWidth, lineW
 
 ### Community 3 - "src/index.ts"
 Cohesion: 0.02
-Nodes (99): AssertionState, AssertionStateSchema, CaptureMode, Citation, ClinicalAssertion, ClinicalAssertionShape, ClinicalFacts, ClinicalFactsResponse (+91 more)
+Nodes (101): AssertionState, AssertionStateSchema, CaptureMode, Citation, ClinicalAssertion, ClinicalAssertionShape, ClinicalFacts, ClinicalFactsResponse (+93 more)
 
 ### Community 4 - "devDependencies"
 Cohesion: 0.09
 Nodes (23): @fontsource-variable/outfit, devDependencies, @fontsource-variable/outfit, jsdom, tailwindcss, @tailwindcss/vite, @testing-library/react, @types/react-dom (+15 more)
 
-### Community 5 - "llm/index.ts"
-Cohesion: 0.16
-Nodes (14): Deidentified, EmbeddingClient, getEmbeddingClient(), build(), OpenAICompatibleClient, OpenAICompatibleEmbeddingClient, GenerateRequest, LLMClient (+6 more)
+### Community 5 - "Deidentified"
+Cohesion: 0.17
+Nodes (11): Deidentified, EmbeddingClient, OpenAICompatibleClient, OpenAICompatibleEmbeddingClient, GenerateRequest, LLMClient, LLMProvider, LLMResponseError (+3 more)
 
 ### Community 6 - "AudioCapture.test.tsx"
-Cohesion: 0.09
-Nodes (13): agree(), consentBox(), FakeAudioContext, FakeMediaRecorder, FakeOfflineAudioContext, recorders, settle(), startButton() (+5 more)
+Cohesion: 0.07
+Nodes (17): agree(), consentBox(), FakeAudioContext, FakeMediaRecorder, FakeOfflineAudioContext, FakeWorker, recorders, settle() (+9 more)
 
 ### Community 7 - "devDependencies"
 Cohesion: 0.11
@@ -258,8 +256,8 @@ Cohesion: 0.10
 Nodes (21): clsx, @fontsource-variable/inter, dependencies, clsx, @fontsource-variable/inter, react, react-hot-toast, react-router-dom (+13 more)
 
 ### Community 11 - "FIXTURES"
-Cohesion: 0.09
-Nodes (34): FIXTURES, fullText(), FIXTURE_RUBRICS, FixtureRubric, auditEvent, captured, FIXTURE, store (+26 more)
+Cohesion: 0.07
+Nodes (37): FIXTURES, fullText(), FIXTURE_RUBRICS, FixtureRubric, auditEvent, captured, FIXTURE, store (+29 more)
 
 ### Community 12 - "frontend/tsconfig.json"
 Cohesion: 0.13
@@ -275,7 +273,7 @@ Nodes (17): 14. Auth Model, 16. Security Controls, 18. Traceability, 19. Open De
 
 ### Community 15 - "app.ts"
 Cohesion: 0.07
-Nodes (34): createApp(), PROTECTED_PREFIXES, EnvSchema, parsed, auth, clientIp(), leftmostForwardedFor(), resolveClientIp() (+26 more)
+Nodes (35): createApp(), PROTECTED_PREFIXES, EnvSchema, parsed, auth, clientIp(), leftmostForwardedFor(), resolveClientIp() (+27 more)
 
 ### Community 16 - "shared/tsconfig.json"
 Cohesion: 0.17
@@ -339,7 +337,7 @@ Nodes (6): 11. Guideline Corpus, Candidate Set Reaching The Prompt, Chunk Record
 
 ### Community 37 - "api.ts"
 Cohesion: 0.06
-Nodes (26): api, ApiError, AuditEvent, AuditEventSchema, ConsultationEnvelope, ErasePatientEnvelope, FixturesEnvelope, GuidelinesEnvelope (+18 more)
+Nodes (25): api, ApiError, AuditEvent, AuditEventSchema, ConsultationEnvelope, ErasePatientEnvelope, FixturesEnvelope, GuidelinesEnvelope (+17 more)
 
 ### Community 38 - "7. Environment Contract"
 Cohesion: 0.40
@@ -385,9 +383,9 @@ Nodes (4): 6. Scope, In Scope, Out Of Scope, Out-Of-Scope Presentations At Runti
 Cohesion: 0.07
 Nodes (34): appended, write(), AuditChainFailure, AuditChainInput, AuditChainRow, AuditChainVerification, computeAuditHash(), buildChain() (+26 more)
 
-### Community 49 - "analysis/index.ts"
-Cohesion: 0.06
-Nodes (46): containsDiagnosticProse(), DIAGNOSTIC_PHRASING, DiagnosticGuardResult, stripDiagnosticProse(), applyEvidenceCheck(), checkAssertion(), checkGroup(), EVIDENCE_REQUIRED_STATES (+38 more)
+### Community 49 - "live.ts"
+Cohesion: 0.08
+Nodes (32): applyEvidenceCheck(), checkAssertion(), checkGroup(), EVIDENCE_REQUIRED_STATES, EvidenceCheckResult, hasVerbatimEvidence(), LlmClinicalFacts, LlmOperationalBlock (+24 more)
 
 ### Community 50 - "CatatAI.tsx"
 Cohesion: 0.08
@@ -395,19 +393,19 @@ Nodes (19): CatatAI(), CONSULTATION, ToolRuns(), FOLLOW_UP_QUESTIONS, OPENING_QU
 
 ### Community 51 - "cn"
 Cohesion: 0.07
-Nodes (31): ENGINES, Toggle(), ConsentGate(), InputMeter(), elapsed(), LiveConversation(), SpeakerChip(), Turn() (+23 more)
+Nodes (32): ConsentGate(), InputMeter(), DemoStepBar(), useDemoTour(), HelpButton(), Spotlight(), cn(), NoteEditor() (+24 more)
 
-### Community 52 - "CapturePanel.tsx"
-Cohesion: 0.18
-Nodes (19): classify(), DOCTOR_PATTERNS, DraftLine, draftToTurns(), endsWithQuestion(), matches(), normalise(), PATIENT_PATTERNS (+11 more)
+### Community 52 - "draft-turns.ts"
+Cohesion: 0.24
+Nodes (12): classify(), DOCTOR_PATTERNS, DraftLine, endsWithQuestion(), matches(), normalise(), PATIENT_PATTERNS, proseToDraft() (+4 more)
 
 ### Community 53 - "logger.ts"
 Cohesion: 0.07
 Nodes (28): ALLOWED_FIELDS, currentRequestId(), DETECTOR_LABELS, ERROR_CLASSES, HTTP_METHODS, labelSet, LEVELS, LLM_OPERATIONS (+20 more)
 
 ### Community 54 - "consultations.ts"
-Cohesion: 0.09
-Nodes (37): audioRetentionEnabled(), purgeAudio(), readAudio(), storeAudio(), sweepExpiredAudio(), eraseConsultation(), erasePatient(), recordAuditEvent() (+29 more)
+Cohesion: 0.11
+Nodes (33): audioRetentionEnabled(), purgeAudio(), readAudio(), storeAudio(), sweepExpiredAudio(), eraseConsultation(), erasePatient(), recordAuditEvent() (+25 more)
 
 ### Community 55 - "ilmu.ts"
 Cohesion: 0.18
@@ -418,40 +416,40 @@ Cohesion: 0.11
 Nodes (15): useTheme(), requestRetention(), reseed(), RetentionEnvelope, RetentionSection(), Settings(), ChromeCluster(), ago() (+7 more)
 
 ### Community 57 - "copilot/index.ts"
-Cohesion: 0.16
-Nodes (16): CopilotChunk, keepPartial(), ReasoningFilter, rehydrateArgs(), runCopilotTurn(), buildCopilotSystemPrompt(), serialiseCorpus(), drip() (+8 more)
+Cohesion: 0.11
+Nodes (21): getClinicalProfile(), CopilotChunk, keepPartial(), ReasoningFilter, rehydrateArgs(), runCopilotTurn(), buildCopilotSystemPrompt(), serialiseCorpus() (+13 more)
 
 ### Community 58 - "guidelines/index.ts"
-Cohesion: 0.16
-Nodes (16): ClinicalProfile, corpusIds, corpusIdsFor(), GUIDELINE_CORPUS, GUIDELINE_CORPUS_VERSION, ProfiledGuidelineChunk, URTI_PROFILES, UTI_PROFILES (+8 more)
+Cohesion: 0.17
+Nodes (15): corpusIds, corpusIdsFor(), GUIDELINE_CORPUS, GUIDELINE_CORPUS_VERSION, ProfiledGuidelineChunk, URTI_PROFILES, UTI_PROFILES, serialiseCorpusForPrompt() (+7 more)
 
 ### Community 59 - "evaluateRedFlags"
-Cohesion: 0.10
-Nodes (22): evaluateRedFlags(), mergeRedFlags(), TRIGGER_FIXTURES, MALAY_TRIGGER_FIXTURES, patient(), ruleIds(), transcript(), patient() (+14 more)
+Cohesion: 0.11
+Nodes (19): evaluateRedFlags(), mergeRedFlags(), TRIGGER_FIXTURES, MALAY_TRIGGER_FIXTURES, patient(), ruleIds(), transcript(), patient() (+11 more)
 
 ### Community 60 - "evals/package.json"
 Cohesion: 0.10
 Nodes (19): dependencies, @shared/types, devDependencies, tsx, @types/node, typescript, vitest, @shared/types (+11 more)
 
 ### Community 61 - "ConsultationReview.tsx"
-Cohesion: 0.05
-Nodes (34): LivePanes, useLivePanes(), spokenTimestamp(), CAPTURE_MODES, ConsultationSettingsDialog(), ConsultationSettingsPatch, Dismissed, FlagState (+26 more)
+Cohesion: 0.08
+Nodes (25): useLivePanes(), spokenTimestamp(), Dismissed, FlagState, GAP_PRIORITY_ORDER, PanelModel, selectPrompts(), SEVERITY_ORDER (+17 more)
 
 ### Community 62 - "copilot-proposals.ts"
 Cohesion: 0.13
 Nodes (16): chunks, consultation(), signed(), stream, hasPhantomClickInstruction(), CONTROL_REQUESTS, EDIT_REQUESTS, main() (+8 more)
 
 ### Community 63 - "draft-turns/index.ts"
-Cohesion: 0.15
-Nodes (13): DraftTurnsFailureReason, DeidentificationError, draftChunk(), draftTurns(), DraftTurnsError, mapWithLimit(), mergeAdjacent(), canonWord() (+5 more)
+Cohesion: 0.18
+Nodes (12): DraftTurnsFailureReason, DeidentificationError, draftChunk(), draftTurns(), DraftTurnsError, mapWithLimit(), mergeAdjacent(), canonWord() (+4 more)
 
 ### Community 64 - "DemoTour.tsx"
 Cohesion: 0.14
 Nodes (15): DemoTourContext, DemoTourProvider(), DemoTourValue, FallbackReason, pickConsultations(), resolveStepRoute(), runEphemeral(), ScoredAnalysis (+7 more)
 
 ### Community 65 - "src/index.test.ts"
-Cohesion: 0.10
-Nodes (19): bareFacts(), emptyOperational(), emptyOperational(), request(), ClinicalAssertionSchema, ClinicalFactsResponseSchema, ConsultationDetailSchema, ConsultationListItemSchema (+11 more)
+Cohesion: 0.13
+Nodes (14): bareFacts(), request(), ClinicalAssertionSchema, ClinicalFactsResponseSchema, ConsultationListItemSchema, DraftTurnsRequestSchema, DraftTurnsResponseSchema, ErrorEnvelopeSchema (+6 more)
 
 ### Community 66 - "asr-ab.ts"
 Cohesion: 0.09
@@ -462,8 +460,8 @@ Cohesion: 0.13
 Nodes (14): compilerOptions, noEmit, types, exclude, extends, include, node, ../tsconfig.json (+6 more)
 
 ### Community 68 - "ChecklistPanel.tsx"
-Cohesion: 0.11
-Nodes (15): timestamp(), CHECKLIST_SECTION_LABELS, CHECKLIST_SECTION_ORDER, ChecklistEntry, ChecklistPanel(), ChecklistRow(), ChecklistSection, CLINICAL_FACT_GROUPS (+7 more)
+Cohesion: 0.10
+Nodes (16): timestamp(), CHECKLIST_SECTION_LABELS, CHECKLIST_SECTION_ORDER, ChecklistEntry, ChecklistPanel(), ChecklistRow(), ChecklistSection, CLINICAL_FACT_GROUPS (+8 more)
 
 ### Community 69 - "triggers.ts"
 Cohesion: 0.16
@@ -475,23 +473,23 @@ Nodes (9): dependencies, @prisma/client, engines, node, @prisma/client, license,
 
 ### Community 71 - "checklist.ts"
 Cohesion: 0.12
-Nodes (19): getActiveClinicalVersions(), ALL_GAP_CHECKLIST, cited(), GAP_CHECKLIST, GAP_CHECKLIST_VERSION, GapChecklistEntry, GapChecklistSource, GapChecklistSourceSchema (+11 more)
+Nodes (17): ALL_GAP_CHECKLIST, cited(), GAP_CHECKLIST, GAP_CHECKLIST_VERSION, GapChecklistSource, GapChecklistSourceSchema, NAG_ADULT_COUGH, NAG_ADULT_COUGH_AND_PHARYNGITIS (+9 more)
 
 ### Community 72 - "digest.ts"
 Cohesion: 0.30
 Nodes (9): decisionFor(), renderChecklist(), renderDigest(), renderGaps(), renderNote(), renderRedFlags(), renderSuggestions(), renderTranscript() (+1 more)
 
 ### Community 73 - "clinical-profiles/index.ts"
-Cohesion: 0.21
-Nodes (11): ADULT_ACUTE_UNCOMPLICATED_UTI_PROFILE_VERSION, ADULT_ACUTE_URTI_PROFILE_VERSION, CLINICAL_PROFILES, PROFILE_IDS, ProfileId, ACTIVE_PROFILE_VERSIONS, ClinicalArtefactVersion, ALL_REDFLAG_TRIGGERS (+3 more)
+Cohesion: 0.18
+Nodes (15): ADULT_ACUTE_UNCOMPLICATED_UTI_PROFILE_VERSION, ADULT_ACUTE_URTI_PROFILE_VERSION, CLINICAL_PROFILES, ClinicalProfile, PROFILE_IDS, ProfileId, ProfileIdSchema, ACTIVE_PROFILE_VERSIONS (+7 more)
 
 ### Community 74 - "AmbientCapture.tsx"
-Cohesion: 0.23
-Nodes (17): AmbientCapture(), Availability, LANGUAGE_LABELS, Phase, REGION_LABELS, absorb(), continuesWord(), dominantSpeaker() (+9 more)
+Cohesion: 0.19
+Nodes (19): AmbientCapture(), Availability, LANGUAGE_LABELS, Phase, REGION_LABELS, absorb(), continuesWord(), dominantSpeaker() (+11 more)
 
 ### Community 76 - "deid/index.ts"
-Cohesion: 0.25
-Nodes (11): labelsIn(), detect(), assertNoIdentifiers(), deidentify(), deidentifyTranscript(), markDeidentified(), serialiseTranscript(), sliceDeidentified() (+3 more)
+Cohesion: 0.35
+Nodes (8): labelsIn(), detect(), assertNoIdentifiers(), deidentify(), deidentifyTranscript(), markDeidentified(), serialiseTranscript(), sliceDeidentified()
 
 ### Community 77 - "asr.test.ts"
 Cohesion: 0.22
@@ -505,9 +503,9 @@ Nodes (11): 20.2 Draft Speaker Labels: Measured, Gated, Not Diarisation, Limits,
 Cohesion: 0.18
 Nodes (10): license, name, private, scripts, build, dev, preview, test (+2 more)
 
-### Community 80 - "PatientList.tsx"
-Cohesion: 0.08
-Nodes (24): count(), ConsultationList(), ERASE_NOUN, EraseDialog(), CONSULTATIONS, VIEW_OPTIONS, CLAIMS, Landing() (+16 more)
+### Community 80 - "Button"
+Cohesion: 0.11
+Nodes (26): count(), ConsultationList(), ERASE_NOUN, EraseDialog(), VIEW_OPTIONS, groupByPublisher(), Guidelines(), matches() (+18 more)
 
 ### Community 81 - "no-stray-provider-sdk.test.ts"
 Cohesion: 0.33
@@ -517,9 +515,9 @@ Nodes (9): isComment(), isProviderSdk(), packageName(), PROVIDER_PACKAGES, PROVI
 Cohesion: 0.18
 Nodes (10): AI_MEDICAL_RECORD, AI_NOTE, analysed(), ANALYSIS, auditEvent, audits, call(), LEGACY_ANALYSIS (+2 more)
 
-### Community 83 - "Guidelines.tsx"
-Cohesion: 0.32
-Nodes (5): groupByPublisher(), Guidelines(), matches(), Select(), OPTIONS
+### Community 83 - "retrieve.ts"
+Cohesion: 0.18
+Nodes (12): getEmbeddingClient(), buildLexicalQuery(), STOP_WORDS, RetrievalOptions, retrieveGuidelines(), embed, findMany, info (+4 more)
 
 ### Community 84 - "shared/tsconfig.typecheck.json"
 Cohesion: 0.20
@@ -545,9 +543,9 @@ Nodes (7): ChoiceCard(), formatLastSeen(), formatMeta(), StartConsultationDialog
 Cohesion: 0.32
 Nodes (5): ErrorClass, classify(), errorHandler(), DeidentificationError, LLMResponseError
 
-### Community 90 - "ConsultationReview.test.tsx"
-Cohesion: 0.15
-Nodes (15): displayValue(), formatNoteForClipboard(), HISTORY_KEYS, MedicalRecordSection, medicalRecordSections(), SECTIONS, MEDICAL_RECORD, SOAP (+7 more)
+### Community 90 - "MedicalRecordNoteEditor.tsx"
+Cohesion: 0.10
+Nodes (23): displayValue(), formatNoteForClipboard(), HISTORY_KEYS, MedicalRecordSection, medicalRecordSections(), SECTIONS, MEDICAL_RECORD, SOAP (+15 more)
 
 ### Community 91 - "no-stray-approval.test.ts"
 Cohesion: 0.36
@@ -562,8 +560,8 @@ Cohesion: 0.25
 Nodes (8): 25.1 The Reported Failure And What Was Actually There, 25.2 Why It Was Invisible To The Suite, 25.3 Method, 25.4 Four Revisions Were Trialled And All Four Rejected, 25.5 The Phantom-Click Diagnostic, 25.6 Evaluation Durability, 25.7 What Stays Open, 25. Review Copilot Tool-Call Behaviour
 
 ### Community 94 - "workflow.ts"
-Cohesion: 0.20
-Nodes (14): BENCH_TRANSCRIPT, TURNS, elapsedMs(), fail(), main(), median(), parseRuns(), runOnce() (+6 more)
+Cohesion: 0.21
+Nodes (13): BENCH_TRANSCRIPT, TURNS, elapsedMs(), fail(), main(), median(), parseRuns(), runOnce() (+5 more)
 
 ### Community 95 - "lint-staged"
 Cohesion: 0.25
@@ -586,16 +584,16 @@ Cohesion: 0.22
 Nodes (8): Adding A Case, Cost And Data, Cost And Data, Evals, Running It, The ASR A/B Harness, What It Grades, Why This Is Not `tests/`
 
 ### Community 100 - "AudioCapture.tsx"
-Cohesion: 0.20
-Nodes (10): AudioCapture(), belowHardwareFloor(), estimateRemaining(), Phase, toMono16k(), ButtonProps, Size, SIZES (+2 more)
+Cohesion: 0.15
+Nodes (8): AudioCapture(), belowHardwareFloor(), estimateRemaining(), Phase, toMono16k(), ApproveBar(), NEXT, InfoTip()
 
 ### Community 101 - "acceptance/safety.test.ts"
 Cohesion: 0.47
 Nodes (4): formatReport(), Measurement, measurements, record()
 
-### Community 103 - "health.ts"
-Cohesion: 0.33
-Nodes (3): healthRouter, envMock, health()
+### Community 103 - "safety.ts"
+Cohesion: 0.20
+Nodes (11): containsDiagnosticProse(), DIAGNOSTIC_PHRASING, DiagnosticGuardResult, stripDiagnosticProse(), BARE_DOSE_REGIMEN, containsUnsafeMedicationProse(), filterUnsafeModelSuggestions(), isUnsafeSuggestion() (+3 more)
 
 ### Community 104 - "22. Observability & Privacy-Safe Logging"
 Cohesion: 0.33
@@ -606,8 +604,8 @@ Cohesion: 0.33
 Nodes (6): 23. Clinic EHR Integration Interface, Approved-Note Export Contract, Authentication And Transport, Candidate Standards Assessment, Direction And Trigger, PHI Boundary Under A Real Integration
 
 ### Community 106 - "asr.ts"
-Cohesion: 0.11
-Nodes (20): LiveSessionFailureReason, CONTEXT, getLiveAsrDescriptor(), LANGUAGE_HINTS, liveSessionConfig(), mintSonioxSession(), REASON_BY_STATUS, REGION_HOSTS (+12 more)
+Cohesion: 0.10
+Nodes (23): LiveSessionFailureReason, CONTEXT, getLiveAsrDescriptor(), LANGUAGE_HINTS, liveSessionConfig(), mintSonioxSession(), REASON_BY_STATUS, REGION_HOSTS (+15 more)
 
 ### Community 107 - "patients.test.ts"
 Cohesion: 0.22
@@ -625,9 +623,9 @@ Nodes (8): 20.4 The Consent Gate (Resolves §19 Row 18), Ambient Extends This, I
 Cohesion: 0.40
 Nodes (5): 24. Frontend Rendering Constraints, Glass Inside Glass Is Always Flat, Public Build Inputs, The Two Constraints DESIGN.md Already Names, Verifying A Glass Change
 
-### Community 111 - "CursorGlow"
-Cohesion: 0.60
-Nodes (4): alphaAt(), CursorGlow(), DISCS, sizeAt()
+### Community 111 - "llm/index.ts"
+Cohesion: 0.23
+Nodes (11): analyseNote(), buildEvidenceLinks(), EvidenceLink, linkFor(), linksForGroup(), NoteAndGapsResult, build(), getLLMClient() (+3 more)
 
 ### Community 112 - "workspaces"
 Cohesion: 0.40
@@ -646,12 +644,12 @@ Cohesion: 0.50
 Nodes (4): CitationSchema, ClinicalSuggestionSchema, makeSuggestionsAndRedFlagsSchema(), RedFlagSchema
 
 ### Community 117 - "use-live-panes.ts"
-Cohesion: 0.23
-Nodes (8): appendOnly(), closedSegments(), deltaFor(), mergeFlags(), segmentsToDelta(), EMPTY, countChunks(), TranscriptSegment
+Cohesion: 0.33
+Nodes (7): appendOnly(), closedSegments(), deltaFor(), mergeFlags(), segmentsToDelta(), EMPTY, TranscriptSegment
 
 ### Community 118 - "AmbientCapture.test.tsx"
-Cohesion: 0.17
-Nodes (14): AmbientProps, config, createLiveSession, draftHostedTurns, liveAsrConfig, recorders, renderAmbient(), session (+6 more)
+Cohesion: 0.11
+Nodes (16): AmbientProps, config, createLiveSession, draftHostedTurns, FakeAudioContext, FakeMediaRecorder, liveAsrConfig, recorders (+8 more)
 
 ### Community 120 - "devDependencies"
 Cohesion: 0.13
@@ -661,9 +659,9 @@ Nodes (15): devDependencies, tsx, @types/compression, @types/cors, @types/expres
 Cohesion: 0.29
 Nodes (5): { completionsCreate, constructed, envMock }, emittedFor(), request(), Schema, SMUGGLED
 
-### Community 128 - "use-segment-recorder.ts"
-Cohesion: 0.26
-Nodes (10): DEFAULT_SEGMENT_BOUNDS, isSilentThroughout(), rmsFromTimeDomain(), SegmentBounds, SegmentState, shouldCut(), BOUNDS, OpenWindow (+2 more)
+### Community 128 - "use-segment-recorder.test.ts"
+Cohesion: 0.12
+Nodes (18): DEFAULT_SEGMENT_BOUNDS, isSilentThroughout(), rmsFromTimeDomain(), SegmentBounds, SegmentState, shouldCut(), BOUNDS, OpenWindow (+10 more)
 
 ### Community 129 - "overrides"
 Cohesion: 0.40
@@ -673,13 +671,13 @@ Nodes (5): overrides, adm-zip, deepmerge-ts, fast-uri, sharp
 Cohesion: 0.22
 Nodes (8): LiveStreamFailure, openSonioxStream(), SonioxMessageSchema, SonioxStreamHandlers, SonioxTokenSchema, blob(), session, toLiveToken()
 
-### Community 132 - "use-segment-recorder.test.ts"
-Cohesion: 0.17
-Nodes (8): Segment, closeContext, disconnectSource, FakeAudioContext, FakeMediaRecorder, mount(), recorders, streamOf()
+### Community 132 - "App.tsx"
+Cohesion: 0.18
+Nodes (5): CLAIMS, Landing(), LIMITS, Privacy(), Toaster()
 
-### Community 140 - "transcribe.worker.ts"
-Cohesion: 0.26
-Nodes (10): WorkerRequest, AsrOptions, ChunkCounter, doLoad(), hasWebGpuAdapter(), load(), loadWasm(), MODEL_HOST (+2 more)
+### Community 140 - "protocol.ts"
+Cohesion: 0.18
+Nodes (11): countChunks(), WorkerRequest, AsrOptions, ChunkCounter, doLoad(), hasWebGpuAdapter(), load(), loadWasm() (+3 more)
 
 ### Community 141 - "CapturePanel.test.tsx"
 Cohesion: 0.19
@@ -689,9 +687,9 @@ Nodes (4): consultationCaptureProps(), openRecordTab(), renderForSubmit(), setup
 Cohesion: 0.21
 Nodes (9): auditState, jsonResponse(), mint(), mintedKey(), nextIp(), readConfig(), sessionState, testEnv (+1 more)
 
-### Community 143 - "audio-settings.ts"
-Cohesion: 0.29
-Nodes (8): AudioSettings, DEFAULT_AUDIO_SETTINGS, loadAudioSettings(), saveAudioSettings(), toConstraints(), TranscriptionEngine, AudioSettingsDialog(), liveAsrConfig
+### Community 143 - "AudioSettingsDialog.tsx"
+Cohesion: 0.26
+Nodes (10): AudioSettings, DEFAULT_AUDIO_SETTINGS, loadAudioSettings(), saveAudioSettings(), toConstraints(), TranscriptionEngine, AudioSettingsDialog(), ENGINES (+2 more)
 
 ### Community 144 - "src/note-templates.test.ts"
 Cohesion: 0.20
@@ -721,9 +719,9 @@ Nodes (10): 20.9 Ambient Capture On ILMU, And The Mechanism Behind 20.8's Post-C
 Cohesion: 0.22
 Nodes (7): EXPECTED_WEBSOCKET_SITES, EXTENSIONS, isWebSocketConstruction(), REPO_ROOT, SKIPPED, SRC, websocketSites()
 
-### Community 151 - "MedicalRecordNoteEditor.tsx"
-Cohesion: 0.24
-Nodes (8): displayValue(), EditTarget, HistoryKey, LegacyMedicalRecordView(), MALAYSIAN_SECTIONS, MedicalRecordNoteEditor(), ProvenanceMarker(), AI_NOTE
+### Community 151 - "CapturePanel.tsx"
+Cohesion: 0.38
+Nodes (7): draftToTurns(), timeDraftLines(), parseTranscript(), serialiseTurns(), CapturePanel(), RECORDED_RANK, TABS
 
 ### Community 152 - "20.7 Live Ambient Capture: Mechanism, Models, And The Accuracy Chain"
 Cohesion: 0.22
@@ -733,17 +731,17 @@ Nodes (9): 20.7.1 Measured: Reachability, Containers, And The Context Effect, 20
 Cohesion: 0.22
 Nodes (9): 20.8.1 The Published Work Closest To This Design, 20.8 How This Design Compares To Industry Practice, The Finding That Matters Most: Nobody De-Identifies Before The Model, Two Numbers To Carry Into Any Client Conversation, What The Clinical Literature Says About The Product Itself, What The Research Changed In 20.7, Where This Design Is Behind, Where This Design Leads (+1 more)
 
-### Community 154 - "WorkerResponse"
-Cohesion: 0.25
-Nodes (4): FakeWorker, WorkerResponse, asr, progressEvents
+### Community 154 - "ConsultationSettingsDialog.tsx"
+Cohesion: 0.20
+Nodes (5): CAPTURE_MODES, ConsultationSettingsDialog(), ConsultationSettingsPatch, NoteTemplateSelector(), OPTIONS
 
 ### Community 155 - "use-live-panes.test.ts"
 Cohesion: 0.25
 Nodes (5): apiMock, emptyFacts, FakeApiError, segment(), withClosed()
 
-### Community 156 - "ConsultationRow.tsx"
-Cohesion: 0.25
-Nodes (5): ConsultationRow(), formatConsultationDate(), STATUS, RenameField(), field()
+### Community 156 - "manifest.json"
+Cohesion: 0.33
+Nodes (5): documents, jurisdiction, publisher, source, sourceLicence
 
 ### Community 157 - "consultations-audio.test.ts"
 Cohesion: 0.32
@@ -773,26 +771,38 @@ Nodes (5): flagIds(), live(), STRADDLING_PAIR, unionOfWindows(), windows()
 Cohesion: 0.40
 Nodes (4): license, name, private, type
 
+### Community 166 - "LiveConversation.tsx"
+Cohesion: 0.24
+Nodes (5): LiveSegment, elapsed(), LiveConversation(), SpeakerChip(), Turn()
+
 ### Community 167 - "no-stray-audio-persistence.test.ts"
 Cohesion: 0.40
 Nodes (3): AUDIO_DIR, MAY_PERSIST, MAY_SEND_AUDIO
 
+### Community 168 - "live-prompt.test.ts"
+Cohesion: 0.20
+Nodes (4): LivePanes, none, panes(), show()
+
+### Community 169 - "Button.tsx"
+Cohesion: 0.33
+Nodes (5): ButtonProps, Size, SIZES, Variant, VARIANTS
+
 ## Knowledge Gaps
-- **951 isolated node(s):** `name`, `private`, `license`, `type`, `dev` (+946 more)
+- **965 isolated node(s):** `name`, `private`, `license`, `type`, `dev` (+960 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **24 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **19 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `draftTurns()` connect `draft-turns/index.ts` to `AudioCapture.tsx`, `asr.ts`, `deid/index.ts`, `AmbientCapture.tsx`?**
-  _High betweenness centrality (0.124) - this node is a cross-community bridge._
-- **Why does `AudioCapture()` connect `AudioCapture.tsx` to `src/index.test.ts`, `soniox-stream.ts`, `AudioCapture.test.tsx`, `audio-settings.ts`, `cn`, `CapturePanel.tsx`, `draft-turns/index.ts`?**
-  _High betweenness centrality (0.096) - this node is a cross-community bridge._
-- **Why does `cn()` connect `cn` to `AudioCapture.tsx`, `ChecklistPanel.tsx`, `api.ts`, `audio-settings.ts`, `PatientList.tsx`, `CatatAI.tsx`, `Guidelines.tsx`, `CapturePanel.tsx`, `MedicalRecordNoteEditor.tsx`, `StartConsultationDialog.tsx`, `Settings.tsx`, `ConsultationRow.tsx`, `ConsultationReview.tsx`?**
-  _High betweenness centrality (0.081) - this node is a cross-community bridge._
+  _High betweenness centrality (0.108) - this node is a cross-community bridge._
+- **Why does `cn()` connect `cn` to `Settings.tsx`, `AudioCapture.tsx`, `ChecklistPanel.tsx`, `LiveConversation.tsx`, `MedicalRecordNoteEditor.tsx`, `Button.tsx`, `AudioSettingsDialog.tsx`, `Button`, `CatatAI.tsx`, `CapturePanel.tsx`, `StartConsultationDialog.tsx`, `ConsultationSettingsDialog.tsx`, `ConsultationReview.tsx`?**
+  _High betweenness centrality (0.094) - this node is a cross-community bridge._
+- **Why does `AudioCapture()` connect `AudioCapture.tsx` to `src/index.test.ts`, `soniox-stream.ts`, `AudioCapture.test.tsx`, `AudioSettingsDialog.tsx`, `cn`, `CapturePanel.tsx`, `draft-turns/index.ts`?**
+  _High betweenness centrality (0.083) - this node is a cross-community bridge._
 - **What connects `name`, `private`, `license` to the rest of the system?**
-  _951 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _965 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `scripts` be split into smaller, more focused modules?**
   _Cohesion score 0.09523809523809523 - nodes in this community are weakly interconnected._
 - **Should `dependencies` be split into smaller, more focused modules?**

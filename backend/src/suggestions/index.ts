@@ -1,5 +1,6 @@
 import {
   type ClinicalSuggestion,
+  type GuidelineChunk,
   makeSuggestionsAndRedFlagsSchema,
   type RedFlag,
 } from '@shared/types'
@@ -26,17 +27,19 @@ export { filterUnsafeModelSuggestions } from './safety.js'
 export async function generateSuggestions(
   content: Deidentified,
   profile: ClinicalProfile = getClinicalProfile(),
+  retrieved: readonly GuidelineChunk[] = [],
 ): Promise<{
   outOfScope: boolean
   redFlags: RedFlag[]
   suggestions: ClinicalSuggestion[]
   suppressedSuggestionIds: SuppressedSuggestionId[]
 }> {
+  const corpus = [...profile.guidelineCorpus, ...retrieved]
   const response = await getLLMClient().generate({
     operation: 'suggestions_and_red_flags',
-    system: buildSuggestionsSystemPrompt(profile),
+    system: buildSuggestionsSystemPrompt(profile, corpus),
     content,
-    schema: makeSuggestionsAndRedFlagsSchema(corpusIdsFor(profile.guidelineCorpus)),
+    schema: makeSuggestionsAndRedFlagsSchema(corpusIdsFor(corpus)),
     schemaName: 'suggestions_and_red_flags',
   })
 
