@@ -6,6 +6,7 @@ import { api } from '../lib/api.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { InfoTip } from '../ui/InfoTip.js'
 import { PageHeader } from '../ui/PageHeader.js'
+import { clampPage, Pagination, paginate } from '../ui/Pagination.js'
 import { Select } from '../ui/Select.js'
 
 /**
@@ -35,6 +36,8 @@ function groupByPublisher(guidelines: GuidelineChunk[]) {
 }
 
 const ALL_PUBLISHERS = 'all'
+const CORPUS_PAGE_SIZE = 12
+const DOCUMENT_PAGE_SIZE = 15
 
 /*
  * The ID is searchable alongside the prose, and that is the point rather than a
@@ -77,6 +80,8 @@ export function Guidelines() {
   })
   const [query, setQuery] = useState('')
   const [publisher, setPublisher] = useState(ALL_PUBLISHERS)
+  const [corpusPage, setCorpusPage] = useState(1)
+  const [documentPage, setDocumentPage] = useState(1)
 
   const all = useMemo(() => guidelines.data ?? [], [guidelines.data])
   const allDocuments = useMemo(() => documents.data ?? [], [documents.data])
@@ -101,14 +106,42 @@ export function Guidelines() {
     [all, publisher, query],
   )
 
-  const groups = groupByPublisher(filtered)
   const filtering = query.trim() !== '' || publisher !== ALL_PUBLISHERS
+
+  const handleQueryChange = (value: string) => {
+    setQuery(value)
+    setCorpusPage(1)
+    setDocumentPage(1)
+  }
+
+  const handlePublisherChange = (value: string) => {
+    setPublisher(value)
+    setCorpusPage(1)
+  }
+
+  const corpusPageCount = useMemo(() => Math.ceil(filtered.length / CORPUS_PAGE_SIZE), [filtered])
+  const currentCorpusPage = clampPage(corpusPage, corpusPageCount)
+  const pagedCorpus = useMemo(
+    () => paginate(filtered, currentCorpusPage, CORPUS_PAGE_SIZE),
+    [filtered, currentCorpusPage],
+  )
+  const pagedGroups = useMemo(() => groupByPublisher(pagedCorpus), [pagedCorpus])
 
   /* The one search box covers both lists: a reader checking where a cited
      span could have come from is asking the same question of each. */
   const filteredDocuments = useMemo(
     () => allDocuments.filter((document) => matchesDocument(document, query)),
     [allDocuments, query],
+  )
+
+  const documentPageCount = useMemo(
+    () => Math.ceil(filteredDocuments.length / DOCUMENT_PAGE_SIZE),
+    [filteredDocuments],
+  )
+  const currentDocumentPage = clampPage(documentPage, documentPageCount)
+  const pagedDocuments = useMemo(
+    () => paginate(filteredDocuments, currentDocumentPage, DOCUMENT_PAGE_SIZE),
+    [filteredDocuments, currentDocumentPage],
   )
 
   return (
@@ -171,7 +204,7 @@ export function Guidelines() {
               <input
                 type="search"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => handleQueryChange(event.target.value)}
                 placeholder="Search by title, summary or guideline ID"
                 aria-label="Search the guideline corpus"
                 className="h-11 w-full rounded-control border border-line bg-surface pr-10 pl-10 text-sm text-ink transition-colors duration-150 hover:border-accent focus:border-accent"
@@ -179,7 +212,7 @@ export function Guidelines() {
               {query && (
                 <button
                   type="button"
-                  onClick={() => setQuery('')}
+                  onClick={() => handleQueryChange('')}
                   aria-label="Clear search"
                   className="absolute top-1/2 right-2 flex size-7 -translate-y-1/2 items-center justify-center rounded-control text-ink-muted transition-colors duration-150 hover:bg-sunken hover:text-ink"
                 >
@@ -192,7 +225,7 @@ export function Guidelines() {
               label="Filter by publisher"
               value={publisher}
               options={publishers}
-              onChange={setPublisher}
+              onChange={handlePublisherChange}
               className="sm:w-56"
             />
           </div>
@@ -216,7 +249,7 @@ export function Guidelines() {
             </Card>
           )}
 
-          {groups.map(([groupPublisher, entries]) => (
+          {pagedGroups.map(([groupPublisher, entries]) => (
             <section key={groupPublisher} className="mt-8">
               <h2 className="text-sm font-semibold text-ink-muted">{groupPublisher}</h2>
               <div className="mt-3 flex flex-col gap-2">
@@ -253,6 +286,19 @@ export function Guidelines() {
               </div>
             </section>
           ))}
+
+          {filtered.length > 0 && (
+            <section aria-labelledby="corpus-pagination-heading" className="mt-6">
+              <h2 id="corpus-pagination-heading" className="sr-only">
+                Curated corpus pagination
+              </h2>
+              <Pagination
+                page={currentCorpusPage}
+                pageCount={corpusPageCount}
+                onPageChange={setCorpusPage}
+              />
+            </section>
+          )}
         </>
       )}
 
@@ -283,7 +329,7 @@ export function Guidelines() {
 
         {filteredDocuments.length > 0 && (
           <div className="mt-4 flex flex-col gap-2">
-            {filteredDocuments.map((document) => (
+            {pagedDocuments.map((document) => (
               <Card key={document.id} className="p-5">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                   <h3 className="font-semibold leading-snug">{document.title}</h3>
@@ -309,6 +355,17 @@ export function Guidelines() {
                 </div>
               </Card>
             ))}
+
+            <nav aria-labelledby="cpg-documents-pagination-heading">
+              <h3 id="cpg-documents-pagination-heading" className="sr-only">
+                CPG documents pagination
+              </h3>
+              <Pagination
+                page={currentDocumentPage}
+                pageCount={documentPageCount}
+                onPageChange={setDocumentPage}
+              />
+            </nav>
           </div>
         )}
       </section>
