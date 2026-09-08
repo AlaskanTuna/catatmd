@@ -148,6 +148,36 @@ describe('the Audio dialog and the control it describes', () => {
     ).toBe('false')
   })
 
+  /*
+   * Naming the running engine was not enough on its own. #290 separated it from
+   * the selection with a border and left both cards tinted, and the fill is
+   * what the eye reads, so the list still presented two live engines while only
+   * one was (#291). The fill now carries that meaning alone, and these pin the
+   * inventory of it on both sides of the mode.
+   */
+  it('reserves the filled card for the engine that is running', () => {
+    renderDialog(true)
+
+    const running = screen.getByText(/soniox \(streaming\)/i).closest('div')?.parentElement
+    expect(running?.className).toContain('bg-accent-soft')
+
+    // Demoted to an outline, not deselected. A change of weight must not move
+    // the state the doctor and the screen reader both act on.
+    const local = screen.getByRole('button', { name: /^On this device/ })
+    expect(local.getAttribute('aria-pressed')).toBe('true')
+    expect(local.parentElement?.className).not.toContain('bg-accent-soft')
+  })
+
+  it('fills the selected card again once nothing is streaming', () => {
+    renderDialog()
+
+    // Press-to-record has no running row to be mistaken for, so the demotion
+    // above must not follow the preference out of ambient.
+    const local = screen.getByRole('button', { name: /^On this device/ })
+    expect(local.getAttribute('aria-pressed')).toBe('true')
+    expect(local.parentElement?.className).toContain('bg-accent-soft')
+  })
+
   it('keeps the streaming engine off the press-to-record path', () => {
     renderDialog()
 
