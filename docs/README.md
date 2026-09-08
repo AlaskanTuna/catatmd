@@ -137,9 +137,10 @@ Three claims the journey diagram is drawn to make checkable:
 
 ![CatatMD technical stack. Inside the trust boundary: React, TypeScript, Vite and Tailwind on Vercel; Node, Express and Bun on Render, carrying the deid PHI gate, the lib/llm client, and the routes, redflags, guidelines and audit modules; PostgreSQL, Prisma and Supabase. Outside it: the Qwen language model, reachable only through lib/llm, and the hosted ASR provider ILMU, reached only by an API relay under per-consultation consent.](assets/tech-stack.drawio.png)
 
-Two claims the stack diagram is drawn to make checkable:
+Three claims the stack diagram is drawn to make checkable:
 
 - **`lib/llm/` is the only text egress**, and everything crossing that line has already passed `deid/`.
+- **`lib/llm/` now carries two egress calls, completion and embedding,** and both accept only de-identified text.
 - **Two audio paths leave the boundary, and neither can be de-identified first.** Speech-to-text runs on the device by default, so it opens only when a doctor has chosen the hosted engine for the device and ticked the per-consultation consent box for that patient. The diagram draws it dashed because it sits outside the boundary, and the audio reaches it only as a relay through the API (`docs/trd.md` §20.4). Ambient capture is the second: it never enters the API at all, streaming from the browser to the provider under a short-lived key the API mints, which is why the browser carries a guard of its own pinning that socket to one module.
 
 Bun workspaces · TypeScript · Zod (shared contracts) · Express 5 · Prisma 6 · better-auth · React 19 + Vite 7 + Tailwind 4 · Supabase Postgres · Vitest · Biome. Hosting: frontend to Vercel, backend to Render, database to Supabase, all three in one region by design.
@@ -388,6 +389,25 @@ Two properties the diagram is drawn to make checkable:
 </details>
 
 <details>
+<summary><strong>Guideline Grounding: Two Tiers, One Constraint</strong></summary>
+
+The candidate corpus for cited suggestions is now two tiers, and the difference between them is the safety argument (`docs/trd.md` §11):
+
+| Tier                                    | What It Holds                                                                                                           | How It Reaches The Model                                   |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| **Curated corpus (the floor)**          | 11 audited, licence-aware chunks; the only ids the red-flag triggers and the gap checklist may cite                     | Serialised into every `suggestions_and_red_flags` call     |
+| **Retrieved CPG library (the ceiling)** | Page-level spans from the Malaysian CPG library (109 documents indexed in `corpus/cpg/manifest.json`), stored as chunks | The top matches for this consultation, fused from two legs |
+
+- **The ID constraint is unchanged, only widened.** `guidelineId` is still a `z.enum` built at request time, now over the union of both tiers; a citation naming anything else fails validation before the doctor sees it.
+- **Retrieval is hybrid.** A Postgres full-text leg and a pgvector embedding leg run over the ingested chunks and are fused by reciprocal rank fusion, so a wording mismatch on one leg does not lose a relevant span.
+- **Embeddings are a second gated egress.** The embedding client accepts only de-identified text and uses the same Singapore endpoint and key as completions, always Qwen, because the stored vectors were produced by one model.
+- **Provenance is page-level.** A retrieved citation opens the source PDF at the page it came from, and a span recovered by OCR from a scanned page is flagged for the doctor to verify against the original.
+
+Reuse terms for the AMM-hosted MOH CPG library are unconfirmed (issue #250). This is a private prototype and nothing is redistributed.
+
+</details>
+
+<details>
 <summary><strong>The Four Invariants</strong></summary>
 
 | Invariant                                  | How It Is Enforced                                                                                                                                                                                                                     |
@@ -473,11 +493,13 @@ backend/
   src/lib/llm/   LLMClient port + provider adapter                ← only egress point
   src/redflags/  deterministic escalation-trigger rules
   src/guidelines/ curated citation corpus
+  src/retrieval/ hybrid CPG retrieval (Postgres full-text + pgvector)
   src/copilot/   CatatAI review copilot, proposal-only tool surface
   src/fixtures/  synthetic consultation transcripts
 frontend/        React SPA
 prisma/          schema + migrations
 evals/           measurements that spend real model calls, kept out of the test suite
+corpus/cpg/      CPG manifest (tracked) and raw PDFs (gitignored) for ingestion
 docs/            product and workflow docs
 ```
 
@@ -530,6 +552,16 @@ Port 5434 rather than 5432 because 5432 and 5433 are commonly already bound. Ove
 - `BETTER_AUTH_SECRET` — generate with `openssl rand -base64 32`.
 - `PORT` defaults to `3001`, which is commonly taken (Grafana, other dev servers). Set `PORT` and `BETTER_AUTH_URL` together if you move it — better-auth's URL must match the origin the API actually serves on.
 - Migrations run from a developer machine against `DIRECT_URL` (`:5432`); the app itself runs on the pooled `DATABASE_URL` (`:6543`).
+
+### Ingest The CPG Library
+
+Optional, and only needed to build or refresh the retrieval tier. Poppler (`pdftotext`, `pdftoppm`) and Tesseract with the `eng` and `msa` language packs must be installed on the machine.
+
+1. Drop the CPG PDFs into `corpus/cpg/raw/` (gitignored); `corpus/cpg/manifest.json` is the tracked index they are matched against.
+2. Run `bun run corpus:ingest --dry-run` to check matching, extraction, and chunking with no writes.
+3. Run `bun run corpus:ingest` to embed, index, and upload each PDF to the private Supabase Storage bucket.
+
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_GUIDELINES_BUCKET` are optional; without the first two the upload step is skipped. The pipeline is documented in `docs/trd.md` §11.
 
 <div align="right"><a href="#top">&#8593;</a></div>
 

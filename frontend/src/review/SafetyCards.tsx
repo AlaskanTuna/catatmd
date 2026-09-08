@@ -2,6 +2,7 @@ import type {
   ClinicalSuggestion,
   Disposition,
   DispositionInput,
+  GapSource,
   GuidelineChunk,
   InformationGap,
   RedFlag,
@@ -68,6 +69,7 @@ function DispositionControl({
   acknowledgeLabel,
   guidelineIds,
   guidelines,
+  gapSource,
 }: {
   findingId: string
   disposition: Disposition | undefined
@@ -75,6 +77,7 @@ function DispositionControl({
   acknowledgeLabel: string
   guidelineIds?: readonly string[]
   guidelines: GuidelineChunk[]
+  gapSource?: GapSource
 }) {
   const [mode, setMode] = useState<'settled' | 'choosing' | 'reason'>('settled')
   const [reason, setReason] = useState('')
@@ -199,7 +202,7 @@ function DispositionControl({
       )}
 
       {mode === 'choosing' && showSources && (
-        <SourcesPanel guidelineIds={guidelineIds} guidelines={guidelines} />
+        <SourcesPanel guidelineIds={guidelineIds} guidelines={guidelines} gapSource={gapSource} />
       )}
     </div>
   )
@@ -295,11 +298,18 @@ function ClampedSummary({ text }: { text: string }) {
 function SourcesPanel({
   guidelineIds,
   guidelines,
+  gapSource,
 }: {
   guidelineIds?: readonly string[]
   guidelines: GuidelineChunk[]
+  gapSource?: GapSource
 }) {
-  const resolved = (guidelineIds ?? [])
+  if (gapSource?.kind === 'unsourced') {
+    return <p className="text-sm text-ink-muted">{gapSource.reason}</p>
+  }
+
+  const ids = gapSource?.kind === 'guideline' ? gapSource.guidelineIds : guidelineIds
+  const resolved = (ids ?? [])
     .map((id) => guidelines.find((g) => g.id === id))
     .filter((chunk): chunk is GuidelineChunk => chunk !== undefined)
 
@@ -520,6 +530,7 @@ export function GapCard({
             onDecide={onDecide}
             acknowledgeLabel="Mark Reviewed"
             guidelines={guidelines}
+            gapSource={gap.source}
           />
         </div>
       )}
