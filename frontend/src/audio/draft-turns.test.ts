@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { type DraftLine, draftToTurns, proseToDraft, segmentsToDraft } from './draft-turns.js'
+import {
+  type DraftLine,
+  draftToTurns,
+  proseToDraft,
+  segmentsToDraft,
+  timeDraftLines,
+} from './draft-turns.js'
 import type { TranscriptSegment } from './protocol.js'
 
 /*
@@ -263,5 +269,95 @@ describe('proseToDraft', () => {
 
   it('carries an id namespace of its own, so appending cannot collide', () => {
     expect(proseToDraft(CONSULT).every((line) => line.id.startsWith('prose-'))).toBe(true)
+  })
+})
+
+/*
+ * Putting the timing a live capture measured back onto the turns the labelling
+ * pass drafted (#293). The two agree on the words, because the labelling pass
+ * re-slices its input rather than rewriting it, so a forward scan locates each
+ * turn. The cases that matter are the ones where it cannot.
+ */
+describe('timeDraftLines', () => {
+  const segments = [seg(0, 2, 'Any fever?'), seg(2, 5, 'Yesterday quite hot.')]
+  const line = (id: string, text: string): DraftLine => ({ id, speaker: 'doctor', text })
+
+  it('takes the start of the first segment a turn touches and the end of the last', () => {
+    const timed = timeDraftLines(
+      [line('a', 'Any fever?'), line('b', 'Yesterday quite hot.')],
+      segments,
+    )
+    expect(timed.map((l) => [l.offsetSeconds, l.endSeconds])).toEqual([
+      [0, 2],
+      [2, 5],
+    ])
+  })
+
+  it('spans both segments when one drafted turn covers both', () => {
+    const timed = timeDraftLines([line('a', 'Any fever? Yesterday quite hot.')], segments)
+    expect(timed[0]?.offsetSeconds).toBe(0)
+    expect(timed[0]?.endSeconds).toBe(5)
+  })
+
+  it('gives a turn it cannot locate no timing at all, rather than a guess', () => {
+    const timed = timeDraftLines([line('a', 'Something never said.')], segments)
+    expect(timed[0]?.offsetSeconds).toBeUndefined()
+    expect(timed[0]?.endSeconds).toBeUndefined()
+  })
+
+  it('scans forward, so a repeated phrase resolves to its own occurrence', () => {
+    const repeated = [seg(0, 1, 'Fever?'), seg(4, 6, 'Fever?')]
+    const timed = timeDraftLines([line('a', 'Fever?'), line('b', 'Fever?')], repeated)
+    expect(timed.map((l) => l.offsetSeconds)).toEqual([0, 4])
+  })
+
+  it('omits an end time for a segment the source never closed', () => {
+    const timed = timeDraftLines([line('a', 'Any fever?')], [seg(0, null, 'Any fever?')])
+    expect(timed[0]?.offsetSeconds).toBe(0)
+    expect(timed[0]?.endSeconds).toBeUndefined()
+  })
+
+  it('returns the lines untouched when there is no timing to apply', () => {
+    const lines = [line('a', 'Any fever?')]
+    expect(timeDraftLines(lines, [])).toEqual(lines)
+  })
+
+  it('matches case-insensitively and across whitespace differences', () => {
+    const timed = timeDraftLines([line('a', 'any   FEVER?')], segments)
+    expect(timed[0]?.offsetSeconds).toBe(0)
+  })
+})
+
+describe('segment end times', () => {
+  it('carries the end of the segment onto the line that opens it', () => {
+    const segments = [seg(0, 4, 'Any fever? Yes, since yesterday.')]
+    const draft = segmentsToDraft(segments, fullText(segments))
+    expect(draft[0]?.offsetSeconds).toBe(0)
+    expect(draft[0]?.endSeconds).toBe(4)
+  })
+
+  it('leaves a split line with neither a start nor an end', () => {
+    const segments = [seg(0, 4, 'Any fever? Yes, since yesterday.')]
+    const draft = segmentsToDraft(segments, fullText(segments))
+    const split = draft.slice(1)
+    expect(split.length).toBeGreaterThan(0)
+    expect(split.every((l) => l.offsetSeconds === undefined && l.endSeconds === undefined)).toBe(
+      true,
+    )
+  })
+
+  it('omits the end when Whisper never closed the segment', () => {
+    const segments = [seg(0, null, 'Any fever?')]
+    const draft = segmentsToDraft(segments, fullText(segments))
+    expect(draft[0]?.offsetSeconds).toBe(0)
+    expect(draft[0]?.endSeconds).toBeUndefined()
+  })
+
+  it('never puts an end on a turn without a start', () => {
+    const segments = [seg(0, 4, 'Any fever? Yes, since yesterday.')]
+    const turns = draftToTurns(segmentsToDraft(segments, fullText(segments)))
+    expect(turns.every((t) => t.endSeconds === undefined || t.offsetSeconds !== undefined)).toBe(
+      true,
+    )
   })
 })

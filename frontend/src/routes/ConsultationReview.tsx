@@ -12,15 +12,17 @@ import type {
 } from '@shared/types'
 import { MedicalRecordNoteSchema, toSoapNote } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Copy, Maximize2, Printer, Settings2, Sparkles } from 'lucide-react'
+import { Copy, Maximize2, Pause, Play, Printer, Settings2, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import type { LivePanes } from '../audio/live/use-live-panes.js'
 import { useLivePanes } from '../audio/live/use-live-panes.js'
+import { useTranscriptAudio } from '../audio/use-transcript-audio.js'
 import { CatatAI } from '../copilot/CatatAI.js'
 import { DEMO_CONSULTATION_ID, useDemoTour } from '../demo/DemoTour.js'
 import { ApiError, api } from '../lib/api.js'
+import { spokenTimestamp } from '../lib/clock.js'
 import { cn } from '../lib/cn.js'
 import { formatNoteForClipboard } from '../lib/note-templates.js'
 import { count } from '../lib/plural.js'
@@ -141,14 +143,44 @@ function FindingsPanel({
  */
 function SettledConversation({
   turns,
+  onPlay,
+  playing,
 }: {
-  turns: readonly { key: string; speaker: string; text: string }[]
+  turns: readonly {
+    key: string
+    speaker: string
+    text: string
+    offsetSeconds?: number
+    endSeconds?: number
+  }[]
+  /**
+   * Plays this turn back from the recording (#293). Absent when the session is
+   * holding no audio, which is every reload and every transcript that was
+   * pasted, uploaded or typed.
+   */
+  onPlay?: (key: string, offsetSeconds: number, endSeconds?: number) => void
+  /** The turn currently playing, if any. */
+  playing?: string
 }) {
   return (
     <ol className="flex flex-col gap-3">
       {turns.map((turn, index) => {
         const opensTurn = turns[index - 1]?.speaker !== turn.speaker
         const doctor = turn.speaker === 'doctor'
+        /*
+         * Playable only where this turn's own timing is known. A turn without
+         * an offset is inert rather than a control that plays the wrong words:
+         * the transcript carries no timing at all on the pasted and uploaded
+         * paths, and even a recorded one leaves lines split out of the middle
+         * of a segment untimed on purpose, because the offset would be a guess.
+         *
+         * Inert is also the whole state after a reload, since the recording
+         * lives in memory only. The affordance is what says which turns can be
+         * checked, exactly as the checklist's rows do.
+         */
+        const at = turn.offsetSeconds
+        const playable = at !== undefined && onPlay !== undefined
+        const sounding = playing === turn.key
         return (
           <li
             key={turn.key}
@@ -174,14 +206,49 @@ function SettledConversation({
                 </span>
               </span>
             )}
-            <p
-              className={cn(
-                'rounded-card px-3 py-2 text-ink text-sm leading-relaxed',
-                doctor ? 'bg-surface' : 'bg-accent-soft',
-              )}
-            >
-              {turn.text}
-            </p>
+            {playable ? (
+              /*
+               * The bubble itself is the control, so the target is the thing
+               * the doctor is already reading rather than a separate hit area
+               * beside it.
+               *
+               * The background does not change on hover, and must not: on this
+               * pane the bubble's colour is what says who spoke, and a hover
+               * tint would have a turn briefly claim to be the other speaker.
+               * The icon's opacity carries the affordance instead, which is the
+               * same move `ChecklistPanel` makes for the same reason. Playing
+               * is a ring, a change of shape rather than of colour.
+               */
+              <button
+                type="button"
+                onClick={() => onPlay(turn.key, at, turn.endSeconds)}
+                aria-label={`${sounding ? 'Stop' : 'Play'} this turn, ${spokenTimestamp(at)} in`}
+                className={cn(
+                  'group flex items-start gap-2 rounded-card px-3 py-2 text-left text-ink text-sm leading-relaxed transition-shadow',
+                  doctor ? 'bg-surface' : 'bg-accent-soft',
+                  sounding && 'ring-2 ring-accent',
+                )}
+              >
+                <span className="min-w-0">{turn.text}</span>
+                {sounding ? (
+                  <Pause aria-hidden className="mt-1 size-3 shrink-0 text-accent" />
+                ) : (
+                  <Play
+                    aria-hidden
+                    className="mt-1 size-3 shrink-0 text-accent opacity-45 transition-opacity group-hover:opacity-100"
+                  />
+                )}
+              </button>
+            ) : (
+              <p
+                className={cn(
+                  'rounded-card px-3 py-2 text-ink text-sm leading-relaxed',
+                  doctor ? 'bg-surface' : 'bg-accent-soft',
+                )}
+              >
+                {turn.text}
+              </p>
+            )}
           </li>
         )
       })}
@@ -194,6 +261,16 @@ export function ConsultationReview() {
   const queryClient = useQueryClient()
   const [showTranscript, setShowTranscript] = useState(false)
   const [captureBusy, setCaptureBusy] = useState(false)
+  /*
+   * The consultation's own audio, so a doctor who doubts a transcribed sentence
+   * can hear it rather than take it on trust (#293).
+   *
+   * Owned here because this is the component that knows the consultation id and
+   * that outlives `CapturePanel`, which unmounts the instant a transcript
+   * exists. The recording is held in memory and never uploaded or stored;
+   * `session-audio.ts` says why at length.
+   */
+  const audio = useTranscriptAudio(id)
   /*
    * The conversation shows in its own full-viewport dialog while capture runs
    * (#287). Held here rather than inside `AmbientCapture` because this
@@ -321,6 +398,15 @@ export function ConsultationReview() {
    */
   const onApproved = (next: ConsultationDetail) => {
     invalidate(next)
+    /*
+     * The recording is released the moment the note is approved (#293).
+     *
+     * That is the whole retention rule, and it is deliberate rather than
+     * incidental: the audio exists to let the doctor check the transcript
+     * before standing behind it, and approval is the doctor saying they have.
+     * Past that point the note is the record and the audio is only exposure.
+     */
+    audio.release()
     toast.success('Note approved. This record is now final.')
   }
 
@@ -587,6 +673,14 @@ export function ConsultationReview() {
     // The bottom padding clears the sticky bar, which is in flow and would
     // otherwise sit on top of the last thing in the tallest column.
     <div className="mx-auto max-w-7xl pb-20">
+      {/*
+        One element for the page, not one per turn. The transcript renders in
+        both the column and the dialog, and two media elements would let two
+        turns play over each other. No `controls`: the transcript rows are the
+        transport, and a scrub bar would invite listening to the consultation
+        rather than checking a sentence of it.
+      */}
+      <audio {...audio.audioProps} className="hidden" />
       <PageHeader
         data-print="hide"
         title="Consultation Review"
@@ -918,7 +1012,11 @@ export function ConsultationReview() {
                 with the ground. That is `surface` here and `sunken` in the
                 live pane, because the two grounds are the other way round.
               */}
-              <SettledConversation turns={keyedTurns} />
+              <SettledConversation
+                turns={keyedTurns}
+                onPlay={audio.available ? audio.play : undefined}
+                playing={audio.playing}
+              />
             </div>
           ) : (
             <Card className="flex flex-col p-4">
@@ -933,6 +1031,7 @@ export function ConsultationReview() {
                       : null
                 }
                 onCapture={(transcript) => capture.mutate(transcript)}
+                onRecording={audio.keep}
                 onLiveSegments={live.absorb}
                 onCaptureModeChange={(captureMode: CaptureMode) => patch.mutate({ captureMode })}
                 /*
@@ -1121,6 +1220,8 @@ export function ConsultationReview() {
                       disposition={byId(detail.redFlagDispositions, flag.id)}
                       onDecide={(decision) => patch.mutate({ redFlagDispositions: [decision] })}
                       guidelines={guidelines.data ?? []}
+                      onPlay={audio.available ? audio.play : undefined}
+                      playing={audio.playing}
                     />
                   ),
                 }))}
@@ -1234,7 +1335,11 @@ export function ConsultationReview() {
               </Button>
             </div>
             <div className="@container min-h-0 flex-1 overflow-y-auto bg-sunken p-6">
-              <SettledConversation turns={keyedTurns} />
+              <SettledConversation
+                turns={keyedTurns}
+                onPlay={audio.available ? audio.play : undefined}
+                playing={audio.playing}
+              />
             </div>
           </div>
         )}

@@ -15,6 +15,7 @@ import {
   draftToTurns,
   proseToDraft,
   segmentsToDraft,
+  timeDraftLines,
 } from '../audio/draft-turns.js'
 import { AmbientCapture } from '../audio/live/AmbientCapture.js'
 import type { TranscriptSegment } from '../audio/protocol.js'
@@ -72,6 +73,7 @@ export function CapturePanel({
   saving,
   error,
   onLiveSegments,
+  onRecording,
   conversationExpanded,
   onConversationExpandedChange,
   prompter,
@@ -79,6 +81,17 @@ export function CapturePanel({
 }: {
   captureMode: CaptureMode
   onCapture: (transcript: Transcript) => void
+  /**
+   * The audio behind the transcript, handed to the page that owns the
+   * consultation id (#293).
+   *
+   * Fires only for a pass whose turns carry timing, because that is the only
+   * audio the offsets in the transcript can index into. A second recording
+   * appended to the same consultation restarts its timebase, so it is
+   * deliberately not offered: the page keeps the first pass's audio, and the
+   * later turns stay inert.
+   */
+  onRecording?: (blob: Blob) => void
   onCaptureModeChange: (captureMode: CaptureMode) => void
   onCaptureBusyChange: (busy: boolean) => void
   saving: boolean
@@ -193,11 +206,13 @@ export function CapturePanel({
     segments,
     source: from,
     draftTurns,
+    audio: recording,
   }: {
     text: string
     segments: readonly TranscriptSegment[]
     source: TranscriptSource
     draftTurns?: readonly DraftTurn[]
+    audio?: Blob
   }) => {
     /*
      * Appended, never replacing what is already there. A doctor may
@@ -215,10 +230,15 @@ export function CapturePanel({
      * which is why nothing in the safety architecture rests on it.
      */
     const withOffsets = text === ''
+    // Offered on the same condition the offsets are, because the two only mean
+    // anything together: audio with no timing cannot be seeked to, and timing
+    // from an earlier pass does not index into this recording.
+    if (withOffsets && recording) onRecording?.(recording)
     // Hosted recordings carry server-drafted labels instead of
     // segments (#189); `hosted-` ids are a namespace disjoint from
-    // the local `seg-` ones, and the turns carry no offsets, so a
-    // wrong timestamp can never be asserted for them.
+    // the local `seg-` ones. The labels arrive with no timing of
+    // their own, and gain it below only where a live capture
+    // measured some and it can be located in the words.
     //
     // The third branch is the one that keeps this from being a
     // dead end. A hosted recording carries no segments, so when the
@@ -244,9 +264,20 @@ export function CapturePanel({
       }),
     )
     const timedLines = segmentsToDraft(segments, transcribed, { withOffsets })
+    /*
+     * Ambient carries both halves, so it no longer has to choose (#293). The
+     * labelling pass gives the better speakers and the live capture gives real
+     * measured timing, and `timeDraftLines` puts the second back onto the
+     * first. A turn it cannot locate keeps no timing at all.
+     *
+     * The hosted relay reaches this line too and is unaffected: it sends no
+     * segments, so there is nothing to align against and the lines come back
+     * exactly as they went in.
+     */
+    const labelledLines = withOffsets ? timeDraftLines(hostedLines, segments) : hostedLines
     const lines =
-      hostedLines.length > 0
-        ? hostedLines
+      labelledLines.length > 0
+        ? labelledLines
         : timedLines.length > 0
           ? timedLines
           : proseToDraft(transcribed)
