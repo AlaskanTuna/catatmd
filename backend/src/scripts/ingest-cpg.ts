@@ -6,7 +6,8 @@ import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { env } from '../config/env.js'
-import { deidentify } from '../deid/index.js'
+import { assertNoIdentifiers, deidentify } from '../deid/index.js'
+import type { Deidentified } from '../deid/types.js'
 import { getEmbeddingClient } from '../lib/llm/embeddings.js'
 import { logger } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
@@ -476,6 +477,30 @@ async function uploadPdf(documentId: string, filePath: string): Promise<string |
   return `${bucket}/${documentId}.pdf`
 }
 
+/**
+ * Guideline pages that list a development group defeat the name detector's
+ * single pass: tokenising one name changes the context the next one is read
+ * in, and the egress assertion then finds what the first pass left. Author
+ * names are not patient data, but the gate has one rule, so the chunk is run
+ * through it until it passes or, after three passes, left without an
+ * embedding. Lexical search still covers such a chunk.
+ */
+const GATE_PASSES = 3
+
+export function gateForEgress(text: string): Deidentified | null {
+  let current = text
+  for (let pass = 0; pass < GATE_PASSES; pass++) {
+    const gated = deidentify(current).text
+    try {
+      assertNoIdentifiers(gated, 'cpg_ingest')
+      return gated
+    } catch {
+      current = gated
+    }
+  }
+  return null
+}
+
 async function writeDocument(
   doc: ManifestDocument,
   manifest: Manifest,
@@ -484,10 +509,21 @@ async function writeDocument(
   chunks: ChunkSpec[],
   storagePath: string | null,
 ): Promise<void> {
+  const gated: Array<{ index: number; text: Deidentified }> = []
+  for (const [index, chunk] of chunks.entries()) {
+    const text = gateForEgress(chunk.text)
+    if (text !== null) gated.push({ index, text })
+  }
   const embeddings = await getEmbeddingClient().embed(
-    chunks.map((c) => deidentify(c.text).text),
+    gated.map((g) => g.text),
     'cpg_ingest',
   )
+  const ungated = chunks.length - gated.length
+  if (ungated > 0) {
+    logger.warn(`${doc.id}: ${ungated} chunk(s) left without an embedding by the egress gate`, {
+      count: ungated,
+    })
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.guidelineChunk.deleteMany({ where: { documentId: doc.id } })
@@ -529,9 +565,11 @@ async function writeDocument(
         ocr: c.ocr,
       })),
     })
-    for (const [i, chunk] of chunks.entries()) {
+    for (const [i, { index }] of gated.entries()) {
       const vector = JSON.stringify(embeddings[i])
-      await tx.$executeRaw`UPDATE "guideline_chunk" SET "embedding" = ${vector}::vector WHERE "id" = ${chunk.id}`
+      const id = chunks[index]?.id
+      if (id === undefined) continue
+      await tx.$executeRaw`UPDATE "guideline_chunk" SET "embedding" = ${vector}::vector WHERE "id" = ${id}`
     }
   })
 }
