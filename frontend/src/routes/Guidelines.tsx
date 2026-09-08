@@ -1,7 +1,7 @@
 import type { GuidelineChunk, GuidelineDocument } from '@shared/types'
 import { useQuery } from '@tanstack/react-query'
 import { ExternalLink, Search, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { InfoTip } from '../ui/InfoTip.js'
@@ -82,6 +82,8 @@ export function Guidelines() {
   const [publisher, setPublisher] = useState(ALL_PUBLISHERS)
   const [corpusPage, setCorpusPage] = useState(1)
   const [documentPage, setDocumentPage] = useState(1)
+  const corpusHeadingRef = useRef<HTMLHeadingElement | null>(null)
+  const cpgHeadingRef = useRef<HTMLHeadingElement | null>(null)
 
   const all = useMemo(() => guidelines.data ?? [], [guidelines.data])
   const allDocuments = useMemo(() => documents.data ?? [], [documents.data])
@@ -289,13 +291,14 @@ export function Guidelines() {
 
           {filtered.length > 0 && (
             <section aria-labelledby="corpus-pagination-heading" className="mt-6">
-              <h2 id="corpus-pagination-heading" className="sr-only">
+              <h2 id="corpus-pagination-heading" ref={corpusHeadingRef} className="sr-only">
                 Curated corpus pagination
               </h2>
               <Pagination
                 page={currentCorpusPage}
                 pageCount={corpusPageCount}
                 onPageChange={setCorpusPage}
+                scrollTo={corpusHeadingRef}
               />
             </section>
           )}
@@ -303,7 +306,7 @@ export function Guidelines() {
       )}
 
       <section className="mt-10" aria-labelledby="cpg-documents-heading">
-        <h2 id="cpg-documents-heading" className="text-base font-semibold">
+        <h2 id="cpg-documents-heading" ref={cpgHeadingRef} className="text-base font-semibold">
           Malaysian Clinical Practice Guidelines
         </h2>
         <p className="mt-1 text-sm text-ink-muted">
@@ -364,6 +367,7 @@ export function Guidelines() {
                 page={currentDocumentPage}
                 pageCount={documentPageCount}
                 onPageChange={setDocumentPage}
+                scrollTo={cpgHeadingRef}
               />
             </nav>
           </div>
