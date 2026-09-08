@@ -107,3 +107,37 @@ describe('the checklist row never overflows its column', () => {
     expect(dd?.className).not.toContain('min-w-0')
   })
 })
+
+describe('the checklist follows the canonical record projection', () => {
+  it('groups fields by canonical section and omits empty family history', () => {
+    render(
+      <ChecklistPanel
+        clinicalFacts={facts(notAssessed)}
+        operational={{
+          ...OPERATIONAL,
+          medicationsDispensed: [
+            { state: 'PRESENT', value: 'Amoxicillin', evidence: 'amoxicillin supplied' },
+          ],
+        }}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /completeness checklist/i }))
+
+    const sectionContaining = (label: string) =>
+      screen.getByText(label).closest('section')?.textContent ?? ''
+
+    expect(sectionContaining('Cough')).toContain('Presenting Complaint')
+    expect(sectionContaining('Sore Throat')).toContain('Presenting Complaint')
+    expect(sectionContaining('Cough Duration')).toContain('History of Presenting Complaint')
+    expect(sectionContaining('Asthma')).toContain('Past Medical History')
+    expect(sectionContaining('Smoking')).toContain('Social History')
+    expect(sectionContaining('Temperature')).toContain('Objective')
+    expect(sectionContaining('Throat')).toContain('Objective')
+    expect(sectionContaining('Diagnosis')).toContain('Assessment')
+    expect(sectionContaining('Mc Days')).toContain('Plan')
+    expect(sectionContaining('Referral')).toContain('Plan')
+    expect(sectionContaining('Follow Up')).toContain('Plan')
+    expect(sectionContaining('Dispensed:')).toContain('Plan')
+    expect(screen.queryByRole('heading', { name: 'Family History' })).toBeNull()
+  })
+})

@@ -3,6 +3,7 @@ import { type DispositionState, type NoteTemplate, NotificationActionSchema } fr
 import type { ProfileId } from '../clinical-profiles/index.js'
 import type { ActiveClinicalVersions } from '../clinical-versions/index.js'
 import { prisma } from '../lib/prisma.js'
+import type { SuppressedSuggestionId } from '../suggestions/safety.js'
 import {
   AUDIT_CHAIN_GENESIS,
   type AuditChainRow,
@@ -68,6 +69,8 @@ export type ConsultationAuditEvent =
         detected: readonly string[]
         /** Field ids forced to NOT_ASSESSED by the evidence check. Ids, never content. */
         discardedFieldIds: readonly string[]
+        /** Server-generated positions for rejected model suggestions. Never model content or ids. */
+        suppressedSuggestionIds: readonly SuppressedSuggestionId[]
         profileId: ProfileId
         versions: AnalysisVersions
       }
@@ -199,6 +202,7 @@ export type EphemeralAuditEvent =
       metadata: {
         detected: readonly string[]
         discardedFieldIds: readonly string[]
+        suppressedSuggestionIds: readonly SuppressedSuggestionId[]
         profileId: ProfileId
         versions: AnalysisVersions
       }

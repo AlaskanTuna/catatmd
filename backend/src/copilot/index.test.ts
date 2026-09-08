@@ -285,6 +285,33 @@ describe('a signed note', () => {
   })
 })
 
+describe('copilot corpus scoping', () => {
+  it('uses the persisted UTI profile corpus rather than the global corpus', async () => {
+    chunks = [{ type: 'text', text: 'The plan mentions follow-up.' }]
+
+    const detail = consultation()
+    const baseAnalysis = detail.analysis
+    detail.analysis = {
+      ...baseAnalysis,
+      profileId: 'adult-acute-uncomplicated-uti',
+    } as ConsultationDetail['analysis']
+
+    await drain('What guidelines apply?', detail)
+
+    expect(captured?.system).toContain('moh-nag-2024-acute-uti-scope')
+    expect(captured?.system).not.toContain('abdullah-2024-safety-netting')
+  })
+
+  it('falls back to the default URTI corpus for a legacy analysis without a profile', async () => {
+    chunks = [{ type: 'text', text: 'The plan mentions follow-up.' }]
+
+    await drain('What guidelines apply?')
+
+    expect(captured?.system).toContain('abdullah-2024-safety-netting')
+    expect(captured?.system).not.toContain('moh-nag-2024-acute-uti-scope')
+  })
+})
+
 /**
  * The phantom-click pin from GitHub issue #185, driven through the real turn
  * rather than against a string, so it holds over what the doctor actually

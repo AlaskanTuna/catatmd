@@ -503,6 +503,29 @@ describe('analyse output', () => {
     })
   })
 
+  it('records only server-generated suppression ids on completion', async () => {
+    const { generateSuggestions } = await import('../suggestions/index.js')
+    vi.mocked(generateSuggestions).mockResolvedValueOnce({
+      outOfScope: false,
+      redFlags: [],
+      suggestions: [
+        {
+          id: 'safe-consideration',
+          text: 'Consider documenting the review interval.',
+          citations: [{ guidelineId: 'g1' }],
+        },
+      ],
+      suppressedSuggestionIds: ['model-suggestion-1'],
+    })
+
+    await call('POST', '/api/consultations/c1/analyze')
+
+    const completed = audits.find((audit) => audit.action === 'consultation.analysis_completed')
+    expect(completed?.metadata).toMatchObject({
+      suppressedSuggestionIds: ['model-suggestion-1'],
+    })
+  })
+
   it('persists the selected profile id in analysis and completion audit metadata', async () => {
     await call('POST', '/api/consultations/c1/analyze', {
       profileId: 'adult-acute-uncomplicated-uti',
@@ -516,6 +539,18 @@ describe('analyse output', () => {
     ).toMatchObject({
       profileId: 'adult-acute-uncomplicated-uti',
     })
+  })
+
+  it('returns the persisted profile id so the copilot can scope its corpus', async () => {
+    await call('POST', '/api/consultations/c1/analyze', {
+      profileId: 'adult-acute-uncomplicated-uti',
+    })
+
+    const detail = (await (await call('GET', '/api/consultations/c1')).json()) as {
+      consultation: { analysis: { profileId?: string } }
+    }
+
+    expect(detail.consultation.analysis.profileId).toBe('adult-acute-uncomplicated-uti')
   })
 })
 

@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query'
 import { CheckCircle2 } from 'lucide-react'
 import { useState } from 'react'
 import { ApiError } from '../lib/api.js'
+import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
 import { InfoTip } from '../ui/InfoTip.js'
 
@@ -103,32 +104,40 @@ export function ApproveBar({
           Cancel
         </Button>
       )}
-      <Button
-        variant="primary"
-        size="lg"
-        loading={approve.isPending}
-        onClick={() => (confirming ? approve.mutate() : setConfirming(true))}
-      >
-        {confirming ? 'Confirm Approval' : 'Approve Note'}
-      </Button>
+      <div className="relative inline-flex">
+        <Button
+          variant="primary"
+          size="lg"
+          className={cn((confirming || unacknowledgedCount > 0) && 'pr-12')}
+          loading={approve.isPending}
+          onClick={() => (confirming ? approve.mutate() : setConfirming(true))}
+        >
+          {confirming ? 'Confirm Approval' : 'Approve Note'}
+        </Button>
 
-      {confirming ? (
-        <InfoTip label="What approving does" layered>
-          You are taking responsibility for this note. It cannot be edited afterwards.
-        </InfoTip>
-      ) : (
-        unacknowledgedCount > 0 && (
+        {confirming ? (
           <InfoTip
-            label={`${unacknowledgedCount} red flag${unacknowledgedCount === 1 ? '' : 's'} not yet acknowledged`}
-            tone="warning"
+            className="absolute top-1/2 right-2 -translate-y-1/2"
+            label="What approving does"
             layered
           >
-            {unacknowledgedCount} red flag{unacknowledgedCount === 1 ? '' : 's'} not yet
-            acknowledged. You can still approve; the count is here so the choice is informed, not
-            prevented.
+            You are taking responsibility for this note. It cannot be edited afterwards.
           </InfoTip>
-        )
-      )}
+        ) : (
+          unacknowledgedCount > 0 && (
+            <InfoTip
+              className="absolute top-1/2 right-2 -translate-y-1/2"
+              label={`${unacknowledgedCount} red flag${unacknowledgedCount === 1 ? '' : 's'} not yet acknowledged`}
+              tone="warning"
+              layered
+            >
+              {unacknowledgedCount} red flag{unacknowledgedCount === 1 ? '' : 's'} not yet
+              acknowledged. You can still approve; the count is here so the choice is informed, not
+              prevented.
+            </InfoTip>
+          )
+        )}
+      </div>
 
       {approve.error && (
         <p role="alert" className="w-full text-sm text-emergency">
