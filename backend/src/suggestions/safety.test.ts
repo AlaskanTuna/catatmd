@@ -58,6 +58,9 @@ describe('filterUnsafeModelSuggestions', () => {
   it.each([
     'Prescribe nitrofurantoin.',
     'Rx amoxicillin.',
+    'Do prescribe nitrofurantoin.',
+    'Do start amoxicillin now.',
+    'Should start amoxicillin immediately.',
     'Plan: prescribe nitrofurantoin.',
     'Start aspirin.',
     'Give insulin.',
@@ -107,6 +110,8 @@ describe('filterUnsafeModelSuggestions', () => {
     'The clinician should not administer salbutamol routinely.',
     'Prescribing antibiotics is not routinely recommended.',
     'What dose of amoxicillin 500 mg is the patient currently taking?',
+    'Do you currently take amoxicillin?',
+    'Should the patient continue taking amoxicillin?',
     'Ask whether the patient was advised to start aspirin.',
     'Confirm whether the patient already took amoxicillin 250.5 mg.',
   ])('retains the non-autonomous medication wording %s', (text) => {

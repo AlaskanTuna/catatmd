@@ -11,7 +11,7 @@ const QUESTION_CONTEXT =
   /^(?:what|which|when|where|who|how|do|does|did|is|are|was|were|has|have|had|can|could|would|should)\b/i
 const SAFE_MEDICATION_CONTEXT =
   /^(?:(?:do not|don't|avoid|consider)\s+(?:recommend(?:ing)?\s+)?(?:prescribe|prescribing|rx|start|starting|give|giving|administer|administering|dispense|dispensing|take|taking|use|using)|(?:the clinician|the doctor|you)\s+(?:should|must|needs? to)\s+not\s+(?:prescribe|rx|start|give|administer|dispense|take|use))\b/i
-const DIRECT_PRESCRIBING_ORDER = /^(?:please\s+)?(?:prescribe|rx)\b/i
+const DIRECT_PRESCRIBING_ORDER = /^(?:please\s+)?(?:do\s+)?(?:prescribe|rx)\b/i
 const MEDICATION_ACTION_ORDER = new RegExp(
   `\\b(?:start|give|administer|dispense|take|use)\\b[\\s\\S]{0,40}\\b${MEDICATION_TERM}\\b`,
   'i',
@@ -30,7 +30,7 @@ function containsUnsafeMedicationProse(text: string): boolean {
     const candidate = clause.trim().replace(CONTEXT_LABEL, '')
     if (
       INFORMATION_GATHERING.test(candidate) ||
-      QUESTION_CONTEXT.test(candidate) ||
+      (QUESTION_CONTEXT.test(candidate) && candidate.endsWith('?')) ||
       SAFE_MEDICATION_CONTEXT.test(candidate)
     ) {
       return false
