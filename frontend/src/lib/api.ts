@@ -42,6 +42,9 @@ import {
   type PatientListItem,
   PatientListItemSchema,
   PatientSchema,
+  type Prescription,
+  type PrescriptionParseResponse,
+  PrescriptionParseResponseSchema,
   type RedFlag,
   type SoapNote,
   type Transcript,
@@ -252,6 +255,13 @@ export const api = {
       title?: string | null
       editedNote?: Partial<SoapNote>
       editedMedicalRecordNote?: Partial<MedicalRecordNote>
+      /*
+       * The whole confirmed list, never a delta. A prescription is authored by
+       * the doctor rather than merged onto a server-side base the way the note
+       * fields above are, so a partial would be ambiguous about whether an
+       * absent entry was removed or untouched.
+       */
+      prescriptions?: Prescription[]
       noteTemplate?: NoteTemplate
       captureMode?: CaptureMode
       acknowledgedRedFlagIds?: string[]
@@ -423,6 +433,26 @@ export const api = {
    * holds and writes nothing. Accepting one is a plain `setTranscript` above,
    * which is why there is no accept call here to pair with it.
    */
+  /**
+   * Structures one dictated medication phrase into draft fields plus spelling
+   * candidates (#313, `docs/decisions.md` D-001).
+   *
+   * Read-only despite the POST, and it stores nothing: the doctor confirms by
+   * sending the whole list through `patch` above, which is why there is no
+   * apply call here to pair with it. No model runs on this path, so nothing
+   * about it is a suggestion.
+   *
+   * `profileId` is deliberately not sent. Nothing in the SPA holds one, and the
+   * route defaults to the URTI profile; a drug outside that profile's lexicon
+   * yields no candidate and the doctor types the name, which is the designed
+   * degrade rather than a failure.
+   */
+  parsePrescription: (id: string, dictated: string): Promise<PrescriptionParseResponse> =>
+    request(`/consultations/${id}/prescriptions/parse`, PrescriptionParseResponseSchema, {
+      method: 'POST',
+      body: JSON.stringify({ dictated }),
+    }),
+
   transcriptCorrections: (id: string): Promise<MishearProposal[]> =>
     request(`/consultations/${id}/transcript-corrections`, TranscriptCorrectionsResponseSchema, {
       method: 'POST',
