@@ -637,6 +637,10 @@ export function ConsultationReview() {
   if (!detail) {
     return <p className="text-sm text-emergency">This consultation could not be loaded.</p>
   }
+  // Only ambient capture streams a transcript while it runs; press-to-record
+  // engines deliver text when the doctor stops, so during that recording the
+  // live safety panel could only ever show its placeholders.
+  const liveCapture = captureBusy && detail.captureMode === 'ambient'
   const analysis = detail.analysis
   const approved = detail.status === 'approved'
   const note = detail.editedNote ?? analysis?.note ?? null
@@ -950,9 +954,11 @@ export function ConsultationReview() {
           // `captureBusy` rather than a second signal of my own: #272 already
           // lifts exactly this from `AmbientCapture`'s `onLiveChange`, and two
           // props tracking one session is one of them going stale.
-          captureBusy
+          liveCapture
             ? 'lg:grid-cols-[minmax(0,1fr)_380px]'
-            : 'lg:grid-cols-[380px_minmax(0,1fr)_340px]',
+            : captureBusy
+              ? 'lg:grid-cols-1'
+              : 'lg:grid-cols-[380px_minmax(0,1fr)_340px]',
         )}
       >
         <section
@@ -1122,7 +1128,7 @@ export function ConsultationReview() {
           scrolling" can mean anything there. That is the rule the rail
           followed and the reason it never became a tab.
         */}
-        {captureBusy && !conversationExpanded && (
+        {liveCapture && !conversationExpanded && (
           <section className="order-1 min-w-0 lg:sticky lg:top-6 lg:order-2 lg:max-h-[calc(100vh-26rem)] lg:overflow-y-auto lg:pr-1">
             {livePrompter}
           </section>
