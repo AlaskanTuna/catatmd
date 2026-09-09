@@ -314,11 +314,11 @@ The sentence above says provider selection is a constructor parameter. That is t
 
 Measured 14/08/26 against `gemini-3.5-flash-lite` on the live OpenAI-compatible endpoint, sending each schema the pipeline actually uses, all with `strict: true`:
 
-| Call                        | JSON Schema size | Depth | Result                   |
-| --------------------------- | ---------------- | ----- | ------------------------ |
-| `note_and_gaps`             | 686 B            | 7     | HTTP 200, schema-valid   |
-| `suggestions_and_red_flags` | 1,312 B          | 7     | HTTP 200, schema-valid   |
-| `clinical_facts`            | 14,240 B         | 10    | **HTTP 400, empty body** |
+| Call                        | JSON Schema size | Depth | Result                                                                                              |
+| --------------------------- | ---------------- | ----- | --------------------------------------------------------------------------------------------------- |
+| `note_and_gaps`             | 686 B            | 7     | HTTP 200, schema-valid                                                                              |
+| `suggestions_and_red_flags` | 1,312 B          | 7     | HTTP 200, schema-valid. Split into `red_flags` and `suggestions` by #340; measured before the split |
+| `clinical_facts`            | 14,240 B         | 10    | **HTTP 400, empty body**                                                                            |
 
 `clinical_facts` is the first call `analyseNote` makes, so the run dies there and nothing downstream is reached.
 
@@ -422,7 +422,7 @@ All 34 fields round-trip in **9 of 9 runs**, and the Qwen state distribution is 
 
 **The ceiling above these bounds is a platform limit, and it is what picks the timeout.** A Vercel rewrite to an external origin allows at most **120s to first byte**, and `vercel.json` rewrites `/api/*` to Render. `/analyze` emits one JSON at the end, so time-to-first-byte is the whole request, not just the model call. 90s leaves roughly 30s of that window for routing, auth, de-identification, retrieval, rehydration, persistence and the audit write. **A bound at 120s would sit on the cap and could never reach the browser.**
 
-**Why the retry went rather than the timeout rising further.** The previous shape spent the whole budget reaching a guaranteed failure: a call needing 70 s of decoding needs 70 s on the second attempt too, so a slow but healthy call burned 120 s and two calls' quota to fail anyway (#340, measured at `durationMs` 120421 and 120467, provider verified healthy in between). Spending the same wall clock on one longer attempt is what lets those calls finish. The cost is that a transient 429 or 5xx now fails immediately, on **every** chat operation and not just analysis.
+**Why the retry went rather than the timeout rising further.** The previous shape spent the whole budget reaching a guaranteed failure: a call needing 70s of decoding needs 70s on the second attempt too, so a slow but healthy call burned 120s and two calls' quota to fail anyway (#340, measured at `durationMs` 120421 and 120467, provider verified healthy in between). Spending the same wall clock on one longer attempt is what lets those calls finish. The cost is that a transient 429 or 5xx now fails immediately, on **every** chat operation and not just analysis.
 
 **A second client carries its own, shorter bound.** `OpenAICompatibleEmbeddingClient` is 10s with no retries. It shipped with neither option, inheriting 10 minutes and two retries, because every assertion in `openai-compatible.test.ts` read the chat client and nothing read this one. It is shorter than the chat bound because it is not concurrent with what follows it: `runAnalysis` awaits `retrieveGuidelines` and only then calls `generateSuggestions`, so every second spent embedding is a second on the critical path, and retrieval already degrades to the curated corpus on failure.
 
@@ -655,7 +655,7 @@ A patient turn always asserts, including a question of their own ("is it bad tha
 ### Merge Rule — The Zero-Suppression Invariant
 
 - Assembly is a union, never a filter: `finalRedFlags = ruleFlags.concat(modelCandidates)`.
-- `modelCandidates` come from the `suggestions_and_red_flags` LLM call (§12), constrained by schema to `source: 'model'` with no `ruleId`.
+- `modelCandidates` come from the `red_flags` LLM call (§12), constrained by schema to `source: 'model'` with no `ruleId`.
 - Nothing in assembly may drop, downgrade, or reorder a `rule`-sourced entry based on model output — the model call runs after rule evaluation and is never shown the rule engine's results to "reconcile" against, so it cannot suppress them even if instructed to.
 - Testable consequence, mirroring the skill's pass criterion: for every trigger in the list, a fixture transcript containing its matching evidence must produce that `RedFlag` on 100% of runs — a single missed trigger is a patient-safety regression, not a quality issue.
 
@@ -685,7 +685,7 @@ There is one corpus now, not two. What differs is which artefact cites which sha
 | Citer                                                                        | Cites                                                           | Because                                                                                                                                                                                                                                    |
 | ---------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Red-flag triggers (§10), the gap checklist (`backend/src/gaps/checklist.ts`) | `doc:<id>[#p<n>]`, a stable document reference                  | Deterministic artefacts are versioned in code and need an id that survives a re-ingest; a retrieved chunk id does not survive one                                                                                                          |
-| The model, on `suggestions_and_red_flags` (§12)                              | The retrieved chunk ids for this consultation, and nothing else | The model's citable set is built per request from `retrieveGuidelines()`. A `doc:` reference is never a member of that set, so it structurally cannot satisfy the request-time `z.enum`: the model can cite a span, never a whole document |
+| The model, on `suggestions` (§12)                                            | The retrieved chunk ids for this consultation, and nothing else | The model's citable set is built per request from `retrieveGuidelines()`. A `doc:` reference is never a member of that set, so it structurally cannot satisfy the request-time `z.enum`: the model can cite a span, never a whole document |
 
 `documentRef(id, page?)` and `parseDocumentRef()` in `backend/src/guidelines/documents.ts` produce and parse the `doc:` form. `CITABLE_DOCUMENT_IDS` names the documents a `doc:` reference may point at; a test in `documents.test.ts` asserts every id there is present in `corpus/cpg/manifest.json`. Page anchors (`#p<n>`) are deliberately unset by every current trigger and checklist entry: nothing in the deterministic layers points at a specific page today, so the format is unexercised rather than broken.
 
@@ -735,7 +735,7 @@ Merging them into one "Centor threshold" chunk would manufacture a consensus tha
 
 ### Candidate Set Reaching The Prompt
 
-Retrieval is the only source of a citable corpus for the model. The chunks `retrieveGuidelines()` (below) returns for this consultation are serialised into the system prompt for the `suggestions_and_red_flags` call (§12), and `corpusIdsFor()` builds the request-time `z.enum` from exactly that set. When retrieval returns nothing, whether because nothing scored above the relevance floors or because the call failed, the corpus is empty: `generateSuggestions()` (`backend/src/suggestions/index.ts`) still runs the model for red-flag candidates, but forces `suggestions: []` and `outOfScope: true`, because a zero-length enum admits nothing to cite. Red flags (§10) and the gap checklist are unaffected, because both cite `doc:` references against the ingested documents directly rather than the retrieved set, so an empty retrieval never silences either of them.
+Retrieval is the only source of a citable corpus for the model. The chunks `retrieveGuidelines()` (below) returns for this consultation are serialised into the system prompt for the `suggestions` call (§12), and `corpusIdsFor()` builds the request-time `z.enum` from exactly that set. When retrieval returns nothing, whether because nothing scored above the relevance floors or because the call failed, the corpus is empty and **that call is not made at all** (#340): `generateSuggestions()` (`backend/src/suggestions/index.ts`) runs only the `red_flags` half and returns `suggestions: []`. `outOfScope` is not forced, because an empty retrieval is not an out-of-scope consultation and §19 row 7 turns on telling those apart. Red flags (§10) and the gap checklist are unaffected, because both cite `doc:` references against the ingested documents directly rather than the retrieved set, so an empty retrieval never silences either of them.
 
 ### Schema-Enforced Rejection
 
@@ -747,7 +747,7 @@ Retrieval is the only source of a citable corpus for the model. The chunks `retr
 
 A per-consultation corpus is retrieved for each consultation. `docs/README.md` ("Guardrails Against Fabrication", "Guideline Grounding") carries the reader-facing narrative; this subsection is the implementation reference.
 
-- **The full library is the corpus, and it is the only one.** `corpus/cpg/manifest.json` indexes 109 CPG documents from the Academy of Medicine portal, the three anchoring sources above included; the top chunks for each consultation join the `suggestions_and_red_flags` candidate set (§12), cited only by the model.
+- **The full library is the corpus, and it is the only one.** `corpus/cpg/manifest.json` indexes 109 CPG documents from the Academy of Medicine portal, the three anchoring sources above included; the top chunks for each consultation join the `suggestions` candidate set (§12), cited only by the model.
 - **Retrieved ids are not stable identifiers.** They are generated per document, page, and chunk ordinal at ingest and change on re-ingest, so nothing outside the prompt names one. The review UI resolves them from `ConsultationAnalysis.retrievedGuidelines` (§3), persisted with the analysis because re-running retrieval would not be reproducible.
 
 #### Data Model
@@ -860,22 +860,45 @@ The arms above use matched, compressed prompts to isolate the split. Re-measured
 
 Splitting the prompt was a second, unbudgeted gain: each half now carries only the rules binding its own output, rather than the model holding SOAP prose constraints in context while filling a 34-key checklist. Assertion yield on this transcript rose from 13 to 15 of 29 before the split to a mean of **22.8 of 29** after. That comparison is observational rather than controlled (the prompts differ by construction, which is the point of the change), so it is recorded as an observed effect and not claimed as a measured causal gain.
 
-### Operation 2 — `suggestions_and_red_flags`
+### Operation 2 — `red_flags` And `suggestions`
 
-| Field           | Value                                                                                                                                                                                                                                                                                  |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `operation`     | `"suggestions_and_red_flags"`                                                                                                                                                                                                                                                          |
-| `system` intent | Given the same transcript and the full candidate guideline corpus (§11), propose cited clinical suggestions and any additional red-flag candidates; explicitly instructed that these are candidates only and can never override the rule engine (§10)                                  |
-| `content`       | The same de-identified transcript as Operation 1                                                                                                                                                                                                                                       |
-| response schema | Proposed `z.object({ redFlags: z.array(RedFlagSchema.omit({ source: true, ruleId: true }).extend({ source: z.literal('model') })), suggestions: z.array(ClinicalSuggestionSchema.extend({ citations: z.array(CitationSchema.extend({ guidelineId: z.enum(corpusIds) })).min(1) })) })` |
-| `schemaName`    | `"suggestions_and_red_flags"`                                                                                                                                                                                                                                                          |
-| `temperature`   | Default `0.2` (§6)                                                                                                                                                                                                                                                                     |
+**Two concurrent calls since issue #340**, split out of a single `suggestions_and_red_flags` operation that was the slowest call in the pipeline and therefore the one sitting closest to the request bound (§6). They answer different schemas and want different inputs.
 
-The candidate set named in the `system` row is the union of the active profile's curated corpus and the chunks `retrieveGuidelines` returned for this transcript (`generateSuggestions` concatenates `[...profile.guidelineCorpus, ...retrieved]`), and the `corpusIds` feeding the `z.enum` above are built from that union, so a retrieved chunk id is citable exactly like a curated one (§11).
+#### 2a — `red_flags`
+
+| Field           | Value                                                                                                                                                                                                                                                                   |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `operation`     | `"red_flags"`                                                                                                                                                                                                                                                           |
+| `system` intent | Given the transcript alone, propose any additional escalation-relevant findings as candidates, explicitly instructed that these are candidates only and can never override the rule engine (§10); and record whether the presentation falls outside the profile's scope |
+| `content`       | The same de-identified transcript as Operation 1                                                                                                                                                                                                                        |
+| response schema | `RedFlagCandidatesSchema`: `z.object({ outOfScope: z.boolean(), redFlags: z.array(RedFlagSchema.omit({ source, ruleId, guidelineIds, evidenceLink }).extend({ source: z.literal('model') })) })`                                                                        |
+| `schemaName`    | `"red_flags"`                                                                                                                                                                                                                                                           |
+| `temperature`   | Default `0.2` (§6)                                                                                                                                                                                                                                                      |
+
+**No corpus reaches this prompt.** A red-flag candidate is read out of the transcript, not out of a guideline, and the schema omits `guidelineIds` precisely because a red flag is not a place a model may attach a citation. Serialising the retrieved set into this call bought nothing and cost its input tokens on every analysis.
+
+#### 2b — `suggestions`
+
+| Field           | Value                                                                                                                                                                                               |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `operation`     | `"suggestions"`                                                                                                                                                                                     |
+| `system` intent | Using only the chunks retrieved for this consultation (§11), propose cited clinical suggestions the transcript actually supports; never a diagnosis                                                 |
+| `content`       | The same de-identified transcript as Operation 1                                                                                                                                                    |
+| response schema | `makeSuggestionsSchema(corpusIds)`: `z.object({ suggestions: z.array(ClinicalSuggestionSchema.extend({ citations: z.array(CitationSchema.extend({ guidelineId: z.enum(corpusIds) })).min(1) })) })` |
+| `schemaName`    | `"suggestions"`                                                                                                                                                                                     |
+| `temperature`   | Default `0.2` (§6)                                                                                                                                                                                  |
+
+**This call is skipped entirely when retrieval returned nothing.** The citable set is the retrieved chunks and nothing else (D-002), so a consultation that retrieved nothing can support no cited suggestion. That used to be a model call whose answer was discarded and replaced with `[]`; it is now no call at all, which is the larger of the split's two savings on those consultations. `makeSuggestionsSchema` takes a **non-empty tuple**, so an empty corpus cannot produce a schema rather than producing one that widens `guidelineId` back to a plain `string`.
+
+#### Where `outOfScope` Lives, And Why
+
+On 2a, the half that cannot be skipped. Deriving it from an empty corpus instead would report "outside the guideline scope" for a perfectly in-scope consultation that simply retrieved nothing, and the review screen renders those as two different sentences (below, and §19 row 7).
+
+The consequence is that 2b never learns the verdict, because the two run concurrently. **Suggestion suppression on an out-of-scope consultation is therefore enforced in `generateSuggestions` rather than asked of the model**, which is stronger than the prompt instruction it replaces. Only suggestions are dropped; `mergeRedFlags` is untouched and candidates pass through regardless of scope.
 
 ### Scope Notice For Non-URTI Presentations
 
-`docs/prd.md` §6 (Scope) requires that, for a transcript outside acute cough / sore throat / other upper-respiratory presentations, the system still runs `note_and_gaps` and the rule engine (§10) as normal but does not attempt guideline-cited suggestions — and the review screen must carry a visible scope notice. The `suggestions_and_red_flags` system prompt can instruct the model to return an empty `suggestions` array when the presentation falls outside the corpus's coverage, which is schema-valid — §11's `citations.min(1)` constrains items present in the array, not the array's length.
+`docs/prd.md` §6 (Scope) requires that, for a transcript outside acute cough / sore throat / other upper-respiratory presentations, the system still runs `note_and_gaps` and the rule engine (§10) as normal but does not attempt guideline-cited suggestions — and the review screen must carry a visible scope notice. The `suggestions` system prompt instructs the model to return an empty array when the presentation falls outside the corpus's coverage, which is schema-valid (§11's `citations.min(1)` constrains items present in the array, not the array's length), and `generateSuggestions` drops the array outright when the `red_flags` half returns `outOfScope: true`.
 
 **Open** — how the review screen decides whether to show the scope notice is unresolved: inferring it from an empty `suggestions` array conflates "out of scope, suggestions suppressed" with "in scope, nothing to suggest," so a dedicated signal (e.g. an `outOfScope: boolean` alongside the analysis) may be needed instead. See §19.
 
@@ -897,7 +920,7 @@ No automatic retry inside `LLMClient` (§6, `Built`) — a failure on either cal
 
 `docs/prd.md` CAP-1 binds analysis to a 30-second target for a 3,000-word transcript. This section originally specified two **sequential** structured-output calls and did not reconcile that cost with the 30s figure. Both halves of the tension are now closed.
 
-- **Nothing is sequential.** All three calls (`clinical_facts`, `note_and_gaps`, `suggestions_and_red_flags`) take only the de-identified content and have no dependency on each other's output. Wall clock is therefore the slowest single call, not the sum, and the budget is not split across operations because it does not need to be.
+- **Nothing is sequential among the model calls.** All four (`clinical_facts`, `note_and_gaps`, `red_flags`, `suggestions`) take only the de-identified content and have no dependency on each other's output. Retrieval is the exception and does sit ahead of `suggestions`, because the corpus has to exist before the prompt can carry it. Wall clock is therefore the slowest single call, not the sum, and the budget is not split across operations because it does not need to be.
 - **Measured, not estimated.** 8 runs of the shipped pipeline on a 3,085-word synthetic Malaysian GP consultation against the live Singapore endpoint: see the table above (§19 rows 8 and 19, both closed).
 - **The residual risk is the tail, not the mean.** Every reduction in per-call response variance buys more headroom than any reduction in the mean. That is the reasoning behind the split, and it is the first thing to reach for if the budget comes under pressure again.
 
@@ -907,15 +930,15 @@ No automatic retry inside `LLMClient` (§6, `Built`) — a failure on either cal
 
 **Status: `Measured`.** `bun run --cwd backend bench:workflow` runs the exact `runAnalysis` stage order (`backend/src/bench/workflow.ts`) against the live Singapore endpoint on `backend/src/bench/fixture.ts`, a synthetic 75-turn, 676-word, 4.0-minute adult URTI consultation carrying a name, an NRIC and a phone number so de-identification has real work. Three sequential runs, `qwen3.7-flash`, medians:
 
-| Stage                                                  | Median     | Note                                                                    |
-| ------------------------------------------------------ | ---------- | ----------------------------------------------------------------------- |
-| `deidentification`                                     | 13 ms      |                                                                         |
-| `rules`                                                | 8 ms       |                                                                         |
-| `note_generation` (`clinical_facts` + `note_and_gaps`) | 45.8 s     |                                                                         |
-| `retrieval` (`suggestions_and_red_flags`)              | 53.8 s     | Carries the serialised corpus. **Excludes retrieval itself, see below** |
-| `llm_concurrent`                                       | 53.8 s     | The wait the doctor experiences                                         |
-| `rehydration`                                          | < 1 ms     |                                                                         |
-| **`total`**                                            | **53.9 s** | Range 53.6 to 56.4 s across the three runs                              |
+| Stage                                                  | Median     | Note                                                                                       |
+| ------------------------------------------------------ | ---------- | ------------------------------------------------------------------------------------------ |
+| `deidentification`                                     | 13 ms      |                                                                                            |
+| `rules`                                                | 8 ms       |                                                                                            |
+| `note_generation` (`clinical_facts` + `note_and_gaps`) | 45.8 s     |                                                                                            |
+| `retrieval` (`suggestions_and_red_flags`)              | 53.8 s     | Carries the serialised corpus. **Measured no retrieval and predates the split, see below** |
+| `llm_concurrent`                                       | 53.8 s     | The wait the doctor experiences                                                            |
+| `rehydration`                                          | < 1 ms     |                                                                                            |
+| **`total`**                                            | **53.9 s** | Range 53.6 to 56.4 s across the three runs                                                 |
 
 What it establishes:
 
@@ -925,7 +948,12 @@ What it establishes:
 - **The live path is not covered.** Red flags and gaps fill during the consultation (#274), so at Finish the doctor waits only for the note. The harness measures the record-then-analyse path.
 - **The delay is visible but not sized.** The Analyse control shows a spinner and "Analysing" for the whole wait and does not state an expected duration.
 
-**The stage named `retrieval` does not run retrieval, and this figure therefore understates production.** `backend/src/bench/workflow.ts` calls `generateSuggestions()` directly with no retrieved chunks, so the 53.8 s is the suggestions model call alone: no embedding, no lexical or vector query, no retrieved chunks in the prompt. Production does more and does it **sequentially**, because `runAnalysis` awaits `retrieveGuidelines` and only then calls `generateSuggestions` inside that one branch. Real wall clock on that branch is retrieval plus this number. Do not cite this table as production latency until the harness runs the real pipeline (#340).
+**This table is superseded and is kept only as the before-figure.** Two faults, both fixed by #340:
+
+- **The stage named `retrieval` did not run retrieval.** `backend/src/bench/workflow.ts` called `generateSuggestions()` directly with no retrieved chunks, so 53.8 s was the suggestions model call alone: no embedding, no lexical or vector query, no retrieved chunks in the prompt. Production does more and does it **sequentially**, because `runAnalysis` awaits `retrieveGuidelines` and only then calls `generateSuggestions` inside that one branch, so real wall clock on that branch was retrieval plus this number.
+- **`note_generation` timed two calls under one name**, so nothing here says whether `clinical_facts` or `note_and_gaps` was the slower of the pair.
+
+The harness now mirrors `runAnalysis` and reports `guideline_retrieval` and `suggestions` separately, and `analyseNote` times its two calls as `extraction` and `note_generation`. **Re-measure before citing any figure here**, and remember that the operation being timed has itself changed: `suggestions_and_red_flags` is now two calls, one of which is skipped when retrieval returns nothing.
 
 The harness prints counts and durations only, never transcript or model text.
 
@@ -1426,7 +1454,7 @@ Two infrastructure facts previously recorded here as `Open` are now **resolved**
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **CAP-1**     | §12 (`note_and_gaps` operation), §3 (`SoapNoteSchema`), §13 (analyse route)                                                                                                                                                                                                                                                                    |
 | **CAP-2**     | §12 (`note_and_gaps` operation — `gaps`), §3 (`InformationGapSchema`), §13 (`PATCH` route — `reviewedGapIds`), §4 (proposed `Consultation.reviewedGapIds`)                                                                                                                                                                                     |
-| **CAP-3**     | §10 (Red-Flag Rules Engine — authoritative), §12 (`suggestions_and_red_flags` — model candidates), §3 (`RedFlagSchema`)                                                                                                                                                                                                                        |
+| **CAP-3**     | §10 (Red-Flag Rules Engine — authoritative), §12 (`red_flags` — model candidates), §3 (`RedFlagSchema`)                                                                                                                                                                                                                                        |
 | **CAP-4**     | §11 (Guideline Corpus), §12 (`suggestions_and_red_flags`), §3 (`ClinicalSuggestionSchema`, `citations.min(1)`), §13 (`GET /api/guidelines`)                                                                                                                                                                                                    |
 | **CAP-5**     | §13 (`PATCH` and `/approve` routes), §4 (`Consultation.editedNote`/`approvedAt`), §15 (Audit Logging)                                                                                                                                                                                                                                          |
 | Cross-cutting | §2 (module boundaries), §5 (PHI boundary), §6 (LLM adapter), §7 (environment contract), §8 (HTTP surface as built), §9 (de-identification), §14 (auth model), §16 (security controls), §17 (environments & deployment), §20 (ASR contract) — these underwrite `docs/prd.md` §10 (Safety Constraints) as a whole rather than any single `CAP-n` |

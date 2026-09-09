@@ -1127,15 +1127,18 @@ export const NoteAndGapsResponseSchema = z.object({
 })
 
 /**
- * Operation 2. `corpusIds` is the live list of guideline chunk ids at request
- * time, which narrows `guidelineId` from a free `string` to a decoding
- * constraint: a citation naming an id outside the corpus fails
- * `safeParse` inside the adapter and never reaches the doctor.
+ * Operation 2a — `red_flags`. Split out of `suggestions_and_red_flags` by
+ * issue #340, and the half that always runs: it needs no corpus, so it is a
+ * fixed schema rather than a factory.
  *
- * `outOfScope` is an explicit signal rather than an inference from an empty
- * `suggestions` array — that inference would conflate "out of scope,
- * suggestions suppressed" with "in scope, nothing to suggest" (docs/trd.md §19
- * row 7).
+ * `outOfScope` lives here, on the call that cannot be skipped, precisely
+ * because it must stay a real judgement about the presentation. It is an
+ * explicit signal rather than an inference from an empty `suggestions` array,
+ * since that inference would conflate "out of scope, suggestions suppressed"
+ * with "in scope, nothing to suggest" (docs/trd.md §19 row 7), and the review
+ * page renders those two, plus "nothing was retrieved", as three distinct
+ * sentences. Deriving it from an empty corpus instead would collapse the
+ * distinction the UI exists to make.
  *
  * Red flags returned here are candidates only: `source` is pinned to `'model'`
  * and `ruleId` is absent, so a model response is structurally incapable of
@@ -1145,33 +1148,47 @@ export const NoteAndGapsResponseSchema = z.object({
  * recording a finding can be heard, and a model that could assert it could
  * point a doctor at a moment that says something else, or at nothing at all.
  * It is resolved from the transcript afterwards, never accepted from a model.
+ *
+ * `guidelineIds` is omitted because a red flag is not a place a model may
+ * attach a citation. This half never receives a corpus at all, which makes
+ * that structural rather than merely asserted.
  */
-export const makeSuggestionsAndRedFlagsSchema = (corpusIds: readonly string[]) => {
-  const hasIds = corpusIds.length > 0
-  const suggestionSchema = ClinicalSuggestionSchema.extend({
-    citations: z
-      .array(
-        CitationSchema.extend({
-          guidelineId: hasIds ? z.enum(corpusIds as [string, ...string[]]) : z.string(),
-        }),
-      )
-      .min(1),
-  })
-  return z.object({
-    outOfScope: z.boolean(),
-    redFlags: z.array(
-      RedFlagSchema.omit({
-        source: true,
-        ruleId: true,
-        guidelineIds: true,
-        evidenceLink: true,
-      }).extend({
-        source: z.literal('model'),
+export const RedFlagCandidatesSchema = z.object({
+  outOfScope: z.boolean(),
+  redFlags: z.array(
+    RedFlagSchema.omit({
+      source: true,
+      ruleId: true,
+      guidelineIds: true,
+      evidenceLink: true,
+    }).extend({
+      source: z.literal('model'),
+    }),
+  ),
+})
+
+/**
+ * Operation 2b — `suggestions`. `corpusIds` is the live list of retrieved
+ * guideline chunk ids at request time, which narrows `guidelineId` from a free
+ * `string` to a decoding constraint: a citation naming an id outside the corpus
+ * fails `safeParse` inside the adapter and never reaches the doctor.
+ *
+ * The parameter is a **non-empty tuple**, not `string[]`, so a caller cannot
+ * reach an empty `z.enum`. That is not a nicety: an empty corpus admits no
+ * citation, every suggestion requires one, and the previous shape answered
+ * that by widening `guidelineId` back to a plain `string` and capping the
+ * array at zero. Making it unrepresentable is stronger, and it is why the
+ * caller skips this operation entirely rather than calling it with nothing
+ * (#340). Build the argument with `corpusIdsFor()`.
+ */
+export const makeSuggestionsSchema = (corpusIds: readonly [string, ...string[]]) =>
+  z.object({
+    suggestions: z.array(
+      ClinicalSuggestionSchema.extend({
+        citations: z.array(CitationSchema.extend({ guidelineId: z.enum(corpusIds) })).min(1),
       }),
     ),
-    suggestions: hasIds ? z.array(suggestionSchema) : z.array(suggestionSchema).max(0),
   })
-}
 
 // ─── API contracts (docs/trd.md §13) ─────────────────────────────────────────
 
@@ -1979,9 +1996,8 @@ export type ConsultationStatus = z.infer<typeof ConsultationStatusSchema>
 export type Consultation = z.infer<typeof ConsultationSchema>
 export type ClinicalFactsResponse = z.infer<typeof ClinicalFactsResponseSchema>
 export type NoteAndGapsResponse = z.infer<typeof NoteAndGapsResponseSchema>
-export type SuggestionsAndRedFlagsResponse = z.infer<
-  ReturnType<typeof makeSuggestionsAndRedFlagsSchema>
->
+export type RedFlagCandidatesResponse = z.infer<typeof RedFlagCandidatesSchema>
+export type SuggestionsResponse = z.infer<ReturnType<typeof makeSuggestionsSchema>>
 export type ConsultationListItem = z.infer<typeof ConsultationListItemSchema>
 export type PatientGender = z.infer<typeof PatientGenderSchema>
 export type Patient = z.infer<typeof PatientSchema>

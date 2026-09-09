@@ -264,4 +264,76 @@ describe('analyseNote', () => {
       await expect(analyseNote(content, content)).rejects.toBeInstanceOf(LLMResponseError)
     })
   })
+
+  /*
+   * Issue #340. The route used to wrap this whole function in one
+   * `note_generation` stage, so a timeout logged that name and nothing said
+   * which of the two concurrent calls had actually run long. Both are timed
+   * here now, which is the only place that can tell them apart.
+   */
+  describe('the two calls are timed apart', () => {
+    function captureLogLines(): { lines: string[]; restore: () => void } {
+      const lines: string[] = []
+      const spy = vi
+        .spyOn(process.stdout, 'write')
+        .mockImplementation((chunk: string | Uint8Array) => {
+          lines.push(String(chunk))
+          return true
+        })
+      return { lines, restore: () => spy.mockRestore() }
+    }
+
+    const stagesIn = (lines: readonly string[]) =>
+      lines
+        .join('')
+        .trim()
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith('{'))
+        .map((line) => JSON.parse(line) as { stage?: string })
+        .flatMap((record) => (record.stage === undefined ? [] : [record.stage]))
+
+    it('names each call as its own stage on success', async () => {
+      const { text: content } = deidentify('Doctor: what brings you in today?')
+      stubSplit(
+        { clinicalFacts: emptyFacts(), operational: LlmOperationalBlockSchema.parse({}) },
+        blankProse(),
+      )
+
+      const { lines, restore } = captureLogLines()
+      try {
+        await analyseNote(content, content)
+      } finally {
+        restore()
+      }
+
+      expect(stagesIn(lines).sort()).toEqual(['extraction', 'note_generation'])
+    })
+
+    it('names the failing call, not the pair', async () => {
+      const { text: content } = deidentify('Doctor: what brings you in today?')
+      stubClient(async (request) => {
+        if (request.operation === 'clinical_facts') {
+          throw new LLMResponseError('Provider response failed schema validation', 'clinical_facts')
+        }
+        return blankProse()
+      })
+
+      const { lines, restore } = captureLogLines()
+      try {
+        await expect(analyseNote(content, content)).rejects.toBeInstanceOf(LLMResponseError)
+      } finally {
+        restore()
+      }
+
+      const failed = lines
+        .join('')
+        .trim()
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith('{'))
+        .map((line) => JSON.parse(line) as { msg?: string; stage?: string })
+        .filter((record) => record.msg === 'pipeline stage failed')
+
+      expect(failed.map((record) => record.stage)).toEqual(['extraction'])
+    })
+  })
 })

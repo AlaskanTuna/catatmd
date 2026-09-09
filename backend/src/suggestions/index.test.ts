@@ -37,56 +37,77 @@ const sampleChunk: GuidelineChunk = {
 
 const citableId = sampleChunk.id
 
-const emptyResponse = { outOfScope: false, redFlags: [], suggestions: [] }
+type Overrides = {
+  outOfScope?: boolean
+  redFlags?: unknown[]
+  suggestions?: unknown[]
+}
+
+/**
+ * The two halves answer different schemas since #340, so the mock dispatches on
+ * the operation rather than returning one shape to both.
+ */
+function respond(overrides: Overrides = {}): void {
+  generate.mockImplementation((request: GenerateRequest<unknown>) =>
+    request.operation === 'red_flags'
+      ? Promise.resolve({
+          outOfScope: overrides.outOfScope ?? false,
+          redFlags: overrides.redFlags ?? [],
+        })
+      : Promise.resolve({ suggestions: overrides.suggestions ?? [] }),
+  )
+}
+
+function requestFor(operation: 'red_flags' | 'suggestions'): GenerateRequest<unknown> {
+  const call = generate.mock.calls.find(
+    ([request]) => (request as GenerateRequest<unknown>).operation === operation,
+  )
+  if (!call) throw new Error(`no ${operation} call was made`)
+  return call[0] as GenerateRequest<unknown>
+}
+
+function operationsCalled(): string[] {
+  return generate.mock.calls.map(([request]) => (request as GenerateRequest<unknown>).operation)
+}
 
 beforeEach(() => {
   generate.mockReset()
-  generate.mockResolvedValue(emptyResponse)
+  respond()
 })
 
-async function capturedRequest(
-  retrieved: readonly GuidelineChunk[] = [],
-): Promise<GenerateRequest<unknown>> {
-  await generateSuggestions(content, getClinicalProfile(), retrieved)
-  const [request] = generate.mock.calls.at(-1) as [GenerateRequest<unknown>]
-  return request
-}
-
 describe('generateSuggestions - call shape', () => {
-  it('calls the LLM client egress point with the suggestions_and_red_flags operation', async () => {
-    const request = await capturedRequest()
+  it('reaches the provider only through the LLM client egress point, once per half', async () => {
+    await generateSuggestions(content, getClinicalProfile(), [sampleChunk])
 
-    expect(request.operation).toBe('suggestions_and_red_flags')
-    expect(request.schemaName).toBe('suggestions_and_red_flags')
-    expect(request.content).toBe(content)
+    expect(operationsCalled().sort()).toEqual(['red_flags', 'suggestions'])
+    expect(requestFor('red_flags').schemaName).toBe('red_flags')
+    expect(requestFor('suggestions').schemaName).toBe('suggestions')
+    expect(requestFor('red_flags').content).toBe(content)
+    expect(requestFor('suggestions').content).toBe(content)
   })
 
   it('returns the client response unchanged when the corpus is non-empty', async () => {
-    const response = {
-      outOfScope: false,
-      redFlags: [],
-      suggestions: [
-        {
-          id: 's1',
-          text: 'Symptomatic management is appropriate.',
-          citations: [{ guidelineId: citableId }],
-        },
-      ],
-    }
-    generate.mockResolvedValue(response)
+    const suggestions = [
+      {
+        id: 's1',
+        text: 'Symptomatic management is appropriate.',
+        citations: [{ guidelineId: citableId }],
+      },
+    ]
+    respond({ suggestions })
 
     await expect(
       generateSuggestions(content, getClinicalProfile(), [sampleChunk]),
     ).resolves.toEqual({
-      ...response,
+      outOfScope: false,
+      redFlags: [],
+      suggestions,
       suppressedSuggestionIds: [],
     })
   })
 
   it('filters unsafe model suggestions after the decoded response and reports ids only', async () => {
-    generate.mockResolvedValue({
-      outOfScope: false,
-      redFlags: [],
+    respond({
       suggestions: [
         {
           id: 'unsafe-prescribing',
@@ -119,9 +140,7 @@ describe('generateSuggestions - call shape', () => {
 
   it('replaces a rejected model-authored id with a server-generated suppression id', async () => {
     const unsafeId = '[PATIENT_1] reports burning urination and a new fever.'
-    generate.mockResolvedValue({
-      outOfScope: false,
-      redFlags: [],
+    respond({
       suggestions: [
         {
           id: unsafeId,
@@ -139,6 +158,18 @@ describe('generateSuggestions - call shape', () => {
 })
 
 describe('generateSuggestions - empty corpus', () => {
+  /*
+   * The saving that motivated the split (#340). The citable corpus is the
+   * retrieved set, so nothing retrieved means no cited suggestion is possible.
+   * That used to be a model call whose answer was discarded and replaced with
+   * an empty array.
+   */
+  it('makes no suggestions call at all when nothing was retrieved', async () => {
+    await generateSuggestions(content)
+
+    expect(operationsCalled()).toEqual(['red_flags'])
+  })
+
   it('preserves the model outOfScope signal and red-flag candidates, with no suggestions', async () => {
     const redFlags = [
       {
@@ -149,7 +180,7 @@ describe('generateSuggestions - empty corpus', () => {
         source: 'model',
       },
     ]
-    generate.mockResolvedValue({ outOfScope: false, redFlags, suggestions: [] })
+    respond({ redFlags })
 
     await expect(generateSuggestions(content)).resolves.toEqual({
       outOfScope: false,
@@ -159,115 +190,43 @@ describe('generateSuggestions - empty corpus', () => {
     })
   })
 
-  it('tells the model no citable corpus is available', async () => {
-    const request = await capturedRequest()
+  /*
+   * An empty retrieval is not an out-of-scope consultation, and the review page
+   * renders those as two different sentences. Deriving the signal from the
+   * corpus would collapse that distinction.
+   */
+  it('does not report out of scope merely because nothing was retrieved', async () => {
+    respond({ outOfScope: false })
 
-    expect(request.system).toMatch(/no citable guideline corpus/i)
-  })
-
-  it('rejects any suggestion when the corpus is empty', async () => {
-    const request = await capturedRequest()
-
-    const result = request.schema.safeParse({
-      outOfScope: false,
-      redFlags: [],
-      suggestions: [
-        {
-          id: 's1',
-          text: 'x',
-          citations: [{ guidelineId: 'not-a-real-corpus-id' }],
-        },
-      ],
-    })
-
-    expect(result.success).toBe(false)
-  })
-
-  it('still allows model red-flag candidates with no corpus', async () => {
-    const request = await capturedRequest()
-
-    const result = request.schema.safeParse({
-      outOfScope: true,
-      redFlags: [
-        {
-          id: 'm1',
-          label: 'Possible peritonsillar abscess',
-          severity: 'urgent',
-          evidence: 'cannot open mouth fully',
-          source: 'model',
-        },
-      ],
-      suggestions: [],
-    })
-
-    expect(result.success).toBe(true)
+    await expect(generateSuggestions(content)).resolves.toMatchObject({ outOfScope: false })
   })
 })
 
 describe('generateSuggestions - schema-enforced citation rejection (docs/trd.md §11)', () => {
   it('rejects a citation naming a guideline id outside the corpus', async () => {
-    const request = await capturedRequest([sampleChunk])
+    await generateSuggestions(content, getClinicalProfile(), [sampleChunk])
 
-    const result = request.schema.safeParse({
-      outOfScope: false,
-      redFlags: [],
-      suggestions: [
-        {
-          id: 's1',
-          text: 'x',
-          citations: [{ guidelineId: 'not-a-real-corpus-id' }],
-        },
-      ],
+    const result = requestFor('suggestions').schema.safeParse({
+      suggestions: [{ id: 's1', text: 'x', citations: [{ guidelineId: 'not-a-real-corpus-id' }] }],
     })
 
     expect(result.success).toBe(false)
   })
 
   it('accepts a citation naming a guideline id inside the corpus', async () => {
-    const request = await capturedRequest([sampleChunk])
+    await generateSuggestions(content, getClinicalProfile(), [sampleChunk])
 
-    const result = request.schema.safeParse({
-      outOfScope: false,
-      redFlags: [],
-      suggestions: [
-        {
-          id: 's1',
-          text: 'x',
-          citations: [{ guidelineId: citableId }],
-        },
-      ],
+    const result = requestFor('suggestions').schema.safeParse({
+      suggestions: [{ id: 's1', text: 'x', citations: [{ guidelineId: citableId }] }],
     })
 
     expect(result.success).toBe(true)
   })
 
-  it('accepts a retrieved chunk id and rejects a foreign id', async () => {
-    await generateSuggestions(content, getClinicalProfile(), [sampleChunk])
-    const [request] = generate.mock.calls.at(-1) as [GenerateRequest<unknown>]
-
-    expect(request.system).toContain(citableId)
-
-    const accepted = request.schema.safeParse({
-      outOfScope: false,
-      redFlags: [],
-      suggestions: [{ id: 's1', text: 'x', citations: [{ guidelineId: citableId }] }],
-    })
-    expect(accepted.success).toBe(true)
-
-    const rejected = request.schema.safeParse({
-      outOfScope: false,
-      redFlags: [],
-      suggestions: [{ id: 's2', text: 'x', citations: [{ guidelineId: 'foreign-id' }] }],
-    })
-    expect(rejected.success).toBe(false)
-  })
-
   it('rejects a suggestion with zero citations', async () => {
-    const request = await capturedRequest([sampleChunk])
+    await generateSuggestions(content, getClinicalProfile(), [sampleChunk])
 
-    const result = request.schema.safeParse({
-      outOfScope: false,
-      redFlags: [],
+    const result = requestFor('suggestions').schema.safeParse({
       suggestions: [{ id: 's1', text: 'x', citations: [] }],
     })
 
@@ -277,26 +236,24 @@ describe('generateSuggestions - schema-enforced citation rejection (docs/trd.md 
 
 describe('generateSuggestions - red flags cannot impersonate the rule engine (docs/trd.md §10)', () => {
   it('rejects a red flag that claims source: "rule"', async () => {
-    const request = await capturedRequest()
+    await generateSuggestions(content)
 
-    const result = request.schema.safeParse({
+    const result = requestFor('red_flags').schema.safeParse({
       outOfScope: false,
       redFlags: [
         { id: 'x', label: 'x', severity: 'advisory', evidence: 'x', source: 'rule', ruleId: 'x' },
       ],
-      suggestions: [],
     })
 
     expect(result.success).toBe(false)
   })
 
   it('accepts a red flag with source: "model" and no ruleId', async () => {
-    const request = await capturedRequest()
+    await generateSuggestions(content)
 
-    const result = request.schema.safeParse({
+    const result = requestFor('red_flags').schema.safeParse({
       outOfScope: false,
       redFlags: [{ id: 'x', label: 'x', severity: 'advisory', evidence: 'x', source: 'model' }],
-      suggestions: [],
     })
 
     expect(result.success).toBe(true)
@@ -304,43 +261,88 @@ describe('generateSuggestions - red flags cannot impersonate the rule engine (do
 })
 
 describe('generateSuggestions - outOfScope signal (docs/trd.md §19 row 7)', () => {
-  it('accepts outOfScope: true with an empty suggestions array', async () => {
-    const request = await capturedRequest()
+  it('accepts outOfScope: true from the half that always runs', async () => {
+    await generateSuggestions(content)
 
-    const result = request.schema.safeParse({
-      outOfScope: true,
-      redFlags: [],
-      suggestions: [],
-    })
+    const result = requestFor('red_flags').schema.safeParse({ outOfScope: true, redFlags: [] })
 
     expect(result.success).toBe(true)
+  })
+
+  /*
+   * One call could suppress its own suggestions when it judged the consultation
+   * out of scope. Two concurrent calls cannot, because the citing half is never
+   * told the verdict, so the suppression became deterministic here instead.
+   */
+  it('drops suggestions when the scope verdict says the corpus does not apply', async () => {
+    respond({
+      outOfScope: true,
+      suggestions: [{ id: 's1', text: 'x', citations: [{ guidelineId: citableId }] }],
+    })
+
+    await expect(
+      generateSuggestions(content, getClinicalProfile(), [sampleChunk]),
+    ).resolves.toMatchObject({ outOfScope: true, suggestions: [] })
+  })
+
+  it('keeps red-flag candidates even when the consultation is out of scope', async () => {
+    const redFlags = [
+      {
+        id: 'm1',
+        label: 'Possible peritonsillar abscess',
+        severity: 'urgent',
+        evidence: 'cannot open mouth fully',
+        source: 'model',
+      },
+    ]
+    respond({ outOfScope: true, redFlags })
+
+    await expect(
+      generateSuggestions(content, getClinicalProfile(), [sampleChunk]),
+    ).resolves.toMatchObject({ redFlags })
   })
 })
 
 describe('generateSuggestions - system prompt content', () => {
   it('states red-flag candidates are candidates only and can never override the rule engine', async () => {
-    const request = await capturedRequest()
+    await generateSuggestions(content)
 
-    expect(request.system).toMatch(/candidates? only/i)
-    expect(request.system).toMatch(/never (override|suppress|downgrade)/i)
+    const system = requestFor('red_flags').system
+    expect(system).toMatch(/candidates? only/i)
+    expect(system).toMatch(/never (override|suppress|downgrade)/i)
   })
 
-  it('serialises every retrieved chunk id into the system prompt', async () => {
+  /*
+   * The input-token half of the split. Red-flag candidates are read out of the
+   * transcript, not out of a guideline, so the retrieved set has no business in
+   * this prompt and used to be serialised into it on every analysis.
+   */
+  it('never serialises the corpus into the red-flag prompt', async () => {
     await generateSuggestions(content, getClinicalProfile(), [sampleChunk])
-    const [request] = generate.mock.calls.at(-1) as [GenerateRequest<unknown>]
 
-    expect(request.system).toContain(citableId)
+    expect(requestFor('red_flags').system).not.toContain(citableId)
+    expect(requestFor('red_flags').system).not.toContain(sampleChunk.summary)
+  })
+
+  it('serialises every retrieved chunk id into the suggestions prompt', async () => {
+    await generateSuggestions(content, getClinicalProfile(), [sampleChunk])
+
+    expect(requestFor('suggestions').system).toContain(citableId)
   })
 
   it('instructs the model to never state a diagnosis', async () => {
-    const request = await capturedRequest()
+    await generateSuggestions(content, getClinicalProfile(), [sampleChunk])
 
-    expect(request.system).toMatch(/never state a diagnosis/i)
+    expect(requestFor('suggestions').system).toMatch(/never state a diagnosis/i)
   })
 
-  it('does not itself state or imply a diagnosis', async () => {
-    const request = await capturedRequest()
+  it('does not itself state or imply a diagnosis, on either half', async () => {
+    await generateSuggestions(content, getClinicalProfile(), [sampleChunk])
 
-    expect(request.system).not.toMatch(/\b(patient has|diagnosed with|suffering from)\b/i)
+    for (const operation of ['red_flags', 'suggestions'] as const) {
+      expect(requestFor(operation).system).not.toMatch(
+        /\b(patient has|diagnosed with|suffering from)\b/i,
+      )
+    }
   })
 })
