@@ -29,12 +29,65 @@ export const SpeakerSchema = z.enum(['doctor', 'patient'])
  * ceiling, and a turn longer than 4,000 characters is not a turn.
  */
 export const MAX_TRANSCRIPT_TURNS = 600
+/**
+ * Bounded for the reason `medicationsDispensed` is, and on the same order of
+ * magnitude deliberately: a GP consultation dispensing more than ten items is
+ * not the scope this prototype claims.
+ */
+export const MAX_PRESCRIPTIONS = 10
 export const MAX_TURN_CHARACTERS = 4_000
+
+/**
+ * How many uncertain spans one turn may carry (issue #309).
+ *
+ * A bound rather than a target, and it is not sized from speech: adjacent
+ * sub-threshold words are merged before they get here, so a turn needing more
+ * than this many separate spans is one the recogniser was unsure of throughout,
+ * where highlighting every run says no more than highlighting the first two
+ * hundred. The producer truncates to this rather than letting a pathological
+ * turn fail the schema, because a 400 on a stored transcript would cost the
+ * doctor the whole consultation to save a display cue.
+ */
+export const MAX_UNCERTAIN_RANGES_PER_TURN = 200
+
+/**
+ * A half-open span of a turn's text, `[start, end)`.
+ *
+ * **Character offsets, not seconds.** `start` and `end` mean seconds on
+ * `HostedAsrSegmentSchema` a hundred lines below, and confusing the two would
+ * put a highlight in a place nobody said anything. Named here once so both
+ * sides read the same thing.
+ */
+export const TextRangeSchema = z.object({
+  start: z.number().int().nonnegative(),
+  end: z.number().int().positive(),
+})
 
 export const TranscriptTurnSchema = z
   .object({
     speaker: SpeakerSchema,
     text: z.string().min(1).max(MAX_TURN_CHARACTERS),
+    /**
+     * Where the recogniser was unsure of its own words (issue #309).
+     *
+     * **A cue to re-read, never a finding.** Soniox returns a confidence per
+     * token; below a threshold the spans are folded into ranges here so the
+     * doctor sees which words to check rather than a score for a whole turn,
+     * which nobody can act on. Nothing downstream may read this as evidence
+     * that a word is wrong, and no red flag, suggestion or note field may be
+     * gated on it.
+     *
+     * **Absent means nothing is claimed**, not that every word was certain. It
+     * is absent on every typed and pasted transcript, on every path whose
+     * recogniser reports no confidence, and on any line the doctor edited: once
+     * the words are theirs, a machine's doubt about the words it replaced is no
+     * longer about anything on screen.
+     *
+     * Optional so transcripts stored before this field existed still parse, and
+     * it lives inside the turn rather than beside it so `Consultation.transcript`
+     * stays the single PHI column `eraseConsultation` already nulls.
+     */
+    uncertain: z.array(TextRangeSchema).max(MAX_UNCERTAIN_RANGES_PER_TURN).optional(),
     /** Seconds from consultation start, when the source provides timing. */
     offsetSeconds: z.number().nonnegative().optional(),
     /**
@@ -57,6 +110,27 @@ export const TranscriptTurnSchema = z
       turn.endSeconds === undefined ||
       turn.endSeconds >= turn.offsetSeconds,
     { message: 'endSeconds must not precede offsetSeconds', path: ['endSeconds'] },
+  )
+  /*
+   * Uncertain spans must be in bounds, non-empty, and in ascending order with
+   * no overlap. Checked rather than assumed because a renderer walks them once
+   * from left to right, so an overlapping or backwards pair would silently
+   * duplicate or drop the text between them, and the doctor would be reading a
+   * turn that is not the one stored.
+   */
+  .refine(
+    (turn) =>
+      turn.uncertain === undefined ||
+      turn.uncertain.every(
+        (range, index) =>
+          range.end > range.start &&
+          range.end <= turn.text.length &&
+          (index === 0 || range.start >= (turn.uncertain?.[index - 1]?.end ?? 0)),
+      ),
+    {
+      message: 'uncertain ranges must be ordered, non-overlapping and within the text',
+      path: ['uncertain'],
+    },
   )
 
 /**
@@ -241,6 +315,17 @@ export const LIVE_ASR_WEBSOCKET_URL =
   /^wss:\/\/stt-rt(?:\.(?:eu|jp|in))?\.soniox\.com\/transcribe-websocket$/
 
 /**
+ * How many vocabulary terms may ride in the session context.
+ *
+ * The vendor's ceiling is the whole context at 8,000 tokens, roughly 10,000
+ * characters, shared with `general`. This bound is far below it and is about a
+ * different risk: the list crosses the audio egress, so it is one of the few
+ * values in the system that cannot be de-identified on the way out. A small
+ * cap keeps it reviewable by eye, which is the only review it can get.
+ */
+export const MAX_ASR_CONTEXT_TERMS = 120
+
+/**
  * The recognition settings the browser sends as the socket's first frame.
  *
  * Served by the API rather than hardcoded in the bundle so hints and the model
@@ -278,6 +363,26 @@ export const LiveSessionConfigSchema = z.object({
       .array(z.object({ key: z.string().min(1).max(32), value: z.string().min(1).max(128) }))
       .min(1)
       .max(8),
+    /**
+     * Clinical vocabulary to prime recognition toward, in the language of the
+     * consultation (issue #307).
+     *
+     * **This is the accuracy layer, not a refinement.** docs/trd.md 20.7.1
+     * measured the same Malay clip going from "Dr. Sayyabah Taksudali Maharaj"
+     * with no context to one word wrong with a clinical Malay vocabulary that
+     * contained none of the sentence's content words. The effect is domain and
+     * language priming rather than keyword injection, which is why the list is
+     * a vocabulary rather than a list of expected answers.
+     *
+     * **One language, and the target one.** The same measurement scored English
+     * context *worse than no context at all* on Malay audio, so this is never a
+     * multilingual superset even though `languageHints` names four.
+     *
+     * **Optional, and that is a rollout property rather than a nicety.** Vercel
+     * and Render deploy independently from one merge, so a required field would
+     * black out ambient capture for the length of the slower build.
+     */
+    terms: z.array(z.string().min(1).max(64)).max(MAX_ASR_CONTEXT_TERMS).optional(),
   }),
 })
 
@@ -675,6 +780,52 @@ export const EvidenceLinkSchema = z.object({
 })
 export type EvidenceLink = z.infer<typeof EvidenceLinkSchema>
 
+/**
+ * `verbatimAllowed` is legally load-bearing, not metadata: MOH NAG 2024 is
+ * all-rights-reserved and may be summarised and linked but never quoted, while
+ * the two CC-licensed sources may be. A `quote` on a chunk that forbids one is
+ * a corpus-authoring defect and fails here (docs/trd.md §11).
+ */
+export const GuidelineChunkSchema = z
+  .object({
+    id: z.string(),
+    title: z.string(),
+    publisher: z.string(),
+    year: z.number().int(),
+    url: z.string().url(),
+    /** Short, non-verbatim summary shown in the UI. */
+    summary: z.string(),
+    sourceLicence: z.string(),
+    verbatimAllowed: z.boolean(),
+    quote: z.string().optional(),
+    /** Set on retrieved CPG chunks only; the curated corpus has no pages. */
+    documentId: z.string().optional(),
+    page: z.number().int().optional(),
+    /** True when the span was OCRed from a scanned page, so it may carry recognition errors. */
+    ocr: z.boolean().optional(),
+  })
+  .refine((chunk) => chunk.verbatimAllowed || chunk.quote === undefined, {
+    path: ['quote'],
+    message: 'quote is not permitted on a chunk whose licence forbids verbatim reuse',
+  })
+
+/** One ingested guideline document, as listed on the guideline library page. */
+export const GuidelineDocumentSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  publisher: z.string(),
+  year: z.number().int(),
+  sourceUrl: z.string().url(),
+  jurisdiction: z.string(),
+  sourceLicence: z.string(),
+  pageCount: z.number().int(),
+  chunkCount: z.number().int(),
+  ingestedAt: z.coerce.date(),
+  /** Clinical profiles this document is retrievable for; empty means never. */
+  profiles: z.array(z.string()),
+  verbatimAllowed: z.boolean(),
+})
+
 // ─── Analysis envelope ───────────────────────────────────────────────────────
 
 export const ConsultationAnalysisSchema = z.object({
@@ -691,6 +842,13 @@ export const ConsultationAnalysisSchema = z.object({
   gaps: z.array(InformationGapSchema),
   redFlags: z.array(RedFlagSchema),
   suggestions: z.array(ClinicalSuggestionSchema),
+  /**
+   * CPG chunks retrieved for this consultation and offered to the model as
+   * citation candidates alongside the curated corpus. Persisted with the
+   * analysis so the review UI can resolve a citation without re-running
+   * retrieval, which would not be reproducible.
+   */
+  retrievedGuidelines: z.array(GuidelineChunkSchema).optional(),
   /**
    * The reviewed checklist, surfaced rather than discarded.
    *
@@ -780,6 +938,113 @@ export const ConsultationTitleSchema = z
   .refine((value) => value.length <= 120)
   .transform((value) => (value.length === 0 ? null : value))
   .nullable()
+
+// ─── Prescriptions ───────────────────────────────────────────────────────────
+
+/**
+ * The three closed sets a parsed sig resolves to (#311, #312).
+ *
+ * They live here rather than beside the parser because both sides read them:
+ * `backend/src/medications/vocabulary.ts` re-exports them for `parseSig`, and
+ * `PrescriptionSchema` below turns them into wire enums. One definition, so a
+ * value the parser produces can never fail the schema that stores it.
+ *
+ * **`every-6-hours` is deliberately distinct from `four-times-daily`.** They are
+ * different instructions, and folding them would be the system interpreting what
+ * the doctor said rather than recording it.
+ */
+export const SIG_ROUTES = ['oral', 'topical', 'inhaled', 'nasal'] as const
+export type SigRoute = (typeof SIG_ROUTES)[number]
+
+export const SIG_FREQUENCIES = [
+  'once-daily',
+  'twice-daily',
+  'three-times-daily',
+  'four-times-daily',
+  'every-4-hours',
+  'every-6-hours',
+  'every-8-hours',
+  'every-12-hours',
+  'at-night',
+  'when-required',
+  'immediately',
+] as const
+export type SigFrequency = (typeof SIG_FREQUENCIES)[number]
+
+export const SIG_FOOD_TIMINGS = ['before', 'after', 'with'] as const
+export type SigFoodTiming = (typeof SIG_FOOD_TIMINGS)[number]
+
+/**
+ * One medication the doctor dictated and then confirmed (`docs/decisions.md`
+ * D-001).
+ *
+ * **Doctor-authored, and separate from `medicationsDispensed` for that reason.**
+ * That field is model-extracted from the consultation and carries a verbatim
+ * transcript span; this one is spoken deliberately afterwards and confirmed
+ * before it is stored. Merging them would put a model's reading and a doctor's
+ * decision in one array with no way to tell them apart.
+ *
+ * `drug` is free text with an optional `lexiconId`, **not** an enum over the
+ * lexicon. The `z.enum(corpusIds)` pattern exists on `guidelineId` because the
+ * *model* authors citations and must not invent one; here the *doctor* authors
+ * the prescription, and a drug outside a URTI-scoped list is a clinician's
+ * decision rather than a hallucination. `lexiconId` records when they accepted
+ * a lexicon candidate, so provenance is visible without the cliff.
+ *
+ * Every parsed field is nullable. `parseSig` leaves what it could not read as
+ * `null` rather than guessing, and a prescription is stored with the gaps the
+ * doctor left rather than with a value nobody said.
+ *
+ * `dictated` is the verbatim phrase, kept as the evidence the structured fields
+ * were derived from, the same role a transcript span plays elsewhere.
+ */
+export const PrescriptionSchema = z.object({
+  drug: z.string().min(1).max(80),
+  lexiconId: z.string().max(80).optional(),
+  dose: z.string().max(40).nullable(),
+  route: z.enum(SIG_ROUTES).nullable(),
+  frequency: z.enum(SIG_FREQUENCIES).nullable(),
+  duration: z.string().max(40).nullable(),
+  food: z.enum(SIG_FOOD_TIMINGS).nullable(),
+  dictated: z.string().min(1).max(400),
+})
+
+/**
+ * One lexicon match offered for a drug name the recogniser may have garbled.
+ *
+ * `heard` and `generic` both travel because the doctor is choosing between
+ * them, and `start`/`end` locate the span in the dictation. **Together those are
+ * a splice instruction, and nothing may act on it without the doctor.** The
+ * matcher guarantees only that it never rewrites text; the confirm step is a
+ * control this layer and the UI have to keep, not one they inherit.
+ */
+export const MedicationCandidateSchema = z.object({
+  lexiconId: z.string().max(80),
+  generic: z.string().max(80),
+  heard: z.string().max(80),
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+  score: z.number(),
+})
+
+/**
+ * What the parse endpoint returns: a draft, never a stored record.
+ *
+ * `candidates` is ordered by the matcher (score, then span length, then id) and
+ * **must not be re-sorted downstream**. A clinical-safety review on #311 found
+ * a contained single agent outranking the combination the doctor actually said,
+ * so the ordering is a fix, not a presentation choice.
+ */
+export const PrescriptionParseResponseSchema = z.object({
+  sig: PrescriptionSchema.pick({
+    dose: true,
+    route: true,
+    frequency: true,
+    duration: true,
+    food: true,
+  }),
+  candidates: z.array(MedicationCandidateSchema).max(20),
+})
 
 export const ConsultationSchema = z.object({
   id: z.string(),
@@ -1237,6 +1502,17 @@ export type DispositionInput = z.infer<typeof DispositionInputSchema>
 export const ConsultationDetailSchema = ConsultationSchema.extend({
   editedNote: SoapNoteSchema.nullable(),
   editedMedicalRecordNote: MedicalRecordNoteSchema.nullish().transform((value) => value ?? null),
+  /*
+   * Nullish rather than required, like every field added after launch. Vercel
+   * and Render deploy independently from one merge and the SPA `safeParse`s
+   * every response, so a required new field breaks the SPA against the older
+   * API for the length of one deploy skew.
+   */
+  prescriptions: z
+    .array(PrescriptionSchema)
+    .max(MAX_PRESCRIPTIONS)
+    .nullish()
+    .transform((value) => value ?? null),
   approvedAt: z.coerce.date().nullable(),
   /**
    * The clinician who approved, by name, and `null` until one has.
@@ -1434,30 +1710,6 @@ export const FixtureSchema = z.object({
   transcript: TranscriptSchema,
 })
 
-/**
- * `verbatimAllowed` is legally load-bearing, not metadata: MOH NAG 2024 is
- * all-rights-reserved and may be summarised and linked but never quoted, while
- * the two CC-licensed sources may be. A `quote` on a chunk that forbids one is
- * a corpus-authoring defect and fails here (docs/trd.md §11).
- */
-export const GuidelineChunkSchema = z
-  .object({
-    id: z.string(),
-    title: z.string(),
-    publisher: z.string(),
-    year: z.number().int(),
-    url: z.string().url(),
-    /** Short, non-verbatim summary shown in the UI. */
-    summary: z.string(),
-    sourceLicence: z.string(),
-    verbatimAllowed: z.boolean(),
-    quote: z.string().optional(),
-  })
-  .refine((chunk) => chunk.verbatimAllowed || chunk.quote === undefined, {
-    path: ['quote'],
-    message: 'quote is not permitted on a chunk whose licence forbids verbatim reuse',
-  })
-
 // ─── Live analysis (ambient capture) ─────────────────────────────────────────
 
 /**
@@ -1546,9 +1798,47 @@ export const LiveFlagsResponseSchema = z.object({
   redFlags: z.array(RedFlagSchema),
 })
 
+// ─── Transcript corrections ──────────────────────────────────────────────────
+
+/**
+ * One suspected mishear the doctor may accept or reject (#308).
+ *
+ * Both words travel. The doctor is choosing between them, so a payload carrying
+ * only `suggested` would ask them to approve a replacement without showing what
+ * it displaces, and `docs/trd.md` §20.7 admits this feature only as "a proposal
+ * on screen, never an automatic edit".
+ *
+ * `start` is a character offset into the turn's stored text, so the client can
+ * splice the correction back without re-running the matcher. It is a position in
+ * the transcript the server read, which is why Accept sends the whole corrected
+ * transcript rather than the offset: a stale offset applied to an edited turn
+ * would corrupt a word nobody chose.
+ */
+export const MishearProposalSchema = z.object({
+  turnIndex: z.number().int().nonnegative(),
+  start: z.number().int().nonnegative(),
+  original: z.string().min(1).max(MAX_TURN_CHARACTERS),
+  suggested: z.string().min(1).max(MAX_TURN_CHARACTERS),
+})
+
+/**
+ * Bounded for the same reason `medicationsDispensed` is: an unbounded array is
+ * an unbounded response. The cap is generous against the 11-entry table, which
+ * can only fire on whole tokens, and it is a bound rather than a target.
+ */
+export const TranscriptCorrectionsResponseSchema = z.object({
+  proposals: z.array(MishearProposalSchema).max(MAX_TRANSCRIPT_TURNS),
+})
+
 // ─── Inferred types ──────────────────────────────────────────────────────────
 
 export type Speaker = z.infer<typeof SpeakerSchema>
+export type Prescription = z.infer<typeof PrescriptionSchema>
+export type MedicationCandidateWire = z.infer<typeof MedicationCandidateSchema>
+export type PrescriptionParseResponse = z.infer<typeof PrescriptionParseResponseSchema>
+export type MishearProposal = z.infer<typeof MishearProposalSchema>
+export type TranscriptCorrectionsResponse = z.infer<typeof TranscriptCorrectionsResponseSchema>
+export type TextRange = z.infer<typeof TextRangeSchema>
 export type TranscriptTurn = z.infer<typeof TranscriptTurnSchema>
 export type TranscriptSource = z.infer<typeof TranscriptSourceSchema>
 export type Transcript = z.infer<typeof TranscriptSchema>
@@ -1603,6 +1893,7 @@ export type RetentionPolicy = z.infer<typeof RetentionPolicySchema>
 export type ErrorEnvelope = z.infer<typeof ErrorEnvelopeSchema>
 export type Fixture = z.infer<typeof FixtureSchema>
 export type GuidelineChunk = z.infer<typeof GuidelineChunkSchema>
+export type GuidelineDocument = z.infer<typeof GuidelineDocumentSchema>
 export type CopilotRole = z.infer<typeof CopilotRoleSchema>
 export type CopilotTurn = z.infer<typeof CopilotTurnSchema>
 export type CopilotRequest = z.infer<typeof CopilotRequestSchema>

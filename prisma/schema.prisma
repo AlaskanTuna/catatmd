@@ -248,6 +248,15 @@ model Consultation {
   /// Erasure must null this beside `analysis` and `editedNote`.
   editedMedicalRecordNote Json?
 
+  /// `Prescription[]` from @shared/types: medications the doctor dictated and
+  /// then confirmed (`docs/decisions.md` D-001). Doctor-authored, and distinct
+  /// from the model-extracted `operational.medicationsDispensed` inside
+  /// `analysis` for that reason.
+  ///
+  /// A fifth PHI column, and erased with the other four. Never reaches a
+  /// provider: this path runs no model at all.
+  prescriptions           Json?
+
   /// Array of `RedFlag.id` the doctor has acknowledged. Acknowledgment is
   /// additive only — a red flag is never removed or downgraded by it.
   ///
@@ -362,4 +371,52 @@ enum PatientGender {
   male
   female
   other
+}
+
+// ─── Guideline retrieval (#220, #225) ────────────────────────────────────────
+
+/// One ingested guideline document, today a Malaysian CPG from the Academy of
+/// Medicine portal. Holds provenance only; the text lives in its chunks.
+model GuidelineDocument {
+  id            String   @id
+  title         String
+  publisher     String
+  year          Int
+  sourceUrl     String
+  jurisdiction  String
+  sourceLicence String
+  sha256        String
+  /// Object path in the Supabase Storage bucket, null until uploaded.
+  storagePath   String?
+  /// Clinical profiles this document may be retrieved for. Empty means never:
+  /// a document is citable only where an operator has scoped it (#220).
+  profiles      String[] @default([])
+  /// Operator's licence decision from the manifest, not a code default.
+  verbatimAllowed Boolean @default(false)
+  pageCount     Int
+  ingestedAt    DateTime @default(now())
+
+  chunks GuidelineChunk[]
+
+  @@map("guideline_document")
+}
+
+/// A retrievable span of a guideline document. `embedding` and `tsv` are
+/// written by raw SQL in the ingestion script, since Prisma cannot type them;
+/// `tsv` is a generated column (see the migration).
+model GuidelineChunk {
+  id         String  @id
+  documentId String
+  document   GuidelineDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  page       Int
+  ordinal    Int
+  heading    String?
+  text       String
+  /// True when the page had no text layer and the text came from Tesseract.
+  ocr        Boolean @default(false)
+  embedding  Unsupported("vector(1024)")?
+  tsv        Unsupported("tsvector")?
+
+  @@index([documentId, ordinal])
+  @@map("guideline_chunk")
 }

@@ -11,18 +11,23 @@ import {
   DispositionInputSchema,
   ERASE_BATCH_LIMIT,
   EraseConsultationsInputSchema,
+  type GuidelineChunk,
   type InformationGap,
   LiveAnalysisResponseSchema,
   LiveAnalysisStateSchema,
   LiveFlagsResponseSchema,
   MAX_LIVE_DELTA_CHARACTERS,
   MAX_LIVE_DELTA_TURNS,
+  MAX_PRESCRIPTIONS,
   type MedicalRecordNote,
   MedicalRecordNoteSchema,
   NoteTemplateSchema,
+  PrescriptionParseResponseSchema,
+  PrescriptionSchema,
   type SoapNote,
   SoapNoteSchema,
   type Transcript,
+  TranscriptCorrectionsResponseSchema,
   TranscriptSchema,
   toSoapNote,
 } from '@shared/types'
@@ -48,8 +53,10 @@ import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
 import { logger, timeStage } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
+import { matchMedication, parseSig } from '../medications/index.js'
 import { inFlightGate, parseAudioBody } from '../middleware/audio-body.js'
-import { evaluateRedFlags, mergeRedFlags } from '../redflags/index.js'
+import { evaluateRedFlags, mergeRedFlags, proposeMishearCorrections } from '../redflags/index.js'
+import { retrieveGuidelines } from '../retrieval/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
 import type { SuppressedSuggestionId } from '../suggestions/safety.js'
 
@@ -117,6 +124,7 @@ function toDetail(
     analysis: row.analysis ?? null,
     editedNote: row.editedNote ?? null,
     editedMedicalRecordNote: row.editedMedicalRecordNote ?? null,
+    prescriptions: row.prescriptions ?? null,
     noteTemplate: row.noteTemplate ?? 'soap',
     captureMode: row.captureMode ?? 'manual',
     approvedAt: row.approvedAt,
@@ -391,9 +399,23 @@ async function runAnalysis(
     evaluateRedFlags(transcript, profile.redFlagTriggers),
   )
 
-  const [noteResult, suggestionResult] = await Promise.all([
+  const [noteResult, { retrieved, result: suggestionResult }] = await Promise.all([
     timeStage('note_generation', () => analyseNote(text, text, profile)),
-    timeStage('retrieval', () => generateSuggestions(text, profile)),
+    timeStage('retrieval', async () => {
+      let retrieved: GuidelineChunk[] = []
+      try {
+        retrieved = await retrieveGuidelines(text, { profileId: profile.id })
+      } catch (error) {
+        // Retrieval widens the supplied corpus; a failure leaves the curated
+        // corpus in use rather than failing the whole analysis.
+        logger.warn('guideline retrieval failed; using the curated corpus only', {
+          errorClass: 'retrieval_error',
+          errorName: error instanceof Error ? error.name : 'unknown',
+        })
+      }
+      const result = await generateSuggestions(text, profile, retrieved)
+      return { retrieved, result }
+    }),
   ])
 
   const rehydrate = (value: string) => vault.rehydrate(value)
@@ -496,6 +518,7 @@ async function runAnalysis(
     // reader whether the corpus had nothing to say or was never consulted, which
     // is the conflation this flag exists to prevent (docs/trd.md §19 row 7).
     outOfScope: suggestionResult.outOfScope,
+    ...(retrieved.length === 0 ? {} : { retrievedGuidelines: retrieved }),
     // Built from the post-evidence-check facts, so every link is a span that
     // survived §21.4 rather than one the model asserted. Checklist fields only:
     // the note is independent prose and has no traceable provenance (#10).
@@ -764,6 +787,111 @@ const LiveDeltaSchema = TranscriptSchema.superRefine((delta, ctx) => {
   }
 })
 
+const PrescriptionParseBodySchema = z.object({
+  dictated: z.string().min(1).max(400),
+  profileId: ProfileIdSchema.optional(),
+})
+
+/**
+ * Turn one dictated medication phrase into draft fields plus spelling
+ * candidates (#312, `docs/decisions.md` D-001).
+ *
+ * **Read-only, and it stores nothing.** The doctor confirms, and confirming is
+ * an ordinary `PATCH /api/consultations/:id { prescriptions }` down the same
+ * route their manual edits use. That is the same shape #308 took for transcript
+ * corrections and the copilot took before it, and it is why no prescription
+ * write path exists here.
+ *
+ * **No model, anywhere on this path.** `parseSig` is regex over a closed
+ * vocabulary and `matchMedication` is phonetic plus orthographic distance
+ * against a static versioned lexicon. Nothing is de-identified because nothing
+ * egresses, and nothing is proposed that the doctor did not say.
+ *
+ * **Candidates are returned in the matcher's order and must not be re-sorted.**
+ * A clinical-safety review on #311 found a contained single agent outranking
+ * the combination actually dictated, because it scored higher on a shorter
+ * span; the ordering is score, then span length, then id, and it is a fix.
+ *
+ * No audit row. Nothing egresses and no state changes, so there is no act to
+ * record: the precedent is `POST /:id/live-flags` in this same file. The
+ * audited act is the doctor confirming, which lands as
+ * `consultation.prescription_recorded` on the PATCH.
+ */
+consultationsRouter.post('/:id/prescriptions/parse', async (req, res) => {
+  const actor = doctorId(req)
+  await assertOwnedConsultation(req.params.id, actor)
+
+  const body = PrescriptionParseBodySchema.safeParse(req.body)
+  if (!body.success) {
+    throw new HttpError(400, 'invalid_body', 'A dictated medication phrase is required.')
+  }
+
+  const profile = getClinicalProfile(body.data.profileId ?? DEFAULT_PROFILE_ID)
+
+  res.json(
+    PrescriptionParseResponseSchema.parse({
+      sig: parseSig(body.data.dictated),
+      candidates: matchMedication(body.data.dictated, profile.id),
+    }),
+  )
+})
+
+/**
+ * Suspected mishears in the stored transcript, for the doctor to accept or
+ * reject (#308).
+ *
+ * **Read-only, and that is the point.** It proposes; it never repairs. Accepting
+ * is an ordinary `PATCH /api/consultations/:id { transcript }` issued by the
+ * client, so this route needs no write path of its own and the correction lands
+ * through the same validation, ownership check and audit the doctor's manual
+ * edits already use. `shared/src/index.ts` sets that precedent for the copilot
+ * and the reasoning transfers unchanged.
+ *
+ * **Draft only.** Past `draft` the transcript is what the note was built from,
+ * so editing it would leave a note grounded in words the record no longer holds.
+ * `PATCH` already refuses a transcript outside `awaiting_review`; refusing here
+ * as well means the doctor never sees an Accept button that cannot work.
+ *
+ * The audit row is written before the response and unguarded, so proposals the
+ * trail did not record are never observable by a client. It carries a count and
+ * never the words: `original` is patient speech and `suggested` is the table's
+ * reading of it, and both are content.
+ */
+consultationsRouter.post('/:id/transcript-corrections', async (req, res) => {
+  const actor = doctorId(req)
+  const consultation = await assertOwnedConsultation(req.params.id, actor)
+
+  if (consultation.status !== 'draft') {
+    throw new HttpError(
+      409,
+      'invalid_state',
+      `Corrections cannot be proposed while the consultation is ${consultation.status}.`,
+    )
+  }
+
+  const transcript = TranscriptSchema.safeParse(consultation.transcript)
+  if (!transcript.success) {
+    await recordAuditEvent({
+      action: 'consultation.corrections_failed',
+      actorId: actor,
+      consultationId: consultation.id,
+      metadata: { reason: 'no_transcript' },
+    })
+    throw new HttpError(409, 'invalid_state', 'This consultation has no usable transcript.')
+  }
+
+  const proposals = proposeMishearCorrections(transcript.data)
+
+  await recordAuditEvent({
+    action: 'consultation.corrections_proposed',
+    actorId: actor,
+    consultationId: consultation.id,
+    metadata: { proposalCount: proposals.length },
+  })
+
+  res.json(TranscriptCorrectionsResponseSchema.parse({ proposals }))
+})
+
 const LiveFlagsBodySchema = z.object({
   delta: LiveDeltaSchema,
   profileId: ProfileIdSchema.optional(),
@@ -983,6 +1111,13 @@ const PatchBodySchema = z
     transcript: TranscriptSchema.optional(),
     editedNote: SoapNoteSchema.partial().optional(),
     editedMedicalRecordNote: MedicalRecordNoteSchema.partial().optional(),
+    /*
+     * The whole confirmed list, not a delta. A prescription is authored by the
+     * doctor rather than merged into a server-side base like the note fields
+     * above, so there is nothing to merge onto and a partial would be
+     * ambiguous about whether an absent entry was removed or untouched.
+     */
+    prescriptions: z.array(PrescriptionSchema).max(MAX_PRESCRIPTIONS).optional(),
     noteTemplate: NoteTemplateSchema.optional(),
     captureMode: CaptureModeSchema.optional(),
     acknowledgedRedFlagIds: z.array(z.string()).optional(),
@@ -1203,6 +1338,7 @@ consultationsRouter.patch('/:id', async (req, res) => {
       ...(nextEditedMedicalRecordNote === undefined
         ? {}
         : { editedMedicalRecordNote: nextEditedMedicalRecordNote }),
+      ...(patch.prescriptions === undefined ? {} : { prescriptions: patch.prescriptions }),
       ...(patch.acknowledgedRedFlagIds === undefined
         ? {}
         : { acknowledgedRedFlagIds: [...previousFlags, ...newFlags] }),
@@ -1251,6 +1387,15 @@ consultationsRouter.patch('/:id', async (req, res) => {
       consultationId: consultation.id,
     })
   }
+  if (patch.prescriptions !== undefined) {
+    await recordAuditEvent({
+      action: 'consultation.prescription_recorded',
+      actorId: actor,
+      consultationId: consultation.id,
+      metadata: { prescriptionCount: patch.prescriptions.length },
+    })
+  }
+
   if (patch.noteTemplate !== undefined) {
     await recordAuditEvent({
       action: 'consultation.template_selected',

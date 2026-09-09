@@ -2,6 +2,8 @@ import OpenAI from 'openai'
 import { z } from 'zod'
 import { env } from '../../config/env.js'
 import { assertNoIdentifiers } from '../../deid/index.js'
+import type { Deidentified } from '../../deid/types.js'
+import { EMBEDDING_DIMENSIONS, type EmbeddingClient } from './embeddings.js'
 import {
   type GenerateRequest,
   type LLMClient,
@@ -257,5 +259,56 @@ export class OpenAICompatibleClient implements LLMClient {
     }
 
     return result.data
+  }
+}
+
+/** DashScope caps one embeddings request at ten inputs. */
+const EMBEDDING_MAX_BATCH = 10
+
+/**
+ * Lives beside `OpenAICompatibleClient` because `no-stray-provider-sdk.test.ts`
+ * pins the provider SDK import to this one file. See `embeddings.ts` for the
+ * port and the gate rationale.
+ */
+export class OpenAICompatibleEmbeddingClient implements EmbeddingClient {
+  private readonly client: OpenAI
+
+  constructor(
+    readonly model: string,
+    options: { apiKey: string; baseURL: string },
+  ) {
+    this.client = new OpenAI({ apiKey: options.apiKey, baseURL: options.baseURL, maxRetries: 2 })
+  }
+
+  async embed(inputs: readonly Deidentified[], operation: string): Promise<number[][]> {
+    if (inputs.length === 0) return []
+    if (env.DEID_FAIL_CLOSED) for (const input of inputs) assertNoIdentifiers(input, operation)
+
+    const vectors: number[][] = []
+    for (let start = 0; start < inputs.length; start += EMBEDDING_MAX_BATCH) {
+      const batch = inputs.slice(start, start + EMBEDDING_MAX_BATCH)
+      const response = await this.client.embeddings.create({
+        model: this.model,
+        input: [...batch],
+        dimensions: EMBEDDING_DIMENSIONS,
+        encoding_format: 'float',
+      })
+      if (response.data.length !== batch.length) {
+        throw new LLMResponseError(
+          `embeddings: expected ${batch.length} vectors, received ${response.data.length}`,
+          operation,
+        )
+      }
+      for (const item of [...response.data].sort((a, b) => a.index - b.index)) {
+        if (item.embedding.length !== EMBEDDING_DIMENSIONS) {
+          throw new LLMResponseError(
+            `embeddings: expected ${EMBEDDING_DIMENSIONS} dimensions, received ${item.embedding.length}`,
+            operation,
+          )
+        }
+        vectors.push(item.embedding)
+      }
+    }
+    return vectors
   }
 }

@@ -216,7 +216,15 @@ describe('receiving tokens', () => {
 
     socket().message({
       tokens: [
-        { text: 'Selamat', start_ms: 100, end_ms: 600, is_final: true, speaker: 1, language: 'ms' },
+        {
+          text: 'Selamat',
+          start_ms: 100,
+          end_ms: 600,
+          is_final: true,
+          speaker: 1,
+          language: 'ms',
+          confidence: 0.42,
+        },
         { text: ' pagi', start_ms: 600, end_ms: 900, is_final: false },
       ],
     })
@@ -229,6 +237,7 @@ describe('receiving tokens', () => {
         isFinal: true,
         speaker: '1',
         language: 'ms',
+        confidence: 0.42,
         endpoint: false,
       },
       {
@@ -238,8 +247,27 @@ describe('receiving tokens', () => {
         isFinal: false,
         speaker: null,
         language: null,
+        // Absent on the wire, and `null` rather than 0 here: the recogniser
+        // said nothing, which is not the same as saying it was unsure.
+        confidence: null,
         endpoint: false,
       },
+    ])
+  })
+
+  it('refuses a confidence outside the vendor range without ending the session', () => {
+    // A live consultation must not die because one token carried a value the
+    // contract does not allow. It becomes an unknown, and the stream continues.
+    openSonioxStream(session, handlers())
+    socket().open()
+
+    socket().message({
+      tokens: [{ text: 'demam', is_final: true, confidence: 1.4 }],
+    })
+
+    expect(onFailure).not.toHaveBeenCalled()
+    expect(onTokens.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({ text: 'demam', confidence: null }),
     ])
   })
 

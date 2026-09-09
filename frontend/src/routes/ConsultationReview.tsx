@@ -9,12 +9,13 @@ import type {
   MedicalRecordNote,
   NoteTemplate,
   SoapNote,
+  TextRange,
   Transcript,
 } from '@shared/types'
 import { MedicalRecordNoteSchema, toSoapNote } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Maximize2, Pause, Play, Printer, Settings2, Sparkles } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import type { LivePanes } from '../audio/live/use-live-panes.js'
@@ -40,12 +41,15 @@ import {
   MedicalRecordNoteEditor,
 } from '../review/MedicalRecordNoteEditor.js'
 import { NoteEditor } from '../review/NoteEditor.js'
+import { PrescriptionBlock } from '../review/PrescriptionBlock.js'
 import { GapCard, RedFlagCard, SuggestionCard } from '../review/SafetyCards.js'
+import { TranscriptCorrections } from '../review/TranscriptCorrections.js'
 import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { InfoTip } from '../ui/InfoTip.js'
 import { PageHeader } from '../ui/PageHeader.js'
 import { RenameField } from '../ui/RenameField.js'
+import { UncertainLegend, UncertainText } from '../ui/UncertainText.js'
 import { CapturePanel } from './CapturePanel.js'
 
 /** The current decision about a finding, or `undefined` if none was made. */
@@ -151,6 +155,8 @@ function SettledConversation({
     key: string
     speaker: string
     text: string
+    /** Character ranges the recogniser was unsure of, shown underlined (#309). */
+    uncertain?: readonly TextRange[]
     offsetSeconds?: number
     endSeconds?: number
   }[]
@@ -164,96 +170,105 @@ function SettledConversation({
   playing?: string
 }) {
   return (
-    <ol className="flex flex-col gap-3">
-      {turns.map((turn, index) => {
-        const opensTurn = turns[index - 1]?.speaker !== turn.speaker
-        const doctor = turn.speaker === 'doctor'
-        /*
-         * Playable only where this turn's own timing is known. A turn without
-         * an offset is inert rather than a control that plays the wrong words:
-         * the transcript carries no timing at all on the pasted and uploaded
-         * paths, and even a recorded one leaves lines split out of the middle
-         * of a segment untimed on purpose, because the offset would be a guess.
-         *
-         * Inert is also the whole state after a reload, since the recording
-         * lives in memory only. The affordance is what says which turns can be
-         * checked, exactly as the checklist's rows do.
-         */
-        const at = turn.offsetSeconds
-        const playable = at !== undefined && onPlay !== undefined
-        const sounding = playing === turn.key
-        return (
-          <li
-            key={turn.key}
-            className={cn(
-              // Same two-sided rule as the live pane, and the same reason for
-              // the two caps: this is 380px in the column, fluid during
-              // capture and wide in the dialog, so 62% would break a line
-              // every three words in the narrow case.
-              'flex flex-col max-w-[88%] @lg:max-w-[62%]',
-              doctor ? 'items-start self-start' : 'items-end self-end',
-              !opensTurn && '-mt-2',
-            )}
-          >
-            {opensTurn && (
-              <span className="mb-1 block">
-                <span
+    <>
+      <ol className="flex flex-col gap-3">
+        {turns.map((turn, index) => {
+          const opensTurn = turns[index - 1]?.speaker !== turn.speaker
+          const doctor = turn.speaker === 'doctor'
+          /*
+           * Playable only where this turn's own timing is known. A turn without
+           * an offset is inert rather than a control that plays the wrong words:
+           * the transcript carries no timing at all on the pasted and uploaded
+           * paths, and even a recorded one leaves lines split out of the middle
+           * of a segment untimed on purpose, because the offset would be a guess.
+           *
+           * Inert is also the whole state after a reload, since the recording
+           * lives in memory only. The affordance is what says which turns can be
+           * checked, exactly as the checklist's rows do.
+           */
+          const at = turn.offsetSeconds
+          const playable = at !== undefined && onPlay !== undefined
+          const sounding = playing === turn.key
+          return (
+            <li
+              key={turn.key}
+              className={cn(
+                // Same two-sided rule as the live pane, and the same reason for
+                // the two caps: this is 380px in the column, fluid during
+                // capture and wide in the dialog, so 62% would break a line
+                // every three words in the narrow case.
+                'flex flex-col max-w-[88%] @lg:max-w-[62%]',
+                doctor ? 'items-start self-start' : 'items-end self-end',
+                !opensTurn && '-mt-2',
+              )}
+            >
+              {opensTurn && (
+                <span className="mb-1 block">
+                  <span
+                    className={cn(
+                      'rounded-pill px-2 py-0.5 text-2xs font-medium',
+                      doctor ? 'bg-surface text-ink-muted' : 'bg-accent-soft text-accent',
+                    )}
+                  >
+                    {doctor ? 'Doctor' : 'Patient'}
+                  </span>
+                </span>
+              )}
+              {playable ? (
+                /*
+                 * The bubble itself is the control, so the target is the thing
+                 * the doctor is already reading rather than a separate hit area
+                 * beside it.
+                 *
+                 * The background does not change on hover, and must not: on this
+                 * pane the bubble's colour is what says who spoke, and a hover
+                 * tint would have a turn briefly claim to be the other speaker.
+                 * The icon's opacity carries the affordance instead, which is the
+                 * same move `ChecklistPanel` makes for the same reason. Playing
+                 * is a ring, a change of shape rather than of colour.
+                 */
+                <button
+                  type="button"
+                  onClick={() => onPlay(turn.key, at, turn.endSeconds)}
+                  aria-label={`${sounding ? 'Stop' : 'Play'} this turn, ${spokenTimestamp(at)} in`}
                   className={cn(
-                    'rounded-pill px-2 py-0.5 text-2xs font-medium',
-                    doctor ? 'bg-surface text-ink-muted' : 'bg-accent-soft text-accent',
+                    'group flex items-start gap-2 rounded-card px-3 py-2 text-left text-ink text-sm leading-relaxed transition-shadow',
+                    doctor ? 'bg-surface' : 'bg-accent-soft',
+                    sounding && 'ring-2 ring-accent',
                   )}
                 >
-                  {doctor ? 'Doctor' : 'Patient'}
-                </span>
-              </span>
-            )}
-            {playable ? (
-              /*
-               * The bubble itself is the control, so the target is the thing
-               * the doctor is already reading rather than a separate hit area
-               * beside it.
-               *
-               * The background does not change on hover, and must not: on this
-               * pane the bubble's colour is what says who spoke, and a hover
-               * tint would have a turn briefly claim to be the other speaker.
-               * The icon's opacity carries the affordance instead, which is the
-               * same move `ChecklistPanel` makes for the same reason. Playing
-               * is a ring, a change of shape rather than of colour.
-               */
-              <button
-                type="button"
-                onClick={() => onPlay(turn.key, at, turn.endSeconds)}
-                aria-label={`${sounding ? 'Stop' : 'Play'} this turn, ${spokenTimestamp(at)} in`}
-                className={cn(
-                  'group flex items-start gap-2 rounded-card px-3 py-2 text-left text-ink text-sm leading-relaxed transition-shadow',
-                  doctor ? 'bg-surface' : 'bg-accent-soft',
-                  sounding && 'ring-2 ring-accent',
-                )}
-              >
-                <span className="min-w-0">{turn.text}</span>
-                {sounding ? (
-                  <Pause aria-hidden className="mt-1 size-3 shrink-0 text-accent" />
-                ) : (
-                  <Play
-                    aria-hidden
-                    className="mt-1 size-3 shrink-0 text-accent opacity-45 transition-opacity group-hover:opacity-100"
-                  />
-                )}
-              </button>
-            ) : (
-              <p
-                className={cn(
-                  'rounded-card px-3 py-2 text-ink text-sm leading-relaxed',
-                  doctor ? 'bg-surface' : 'bg-accent-soft',
-                )}
-              >
-                {turn.text}
-              </p>
-            )}
-          </li>
-        )
-      })}
-    </ol>
+                  <span className="min-w-0">
+                    <UncertainText text={turn.text} uncertain={turn.uncertain} />
+                  </span>
+                  {sounding ? (
+                    <Pause aria-hidden className="mt-1 size-3 shrink-0 text-accent" />
+                  ) : (
+                    <Play
+                      aria-hidden
+                      className="mt-1 size-3 shrink-0 text-accent opacity-45 transition-opacity group-hover:opacity-100"
+                    />
+                  )}
+                </button>
+              ) : (
+                <p
+                  className={cn(
+                    'rounded-card px-3 py-2 text-ink text-sm leading-relaxed',
+                    doctor ? 'bg-surface' : 'bg-accent-soft',
+                  )}
+                >
+                  <UncertainText text={turn.text} uncertain={turn.uncertain} />
+                </p>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+      {/* Said once, and only when something is underlined. Outside the list,
+          because a caption is not one of the turns. */}
+      {turns.some((turn) => turn.uncertain !== undefined) && (
+        <UncertainLegend className="mt-3 text-2xs text-ink-muted" />
+      )}
+    </>
   )
 }
 
@@ -383,6 +398,24 @@ export function ConsultationReview() {
     enabled: !isEphemeral,
   })
   const guidelines = useQuery({ queryKey: ['guidelines'], queryFn: api.guidelines })
+
+  /*
+   * What a citation id may resolve to: the curated corpus plus the CPG chunks
+   * retrieval attached to this analysis. `retrievedGuidelines` is persisted on
+   * the analysis precisely so this lookup works without re-running retrieval,
+   * which would not be reproducible.
+   *
+   * The curated corpus is listed first so an id collision keeps the curated
+   * entry. The dedupe makes that precedence a fact rather than relying on
+   * retrieved ids never overlapping the corpus.
+   */
+  const citableGuidelines = useMemo(() => {
+    const curated = guidelines.data ?? []
+    const record = isEphemeral ? tour.ephemeral : consultation.data
+    const retrieved = record?.analysis?.retrievedGuidelines ?? []
+    const curatedIds = new Set(curated.map((chunk) => chunk.id))
+    return [...curated, ...retrieved.filter((chunk) => !curatedIds.has(chunk.id))]
+  }, [guidelines.data, isEphemeral, tour.ephemeral, consultation.data])
 
   const invalidate = (next: ConsultationDetail) => {
     queryClient.setQueryData(['consultation', id], next)
@@ -998,7 +1031,7 @@ export function ConsultationReview() {
             rather than 12px, which is the documented body floor and is most of
             what made this read as a wall.
           */}
-          {detail.transcript ? (
+          {detail.transcript && (
             <div className="@container max-h-[70vh] overflow-y-auto rounded-card bg-sunken p-4 lg:max-h-none lg:overflow-visible">
               {/*
                 Sides, not a single left edge, matching the live pane (#278).
@@ -1017,7 +1050,23 @@ export function ConsultationReview() {
                 playing={audio.playing}
               />
             </div>
-          ) : (
+          )}
+          {/*
+            Corrections sit under the conversation and only while the note has
+            not been built yet (#308). Past `draft` the note was generated from
+            these words, so changing them would leave it grounded in text the
+            record no longer holds, and the API refuses for the same reason.
+          */}
+          {detail.transcript && detail.status === 'draft' && (
+            <div className="mt-3">
+              <TranscriptCorrections
+                consultationId={id}
+                transcript={detail.transcript}
+                onSaved={(next) => queryClient.setQueryData(['consultation', id], next)}
+              />
+            </div>
+          )}
+          {!detail.transcript && (
             <Card className="flex flex-col p-4">
               <CapturePanel
                 captureMode={detail.captureMode}
@@ -1119,6 +1168,23 @@ export function ConsultationReview() {
                   onSave={(editedNote: Partial<SoapNote>) => patch.mutate({ editedNote })}
                 />
               )}
+              {/*
+                Above the checklist, because a prescription belongs beside the
+                plan it came out of while the checklist is a review of what the
+                note is missing. It is also what keeps the column's
+                `[&>*:last-child]:grow` on the panel that has always carried it.
+
+                Not in the tour: the ephemeral consultation has no row, so the
+                parse route would 404 on an id no database holds.
+              */}
+              {!isEphemeral && (
+                <PrescriptionBlock
+                  consultationId={id}
+                  prescriptions={detail.prescriptions}
+                  status={detail.status}
+                  onSave={(prescriptions) => patch.mutateAsync({ prescriptions })}
+                />
+              )}
               <ChecklistPanel
                 clinicalFacts={analysis.clinicalFacts}
                 operational={analysis.operational}
@@ -1217,7 +1283,7 @@ export function ConsultationReview() {
                       flag={flag}
                       disposition={byId(detail.redFlagDispositions, flag.id)}
                       onDecide={(decision) => patch.mutate({ redFlagDispositions: [decision] })}
-                      guidelines={guidelines.data ?? []}
+                      guidelines={citableGuidelines}
                       onPlay={audio.available ? audio.play : undefined}
                       playing={audio.playing}
                     />
@@ -1236,7 +1302,7 @@ export function ConsultationReview() {
                       gap={gap}
                       disposition={byId(detail.gapDispositions, gap.id)}
                       onDecide={(decision) => patch.mutate({ gapDispositions: [decision] })}
-                      guidelines={guidelines.data ?? []}
+                      guidelines={citableGuidelines}
                     />
                   ),
                 }))}
@@ -1260,9 +1326,7 @@ export function ConsultationReview() {
                 }
                 findings={analysis.suggestions.map((suggestion) => ({
                   id: suggestion.id,
-                  node: (
-                    <SuggestionCard suggestion={suggestion} guidelines={guidelines.data ?? []} />
-                  ),
+                  node: <SuggestionCard suggestion={suggestion} guidelines={citableGuidelines} />,
                 }))}
                 onShowAll={setOverflow}
               />

@@ -154,7 +154,9 @@ OWASP promoted Software Supply Chain Failures to A03:2025, and it is this repo's
 - **Pin GitHub Actions to commit SHAs.** `ci.yml` currently uses floating major tags (`actions/checkout@v4`, `oven-sh/setup-bun@v2`); convert them when you next touch the workflow, and add new actions SHA-pinned from the start.
 - Before adding a dependency: prefer well-known, actively maintained packages, check open advisories, and avoid versions published in the last few days. Most malicious releases are pulled within hours, so a short cooldown catches them.
 - Keep the CI secret surface at one entry (`secrets.VERCEL_TOKEN`). Project and org IDs are identifiers, not credentials, and stay inline.
-- **Not built today:** no `bun audit`, no Dependabot or Renovate, no secret scanning, no SAST. The "Confidentiality check" greps engagement terms, not credentials. State this as an open gap rather than implying coverage.
+- **Built:** `bun audit --audit-level=high` runs in `verify` (`ci.yml`), so a high or critical advisory fails every branch until it is resolved. It reads a database that moves on its own, which means **a red `verify` can appear on a branch that changed no dependency**: check `git diff --name-only origin/main -- package.json bun.lock` before assuming the branch caused it (issue #315 was exactly this).
+- **Transitive advisories are fixed through the root `overrides` block**, which is why one exists. Bump the entry rather than pinning a workspace dependency, and never let a bump move `@huggingface/transformers` off the version `docs/trd.md` §20.1 measured.
+- **Not built today:** no Dependabot or Renovate, no secret scanning, no SAST. The "Confidentiality check" greps engagement terms, not credentials. State this as an open gap rather than implying coverage.
 - **Architectural invariants are enforced by source-scanning guard tests.** Six exist, all named `no-stray-*`, so `find backend/src -name 'no-stray-*.test.ts'` is the authority rather than this list:
   - `audit/no-stray-audit-writes.test.ts`: every audit write goes through `recordAuditEvent`
   - `clinical-versions/no-stray-clinical-constants.test.ts`: version constants have one home

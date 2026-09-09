@@ -236,6 +236,65 @@ function unquote(evidence: string): string {
   return text
 }
 
+/*
+ * The provenance line both citation surfaces share. A retrieved CPG chunk
+ * carries the page its span was lifted from, and the link lands on that page
+ * rather than the document's first; the OCR note exists because a span
+ * recovered from a scan can carry recognition errors the curated corpus never
+ * has. Curated entries set neither field and render exactly as before.
+ */
+function ChunkProvenance({ chunk }: { chunk: GuidelineChunk }) {
+  return (
+    <>
+      <p className="mt-0.5 text-2xs text-ink-muted">
+        {chunk.publisher} · {chunk.year}
+      </p>
+      {chunk.ocr === true && (
+        <p className="mt-0.5 text-2xs text-ink-muted">
+          Text recovered by OCR from a scanned page; verify against the source.
+        </p>
+      )}
+    </>
+  )
+}
+
+function SourceLink({ chunk }: { chunk: GuidelineChunk }) {
+  return (
+    <a
+      href={chunk.page === undefined ? chunk.url : `${chunk.url}#page=${chunk.page}`}
+      target="_blank"
+      rel="noreferrer noopener"
+      className="mt-2 inline-block text-xs font-medium text-accent underline underline-offset-2"
+    >
+      {chunk.page === undefined ? 'Open Guideline' : `Open source, p. ${chunk.page}`}
+    </a>
+  )
+}
+
+/*
+ * A retrieved chunk's summary is the verbatim span itself, which can run to a
+ * page of guideline text where a curated summary is two sentences. Past the
+ * threshold the span sits behind a disclosure so the card stays card-sized;
+ * the toggle is a button rather than a details element because every other
+ * disclosure on this screen is one.
+ */
+function ClampedSummary({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div className="mt-2">
+      <p className={cn('text-xs text-ink-muted', expanded ? '' : 'line-clamp-6')}>{text}</p>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((open) => !open)}
+        className="mt-1 text-2xs font-medium text-accent underline underline-offset-2"
+      >
+        {expanded ? 'Show less' : 'Show more'}
+      </button>
+    </div>
+  )
+}
+
 function SourcesPanel({
   guidelineIds,
   guidelines,
@@ -271,17 +330,8 @@ function SourcesPanel({
             {chunk.id}
           </span>
           <p className="mt-2 text-xs font-medium text-ink">{chunk.title}</p>
-          <p className="mt-0.5 text-2xs text-ink-muted">
-            {chunk.publisher} · {chunk.year}
-          </p>
-          <a
-            href={chunk.url}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="mt-2 inline-block text-xs font-medium text-accent underline underline-offset-2"
-          >
-            Open Guideline
-          </a>
+          <ChunkProvenance chunk={chunk} />
+          <SourceLink chunk={chunk} />
         </div>
       ))}
     </div>
@@ -521,10 +571,12 @@ export function SuggestionCard({
               {open && chunk && (
                 <div className="mt-2 rounded-control border border-line bg-sunken p-3">
                   <p className="text-xs font-medium text-ink">{chunk.title}</p>
-                  <p className="mt-0.5 text-2xs text-ink-muted">
-                    {chunk.publisher} · {chunk.year}
-                  </p>
-                  <p className="mt-2 text-xs text-ink-muted">{chunk.summary}</p>
+                  <ChunkProvenance chunk={chunk} />
+                  {chunk.summary.length > 600 ? (
+                    <ClampedSummary text={chunk.summary} />
+                  ) : (
+                    <p className="mt-2 text-xs text-ink-muted">{chunk.summary}</p>
+                  )}
                   {chunk.quote ? (
                     <blockquote className="mt-2 border-l-2 border-line pl-2 text-xs italic text-ink-muted">
                       {chunk.quote}
@@ -536,14 +588,7 @@ export function SuggestionCard({
                       Licence ({chunk.sourceLicence}) does not permit verbatim quotation.
                     </p>
                   )}
-                  <a
-                    href={chunk.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="mt-2 inline-block text-xs font-medium text-accent underline underline-offset-2"
-                  >
-                    Open Guideline
-                  </a>
+                  <SourceLink chunk={chunk} />
                 </div>
               )}
             </div>

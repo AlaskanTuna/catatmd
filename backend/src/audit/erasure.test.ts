@@ -12,6 +12,7 @@ type ConsultationRow = {
   analysis: unknown
   editedNote: unknown
   editedMedicalRecordNote?: unknown
+  prescriptions?: unknown
   erasedAt: Date | null
 }
 
@@ -111,6 +112,7 @@ vi.mock('../lib/prisma.js', () => {
               analysis: databaseNull(data.analysis),
               editedNote: databaseNull(data.editedNote),
               editedMedicalRecordNote: databaseNull(data.editedMedicalRecordNote),
+              prescriptions: databaseNull(data.prescriptions),
             }
             consultations.set(where.id, updated)
             return { ...updated }
@@ -149,6 +151,7 @@ beforeEach(() => {
     analysis: { note: { subjective: 'Ahmad reports cough' } },
     editedNote: { subjective: 'Doctor note about Ahmad' },
     editedMedicalRecordNote: { presentingComplaint: 'Ahmad has a cough' },
+    prescriptions: [{ drug: 'amoxicillin', dictated: 'amoxicillin 500 mg for Ahmad' }],
     erasedAt: null,
   })
 })
@@ -174,6 +177,7 @@ describe('eraseConsultation', () => {
       analysis: null,
       editedNote: null,
       editedMedicalRecordNote: null,
+      prescriptions: null,
       erasedAt: expect.any(Date),
     })
     expect(appended.at(-1)).toMatchObject({
@@ -212,6 +216,38 @@ describe('eraseConsultation', () => {
     const erased = consultations.get('consult-2')
     expect(erased).toMatchObject({ title: null, erasedAt: expect.any(Date) })
     expect(JSON.stringify(erased)).not.toMatch(/Siti|Nurhaliza/)
+  })
+
+  /*
+   * The same shape for prescriptions (#312), and it earns its own test for the
+   * same reason `title` did: `dictated` is a verbatim phrase the doctor spoke,
+   * so a patient name reaches it whenever they said one while prescribing. A
+   * `toMatchObject` on `prescriptions: null` would pass on a row that still
+   * held the name somewhere else, which is exactly what this catches.
+   */
+  it('clears prescriptions, whose dictation is verbatim speech', async () => {
+    consultations.set('consult-3', {
+      id: 'consult-3',
+      doctorId: 'doctor-1',
+      patientId: 'patient-1',
+      title: null,
+      transcript: { turns: [] },
+      analysis: {},
+      editedNote: {},
+      prescriptions: [
+        {
+          drug: 'amoxicillin',
+          dictated: 'for Siti Nurhaliza, amoxicillin 500 mg three times a day',
+        },
+      ],
+      erasedAt: null,
+    })
+
+    await eraseConsultation('consult-3', 'doctor-1')
+
+    const erased = consultations.get('consult-3')
+    expect(erased).toMatchObject({ prescriptions: null, erasedAt: expect.any(Date) })
+    expect(JSON.stringify(erased)).not.toMatch(/Siti|Nurhaliza|amoxicillin/)
   })
 })
 
@@ -255,6 +291,7 @@ describe('erasePatient', () => {
         transcript: null,
         analysis: null,
         editedNote: null,
+        prescriptions: null,
         title: null,
         erasedAt: expect.any(Date),
       })
