@@ -987,12 +987,17 @@ export function ConsultationReview() {
              * padding land inside one viewport, so during capture the
              * transcript is the only thing on screen that scrolls.
              */
-            captureBusy ? 'lg:max-h-[calc(100vh-26rem)]' : 'lg:max-h-[calc(100vh-13rem)]',
+            // A fixed height, where the other two columns cap theirs: a
+            // transcript is usually shorter than the note beside it, and a
+            // capped column ends where its content ends, so the three
+            // columns only bottom-align if this one is held to the floor and
+            // its card is let grow into it.
+            captureBusy ? 'lg:h-[calc(100vh-26rem)]' : 'lg:h-[calc(100vh-13rem)]',
             'lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
             // The mobile show/hide belongs to a transcript that already
             // exists. Capture is the one thing on this screen a doctor has
             // come here to do, so it is never behind a toggle.
-            detail.transcript && !showTranscript ? 'hidden' : 'block',
+            detail.transcript && !showTranscript ? 'hidden lg:block' : 'block',
           )}
           aria-labelledby="transcript-heading"
           data-tour="transcript"
