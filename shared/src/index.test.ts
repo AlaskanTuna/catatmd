@@ -16,6 +16,7 @@ import {
   LlmClinicalFactsSchema,
   MAX_DRAFT_TEXT_CHARACTERS,
   MAX_UNCERTAIN_RANGES_PER_TURN,
+  makeCopilotEventSchema,
   makeSuggestionsAndRedFlagsSchema,
   NoteAndGapsResponseSchema,
   OperationalBlockSchema,
@@ -310,6 +311,76 @@ describe('makeSuggestionsAndRedFlagsSchema', () => {
   it('allows an empty suggestions array for an out-of-scope presentation', () => {
     const result = schema.safeParse({ outOfScope: true, redFlags: [], suggestions: [] })
     expect(result.success).toBe(true)
+  })
+
+  it('parses a response with model red-flag candidates and no corpus ids', () => {
+    const emptySchema = makeSuggestionsAndRedFlagsSchema([])
+    const result = emptySchema.safeParse({
+      outOfScope: false,
+      redFlags: [
+        {
+          id: 'm1',
+          label: 'Possible peritonsillar abscess',
+          severity: 'urgent',
+          evidence: 'cannot open mouth fully',
+          source: 'model',
+        },
+      ],
+      suggestions: [],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('never lets a document reference satisfy the model-facing enum', () => {
+    const retrieved = ['moh-nag-2024-p348-c1']
+    const schema = makeSuggestionsAndRedFlagsSchema(retrieved)
+    const cite = (guidelineId: string) =>
+      schema.safeParse({
+        outOfScope: false,
+        redFlags: [],
+        suggestions: [{ id: 's1', text: 'Consider a throat swab.', citations: [{ guidelineId }] }],
+      }).success
+    expect(cite('moh-nag-2024-p348-c1')).toBe(true)
+    expect(cite('doc:moh-nag-2024')).toBe(false)
+    expect(cite('doc:moh-nag-2024#p348')).toBe(false)
+  })
+
+  it('rejects any suggestion when the corpus is empty', () => {
+    const emptySchema = makeSuggestionsAndRedFlagsSchema([])
+    const result = emptySchema.safeParse({
+      outOfScope: false,
+      redFlags: [],
+      suggestions: [
+        {
+          id: 's1',
+          text: 'Consider a throat swab.',
+          citations: [{ guidelineId: 'invented' }],
+        },
+      ],
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('makeCopilotEventSchema', () => {
+  it('accepts a done event with no citations when the corpus is empty', () => {
+    const schema = makeCopilotEventSchema([])
+    const result = schema.safeParse({
+      type: 'done',
+      messageId: 'msg-1',
+      citations: [],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects a done event with citations when the corpus is empty', () => {
+    const schema = makeCopilotEventSchema([])
+    const result = schema.safeParse({
+      type: 'done',
+      messageId: 'msg-1',
+      citations: [{ guidelineId: 'invented' }],
+    })
+    expect(result.success).toBe(false)
   })
 })
 

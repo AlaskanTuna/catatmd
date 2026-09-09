@@ -63,6 +63,28 @@ Each of these is a safety boundary in its own right, and none is a deferred feat
 
 **The feature is deterministic end to end.** No LLM participates: the sig parser is regex, the drug-name matcher is phonetic plus orthographic distance against a static versioned list. This is not incidental. It keeps the capability out of the "adaptive logic" framing that separates a documentation aid from decision support, and it matches the existing posture that patient safety must not depend on model behaviour.
 
-**The lexicon is a spelling aid, not a formulary.** It holds names and synonyms, and no dose, indication, or recommendation data. `backend/src/guidelines/corpus.ts` draws the identical line for itself: "This prototype does not encode drug choice, dose, duration, or treatment thresholds."
+**The lexicon is a spelling aid, not a formulary.** It holds names and synonyms, and no dose, indication, or recommendation data. The ingested CPG chunks draw the identical line for themselves: "This prototype does not encode drug choice, dose, duration, or treatment thresholds."
 
 **The confirm step is the control.** Published guidance on speech recognition in medication documentation names selection from a list, plus prescriber review before submission, as the mitigations for exactly this failure mode. `docs/trd.md` Section 20.7 reached the same place independently for transcript corrections: "a proposal on screen, never an automatic edit, and never a rewrite of stored text."
+
+---
+
+## D-002: Retire The Curated Guideline Corpus For Retrieval-Only Citation
+
+|                |                                                                                                        |
+| -------------- | ------------------------------------------------------------------------------------------------------ |
+| **Date**       | 2026-09-09                                                                                             |
+| **Status**     | Adopted                                                                                                |
+| **Issues**     | #250 (open)                                                                                            |
+| **Supersedes** | The hand-written `guideline-corpus-v4` chunk set that anchored `docs/trd.md` Section 11 since issue #8 |
+
+### Decision
+
+The 11 hand-written guideline chunks are retired. The three documents behind them, MOH NAG 2024, Abdullah et al. 2024, and Ooi et al. 2022, are ingested through the same CPG retrieval pipeline as every other guideline in `corpus/cpg/manifest.json`, and the model's citable set on `suggestions_and_red_flags` is the retrieved chunks for that consultation and nothing else.
+
+### What This Decision Does Not License
+
+- **No change to the ID-constrained citation mechanism.** `guidelineId` still fails schema validation for any id outside the live corpus (`docs/trd.md` Section 11).
+- **No new clinical content.** The same three documents, now ingested rather than hand-copied, plus the deterministic layers (red-flag triggers, gap checklist) citing them through stable `doc:<id>[#p<n>]` references instead of a curated chunk id.
+- **Issue #250 stays open.** Whether MOH-ARR spans may be sent to the model for grounding at all, distinct from whether they may be displayed, is not answered by this decision. The current posture is that they are sent, de-identified, and display is off.
+- **Page anchors on `doc:` references are deliberately left unset.** No trigger or checklist entry cites a specific page today; this is a scope boundary of the current content, not a limitation of the reference format.

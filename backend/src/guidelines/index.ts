@@ -1,8 +1,10 @@
 export {
-  corpusIds,
+  CITABLE_DOCUMENT_IDS,
+  type CitableDocumentId,
   corpusIdsFor,
-  GUIDELINE_CORPUS,
+  documentRef,
   GUIDELINE_CORPUS_VERSION,
-  type ProfiledGuidelineChunk,
-} from './corpus.js'
+  parseDocumentRef,
+} from './documents.js'
+export { modernizeCitationId, withLegacyCitations } from './legacy.js'
 export { serialiseCorpusForPrompt } from './prompt.js'

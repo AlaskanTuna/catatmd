@@ -1,33 +1,46 @@
-# Citation corpus
+<a id="top"></a>
 
-Curated guideline chunks the model may cite, each with a stable ID. The model
-receives the whole curated corpus (`serialiseCorpusForPrompt` in `prompt.ts`),
-plus any CPG chunks retrieved for the consultation (`backend/src/retrieval/`),
-and may only cite an ID present in that union; free-text
-references fail schema validation, which makes hallucinated citations
-structurally impossible rather than merely unlikely.
+# Guideline Identity and Serialisation
 
-Sources (resolved 13/08/26, see `docs/trd.md` §11 — canonical):
+The `guidelines` module holds the versioned identity of the citable document
+set and the serialisation that goes into LLM prompts.
 
-- **MOH National Antimicrobial Guideline (NAG), 4th ed., 2024** — Modified
-  Centor scoring, acute pharyngitis, adult acute-cough assessment, acute
-  bronchitis, acute rhinosinusitis, and UTI scope. © MOH Malaysia, all rights
-  reserved: `sourceLicence: 'MOH-ARR'`, `verbatimAllowed: false` (summarise and
-  link, never quote).
-- **Abdullah et al. (2024)**, Malaysian sore-throat Delphi consensus,
-  _Infect Drug Resist_ — McIsaac scoring, antibiotic thresholds, point-of-care
-  testing, and symptomatic treatment. CC BY-NC 3.0: `verbatimAllowed: true`.
-- **Ooi et al. (2022)**, _Malaysian Family Physician_ — Malaysian URTI
-  presenting patterns and antibiotic use. CC BY 4.0: `verbatimAllowed: true`.
+Stable document ids are used by deterministic layers, so a red-flag trigger
+or gap checklist can cite a `doc:` reference that survives re-ingest.
+Retrieved CPG chunks are fed to the model through `serialiseCorpusForPrompt`.
 
-Every summary was checked against its linked primary source on 07/09/26. A
-clinician review of the corrected summaries is still required by issue #240.
+---
 
-**NICE is excluded.** Its UK Open Content Licence does not cover use for
-artificial intelligence purposes; no NICE recommendation text may enter this
-corpus.
+## What Each File Does
 
-One source per chunk — MOH NAG and the Delphi consensus disagree on the
-antibiotic threshold (Modified Centor ≥3 vs. McIsaac ≥4), and merging them
-into one chunk would manufacture a consensus the ID-constraint mechanism
-cannot detect, since the model would be citing a real, valid ID.
+| File                | Responsibility                                                                                        |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
+| `documents.ts`      | `GUIDELINE_CORPUS_VERSION`, `CITABLE_DOCUMENT_IDS`, `corpusIdsFor`, `documentRef`, `parseDocumentRef` |
+| `prompt.ts`         | `serialiseCorpusForPrompt`                                                                            |
+| `documents.test.ts` | Manifest coverage and reference parsing                                                               |
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+
+---
+
+## Citable Documents
+
+`CITABLE_DOCUMENT_IDS` are the source documents the deterministic layers may
+cite. They are the `doc:` ids in `corpus/cpg/manifest.json`, not the generated
+chunk ids the model cites.
+
+`corpusIdsFor(chunks)` turns a retrieved chunk list into a non-empty tuple for
+the `guidelineId` enum, so a fabricated or free-text reference fails schema
+validation before it reaches a route.
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>
+
+---
+
+## Prompt Surface
+
+`serialiseCorpusForPrompt` emits only `id`, `title`, and `summary`. It never
+emits `url`, `sourceLicence`, `verbatimAllowed`, or `quote`, because a licence
+field in the prompt invites the model to reason about rights it cannot judge.
+
+<div align="right"><a href="#top">&#8593;&nbsp;Back to top</a></div>

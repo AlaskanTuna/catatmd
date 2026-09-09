@@ -389,20 +389,27 @@ Two properties the diagram is drawn to make checkable:
 </details>
 
 <details>
-<summary><strong>Guideline Grounding: Two Tiers, One Constraint</strong></summary>
+<summary><strong>Guideline Grounding: One Corpus, Two Citable Vocabularies</strong></summary>
 
-The candidate corpus for cited suggestions is now two tiers, and the difference between them is the safety argument (`docs/trd.md` §11):
+Every citable guideline, the three anchoring sources included, is ingested through one retrieval pipeline rather than hand-copied (`docs/trd.md` §11):
 
-| Tier                                    | What It Holds                                                                                                           | How It Reaches The Model                                   |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| **Curated corpus (the floor)**          | 11 audited, licence-aware chunks; the only ids the red-flag triggers and the gap checklist may cite                     | Serialised into every `suggestions_and_red_flags` call     |
-| **Retrieved CPG library (the ceiling)** | Page-level spans from the Malaysian CPG library (109 documents indexed in `corpus/cpg/manifest.json`), stored as chunks | The top matches for this consultation, fused from two legs |
+| Source                                                             | Covers                                                       | Licence Posture                                     |
+| ------------------------------------------------------------------ | ------------------------------------------------------------ | --------------------------------------------------- |
+| **MOH National Antimicrobial Guideline (NAG) 4th ed., 2024**       | Modified Centor scoring, acute pharyngitis, acute bronchitis | © MOH, all rights reserved, summarise and link only |
+| **Abdullah et al. (2024)**, Malaysian sore-throat Delphi consensus | McIsaac scoring and thresholds                               | CC BY-NC 3.0, quotable with attribution             |
+| **Ooi et al. (2022)**, _Malaysian Family Physician_                | Malaysian URTI epidemiology                                  | CC BY 4.0, quotable with attribution                |
 
-- **Scope is a rule, not a prompt.** A CPG is retrievable only for the clinical profiles it is tagged with in the manifest, and each retrieval leg has a minimum score, so an off-topic guideline never enters the candidate set and retrieval returns nothing rather than padding to six.
-- **The ID constraint is unchanged, only widened.** `guidelineId` is still a `z.enum` built at request time, now over the union of both tiers; a citation naming anything else fails validation before the doctor sees it.
+These three anchor a wider library of 109 CPG documents indexed in `corpus/cpg/manifest.json`, all reachable the same way.
+
+- **Two citable vocabularies, one corpus.** The red-flag triggers and the gap checklist cite stable `doc:<id>` references against the ingested documents; the model cites only the chunks retrieved for this consultation, and a document reference can never satisfy the model's citation enum.
+- **Scope is a rule, not a prompt.** A CPG is retrievable only for the clinical profiles it is tagged with in the manifest, and each retrieval leg has a minimum score, so an off-topic guideline never enters the candidate set.
 - **Retrieval is hybrid.** A Postgres full-text leg and a pgvector embedding leg run over the ingested chunks and are fused by reciprocal rank fusion, so a wording mismatch on one leg does not lose a relevant span.
 - **Embeddings are a second gated egress.** The embedding client accepts only de-identified text and uses the same Singapore endpoint and key as completions, always Qwen, because the stored vectors were produced by one model.
-- **Provenance is page-level.** A retrieved citation opens the source PDF at the page it came from, and a span recovered by OCR from a scanned page is flagged for the doctor to verify against the original.
+- **An empty or failed retrieval means no citable corpus.** Suggestions come back empty and marked out of scope; red flags and gaps are unaffected, because they cite the documents directly rather than the retrieved set.
+- **Licence-restricted spans render attribution only.** A chunk from the NAG (`verbatimAllowed: false`) shows title, publisher, year, page, a deep link to the source, and the licence line, never the summary or a quoted span.
+- **Provenance is page-level.** A retrieved citation opens the source PDF at the page it came from, and a span recovered by OCR from a scanned page is flagged for the doctor to verify.
+- **NICE is excluded.** Its Open Content Licence expressly does not cover use for artificial-intelligence purposes, in the UK or internationally.
+- **Disagreeing sources stay separate.** NAG puts the antibiotic threshold at Modified Centor ≥3; the 2024 Delphi consensus puts it at McIsaac ≥4. Merging them would manufacture a consensus that does not exist, and the ID-constrained citation mechanism cannot catch that, because the model would be citing a real, valid ID. One source per chunk; the UI attributes per chunk and never says "the guideline says" over merged sources.
 
 Reuse terms for the AMM-hosted MOH CPG library are unconfirmed (issue #250). This is a private prototype and nothing is redistributed.
 
@@ -421,25 +428,6 @@ Reuse terms for the AMM-hosted MOH CPG library are unconfirmed (issue #250). Thi
 **The asymmetry on assertion states is deliberate.** A false `NOT_ASSESSED` costs the doctor one dismissed prompt. A false `DENIED` lets a later clinician rule out a diagnosis on a finding nobody ever checked.
 
 **The diagnosis invariant is machine-checkable rather than promised.** The system may not produce a diagnosis the doctor did not say, and no generated prose, whether assessment text, gaps, suggestions or UI copy, states or implies one at all.
-
-</details>
-
-<details>
-<summary><strong>The Guideline Corpus</strong></summary>
-
-10–15 chunks, anchored on Malaysian sources, each carrying its own licence posture:
-
-| Source                                                             | Covers                                                       | Licence Posture                                      |
-| ------------------------------------------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------- |
-| **MOH National Antimicrobial Guideline (NAG) 4th ed., 2024**       | Modified Centor scoring, acute pharyngitis, acute bronchitis | © MOH, all rights reserved — summarise and link only |
-| **Abdullah et al. (2024)**, Malaysian sore-throat Delphi consensus | McIsaac scoring and thresholds                               | CC BY-NC 3.0 — quotable with attribution             |
-| **Ooi et al. (2022)**, _Malaysian Family Physician_                | Malaysian URTI epidemiology                                  | CC BY 4.0 — quotable with attribution                |
-
-**NICE is excluded.** Its Open Content Licence expressly does not cover use for artificial-intelligence purposes, in the UK or internationally.
-
-**Disagreeing sources stay separate.** NAG puts the antibiotic threshold at Modified Centor ≥3; the 2024 Delphi consensus puts it at McIsaac ≥4. Merging them would manufacture a consensus that does not exist.
-
-**The ID-constrained citation mechanism cannot catch that**, because the model would be citing a real, valid ID. So one source per chunk: the UI attributes per chunk and never says "the guideline says" over merged sources.
 
 </details>
 

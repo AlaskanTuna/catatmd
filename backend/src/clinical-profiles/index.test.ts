@@ -2,7 +2,6 @@ import type { Transcript } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import { ACTIVE_CLINICAL_VERSIONS, getActiveClinicalVersions } from '../clinical-versions/index.js'
 import { GAP_CHECKLIST } from '../gaps/index.js'
-import { GUIDELINE_CORPUS } from '../guidelines/index.js'
 import { evaluateRedFlags, REDFLAG_TRIGGERS } from '../redflags/index.js'
 import { getClinicalProfile } from './index.js'
 
@@ -12,15 +11,12 @@ describe('clinical profiles', () => {
 
     expect(profile.redFlagTriggers).not.toEqual(REDFLAG_TRIGGERS)
     expect(profile.gapChecklist).not.toEqual(GAP_CHECKLIST)
-    expect(profile.guidelineCorpus).not.toEqual(GUIDELINE_CORPUS)
     expect(profile.redFlagTriggers).toHaveLength(7)
     expect(profile.gapChecklist).toHaveLength(5)
-    expect(profile.guidelineCorpus).toHaveLength(1)
     expect(profile.redFlagTriggers.every((trigger) => trigger.profiles.includes(profile.id))).toBe(
       true,
     )
     expect(profile.gapChecklist.every((entry) => entry.profiles.includes(profile.id))).toBe(true)
-    expect(profile.guidelineCorpus.every((chunk) => chunk.profiles.includes(profile.id))).toBe(true)
   })
 
   it('fires every deliberately broad UTI rule on its matching transcript evidence', () => {
@@ -67,7 +63,6 @@ describe('clinical profiles', () => {
 
     expect(profile.redFlagTriggers).toEqual(REDFLAG_TRIGGERS)
     expect(profile.gapChecklist).toEqual(GAP_CHECKLIST)
-    expect(profile.guidelineCorpus).toEqual(GUIDELINE_CORPUS.slice(0, 10))
   })
 
   it('includes the selected profile version in each analysis stamp', () => {

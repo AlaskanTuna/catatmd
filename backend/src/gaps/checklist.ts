@@ -2,25 +2,43 @@ import type { ClinicalAssertion, ClinicalFacts, OperationalBlock } from '@shared
 import { z } from 'zod'
 import type { ProfileId } from '../clinical-profiles/types.js'
 import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
-import { corpusIds } from '../guidelines/corpus.js'
+import {
+  CITABLE_DOCUMENT_IDS,
+  type CitableDocumentId,
+  documentRef,
+  parseDocumentRef,
+} from '../guidelines/documents.js'
 
 /**
  * Bumped whenever an entry is added, removed, or its selector, priority,
  * wording or source changes. Recorded with every analysis (docs/trd.md §15)
  * so a past set of gaps can be traced back to the checklist that produced it.
+ * v7 replaces the old corpus chunk ids in every `cited` source with `doc:`
+ * document references against the NAG, Abdullah et al. 2024 and Ooi et al. 2022.
  */
 export const GAP_CHECKLIST_VERSION: ClinicalArtefactVersion = {
-  id: 'gap-checklist-v6',
+  id: 'gap-checklist-v7',
   effectiveDate: '2026-09-09',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
 const UTI_PROFILES: readonly ProfileId[] = ['adult-acute-uncomplicated-uti']
 
+const CitableDocumentIdSchema = z.enum(CITABLE_DOCUMENT_IDS)
+
+const DocumentRefSchema = z.string().refine(
+  (value) => {
+    const parsed = parseDocumentRef(value)
+    if (parsed === null) return false
+    return CitableDocumentIdSchema.safeParse(parsed.documentId).success
+  },
+  { message: 'must be a doc: reference to a citable document' },
+)
+
 export const GapChecklistSourceSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('guideline'),
-    guidelineIds: z.array(z.enum(corpusIds)).min(1),
+    guidelineIds: z.array(DocumentRefSchema).min(1),
   }),
   z.object({
     kind: z.literal('unsourced'),
@@ -30,21 +48,18 @@ export const GapChecklistSourceSchema = z.discriminatedUnion('kind', [
 
 export type GapChecklistSource = z.infer<typeof GapChecklistSourceSchema>
 
-const cited = (...guidelineIds: [string, ...string[]]): GapChecklistSource =>
-  GapChecklistSourceSchema.parse({ kind: 'guideline', guidelineIds })
+const cited = (...documentIds: [CitableDocumentId, ...CitableDocumentId[]]): GapChecklistSource =>
+  GapChecklistSourceSchema.parse({
+    kind: 'guideline',
+    guidelineIds: documentIds.map((id) => documentRef(id)),
+  })
 
-const NAG_ADULT_COUGH = cited('moh-nag-2024-c1-viral-vs-bacterial')
-const NAG_PHARYNGITIS = cited('moh-nag-2024-c1-acute-pharyngitis')
-const NAG_ADULT_COUGH_AND_PHARYNGITIS = cited(
-  'moh-nag-2024-c1-viral-vs-bacterial',
-  'moh-nag-2024-c1-acute-pharyngitis',
-)
+const NAG_ADULT_COUGH = cited('moh-nag-2024')
+const NAG_PHARYNGITIS = cited('moh-nag-2024')
+const NAG_ADULT_COUGH_AND_PHARYNGITIS = cited('moh-nag-2024')
 
 // NAG 2024 C1 uses these features to decide pneumonia work-up versus self-limiting bronchitis.
-const NAG_ACUTE_COUGH_PATHWAY = cited(
-  'moh-nag-2024-c1-viral-vs-bacterial',
-  'moh-nag-2024-c3-acute-bronchitis',
-)
+const NAG_ACUTE_COUGH_PATHWAY = cited('moh-nag-2024')
 
 const UNSOURCED_SMOKING: GapChecklistSource = {
   kind: 'unsourced',
@@ -142,7 +157,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
     rationale:
       'Cough duration is a standard field tracked for adult cough and URTI presentations and ' +
       'is not documented in this consultation.',
-    source: cited('moh-nag-2024-c4-uncomplicated-urti'),
+    source: cited('moh-nag-2024'),
     select: (facts) => facts.symptoms.coughDuration,
     profiles: URTI_PROFILES,
   },

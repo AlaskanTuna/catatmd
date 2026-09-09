@@ -1,4 +1,4 @@
-import type { CopilotProposal } from '@shared/types'
+import type { CopilotProposal, GuidelineDocument } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -42,7 +42,7 @@ vi.mock('../lib/api.js', () => ({
   ApiError: class extends Error {},
   api: {
     getConsultation: vi.fn(),
-    guidelines: vi.fn(),
+    guidelineDocuments: vi.fn(),
     patch: vi.fn(),
     analyze: vi.fn(),
     approve: vi.fn(),
@@ -201,7 +201,7 @@ describe('approved note copy', () => {
   beforeEach(() => {
     vi.mocked(api.getConsultation).mockReset()
     vi.mocked(api.getConsultation).mockResolvedValue(APPROVED as never)
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
     toastSuccess.mockReset()
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -247,7 +247,7 @@ describe('consultation note template', () => {
     }
     vi.mocked(api.getConsultation).mockReset()
     vi.mocked(api.getConsultation).mockResolvedValue(APPROVED as never)
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
     vi.mocked(api.patch).mockReset()
     toastError.mockReset()
     Object.defineProperty(navigator, 'clipboard', {
@@ -433,7 +433,7 @@ describe('consultation note template', () => {
 describe('consultation hero actions', () => {
   beforeEach(() => {
     vi.mocked(api.getConsultation).mockReset()
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
     vi.mocked(api.analyze).mockReset()
     vi.mocked(api.getConsultation).mockResolvedValue({
       ...APPROVED,
@@ -539,7 +539,7 @@ describe('consultation hero actions', () => {
 describe('copilot note edits', () => {
   beforeEach(() => {
     vi.mocked(api.getConsultation).mockReset()
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
     vi.mocked(api.patch).mockReset()
   })
 
@@ -615,7 +615,7 @@ describe('missing information order', () => {
 
   beforeEach(() => {
     vi.mocked(api.getConsultation).mockReset()
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
     vi.mocked(api.getConsultation).mockResolvedValue({
       ...APPROVED,
       analysis: {
@@ -683,7 +683,7 @@ describe('the full missing-information list', () => {
       this.dispatchEvent(new Event('close'))
     }
     vi.mocked(api.getConsultation).mockReset()
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
     vi.mocked(api.getConsultation).mockResolvedValue({
       ...APPROVED,
       analysis: { ...APPROVED.analysis, gaps: SEVEN },
@@ -808,7 +808,7 @@ describe('the panel overflow threshold', () => {
 
   const withGaps = (n: number) => {
     vi.mocked(api.getConsultation).mockReset()
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
     vi.mocked(api.getConsultation).mockResolvedValue({
       ...APPROVED,
       analysis: {
@@ -847,7 +847,7 @@ describe('the panel overflow threshold', () => {
 describe('the header identifies the consultation', () => {
   beforeEach(() => {
     vi.mocked(api.getConsultation).mockReset()
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
   })
 
   it('names the patient in the breadcrumb rather than the word Review', async () => {
@@ -892,7 +892,7 @@ describe('the live panes during ambient capture', () => {
   }
 
   beforeEach(() => {
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
     vi.mocked(api.getConsultation).mockResolvedValue(DRAFT as never)
     livePanes.redFlags = []
     livePanes.gaps = []
@@ -983,7 +983,7 @@ describe('the live panes during ambient capture', () => {
 describe('the note column while capture runs', () => {
   beforeEach(() => {
     vi.mocked(api.getConsultation).mockReset()
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
     vi.mocked(api.getConsultation).mockResolvedValue({
       ...APPROVED,
       status: 'draft',
@@ -1063,7 +1063,7 @@ describe('reopening the settled conversation', () => {
   const conversation = () => document.querySelector('dialog[aria-labelledby="conversation-title"]')
 
   beforeEach(() => {
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
     vi.mocked(api.getConsultation).mockReset()
     vi.mocked(api.getConsultation).mockResolvedValue(WITH_TRANSCRIPT as never)
   })
@@ -1117,7 +1117,7 @@ describe('transcript column layout', () => {
   beforeEach(() => {
     vi.mocked(api.getConsultation).mockReset()
     vi.mocked(api.getConsultation).mockResolvedValue(WITH_TRANSCRIPT as never)
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
   })
 
   it('holds the transcript column to the floor the other columns cap at', async () => {
@@ -1216,7 +1216,7 @@ describe('transcript column layout', () => {
 describe('retrieved CPG citations', () => {
   beforeEach(() => {
     vi.mocked(api.getConsultation).mockReset()
-    vi.mocked(api.guidelines).mockResolvedValue([])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
     vi.mocked(api.getConsultation).mockResolvedValue({
       ...APPROVED,
       status: 'awaiting_review' as const,
@@ -1255,5 +1255,104 @@ describe('retrieved CPG citations', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'cpg-cough-p12' }))
 
     expect(await screen.findByText('Management of Acute Cough, p. 12')).toBeTruthy()
+  })
+})
+
+describe('document references on the review page', () => {
+  const MOH_NAG: GuidelineDocument = {
+    id: 'moh-nag-2024',
+    title: 'MOH NAG 2024',
+    publisher: 'MOH Malaysia',
+    year: 2024,
+    sourceUrl: 'https://example.com/moh-nag-2024.pdf',
+    jurisdiction: 'Malaysia',
+    sourceLicence: 'All rights reserved',
+    pageCount: 120,
+    chunkCount: 0,
+    ingestedAt: new Date('2026-09-01T00:00:00.000Z'),
+    profiles: ['adult-acute-urti'],
+    verbatimAllowed: false,
+  }
+
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([MOH_NAG])
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+      analysis: {
+        ...APPROVED.analysis,
+        suggestions: [
+          {
+            id: 's-1',
+            text: 'A suggestion with a document reference.',
+            citations: [{ guidelineId: 'doc:moh-nag-2024#p12' }],
+          },
+        ],
+      },
+    } as never)
+  })
+
+  it('resolves a document reference to title, publisher, year and a working link', async () => {
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'doc:moh-nag-2024#p12' }))
+
+    expect(await screen.findByText('MOH NAG 2024')).toBeTruthy()
+    expect(screen.getByText('MOH Malaysia · 2024')).toBeTruthy()
+    const link = screen.getByRole('link', { name: 'Open source, p. 12' })
+    expect(link.getAttribute('href')).toBe('https://example.com/moh-nag-2024.pdf#page=12')
+  })
+})
+
+describe('suggestions empty state', () => {
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
+  })
+
+  it('explains an empty retrieval when outOfScope is false', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+      analysis: {
+        ...APPROVED.analysis,
+        outOfScope: false,
+        suggestions: [],
+        retrievedGuidelines: [],
+      },
+    } as never)
+    setup()
+
+    expect(
+      await screen.findByText(
+        'No guideline passages were retrieved for this consultation, so no suggestions were offered.',
+      ),
+    ).toBeTruthy()
+  })
+
+  it('keeps the out-of-scope copy when outOfScope is true', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+      analysis: {
+        ...APPROVED.analysis,
+        outOfScope: true,
+        suggestions: [],
+      },
+    } as never)
+    setup()
+
+    expect(
+      await screen.findByText(
+        'Outside the guideline corpus\u2019s scope, so no suggestions were offered.',
+      ),
+    ).toBeTruthy()
   })
 })

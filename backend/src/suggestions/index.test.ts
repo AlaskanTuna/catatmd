@@ -9,7 +9,6 @@ vi.mock('../lib/llm/index.js', () => ({
 
 import { getClinicalProfile } from '../clinical-profiles/index.js'
 import { deidentify } from '../deid/index.js'
-import { corpusIdsFor } from '../guidelines/index.js'
 import type { GenerateRequest } from '../lib/llm/types.js'
 import { generateSuggestions } from './index.js'
 
@@ -23,7 +22,20 @@ const { text: content } = deidentify(
   'Doctor: What brings you in? Patient: [PATIENT_1] here, cough 3 days.',
 )
 
-const firstCorpusId = corpusIdsFor(getClinicalProfile().guidelineCorpus)[0]
+const sampleChunk: GuidelineChunk = {
+  id: 'retrieved-cpg-p3',
+  title: 'Clinical Practice Guideline, p. 3: Antibiotics',
+  publisher: 'MOH',
+  year: 2024,
+  url: 'https://example.com/cpg',
+  summary: 'Summary text.',
+  sourceLicence: 'MOH-ARR',
+  verbatimAllowed: true,
+  documentId: 'doc-1',
+  page: 3,
+}
+
+const citableId = sampleChunk.id
 
 const emptyResponse = { outOfScope: false, redFlags: [], suggestions: [] }
 
@@ -32,13 +44,15 @@ beforeEach(() => {
   generate.mockResolvedValue(emptyResponse)
 })
 
-async function capturedRequest(): Promise<GenerateRequest<unknown>> {
-  await generateSuggestions(content)
+async function capturedRequest(
+  retrieved: readonly GuidelineChunk[] = [],
+): Promise<GenerateRequest<unknown>> {
+  await generateSuggestions(content, getClinicalProfile(), retrieved)
   const [request] = generate.mock.calls.at(-1) as [GenerateRequest<unknown>]
   return request
 }
 
-describe('generateSuggestions — call shape', () => {
+describe('generateSuggestions - call shape', () => {
   it('calls the LLM client egress point with the suggestions_and_red_flags operation', async () => {
     const request = await capturedRequest()
 
@@ -47,7 +61,7 @@ describe('generateSuggestions — call shape', () => {
     expect(request.content).toBe(content)
   })
 
-  it('returns the client response unchanged', async () => {
+  it('returns the client response unchanged when the corpus is non-empty', async () => {
     const response = {
       outOfScope: false,
       redFlags: [],
@@ -55,13 +69,15 @@ describe('generateSuggestions — call shape', () => {
         {
           id: 's1',
           text: 'Symptomatic management is appropriate.',
-          citations: [{ guidelineId: firstCorpusId }],
+          citations: [{ guidelineId: citableId }],
         },
       ],
     }
     generate.mockResolvedValue(response)
 
-    await expect(generateSuggestions(content)).resolves.toEqual({
+    await expect(
+      generateSuggestions(content, getClinicalProfile(), [sampleChunk]),
+    ).resolves.toEqual({
       ...response,
       suppressedSuggestionIds: [],
     })
@@ -75,24 +91,26 @@ describe('generateSuggestions — call shape', () => {
         {
           id: 'unsafe-prescribing',
           text: 'Prescribe amoxicillin 500 mg three times daily.',
-          citations: [{ guidelineId: firstCorpusId }],
+          citations: [{ guidelineId: citableId }],
         },
         {
           id: 'safe-consideration',
           text: 'Consider documenting the review interval.',
-          citations: [{ guidelineId: firstCorpusId }],
+          citations: [{ guidelineId: citableId }],
         },
       ],
     })
 
-    await expect(generateSuggestions(content)).resolves.toEqual({
+    await expect(
+      generateSuggestions(content, getClinicalProfile(), [sampleChunk]),
+    ).resolves.toEqual({
       outOfScope: false,
       redFlags: [],
       suggestions: [
         {
           id: 'safe-consideration',
           text: 'Consider documenting the review interval.',
-          citations: [{ guidelineId: firstCorpusId }],
+          citations: [{ guidelineId: citableId }],
         },
       ],
       suppressedSuggestionIds: ['model-suggestion-1'],
@@ -108,20 +126,46 @@ describe('generateSuggestions — call shape', () => {
         {
           id: unsafeId,
           text: 'Prescribe nitrofurantoin.',
-          citations: [{ guidelineId: firstCorpusId }],
+          citations: [{ guidelineId: citableId }],
         },
       ],
     })
 
-    const result = await generateSuggestions(content)
+    const result = await generateSuggestions(content, getClinicalProfile(), [sampleChunk])
 
     expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1'])
     expect(JSON.stringify(result.suppressedSuggestionIds)).not.toContain(unsafeId)
   })
 })
 
-describe('generateSuggestions — schema-enforced citation rejection (docs/trd.md §11)', () => {
-  it('rejects a citation naming a guideline id outside the corpus', async () => {
+describe('generateSuggestions - empty corpus', () => {
+  it('preserves the model outOfScope signal and red-flag candidates, with no suggestions', async () => {
+    const redFlags = [
+      {
+        id: 'm1',
+        label: 'Possible aspiration',
+        severity: 'urgent',
+        evidence: 'cannot swallow',
+        source: 'model',
+      },
+    ]
+    generate.mockResolvedValue({ outOfScope: false, redFlags, suggestions: [] })
+
+    await expect(generateSuggestions(content)).resolves.toEqual({
+      outOfScope: false,
+      redFlags,
+      suggestions: [],
+      suppressedSuggestionIds: [],
+    })
+  })
+
+  it('tells the model no citable corpus is available', async () => {
+    const request = await capturedRequest()
+
+    expect(request.system).toMatch(/no citable guideline corpus/i)
+  })
+
+  it('rejects any suggestion when the corpus is empty', async () => {
     const request = await capturedRequest()
 
     const result = request.schema.safeParse({
@@ -139,8 +183,30 @@ describe('generateSuggestions — schema-enforced citation rejection (docs/trd.m
     expect(result.success).toBe(false)
   })
 
-  it('accepts a citation naming a guideline id inside the corpus', async () => {
+  it('still allows model red-flag candidates with no corpus', async () => {
     const request = await capturedRequest()
+
+    const result = request.schema.safeParse({
+      outOfScope: true,
+      redFlags: [
+        {
+          id: 'm1',
+          label: 'Possible peritonsillar abscess',
+          severity: 'urgent',
+          evidence: 'cannot open mouth fully',
+          source: 'model',
+        },
+      ],
+      suggestions: [],
+    })
+
+    expect(result.success).toBe(true)
+  })
+})
+
+describe('generateSuggestions - schema-enforced citation rejection (docs/trd.md §11)', () => {
+  it('rejects a citation naming a guideline id outside the corpus', async () => {
+    const request = await capturedRequest([sampleChunk])
 
     const result = request.schema.safeParse({
       outOfScope: false,
@@ -149,7 +215,25 @@ describe('generateSuggestions — schema-enforced citation rejection (docs/trd.m
         {
           id: 's1',
           text: 'x',
-          citations: [{ guidelineId: firstCorpusId }],
+          citations: [{ guidelineId: 'not-a-real-corpus-id' }],
+        },
+      ],
+    })
+
+    expect(result.success).toBe(false)
+  })
+
+  it('accepts a citation naming a guideline id inside the corpus', async () => {
+    const request = await capturedRequest([sampleChunk])
+
+    const result = request.schema.safeParse({
+      outOfScope: false,
+      redFlags: [],
+      suggestions: [
+        {
+          id: 's1',
+          text: 'x',
+          citations: [{ guidelineId: citableId }],
         },
       ],
     })
@@ -158,29 +242,15 @@ describe('generateSuggestions — schema-enforced citation rejection (docs/trd.m
   })
 
   it('accepts a retrieved chunk id and rejects a foreign id', async () => {
-    const retrievedId = 'retrieved-cpg-p3'
-    const retrievedChunk: GuidelineChunk = {
-      id: retrievedId,
-      title: 'Clinical Practice Guideline, p. 3: Antibiotics',
-      publisher: 'MOH',
-      year: 2024,
-      url: 'https://example.com/cpg',
-      summary: 'Summary text.',
-      sourceLicence: 'MOH-ARR',
-      verbatimAllowed: true,
-      documentId: 'doc-1',
-      page: 3,
-    }
-
-    await generateSuggestions(content, getClinicalProfile(), [retrievedChunk])
+    await generateSuggestions(content, getClinicalProfile(), [sampleChunk])
     const [request] = generate.mock.calls.at(-1) as [GenerateRequest<unknown>]
 
-    expect(request.system).toContain(retrievedId)
+    expect(request.system).toContain(citableId)
 
     const accepted = request.schema.safeParse({
       outOfScope: false,
       redFlags: [],
-      suggestions: [{ id: 's1', text: 'x', citations: [{ guidelineId: retrievedId }] }],
+      suggestions: [{ id: 's1', text: 'x', citations: [{ guidelineId: citableId }] }],
     })
     expect(accepted.success).toBe(true)
 
@@ -193,7 +263,7 @@ describe('generateSuggestions — schema-enforced citation rejection (docs/trd.m
   })
 
   it('rejects a suggestion with zero citations', async () => {
-    const request = await capturedRequest()
+    const request = await capturedRequest([sampleChunk])
 
     const result = request.schema.safeParse({
       outOfScope: false,
@@ -205,7 +275,7 @@ describe('generateSuggestions — schema-enforced citation rejection (docs/trd.m
   })
 })
 
-describe('generateSuggestions — red flags cannot impersonate the rule engine (docs/trd.md §10)', () => {
+describe('generateSuggestions - red flags cannot impersonate the rule engine (docs/trd.md §10)', () => {
   it('rejects a red flag that claims source: "rule"', async () => {
     const request = await capturedRequest()
 
@@ -233,7 +303,7 @@ describe('generateSuggestions — red flags cannot impersonate the rule engine (
   })
 })
 
-describe('generateSuggestions — outOfScope signal (docs/trd.md §19 row 7)', () => {
+describe('generateSuggestions - outOfScope signal (docs/trd.md §19 row 7)', () => {
   it('accepts outOfScope: true with an empty suggestions array', async () => {
     const request = await capturedRequest()
 
@@ -247,7 +317,7 @@ describe('generateSuggestions — outOfScope signal (docs/trd.md §19 row 7)', (
   })
 })
 
-describe('generateSuggestions — system prompt content', () => {
+describe('generateSuggestions - system prompt content', () => {
   it('states red-flag candidates are candidates only and can never override the rule engine', async () => {
     const request = await capturedRequest()
 
@@ -255,12 +325,11 @@ describe('generateSuggestions — system prompt content', () => {
     expect(request.system).toMatch(/never (override|suppress|downgrade)/i)
   })
 
-  it('serialises every selected profile corpus id into the system prompt', async () => {
-    const request = await capturedRequest()
+  it('serialises every retrieved chunk id into the system prompt', async () => {
+    await generateSuggestions(content, getClinicalProfile(), [sampleChunk])
+    const [request] = generate.mock.calls.at(-1) as [GenerateRequest<unknown>]
 
-    for (const id of corpusIdsFor(getClinicalProfile().guidelineCorpus)) {
-      expect(request.system).toContain(id)
-    }
+    expect(request.system).toContain(citableId)
   })
 
   it('instructs the model to never state a diagnosis', async () => {

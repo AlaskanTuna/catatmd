@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { GAP_CHECKLIST } from '../gaps/index.js'
-import { GUIDELINE_CORPUS } from '../guidelines/index.js'
+import { CITABLE_DOCUMENT_IDS } from '../guidelines/index.js'
 import { ALL_REDFLAG_TRIGGERS, RED_FLAG_LIST_VERSION, REDFLAG_TRIGGERS } from '../redflags/index.js'
 import { ACTIVE_CLINICAL_VERSIONS, ACTIVE_PROFILE_VERSIONS } from './index.js'
 
@@ -49,7 +49,7 @@ describe('clinical content versions (issue #16)', () => {
   it('versions artefacts that are actually populated', () => {
     expect(REDFLAG_TRIGGERS.length).toBeGreaterThan(0)
     expect(GAP_CHECKLIST.length).toBeGreaterThan(0)
-    expect(GUIDELINE_CORPUS.length).toBeGreaterThan(0)
+    expect(CITABLE_DOCUMENT_IDS.length).toBeGreaterThan(0)
   })
 
   it('includes a version for every selectable clinical profile', () => {
