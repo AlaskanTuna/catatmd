@@ -48,6 +48,21 @@ const CONFUSABLES: ReadonlyMap<string, string> = new Map([
   ['tongsel', 'tonsil'],
 ])
 
+/**
+ * The words the table is trying to recover, for recognition-time biasing.
+ *
+ * **Derived, never listed.** `backend/src/lib/asr/vocabulary.ts` primes the
+ * recogniser with these so the mishear has a chance not to happen, and a
+ * hand-copied list would be the one thing worse than no biasing at all: a pair
+ * added here would silently keep missing at layer 1 while appearing to be
+ * covered.
+ *
+ * Reading it from the map's values also states the direction of the fix. Layer
+ * 1 aims at the target, layer 2 catches the miss, and the two cannot disagree
+ * about what the target is.
+ */
+export const CONFUSABLE_TARGETS: readonly string[] = [...new Set(CONFUSABLES.values())]
+
 /** Whole tokens only: "sepatutnya" is never expanded, only the bare word is. */
 const TOKEN = /[\p{L}]+/gu
 

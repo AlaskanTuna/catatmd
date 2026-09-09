@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs'
+import { MAX_ASR_CONTEXT_TERMS } from '@shared/types'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { CONFUSABLE_TARGETS } from '../../redflags/mishears.js'
 import {
   getLiveAsrDescriptor,
   liveSessionConfig,
@@ -9,6 +11,7 @@ import {
   sonioxHosts,
   TEMPORARY_KEY_TTL_SECONDS,
 } from './soniox.js'
+import { asrContextTerms } from './vocabulary.js'
 
 /**
  * The adapter reads only the three Soniox fields, and the mock is what keeps
@@ -276,8 +279,45 @@ describe('liveSessionConfig', () => {
           { key: 'domain', value: 'Healthcare' },
           { key: 'speakers', value: 'Two speakers: a doctor and a patient' },
         ],
+        terms: asrContextTerms(),
       },
     })
+  })
+
+  it('takes no arguments, which is what keeps a consultation out of the egress', () => {
+    // The comment above `CONTEXT` says this structurally prevents request data
+    // reaching a value that crosses the audio egress. Pinned as a test at the
+    // moment the feature adds pressure to make the vocabulary per-session:
+    // a reviewer reading a diff that adds a parameter sees this fail.
+    expect(liveSessionConfig.length).toBe(0)
+  })
+
+  it('primes every word the confusable table exists to recover', () => {
+    // Layer 1 aims at the target and layer 2 catches the miss, so a target the
+    // recogniser was never primed for is a gap in the chain rather than two
+    // independent defences. Derived on both sides, so this cannot drift.
+    const terms = liveSessionConfig().context.terms ?? []
+
+    for (const target of CONFUSABLE_TARGETS) {
+      expect(terms).toContain(target)
+    }
+  })
+
+  it('stays inside the vendor context budget', () => {
+    // The whole context is capped at roughly 10,000 characters, shared with
+    // `general`. Measured as sent rather than as a term count, because a term
+    // is a phrase here and a count would not catch a long one.
+    const { terms, general } = liveSessionConfig().context
+    const sent = [...(terms ?? []), ...general.map((entry) => `${entry.key}${entry.value}`)].join()
+
+    expect(terms?.length ?? 0).toBeLessThanOrEqual(MAX_ASR_CONTEXT_TERMS)
+    expect(sent.length).toBeLessThan(10_000)
+  })
+
+  it('carries no duplicates, so the budget is not spent twice on one word', () => {
+    const terms = liveSessionConfig().context.terms ?? []
+
+    expect(new Set(terms).size).toBe(terms.length)
   })
 
   it('excludes Indonesian, which Malay is measurably confused with', () => {
@@ -302,13 +342,16 @@ describe('liveSessionConfig', () => {
     const first = liveSessionConfig()
     first.context.general[0] = { key: 'patient', value: 'leaked' }
     first.context.general.push({ key: 'extra', value: 'leaked' })
+    first.context.terms?.push('Encik Ahmad bin Ismail')
 
     expect(liveSessionConfig().context).toEqual({
       general: [
         { key: 'domain', value: 'Healthcare' },
         { key: 'speakers', value: 'Two speakers: a doctor and a patient' },
       ],
+      terms: asrContextTerms(),
     })
+    expect(liveSessionConfig().context.terms).not.toContain('Encik Ahmad bin Ismail')
   })
 })
 
