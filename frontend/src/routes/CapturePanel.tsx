@@ -1,6 +1,7 @@
 import type {
   CaptureMode,
   DraftTurn,
+  TextRange,
   Transcript,
   TranscriptSource,
   TranscriptTurn,
@@ -11,8 +12,10 @@ import { AudioCapture } from '../audio/AudioCapture.js'
 import { AudioSettingsDialog } from '../audio/AudioSettingsDialog.js'
 import { type AudioSettings, loadAudioSettings } from '../audio/audio-settings.js'
 import {
+  carryUncertain,
   type DraftLine,
   draftToTurns,
+  type MarkedSegment,
   proseToDraft,
   segmentsToDraft,
   timeDraftLines,
@@ -141,6 +144,23 @@ export function CapturePanel({
   const turns = parseTranscript(text)
 
   /*
+   * Where the recogniser doubted its own words, keyed by the exact turn text it
+   * said it about (issue #309).
+   *
+   * The transcript round-trips through this textarea, so a turn is flattened to
+   * a line and parsed back, and nothing that is not in that string survives.
+   * Re-attaching on an exact match carries the cues across, and the same rule is
+   * what drops them: a line the doctor edited no longer matches and carries
+   * none. That is the honest reading rather than a shortcoming, because once
+   * the words are theirs, a machine's doubt about the words it replaced is no
+   * longer about anything on screen.
+   *
+   * A ref rather than state, because it never renders. It accumulates across
+   * recording passes, since each pass re-parses the whole transcript.
+   */
+  const uncertainByText = useRef(new Map<string, readonly TextRange[]>())
+
+  /*
    * `labelsReviewed` says whether a person stands behind the speaker on every
    * turn, and the red-flag engine reads it before it is willing to drop a
    * trigger hit (shared/src/index.ts). True on Paste only, because the doctor
@@ -152,7 +172,15 @@ export function CapturePanel({
   const submitText = (fullText: string, nextSource: TranscriptSource) => {
     const parsed = parseTranscript(fullText)
     if (parsed.length === 0) return
-    onCapture({ source: nextSource, turns: parsed, labelsReviewed: nextSource === 'paste' })
+    const withUncertainty = parsed.map((turn) => {
+      const uncertain = uncertainByText.current.get(turn.text)
+      return uncertain === undefined ? turn : { ...turn, uncertain: [...uncertain] }
+    })
+    onCapture({
+      source: nextSource,
+      turns: withUncertainty,
+      labelsReviewed: nextSource === 'paste',
+    })
   }
 
   const submit = () => submitText(text, source)
@@ -209,7 +237,7 @@ export function CapturePanel({
     audio: recording,
   }: {
     text: string
-    segments: readonly TranscriptSegment[]
+    segments: readonly MarkedSegment[]
     source: TranscriptSource
     draftTurns?: readonly DraftTurn[]
     audio?: Blob
@@ -299,7 +327,17 @@ export function CapturePanel({
        * trigger hit on a question-denial reading it cannot stand
        * behind.
        */
-      addition = serialiseTurns(draftToTurns(lines))
+      /*
+       * The uncertain spans the recogniser measured are put back onto these
+       * lines the same way `timeDraftLines` puts the timing back, and then
+       * remembered against the exact text they describe, because the next thing
+       * that happens to them is being flattened into the textarea (#309).
+       */
+      const applied = draftToTurns(carryUncertain(lines, segments))
+      for (const turn of applied) {
+        if (turn.uncertain !== undefined) uncertainByText.current.set(turn.text, turn.uncertain)
+      }
+      addition = serialiseTurns(applied)
     } else {
       // No usable timing: fall back to the unlabelled prose the
       // record path produced before #118.

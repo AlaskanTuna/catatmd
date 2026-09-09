@@ -31,10 +31,57 @@ export const SpeakerSchema = z.enum(['doctor', 'patient'])
 export const MAX_TRANSCRIPT_TURNS = 600
 export const MAX_TURN_CHARACTERS = 4_000
 
+/**
+ * How many uncertain spans one turn may carry (issue #309).
+ *
+ * A bound rather than a target, and it is not sized from speech: adjacent
+ * sub-threshold words are merged before they get here, so a turn needing more
+ * than this many separate spans is one the recogniser was unsure of throughout,
+ * where highlighting every run says no more than highlighting the first two
+ * hundred. The producer truncates to this rather than letting a pathological
+ * turn fail the schema, because a 400 on a stored transcript would cost the
+ * doctor the whole consultation to save a display cue.
+ */
+export const MAX_UNCERTAIN_RANGES_PER_TURN = 200
+
+/**
+ * A half-open span of a turn's text, `[start, end)`.
+ *
+ * **Character offsets, not seconds.** `start` and `end` mean seconds on
+ * `HostedAsrSegmentSchema` a hundred lines below, and confusing the two would
+ * put a highlight in a place nobody said anything. Named here once so both
+ * sides read the same thing.
+ */
+export const TextRangeSchema = z.object({
+  start: z.number().int().nonnegative(),
+  end: z.number().int().positive(),
+})
+
 export const TranscriptTurnSchema = z
   .object({
     speaker: SpeakerSchema,
     text: z.string().min(1).max(MAX_TURN_CHARACTERS),
+    /**
+     * Where the recogniser was unsure of its own words (issue #309).
+     *
+     * **A cue to re-read, never a finding.** Soniox returns a confidence per
+     * token; below a threshold the spans are folded into ranges here so the
+     * doctor sees which words to check rather than a score for a whole turn,
+     * which nobody can act on. Nothing downstream may read this as evidence
+     * that a word is wrong, and no red flag, suggestion or note field may be
+     * gated on it.
+     *
+     * **Absent means nothing is claimed**, not that every word was certain. It
+     * is absent on every typed and pasted transcript, on every path whose
+     * recogniser reports no confidence, and on any line the doctor edited: once
+     * the words are theirs, a machine's doubt about the words it replaced is no
+     * longer about anything on screen.
+     *
+     * Optional so transcripts stored before this field existed still parse, and
+     * it lives inside the turn rather than beside it so `Consultation.transcript`
+     * stays the single PHI column `eraseConsultation` already nulls.
+     */
+    uncertain: z.array(TextRangeSchema).max(MAX_UNCERTAIN_RANGES_PER_TURN).optional(),
     /** Seconds from consultation start, when the source provides timing. */
     offsetSeconds: z.number().nonnegative().optional(),
     /**
@@ -57,6 +104,27 @@ export const TranscriptTurnSchema = z
       turn.endSeconds === undefined ||
       turn.endSeconds >= turn.offsetSeconds,
     { message: 'endSeconds must not precede offsetSeconds', path: ['endSeconds'] },
+  )
+  /*
+   * Uncertain spans must be in bounds, non-empty, and in ascending order with
+   * no overlap. Checked rather than assumed because a renderer walks them once
+   * from left to right, so an overlapping or backwards pair would silently
+   * duplicate or drop the text between them, and the doctor would be reading a
+   * turn that is not the one stored.
+   */
+  .refine(
+    (turn) =>
+      turn.uncertain === undefined ||
+      turn.uncertain.every(
+        (range, index) =>
+          range.end > range.start &&
+          range.end <= turn.text.length &&
+          (index === 0 || range.start >= (turn.uncertain?.[index - 1]?.end ?? 0)),
+      ),
+    {
+      message: 'uncertain ranges must be ordered, non-overlapping and within the text',
+      path: ['uncertain'],
+    },
   )
 
 /**
@@ -1643,6 +1711,7 @@ export const TranscriptCorrectionsResponseSchema = z.object({
 export type Speaker = z.infer<typeof SpeakerSchema>
 export type MishearProposal = z.infer<typeof MishearProposalSchema>
 export type TranscriptCorrectionsResponse = z.infer<typeof TranscriptCorrectionsResponseSchema>
+export type TextRange = z.infer<typeof TextRangeSchema>
 export type TranscriptTurn = z.infer<typeof TranscriptTurnSchema>
 export type TranscriptSource = z.infer<typeof TranscriptSourceSchema>
 export type Transcript = z.infer<typeof TranscriptSchema>

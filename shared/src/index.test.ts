@@ -15,6 +15,7 @@ import {
   LlmClinicalAssertionSchema,
   LlmClinicalFactsSchema,
   MAX_DRAFT_TEXT_CHARACTERS,
+  MAX_UNCERTAIN_RANGES_PER_TURN,
   makeSuggestionsAndRedFlagsSchema,
   NoteAndGapsResponseSchema,
   OperationalBlockSchema,
@@ -180,6 +181,69 @@ describe('Transcript.source', () => {
       turns: [{ speaker: 'doctor', text: 'What brings you in?' }],
     })
     expect(result.success).toBe(true)
+  })
+})
+
+describe('TranscriptTurn.uncertain', () => {
+  const turn = (uncertain?: unknown) => ({
+    source: 'asr_live' as const,
+    turns: [
+      {
+        speaker: 'patient' as const,
+        text: 'Saya teman dua hari',
+        ...(uncertain === undefined ? {} : { uncertain }),
+      },
+    ],
+  })
+
+  it('accepts a turn that names no uncertainty, so stored transcripts still parse', () => {
+    expect(TranscriptSchema.safeParse(turn()).success).toBe(true)
+  })
+
+  it('accepts a range inside the turn text', () => {
+    expect(TranscriptSchema.safeParse(turn([{ start: 5, end: 10 }])).success).toBe(true)
+  })
+
+  it('rejects a range that runs past the end of the text', () => {
+    // The renderer walks these against the text it was given. A range past the
+    // end would drop the words after it.
+    expect(TranscriptSchema.safeParse(turn([{ start: 5, end: 99 }])).success).toBe(false)
+  })
+
+  it('rejects an empty or backwards range', () => {
+    expect(TranscriptSchema.safeParse(turn([{ start: 5, end: 5 }])).success).toBe(false)
+    expect(TranscriptSchema.safeParse(turn([{ start: 10, end: 5 }])).success).toBe(false)
+  })
+
+  it('rejects ranges that overlap or run backwards against each other', () => {
+    expect(
+      TranscriptSchema.safeParse(
+        turn([
+          { start: 0, end: 6 },
+          { start: 5, end: 10 },
+        ]),
+      ).success,
+    ).toBe(false)
+    expect(
+      TranscriptSchema.safeParse(
+        turn([
+          { start: 5, end: 10 },
+          { start: 0, end: 4 },
+        ]),
+      ).success,
+    ).toBe(false)
+  })
+
+  it('rejects a non-integer offset', () => {
+    expect(TranscriptSchema.safeParse(turn([{ start: 5.5, end: 10 }])).success).toBe(false)
+  })
+
+  it('rejects more ranges than the per-turn cap', () => {
+    const tooMany = Array.from({ length: MAX_UNCERTAIN_RANGES_PER_TURN + 1 }, (_, i) => ({
+      start: i,
+      end: i + 1,
+    }))
+    expect(TranscriptSchema.safeParse(turn(tooMany)).success).toBe(false)
   })
 })
 

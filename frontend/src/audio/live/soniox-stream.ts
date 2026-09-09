@@ -36,6 +36,17 @@ const SonioxTokenSchema = z.object({
   // both a string and a number. It is never parsed as a person.
   speaker: z.union([z.string(), z.number()]).optional(),
   language: z.string().optional(),
+  /*
+   * How sure the recogniser was of this token (issue #309).
+   *
+   * Bounded to the vendor's documented range rather than trusted, because this
+   * number reaches a doctor as a cue to re-read a word. `.catch` is what makes
+   * the bound safe to enforce on a live path: an out-of-range value becomes
+   * absent, which `toLiveToken` maps to "unknown", instead of failing the whole
+   * message and ending a consultation mid-sentence. The `speaker` field above
+   * records that this vendor has already changed a field's type once.
+   */
+  confidence: z.number().min(0).max(1).optional().catch(undefined),
 })
 
 const SonioxMessageSchema = z.object({
@@ -109,6 +120,10 @@ function toLiveToken(raw: z.infer<typeof SonioxTokenSchema>): LiveToken {
     isFinal: raw.is_final ?? false,
     speaker: raw.speaker === undefined ? null : String(raw.speaker),
     language: raw.language ?? null,
+    // Absent maps to `null`, never to 0. An unknown is not an uncertainty, and
+    // a missing field read as "least confident" would underline a whole
+    // consultation the moment a vendor stopped sending this.
+    confidence: raw.confidence ?? null,
     endpoint,
   }
 }
