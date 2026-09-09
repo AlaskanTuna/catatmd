@@ -63,8 +63,8 @@ export const UPLOAD_TIMEOUT_MS = 180_000
  * How long the labelling pass after a hosted transcription may run (#189).
  *
  * A total deadline like the upload's, and for the same reason: one request
- * with no progress to listen to. Sized to the LLM adapter's own bounds, a
- * 60 s timeout with one retry, plus headroom. Expiring is not reported as a
+ * with no progress to listen to. Sized to the LLM adapter's own bound, one
+ * 90 s attempt since #340, plus headroom. Expiring is not reported as a
  * failure: the transcription is already in hand, so the doctor gets the
  * unlabelled prose rather than an error about the labels.
  */

@@ -413,12 +413,18 @@ All 34 fields round-trip in **9 of 9 runs**, and the Qwen state distribution is 
 
 ### Request Bounds
 
-**Status: `Built`** (issue #94). Both are constructor options on the shared adapter, so every call path inherits them and a new provider cannot be added without them.
+**Status: `Built`** (issue #94, revised by #340). Both are constructor options on the shared adapter, so every call path inherits them and a new provider cannot be added without them.
 
-| Bound        | Value    | SDK Default | Why                                                                                                                                         |
-| ------------ | -------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `timeout`    | `60_000` | `600_000`   | Roughly 3x the §19 row 19 worst case (21.6s), so it cannot fire on a healthy call while converting a 10-minute stall into a 60-second error |
-| `maxRetries` | `1`      | `2`         | The SDK retries timeouts, so an unpinned count is what compounds 10 minutes into 30. One retry still covers a fast transient failure        |
+| Bound        | Value    | SDK Default | Why                                                                                                                                                      |
+| ------------ | -------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `timeout`    | `90_000` | `600_000`   | The largest value that still fits under the 120s proxy ceiling below with room for the non-model stages. Was `60_000`, which the pipeline outgrew (#340) |
+| `maxRetries` | `0`      | `2`         | The SDK retries timeouts, so the retry could only repeat a slow call's failure at double the cost. CAP-5 already makes the doctor's press the only retry |
+
+**The ceiling above these bounds is a platform limit, and it is what picks the timeout.** A Vercel rewrite to an external origin allows at most **120s to first byte**, and `vercel.json` rewrites `/api/*` to Render. `/analyze` emits one JSON at the end, so time-to-first-byte is the whole request, not just the model call. 90s leaves roughly 30s of that window for routing, auth, de-identification, retrieval, rehydration, persistence and the audit write. **A bound at 120s would sit on the cap and could never reach the browser.**
+
+**Why the retry went rather than the timeout rising further.** The previous shape spent the whole budget reaching a guaranteed failure: a call needing 70 s of decoding needs 70 s on the second attempt too, so a slow but healthy call burned 120 s and two calls' quota to fail anyway (#340, measured at `durationMs` 120421 and 120467, provider verified healthy in between). Spending the same wall clock on one longer attempt is what lets those calls finish. The cost is that a transient 429 or 5xx now fails immediately, on **every** chat operation and not just analysis.
+
+**A second client carries its own, shorter bound.** `OpenAICompatibleEmbeddingClient` is 10s with no retries. It shipped with neither option, inheriting 10 minutes and two retries, because every assertion in `openai-compatible.test.ts` read the chat client and nothing read this one. It is shorter than the chat bound because it is not concurrent with what follows it: `runAnalysis` awaits `retrieveGuidelines` and only then calls `generateSuggestions`, so every second spent embedding is a second on the critical path, and retrieval already degrades to the curated corpus on failure.
 
 Two clarifications, because the adjacent bound is easy to confuse with these:
 
@@ -901,15 +907,15 @@ No automatic retry inside `LLMClient` (§6, `Built`) — a failure on either cal
 
 **Status: `Measured`.** `bun run --cwd backend bench:workflow` runs the exact `runAnalysis` stage order (`backend/src/bench/workflow.ts`) against the live Singapore endpoint on `backend/src/bench/fixture.ts`, a synthetic 75-turn, 676-word, 4.0-minute adult URTI consultation carrying a name, an NRIC and a phone number so de-identification has real work. Three sequential runs, `qwen3.7-flash`, medians:
 
-| Stage                                                  | Median     | Note                                       |
-| ------------------------------------------------------ | ---------- | ------------------------------------------ |
-| `deidentification`                                     | 13 ms      |                                            |
-| `rules`                                                | 8 ms       |                                            |
-| `note_generation` (`clinical_facts` + `note_and_gaps`) | 45.8 s     |                                            |
-| `retrieval` (`suggestions_and_red_flags`)              | 53.8 s     | Carries the serialised corpus              |
-| `llm_concurrent`                                       | 53.8 s     | The wait the doctor experiences            |
-| `rehydration`                                          | < 1 ms     |                                            |
-| **`total`**                                            | **53.9 s** | Range 53.6 to 56.4 s across the three runs |
+| Stage                                                  | Median     | Note                                                                    |
+| ------------------------------------------------------ | ---------- | ----------------------------------------------------------------------- |
+| `deidentification`                                     | 13 ms      |                                                                         |
+| `rules`                                                | 8 ms       |                                                                         |
+| `note_generation` (`clinical_facts` + `note_and_gaps`) | 45.8 s     |                                                                         |
+| `retrieval` (`suggestions_and_red_flags`)              | 53.8 s     | Carries the serialised corpus. **Excludes retrieval itself, see below** |
+| `llm_concurrent`                                       | 53.8 s     | The wait the doctor experiences                                         |
+| `rehydration`                                          | < 1 ms     |                                                                         |
+| **`total`**                                            | **53.9 s** | Range 53.6 to 56.4 s across the three runs                              |
 
 What it establishes:
 
@@ -918,6 +924,8 @@ What it establishes:
 - **Production agrees.** The deployed `/analyze` on a 15-turn pasted transcript, same day, returned between 33 and 63 s when polled from the browser at 30 s intervals.
 - **The live path is not covered.** Red flags and gaps fill during the consultation (#274), so at Finish the doctor waits only for the note. The harness measures the record-then-analyse path.
 - **The delay is visible but not sized.** The Analyse control shows a spinner and "Analysing" for the whole wait and does not state an expected duration.
+
+**The stage named `retrieval` does not run retrieval, and this figure therefore understates production.** `backend/src/bench/workflow.ts` calls `generateSuggestions()` directly with no retrieved chunks, so the 53.8 s is the suggestions model call alone: no embedding, no lexical or vector query, no retrieved chunks in the prompt. Production does more and does it **sequentially**, because `runAnalysis` awaits `retrieveGuidelines` and only then calls `generateSuggestions` inside that one branch. Real wall clock on that branch is retrieval plus this number. Do not cite this table as production latency until the harness runs the real pipeline (#340).
 
 The harness prints counts and durations only, never transcript or model text.
 
@@ -3281,5 +3289,5 @@ An evaluation that spends real model calls must treat its **raw per-turn outputs
 
 - The defect is real but small, about 4 in 36, and neither the three prompt revisions nor the tool-description revision beat it without introducing something worse. Both levers are now spent; what remains untried is a different tier, for example a post-hoc check that a turn composing replacement wording actually called the tool.
 - One turn in 36 truncated mid-answer, emitting four characters. Cause unknown, not reproduced, not investigated.
-- One statement prompt, "her temperature was 38.2 when the nurse checked", reliably exceeds the provider bound and is the cause of most errored turns in v3 and v4. **This is slow, not hung, and the cause is known:** `openai-compatible.ts` sets `REQUEST_TIMEOUT_MS = 60_000` with `MAX_RETRIES = 1` on the one shared client, the SDK retries timeouts, and `stream()` uses that client, so a request that exceeds 60 s is attempted twice and the turn ends at roughly 120 s. That is the §94 bound behaving as specified. The open question is not why it hangs but why this prompt exceeds 60 s when its neighbours return in seconds, and the likely answer is the model working on a sentence that is genuinely ambiguous between dictation and context, which is the ambiguity the statement arm exists to measure.
+- One statement prompt, "her temperature was 38.2 when the nurse checked", reliably exceeds the provider bound and is the cause of most errored turns in v3 and v4. **This is slow, not hung, and the cause is known:** `openai-compatible.ts` set `REQUEST_TIMEOUT_MS = 60_000` with `MAX_RETRIES = 1` on the one shared client, the SDK retries timeouts, and `stream()` uses that client, so a request that exceeded 60 s was attempted twice and the turn ended at roughly 120 s. That was the §94 bound behaving as specified. **Issue #340 has since changed that shape to one 90 s attempt**, so a turn of this kind now ends at roughly 90 s instead, and a prompt needing 60 to 90 s completes rather than failing twice. The open question is not why it hangs but why this prompt exceeds 60 s when its neighbours return in seconds, and the likely answer is the model working on a sentence that is genuinely ambiguous between dictation and context, which is the ambiguity the statement arm exists to measure.
 - The bare-statement arm sits near 78% and is unexplained: the model proposes readily on "she is allergic to penicillin" while declining on explicit imperatives. Whether that is correct is undecided, so it has no target.
