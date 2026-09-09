@@ -822,7 +822,13 @@ describe('the header identifies the consultation', () => {
  * the review screen renders them, and that the note does **not** become one.
  */
 describe('the live panes during ambient capture', () => {
-  const DRAFT = { ...APPROVED, status: 'draft' as const, analysis: null, editedNote: null }
+  const DRAFT = {
+    ...APPROVED,
+    status: 'draft' as const,
+    captureMode: 'ambient' as const,
+    analysis: null,
+    editedNote: null,
+  }
 
   beforeEach(() => {
     vi.mocked(api.guidelines).mockResolvedValue([])
@@ -841,6 +847,19 @@ describe('the live panes during ambient capture', () => {
     expect(await screen.findByText('Red Flags')).toBeTruthy()
     expect(screen.queryByTestId('flag')).toBeNull()
     expect(screen.queryByTestId('gap')).toBeNull()
+  })
+
+  it('shows no live safety panel while a press-to-record engine is recording', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...DRAFT,
+      captureMode: 'manual',
+    } as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Mock Capture Busy' }))
+
+    expect(screen.queryByText('Red Flags')).toBeNull()
+    expect(screen.queryByText('Ask Next')).toBeNull()
   })
 
   it('renders live flags and gaps once capture produces them', async () => {
