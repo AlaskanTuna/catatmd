@@ -1,0 +1,21 @@
+-- Medications the doctor dictated and then confirmed (issue #312).
+--
+-- PHI-bearing, and the fifth erasure target. `eraseConsultation`
+-- (backend/src/audit/erasure.ts) nulls it alongside `transcript`, `analysis`,
+-- `editedNote` and `editedMedicalRecordNote`, and `title` beside them.
+--
+-- Distinct from `operational.medicationsDispensed`, which lives inside
+-- `analysis` and is extracted by the model from what the doctor said during
+-- the consultation. This column is authored by the doctor afterwards, dictated
+-- and confirmed before it is stored, and the two are kept apart so a model's
+-- reading and a clinician's decision are never one array.
+--
+-- Never reaches a provider. Parsing is deterministic and runs no model, so
+-- this column has no de-identification surface of its own.
+--
+-- Nullable with no default and no backfill. Absent means the doctor recorded
+-- no prescription, which is the honest state for every consultation that
+-- exists today; an empty array would assert they considered it and declined.
+
+-- AlterTable
+ALTER TABLE "consultation" ADD COLUMN     "prescriptions" JSONB;

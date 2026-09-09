@@ -17,26 +17,29 @@
  * No I/O, no clock, no randomness (`redflags/evaluate.ts` posture).
  */
 
-export const SIG_ROUTES = ['oral', 'topical', 'inhaled', 'nasal'] as const
-export type SigRoute = (typeof SIG_ROUTES)[number]
+/*
+ * The three closed sets moved to `shared/` when #312 gave them a wire contract,
+ * and are re-exported here so this module's public surface is unchanged.
+ *
+ * They had to move rather than be mirrored: a prescription stores a route, a
+ * frequency and a food timing, so the SPA parses them and `shared/` is the only
+ * place both sides can read. Declaring a second copy beside `PrescriptionSchema`
+ * is exactly the drift the shared-contract rule exists to stop, and a Zod enum
+ * that had silently fallen behind this parser would be a validation failure on
+ * a value the parser had just produced.
+ *
+ * Everything below this line is parser-internal and stays here.
+ */
+import type { SigFrequency } from '@shared/types'
 
-export const SIG_FREQUENCIES = [
-  'once-daily',
-  'twice-daily',
-  'three-times-daily',
-  'four-times-daily',
-  'every-4-hours',
-  'every-6-hours',
-  'every-8-hours',
-  'every-12-hours',
-  'at-night',
-  'when-required',
-  'immediately',
-] as const
-export type SigFrequency = (typeof SIG_FREQUENCIES)[number]
-
-export const SIG_FOOD_TIMINGS = ['before', 'after', 'with'] as const
-export type SigFoodTiming = (typeof SIG_FOOD_TIMINGS)[number]
+export {
+  SIG_FOOD_TIMINGS,
+  SIG_FREQUENCIES,
+  SIG_ROUTES,
+  type SigFoodTiming,
+  type SigFrequency,
+  type SigRoute,
+} from '@shared/types'
 
 /**
  * Units exactly as `safety.ts` accepted them, including both `μg` and `ug`.

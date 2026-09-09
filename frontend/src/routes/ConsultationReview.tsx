@@ -1017,7 +1017,7 @@ export function ConsultationReview() {
             rather than 12px, which is the documented body floor and is most of
             what made this read as a wall.
           */}
-          {detail.transcript ? (
+          {detail.transcript && (
             <div className="@container max-h-[70vh] overflow-y-auto rounded-card bg-sunken p-4 lg:max-h-none lg:overflow-visible">
               {/*
                 Sides, not a single left edge, matching the live pane (#278).
@@ -1036,8 +1036,6 @@ export function ConsultationReview() {
                 playing={audio.playing}
               />
             </div>
-          ) : (
-            <></>
           )}
           {/*
             Corrections sit under the conversation and only while the note has
