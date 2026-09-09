@@ -1,6 +1,6 @@
 import type { CopilotProposal } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, api } from '../lib/api.js'
@@ -101,8 +101,13 @@ vi.mock('../review/SafetyCards.js', async (importOriginal) => {
     ...actual,
     // Renders its question so a test can read the order gaps come out in. The
     // real card is covered by SafetyCards.test.tsx; what matters here is sequence.
-    GapCard: ({ gap }: { gap: { question: string } }) => (
-      <div data-testid="gap">{gap.question}</div>
+    GapCard: (props: Parameters<typeof actual.GapCard>[0]) => (
+      <>
+        <span data-testid="gap" hidden>
+          {props.gap.question}
+        </span>
+        <actual.GapCard {...props} />
+      </>
     ),
     RedFlagCard: ({ flag }: { flag: { label: string } }) => (
       <div data-testid="flag">{flag.label}</div>
@@ -734,6 +739,62 @@ describe('the full missing-information list', () => {
     // The rail's seven and nothing else: the dialog's copy is gated on state,
     // not merely hidden, so a closed dialog contributes no duplicate controls.
     expect(screen.getAllByTestId('gap')).toHaveLength(7)
+  })
+
+  it('resolves a gap source from a retrieved guideline in the overflow dialog', async () => {
+    const RETRIEVED = {
+      id: 'cpg-cough-p12',
+      title: 'Management of Acute Cough, p. 12',
+      publisher: 'MOH Malaysia',
+      year: 2024,
+      url: 'https://example.com/cpg-cough.pdf',
+      summary: 'A retrieved span.',
+      sourceLicence: 'All rights reserved',
+      verbatimAllowed: false,
+      documentId: 'cpg-cough',
+      page: 12,
+    }
+
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+      analysis: {
+        ...APPROVED.analysis,
+        gaps: [
+          {
+            id: 'fever',
+            question: 'Has the patient had a fever?',
+            rationale: 'Fever status is not documented.',
+            priority: 'high',
+            source: { kind: 'guideline', guidelineIds: ['cpg-cough-p12'] },
+          },
+          { id: '1', question: 'Q-1', rationale: 'Because', priority: 'medium' },
+          { id: '2', question: 'Q-2', rationale: 'Because', priority: 'medium' },
+          { id: '3', question: 'Q-3', rationale: 'Because', priority: 'medium' },
+        ],
+        retrievedGuidelines: [RETRIEVED],
+      },
+    } as never)
+
+    setup()
+
+    fireEvent.click(await screen.findByText('Show All 4 Missing Items'))
+
+    const dialog = await screen.findByRole('dialog')
+    const card = within(dialog)
+      .getByRole('heading', { name: 'Has the patient had a fever?' })
+      .closest('div[data-tour="gap"]') as HTMLElement
+    const more = within(card).getByRole('button', { name: /more options/i })
+
+    fireEvent.click(more)
+
+    const sources = within(card).getByRole('button', { name: /sources/i })
+    fireEvent.click(sources)
+
+    expect(within(dialog).getByText('Management of Acute Cough, p. 12')).toBeTruthy()
+    expect(screen.queryByText('No guideline citation.')).toBeNull()
   })
 })
 
