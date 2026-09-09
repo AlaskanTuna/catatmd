@@ -55,7 +55,7 @@ import {
 import { getActiveClinicalVersions } from '../clinical-versions/index.js'
 import { env } from '../config/env.js'
 import { DeidentificationError, deidentifyTranscript } from '../deid/index.js'
-import { deriveGaps } from '../gaps/index.js'
+import { deriveGaps, withGapProvenance } from '../gaps/index.js'
 import { assertOwnedConsultation, assertOwnedPatient } from '../lib/authz.js'
 import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
@@ -119,6 +119,11 @@ function toDetail(
   approvedBy: string | null = null,
   patient: { id: string; name: string | null } | null = null,
 ) {
+  const analysis =
+    row.analysis === null || row.analysis === undefined
+      ? null
+      : withGapProvenance(row.analysis as unknown as ConsultationAnalysis)
+
   const detail = ConsultationDetailSchema.parse({
     id: row.id,
     status: row.status,
@@ -130,7 +135,7 @@ function toDetail(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     transcript: row.transcript ?? null,
-    analysis: row.analysis ?? null,
+    analysis,
     editedNote: row.editedNote ?? null,
     editedMedicalRecordNote: row.editedMedicalRecordNote ?? null,
     prescriptions: row.prescriptions ?? null,

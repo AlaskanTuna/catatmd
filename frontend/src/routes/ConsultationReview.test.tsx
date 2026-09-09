@@ -1,6 +1,6 @@
 import type { CopilotProposal } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, api } from '../lib/api.js'
@@ -101,8 +101,13 @@ vi.mock('../review/SafetyCards.js', async (importOriginal) => {
     ...actual,
     // Renders its question so a test can read the order gaps come out in. The
     // real card is covered by SafetyCards.test.tsx; what matters here is sequence.
-    GapCard: ({ gap }: { gap: { question: string } }) => (
-      <div data-testid="gap">{gap.question}</div>
+    GapCard: (props: Parameters<typeof actual.GapCard>[0]) => (
+      <>
+        <span data-testid="gap" hidden>
+          {props.gap.question}
+        </span>
+        <actual.GapCard {...props} />
+      </>
     ),
     RedFlagCard: ({ flag }: { flag: { label: string } }) => (
       <div data-testid="flag">{flag.label}</div>
@@ -735,6 +740,62 @@ describe('the full missing-information list', () => {
     // not merely hidden, so a closed dialog contributes no duplicate controls.
     expect(screen.getAllByTestId('gap')).toHaveLength(7)
   })
+
+  it('resolves a gap source from a retrieved guideline in the overflow dialog', async () => {
+    const RETRIEVED = {
+      id: 'cpg-cough-p12',
+      title: 'Management of Acute Cough, p. 12',
+      publisher: 'MOH Malaysia',
+      year: 2024,
+      url: 'https://example.com/cpg-cough.pdf',
+      summary: 'A retrieved span.',
+      sourceLicence: 'All rights reserved',
+      verbatimAllowed: false,
+      documentId: 'cpg-cough',
+      page: 12,
+    }
+
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+      analysis: {
+        ...APPROVED.analysis,
+        gaps: [
+          {
+            id: 'fever',
+            question: 'Has the patient had a fever?',
+            rationale: 'Fever status is not documented.',
+            priority: 'high',
+            source: { kind: 'guideline', guidelineIds: ['cpg-cough-p12'] },
+          },
+          { id: '1', question: 'Q-1', rationale: 'Because', priority: 'medium' },
+          { id: '2', question: 'Q-2', rationale: 'Because', priority: 'medium' },
+          { id: '3', question: 'Q-3', rationale: 'Because', priority: 'medium' },
+        ],
+        retrievedGuidelines: [RETRIEVED],
+      },
+    } as never)
+
+    setup()
+
+    fireEvent.click(await screen.findByText('Show All 4 Missing Items'))
+
+    const dialog = await screen.findByRole('dialog')
+    const card = within(dialog)
+      .getByRole('heading', { name: 'Has the patient had a fever?' })
+      .closest('div[data-tour="gap"]') as HTMLElement
+    const more = within(card).getByRole('button', { name: /more options/i })
+
+    fireEvent.click(more)
+
+    const sources = within(card).getByRole('button', { name: /sources/i })
+    fireEvent.click(sources)
+
+    expect(within(dialog).getByText('Management of Acute Cough, p. 12')).toBeTruthy()
+    expect(screen.queryByText('No guideline citation.')).toBeNull()
+  })
 })
 
 describe('the panel overflow threshold', () => {
@@ -822,7 +883,13 @@ describe('the header identifies the consultation', () => {
  * the review screen renders them, and that the note does **not** become one.
  */
 describe('the live panes during ambient capture', () => {
-  const DRAFT = { ...APPROVED, status: 'draft' as const, analysis: null, editedNote: null }
+  const DRAFT = {
+    ...APPROVED,
+    status: 'draft' as const,
+    captureMode: 'ambient' as const,
+    analysis: null,
+    editedNote: null,
+  }
 
   beforeEach(() => {
     vi.mocked(api.guidelines).mockResolvedValue([])
@@ -841,6 +908,19 @@ describe('the live panes during ambient capture', () => {
     expect(await screen.findByText('Red Flags')).toBeTruthy()
     expect(screen.queryByTestId('flag')).toBeNull()
     expect(screen.queryByTestId('gap')).toBeNull()
+  })
+
+  it('shows no live safety panel while a press-to-record engine is recording', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...DRAFT,
+      captureMode: 'manual',
+    } as never)
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Mock Capture Busy' }))
+
+    expect(screen.queryByText('Waiting for the first safety check.')).toBeNull()
+    expect(screen.queryByText('Ask Next')).toBeNull()
   })
 
   it('renders live flags and gaps once capture produces them', async () => {
@@ -907,6 +987,7 @@ describe('the note column while capture runs', () => {
     vi.mocked(api.getConsultation).mockResolvedValue({
       ...APPROVED,
       status: 'draft',
+      captureMode: 'ambient',
       analysis: null,
       approvedAt: null,
       approvedBy: null,
@@ -1020,6 +1101,106 @@ describe('reopening the settled conversation', () => {
 
     await screen.findByRole('heading', { name: 'Consultation Review' })
     expect(screen.queryByRole('button', { name: /view conversation/i })).toBeNull()
+  })
+})
+
+describe('transcript column layout', () => {
+  const WITH_TRANSCRIPT = {
+    ...APPROVED,
+    transcript: {
+      source: 'paste',
+      labelsReviewed: true,
+      turns: [{ speaker: 'patient', text: 'Cough for three days.' }],
+    },
+  }
+
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.getConsultation).mockResolvedValue(WITH_TRANSCRIPT as never)
+    vi.mocked(api.guidelines).mockResolvedValue([])
+  })
+
+  it('holds the transcript column to the floor the other columns cap at', async () => {
+    setup()
+
+    const transcript = (await screen.findByRole('heading', { name: 'Transcript' })).closest(
+      'section',
+    )
+    const rail = screen.getByRole('complementary', { name: 'Clinical safety' })
+
+    expect(rail?.className).toContain('lg:max-h-[var(--review-columns-height)]')
+    expect(transcript?.className).toContain('lg:h-[var(--review-columns-height)]')
+    expect(transcript?.className).not.toContain('lg:max-h-')
+    expect(transcript?.className).toContain('lg:[&>*:last-child]:grow')
+  })
+
+  it('caps the transcript column when there is no analysis to level against', async () => {
+    const draft = {
+      ...WITH_TRANSCRIPT,
+      status: 'draft' as const,
+      analysis: null,
+      approvedAt: null,
+      approvedBy: null,
+    }
+    vi.mocked(api.getConsultation).mockResolvedValue(draft as never)
+    setup()
+
+    const transcript = (await screen.findByRole('heading', { name: 'Transcript' })).closest(
+      'section',
+    )
+
+    expect(transcript?.className).toContain('lg:max-h-[var(--review-columns-height)]')
+    expect(transcript?.className).not.toContain('lg:h-')
+  })
+
+  it('measures the grid top and writes the column height custom property', async () => {
+    const original = Element.prototype.getBoundingClientRect
+    const originalInnerHeight = window.innerHeight
+    Object.defineProperty(window, 'innerHeight', {
+      value: 900,
+      writable: true,
+      configurable: true,
+    })
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      top: 292,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: 0,
+      height: 0,
+      x: 0,
+      y: 292,
+      toJSON: () => undefined,
+    } as DOMRect)
+
+    setup()
+
+    const rail = await screen.findByRole('complementary', { name: 'Clinical safety' })
+    const grid = rail.parentElement
+
+    expect(grid?.style.getPropertyValue('--review-columns-height')).toContain('100vh - 292px')
+
+    Element.prototype.getBoundingClientRect = original
+    Object.defineProperty(window, 'innerHeight', {
+      value: originalInnerHeight,
+      writable: true,
+      configurable: true,
+    })
+  })
+
+  it('falls back to the 13rem calc when ResizeObserver is absent', async () => {
+    const original = window.ResizeObserver
+    // @ts-expect-error ResizeObserver is optional in the test environment.
+    delete window.ResizeObserver
+
+    setup()
+
+    const rail = await screen.findByRole('complementary', { name: 'Clinical safety' })
+    const grid = rail.parentElement
+
+    expect(grid?.style.getPropertyValue('--review-columns-height')).toBe('calc(100vh - 13rem)')
+
+    window.ResizeObserver = original
   })
 })
 

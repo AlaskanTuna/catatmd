@@ -877,6 +877,38 @@
       "sourceUrl": "https://www.acadmed.org.my/view_file.cfm?fileid=1160",
       "file": null,
       "profiles": []
+    },
+    {
+      "id": "abdullah-2024-idr-sore-throat",
+      "title": "Treatment of Acute Sore Throat in Malaysia: A Consensus of Multidisciplinary Recommendations Using Modified Delphi Methodology",
+      "year": 2024,
+      "sourceUrl": "https://doi.org/10.2147/IDR.S477038",
+      "file": "abdullah-2024-idr-sore-throat.pdf",
+      "profiles": ["adult-acute-urti"],
+      "publisher": "Dove Medical Press",
+      "sourceLicence": "CC-BY-NC-3.0",
+      "verbatimAllowed": true
+    },
+    {
+      "id": "ooi-2022-mfp-urti",
+      "title": "Patient Profile and Antibiotic Use in a Dedicated Upper Respiratory Tract Infection Clinic Based in a Primary Healthcare Setting During COVID-19 Pandemic in Malaysia: A Cross Sectional Study",
+      "year": 2022,
+      "sourceUrl": "https://doi.org/10.51866/oa.38",
+      "file": "ooi-2022-mfp-urti.pdf",
+      "profiles": ["adult-acute-urti"],
+      "publisher": "Malaysian Family Physician",
+      "sourceLicence": "CC-BY-4.0",
+      "verbatimAllowed": true
+    },
+    {
+      "id": "moh-nag-2024",
+      "title": "National Antimicrobial Guideline (NAG) 2024, 4th Edition",
+      "year": 2024,
+      "sourceUrl": "https://sites.google.com/moh.gov.my/nag",
+      "file": "moh-nag-2024.pdf",
+      "profiles": ["adult-acute-urti", "adult-acute-uncomplicated-uti"],
+      "sourceLicence": "MOH-ARR",
+      "verbatimAllowed": false
     }
   ]
 }

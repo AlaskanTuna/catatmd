@@ -15,6 +15,16 @@ import { Card } from '../ui/Card.js'
 const humanise = (key: string) =>
   key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase())
 
+/*
+ * One fixed four-track grid for every row: label, value, badge, evidence.
+ * The badge track is a fixed width so every row shares the same third column
+ * and the value column is not pushed around by different badge lengths.
+ * `minmax(0, …)` on the two text tracks lets labels and values wrap, and the
+ * fixed evidence track holds its width whether the row has a link or not.
+ */
+const ROW_GRID =
+  'grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_1.5rem] items-center gap-x-3'
+
 /**
  * One checklist row, and its evidence when the field has any (issue #10, AC7).
  *
@@ -47,31 +57,13 @@ function ChecklistRow({
 
   const summary = (
     <>
-      <dt className="min-w-0 truncate text-sm text-ink">{label}</dt>
-      {/* `dd` used to be `shrink-0`, and the value span capped at a flat
-          `max-w-[10rem]` (160px) regardless of how wide the row actually was.
-          At the two-column checklist width a row can be as narrow as ~162px
-          total, so a 160px value cap plus the badge next to it could not
-          possibly fit, whatever else truncated correctly: the row overflowed
-          by design, not by a missing `min-w-0` anywhere.
-          `min-w-0` on `dd` is conditional on there being a value to truncate,
-          not a constant, because the two shapes need opposite defaults.
-          With a value: the span (`min-w-0 truncate`) has to be the one that
-          absorbs the squeeze, and `dd` needs `min-w-0` too or its own
-          intrinsic-size floor stays "badge plus the value's full width",
-          overflowing exactly as before. Without a value, `dd` holds only the
-          badge, which is `shrink-0` and must never truncate a clinical state
-          word; there `dd`'s default (unset) minimum already floors correctly
-          at the badge's own width, and adding `min-w-0` breaks that floor,
-          letting the badge itself overflow instead. Both failure modes were
-          measured directly against the built CSS before this was written:
-          a badge-only row overflowed by 21px with `min-w-0` present, and a
-          valued row overflowed by 169px with it absent. */}
-      <dd className={cn('flex items-center gap-2', assertion.value && 'min-w-0')}>
-        {assertion.value && (
-          <span className="min-w-0 truncate text-xs text-ink-muted">{assertion.value}</span>
-        )}
-        <AssertionStateBadge state={assertion.state} />
+      <dt className="min-w-0 break-words text-sm text-ink">{label}</dt>
+      {/* `dd` is `display: contents` so its value and badge can occupy their
+          own row tracks while staying a single definition element; the tests
+          count exactly one `dd` per row. */}
+      <dd className="contents">
+        <span className="min-w-0 break-words text-xs text-ink-muted">{assertion.value}</span>
+        <AssertionStateBadge state={assertion.state} className="justify-self-end" />
       </dd>
     </>
   )
@@ -82,14 +74,17 @@ function ChecklistRow({
   // the list would look ragged for a reason the reader cannot see.
   if (!link) {
     return (
-      <div className="flex min-w-0 items-center justify-between gap-3 border-b border-line/60 px-2 py-2 last:border-0">
+      <div className={cn(ROW_GRID, 'px-2 py-2')}>
         {summary}
+        {/* The evidence track renders even when empty, so the badge column
+            keeps the same right edge on rows that have no link. */}
+        <span className="h-6" />
       </div>
     )
   }
 
   return (
-    <div className="min-w-0 border-b border-line/60 last:border-0">
+    <div className="min-w-0">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -99,17 +94,22 @@ function ChecklistRow({
            checklist's own content set the panel's scroll width and the review
            column grew a horizontal scrollbar. The inert row above carries the
            same `px-2` instead, so the two still align. */
-        className="group flex w-full min-w-0 items-center justify-between gap-3 rounded-control px-2 py-2 text-left transition-colors hover:bg-sunken-soft"
+        className={cn(
+          ROW_GRID,
+          'group w-full rounded-control px-2 py-2 text-left transition-colors hover:bg-sunken-soft',
+        )}
       >
         {summary}
-        <Quote
-          aria-hidden
-          className={cn(
-            'size-3 shrink-0 text-accent transition-opacity',
-            open ? 'opacity-100' : 'opacity-45 group-hover:opacity-100',
-          )}
-        />
-        <span className="sr-only">Show the transcript source for {label}</span>
+        <span className="flex h-6 items-center justify-center">
+          <Quote
+            aria-hidden
+            className={cn(
+              'size-3 shrink-0 text-accent transition-opacity',
+              open ? 'opacity-100' : 'opacity-45 group-hover:opacity-100',
+            )}
+          />
+          <span className="sr-only">Show the transcript source for {label}</span>
+        </span>
       </button>
 
       {/*
@@ -317,86 +317,89 @@ export function ChecklistPanel({
        * default, and the scroller's overflow cap would all silently truncate
        * that evidence on paper, so the `print:` utilities flatten all three.
        */}
+      {/*
+       * `open:flex` rather than `flex`: author display outranks the UA rule
+       * `dialog:not([open]) { display: none }`, so a bare `flex` would leave
+       * the closed dialog painted on the page. `overflow-hidden` leaves the
+       * inner scroller as the only scrollbar; the print utilities still
+       * flatten the shell on paper.
+       */}
       <dialog
         ref={dialog}
         data-print="block"
         onClose={() => setOpen(false)}
         aria-labelledby={titleId}
-        className="glass-panel m-auto h-[min(85vh,48rem)] w-[min(56rem,calc(100vw-2rem))] max-w-none rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm print:static print:h-auto print:max-h-none print:overflow-visible"
+        className="glass-panel m-auto h-[min(85vh,48rem)] w-[min(56rem,calc(100vw-2rem))] max-w-none overflow-hidden rounded-float p-0 text-ink open:flex open:flex-col backdrop:bg-scrim backdrop:backdrop-blur-sm print:static print:h-auto print:max-h-none print:overflow-visible"
       >
-        <div className="flex h-full flex-col">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-6 py-4">
-            <h2
-              id={titleId}
-              className="font-display text-lg font-semibold flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2"
-            >
-              <span>Completeness Checklist</span>
-              <span aria-hidden className="text-sm font-normal tabular-nums text-ink-muted">
-                {assessed} of {entries.length} established
-              </span>
-            </h2>
-            {/* `ui/Button` does not forward a ref, and this is the button the
-                open effect focuses, so it is a plain element in Button's
-                `neutral`/`sm` styling. */}
-            <button
-              ref={closeButton}
-              type="button"
-              data-print="hide"
-              onClick={() => dialog.current?.close()}
-              className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-control border border-line bg-sunken-soft px-3 text-xs font-medium text-ink shadow-raised transition-colors duration-150 ease-out-quart hover:bg-sunken active:scale-[0.97]"
-            >
-              Close
-            </button>
-          </div>
-          {/*
-           * `@container`, so the two-column grid below reads the scroller's own
-           * rendered width rather than the viewport's. `sm:grid-cols-2` is a
-           * media query: on an ordinary 1280px laptop viewport it is always
-           * true, whatever width the review page has actually left this panel.
-           * Measured against the real rendered checklist, a two-column row can
-           * be squeezed to ~162-175px wide and a state badge needs roughly
-           * 90-98px it must never give up, so two columns cannot fit in that
-           * space no matter how aggressively the label and value truncate. The
-           * container query switches only once the scroller has genuinely
-           * earned the room.
-           */}
-          <div className="@container min-h-0 flex-1 overflow-y-auto bg-sunken p-6 print:overflow-visible">
-            <div className="flex flex-col gap-4">
-              {CHECKLIST_SECTION_ORDER.map((section) => {
-                const sectionEntries = entries.filter((entry) => entry.section === section)
-                const medications = section === 'plan' ? operational.medicationsDispensed : []
-                if (sectionEntries.length === 0 && medications.length === 0) return null
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-6 py-4">
+          <h2
+            id={titleId}
+            className="font-display text-lg font-semibold flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2"
+          >
+            <span>Completeness Checklist</span>
+            <span aria-hidden className="text-sm font-normal tabular-nums text-ink-muted">
+              {assessed} of {entries.length} established
+            </span>
+          </h2>
+          {/* `ui/Button` does not forward a ref, and this is the button the
+              open effect focuses, so it is a plain element in Button's
+              `neutral`/`sm` styling. */}
+          <button
+            ref={closeButton}
+            type="button"
+            data-print="hide"
+            onClick={() => dialog.current?.close()}
+            className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-control border border-line bg-sunken-soft px-3 text-xs font-medium text-ink shadow-raised transition-colors duration-150 ease-out-quart hover:bg-sunken active:scale-[0.97]"
+          >
+            Close
+          </button>
+        </div>
+        {/*
+         * `@container`, so the two-column grid below reads the scroller's own
+         * rendered width rather than the viewport's. `sm:grid-cols-2` is a
+         * media query: on an ordinary 1280px laptop viewport it is always
+         * true, whatever width the review page has actually left this panel.
+         * Rows no longer truncate, so each one needs its badge and evidence
+         * tracks plus enough left over for wrapped labels and values to stay
+         * readable; the container query switches only once the scroller has
+         * genuinely earned the room.
+         */}
+        <div className="@container min-h-0 flex-1 overflow-y-auto bg-sunken p-6 print:overflow-visible">
+          <div className="flex flex-col gap-4">
+            {CHECKLIST_SECTION_ORDER.map((section) => {
+              const sectionEntries = entries.filter((entry) => entry.section === section)
+              const medications = section === 'plan' ? operational.medicationsDispensed : []
+              if (sectionEntries.length === 0 && medications.length === 0) return null
 
-                return (
-                  <section
-                    key={section}
-                    className="rounded-card border border-line bg-surface p-4 page-break-avoid"
-                  >
-                    <h3 className="mb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
-                      {CHECKLIST_SECTION_LABELS[section]}
-                    </h3>
-                    <dl className="mt-1 grid gap-x-10 @[320px]:grid-cols-2">
-                      {sectionEntries.map(({ field, fieldId, assertion }) => (
-                        <ChecklistRow
-                          key={fieldId}
-                          label={humanise(field)}
-                          assertion={assertion}
-                          link={linkFor(fieldId)}
-                        />
-                      ))}
-                    </dl>
-                    {medications.length > 0 && (
-                      <p className="mt-2 text-sm text-ink">
-                        <span className="text-ink-muted">Dispensed: </span>
-                        {medications
-                          .flatMap((medication) => (medication.value ? [medication.value] : []))
-                          .join(', ')}
-                      </p>
-                    )}
-                  </section>
-                )
-              })}
-            </div>
+              return (
+                <section
+                  key={section}
+                  className="rounded-card border border-line bg-surface p-4 page-break-avoid"
+                >
+                  <h3 className="mb-1 border-b border-line/60 pb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                    {CHECKLIST_SECTION_LABELS[section]}
+                  </h3>
+                  <dl className="mt-1 grid gap-x-10 @[640px]:grid-cols-2">
+                    {sectionEntries.map(({ field, fieldId, assertion }) => (
+                      <ChecklistRow
+                        key={fieldId}
+                        label={humanise(field)}
+                        assertion={assertion}
+                        link={linkFor(fieldId)}
+                      />
+                    ))}
+                  </dl>
+                  {medications.length > 0 && (
+                    <p className="mt-2 text-sm text-ink">
+                      <span className="text-ink-muted">Dispensed: </span>
+                      {medications
+                        .flatMap((medication) => (medication.value ? [medication.value] : []))
+                        .join(', ')}
+                    </p>
+                  )}
+                </section>
+              )
+            })}
           </div>
         </div>
       </dialog>

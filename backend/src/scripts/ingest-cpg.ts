@@ -41,6 +41,52 @@ export interface ManifestDocument {
   sourceUrl: string
   file: string | null
   profiles: string[]
+  /**
+   * Per-document attribution and licence, overriding the manifest's top-level
+   * values.
+   *
+   * The manifest began as one corpus from one publisher under one licence, so
+   * all three lived at the top level and every row inherited them. That stops
+   * working the moment a second source is added: an open-access paper and an
+   * all-rights-reserved guideline cannot share one `verbatimAllowed`, and
+   * `retrieve.ts` hands `chunk.text` to the doctor as the citation body, so
+   * the flag decides whether a span may be shown verbatim at all. `publisher`
+   * is the same problem in the citation line rather than the licence. Absent
+   * means "inherit", which keeps every existing entry reading as before.
+   */
+  publisher?: string
+  sourceLicence?: string
+  verbatimAllowed?: boolean
+}
+
+/** Per-document attribution and licence where set, the manifest's otherwise. */
+export function resolveDocumentFields(
+  doc: Pick<ManifestDocument, 'publisher' | 'sourceLicence' | 'verbatimAllowed'>,
+  manifest: Pick<Manifest, 'publisher' | 'sourceLicence' | 'verbatimAllowed'>,
+): { publisher: string; sourceLicence: string; verbatimAllowed: boolean } {
+  return {
+    publisher: doc.publisher ?? manifest.publisher,
+    sourceLicence: doc.sourceLicence ?? manifest.sourceLicence,
+    verbatimAllowed: doc.verbatimAllowed ?? manifest.verbatimAllowed,
+  }
+}
+
+/**
+ * What an unchanged PDF still syncs from the manifest on re-ingest. Scope and
+ * licence are metadata, so an operator edits one file and re-runs; the
+ * licence must come through the per-document resolution or a re-run would
+ * quietly reset a `verbatimAllowed: false` document to the manifest default.
+ */
+export function manifestSyncData(
+  doc: Pick<ManifestDocument, 'profiles' | 'publisher' | 'sourceLicence' | 'verbatimAllowed'>,
+  manifest: Pick<Manifest, 'publisher' | 'sourceLicence' | 'verbatimAllowed'>,
+): {
+  profiles: string[]
+  publisher: string
+  sourceLicence: string
+  verbatimAllowed: boolean
+} {
+  return { profiles: [...doc.profiles], ...resolveDocumentFields(doc, manifest) }
 }
 
 export interface ChunkSpec {
@@ -176,16 +222,87 @@ export function isScannedPage(text: string): boolean {
   return text.replace(/\s/g, '').length < SCANNED_THRESHOLD
 }
 
+const CHROME_DATE_TIME_PATTERN =
+  /^\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4}),\s+\d{1,2}:\d{2}(?:\s*[AP]M)?(?:\s+|$)/i
+
+// pdftotext often puts Chrome's timestamp on a line of its own above the
+// title; a line that is nothing but that timestamp is never content.
+function isChromeDateTimeLine(line: string): boolean {
+  return line.trim() !== '' && stripChromeDateTime(line) === ''
+}
+const FOOTER_URL_PATTERN = /^\s*(\S+?:\/\/\S+?)(?:\s+\d{1,4}\/\d{1,4})?\s*$/
+
+function collapseSpaces(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+function stripChromeDateTime(line: string): string {
+  return line.replace(CHROME_DATE_TIME_PATTERN, '').trim()
+}
+
+function parseChromeFooterUrl(line: string): string | null {
+  const match = line.match(FOOTER_URL_PATTERN)
+  return match?.[1] ?? null
+}
+
+// A bare URL, alone on the last line, optionally followed by an `n/m` page
+// counter, is Chrome's print footer on its own evidence. It cannot be gated
+// on running-header membership: a site rendered section by section carries a
+// different URL per section, each far below the repeat threshold.
+function isFooterLine(line: string): boolean {
+  return parseChromeFooterUrl(line) !== null
+}
+
+// A running header is a phrase, not a word. Table column labels ("Preferred",
+// "Alternative", "Comments") and connectives ("or") recur on most pages of a
+// dosing guideline and stripping them cuts an alternative out of its row.
+const RUNNING_HEADER_MIN_CHARS = 8
+const RUNNING_HEADER_MIN_WORDS = 2
+
+function isRunningHeaderCandidate(key: string): boolean {
+  if (/^\S+:\/\/\S+$/.test(key)) return true
+  return key.length >= RUNNING_HEADER_MIN_CHARS && key.split(' ').length >= RUNNING_HEADER_MIN_WORDS
+}
+
 export function computeRunningHeaders(rawPages: string[]): Set<string> {
   const counts = new Map<string, number>()
   for (const page of rawPages) {
     const seen = new Set<string>()
-    for (const line of page.split('\n')) {
-      const normalised = line.replace(/\s+/g, ' ').trim().toLowerCase()
-      if (!normalised || /^\d+$/.test(normalised)) continue
-      if (!seen.has(normalised)) {
-        seen.add(normalised)
-        counts.set(normalised, (counts.get(normalised) ?? 0) + 1)
+    const lines = page.split('\n')
+    let firstIndex = -1
+    let lastIndex = -1
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? ''
+      if (!line.trim() || /^\d+$/.test(line.trim()) || isChromeDateTimeLine(line)) continue
+      if (firstIndex === -1) firstIndex = i
+      lastIndex = i
+    }
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? ''
+      if (!line.trim() || /^\d+$/.test(line.trim()) || isChromeDateTimeLine(line)) continue
+      let key: string
+      if (i === firstIndex) {
+        const stripped = stripChromeDateTime(line)
+        key = collapseSpaces(stripped)
+        const dashIndex = key.indexOf(' - ')
+        if (dashIndex > 0) {
+          const prefix = key.slice(0, dashIndex).trim()
+          if (prefix && !seen.has(prefix)) {
+            seen.add(prefix)
+            counts.set(prefix, (counts.get(prefix) ?? 0) + 1)
+          }
+        }
+      } else if (i === lastIndex) {
+        const url = parseChromeFooterUrl(line)
+        key = url ? collapseSpaces(url) : collapseSpaces(line)
+      } else {
+        key = collapseSpaces(line)
+      }
+      if (!key || /^\d+$/.test(key)) continue
+      if (!isRunningHeaderCandidate(key)) continue
+      if (!seen.has(key)) {
+        seen.add(key)
+        counts.set(key, (counts.get(key) ?? 0) + 1)
       }
     }
   }
@@ -210,11 +327,35 @@ function isPageNumberLine(line: string): boolean {
 export function cleanPage(rawText: string, headerSet: Set<string>): string {
   const rawLines = rawText.split('\n')
   const keep: string[] = []
+  let firstContent = true
   for (const line of rawLines) {
-    if (isPageNumberLine(line)) continue
-    const collapsed = line.replace(/\s+/g, ' ').trim().toLowerCase()
-    if (headerSet.has(collapsed)) continue
+    if (isPageNumberLine(line) || isChromeDateTimeLine(line)) continue
+    if (firstContent && line.trim()) {
+      const stripped = collapseSpaces(stripChromeDateTime(line))
+      if (stripped && headerSet.has(stripped)) {
+        firstContent = false
+        continue
+      }
+      const dashIndex = stripped.indexOf(' - ')
+      if (dashIndex >= 0) {
+        const prefix = stripped.slice(0, dashIndex).trim()
+        if (prefix && headerSet.has(prefix)) {
+          firstContent = false
+          continue
+        }
+      }
+      firstContent = false
+    } else if (!firstContent) {
+      const collapsed = collapseSpaces(line)
+      if (headerSet.has(collapsed)) continue
+    }
     keep.push(line)
+  }
+
+  while (keep.length > 0 && !(keep[keep.length - 1] ?? '').trim()) keep.pop()
+  if (keep.length > 0 && isFooterLine(keep[keep.length - 1] ?? '')) {
+    keep.pop()
+    while (keep.length > 0 && !(keep[keep.length - 1] ?? '').trim()) keep.pop()
   }
 
   for (let i = 0; i < keep.length; ) {
@@ -534,6 +675,8 @@ async function writeDocument(
     })
   }
 
+  const fields = resolveDocumentFields(doc, manifest)
+
   await prisma.$transaction(async (tx) => {
     await tx.guidelineChunk.deleteMany({ where: { documentId: doc.id } })
     await tx.guidelineDocument.upsert({
@@ -541,29 +684,29 @@ async function writeDocument(
       create: {
         id: doc.id,
         title: doc.title,
-        publisher: manifest.publisher,
+        publisher: fields.publisher,
         year: doc.year,
         sourceUrl: doc.sourceUrl,
         jurisdiction: manifest.jurisdiction,
-        sourceLicence: manifest.sourceLicence,
+        sourceLicence: fields.sourceLicence,
         sha256,
         pageCount,
         storagePath,
         profiles: [...doc.profiles],
-        verbatimAllowed: manifest.verbatimAllowed,
+        verbatimAllowed: fields.verbatimAllowed,
       },
       update: {
         title: doc.title,
-        publisher: manifest.publisher,
+        publisher: fields.publisher,
         year: doc.year,
         sourceUrl: doc.sourceUrl,
         jurisdiction: manifest.jurisdiction,
-        sourceLicence: manifest.sourceLicence,
+        sourceLicence: fields.sourceLicence,
         sha256,
         pageCount,
         storagePath,
         profiles: [...doc.profiles],
-        verbatimAllowed: manifest.verbatimAllowed,
+        verbatimAllowed: fields.verbatimAllowed,
         ingestedAt: new Date(),
       },
     })
@@ -616,12 +759,9 @@ async function processDocument(
   if (!flags.dryRun) {
     const existing = await prisma.guidelineDocument.findUnique({ where: { id: doc.id } })
     if (existing && existing.sha256 === sha256 && !flags.force) {
-      // Scope and licence are manifest metadata, kept in sync without a
-      // re-ingest so an operator can widen or narrow retrieval by editing one
-      // file and re-running.
       await prisma.guidelineDocument.update({
         where: { id: doc.id },
-        data: { profiles: [...doc.profiles], verbatimAllowed: manifest.verbatimAllowed },
+        data: manifestSyncData(doc, manifest),
       })
       logger.info(`unchanged, skipping ${doc.id} (scope synced)`)
       return null

@@ -29,4 +29,24 @@ describe('gap checklist provenance', () => {
       }
     }
   })
+
+  const ALLOWED_UNSOURCED_URTI_IDS: readonly string[] = [
+    'haemoptysis',
+    'smoking',
+    'current-medications',
+    'drug-allergies',
+    'diagnosis',
+    'mc-days',
+    'referral',
+    'follow-up',
+  ]
+
+  it('grounds every non-administrative adult-acute-urti prompt in a guideline', () => {
+    for (const entry of ALL_GAP_CHECKLIST) {
+      if (!entry.profiles.includes('adult-acute-urti')) continue
+      if (ALLOWED_UNSOURCED_URTI_IDS.includes(entry.id)) continue
+
+      expect(entry.source.kind, `${entry.id} must be sourced from a guideline`).toBe('guideline')
+    }
+  })
 })
