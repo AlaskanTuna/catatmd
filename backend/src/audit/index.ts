@@ -137,6 +137,18 @@ export type ConsultationAuditEvent =
       action: 'consultation.corrections_failed'
       metadata: { reason: TranscriptCorrectionsFailureReason }
     }
+  /*
+   * Prescriptions the doctor confirmed (#312).
+   *
+   * A count, never a drug name. `consultation.renamed` sets the precedent by
+   * carrying no metadata at all, on the reasoning that the old and new titles
+   * are exactly the free text a row must not hold; a drug, a dose and a
+   * verbatim dictation are the same class of content.
+   *
+   * The count is what makes the row answerable: it records that a clinician
+   * confirmed a prescription, and how many, without reproducing it.
+   */
+  | { action: 'consultation.prescription_recorded'; metadata: { prescriptionCount: number } }
   | { action: 'consultation.edited' }
   | {
       action: 'consultation.template_selected'

@@ -348,6 +348,7 @@ async function runEphemeral(): Promise<ConsultationDetail> {
     analysis,
     editedNote: null,
     editedMedicalRecordNote: null,
+    prescriptions: null,
     approvedAt: null,
     approvedBy: null,
     // The tour's consultation is ephemeral and belongs to no registered patient.

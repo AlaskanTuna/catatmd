@@ -17,6 +17,7 @@ import {
   liveAnalysisRateLimit,
   liveFlagsRateLimit,
   liveSessionRateLimit,
+  prescriptionParseRateLimit,
   settingsWriteRateLimit,
   transcriptCorrectionsRateLimit,
 } from './middleware/rate-limit.js'
@@ -121,6 +122,9 @@ export function createApp() {
   // human cadence rather than a streaming one, so it gets a much smaller
   // allowance than the live panes.
   app.post('/api/consultations/:id/transcript-corrections', transcriptCorrectionsRateLimit)
+  // Prescription parsing (#312). Deterministic and read-only like the two
+  // above, and at the same human cadence, so it takes the same allowance.
+  app.post('/api/consultations/:id/prescriptions/parse', prescriptionParseRateLimit)
   // The consultation recording (#293). The write carries up to 25 MB and is the
   // only way the audio store grows, so it gets the tightest bucket here; the
   // read is looser because playing a sentence back repeatedly is the behaviour

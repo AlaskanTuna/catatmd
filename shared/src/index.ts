@@ -29,6 +29,12 @@ export const SpeakerSchema = z.enum(['doctor', 'patient'])
  * ceiling, and a turn longer than 4,000 characters is not a turn.
  */
 export const MAX_TRANSCRIPT_TURNS = 600
+/**
+ * Bounded for the reason `medicationsDispensed` is, and on the same order of
+ * magnitude deliberately: a GP consultation dispensing more than ten items is
+ * not the scope this prototype claims.
+ */
+export const MAX_PRESCRIPTIONS = 10
 export const MAX_TURN_CHARACTERS = 4_000
 
 /**
@@ -933,6 +939,113 @@ export const ConsultationTitleSchema = z
   .transform((value) => (value.length === 0 ? null : value))
   .nullable()
 
+// ─── Prescriptions ───────────────────────────────────────────────────────────
+
+/**
+ * The three closed sets a parsed sig resolves to (#311, #312).
+ *
+ * They live here rather than beside the parser because both sides read them:
+ * `backend/src/medications/vocabulary.ts` re-exports them for `parseSig`, and
+ * `PrescriptionSchema` below turns them into wire enums. One definition, so a
+ * value the parser produces can never fail the schema that stores it.
+ *
+ * **`every-6-hours` is deliberately distinct from `four-times-daily`.** They are
+ * different instructions, and folding them would be the system interpreting what
+ * the doctor said rather than recording it.
+ */
+export const SIG_ROUTES = ['oral', 'topical', 'inhaled', 'nasal'] as const
+export type SigRoute = (typeof SIG_ROUTES)[number]
+
+export const SIG_FREQUENCIES = [
+  'once-daily',
+  'twice-daily',
+  'three-times-daily',
+  'four-times-daily',
+  'every-4-hours',
+  'every-6-hours',
+  'every-8-hours',
+  'every-12-hours',
+  'at-night',
+  'when-required',
+  'immediately',
+] as const
+export type SigFrequency = (typeof SIG_FREQUENCIES)[number]
+
+export const SIG_FOOD_TIMINGS = ['before', 'after', 'with'] as const
+export type SigFoodTiming = (typeof SIG_FOOD_TIMINGS)[number]
+
+/**
+ * One medication the doctor dictated and then confirmed (`docs/decisions.md`
+ * D-001).
+ *
+ * **Doctor-authored, and separate from `medicationsDispensed` for that reason.**
+ * That field is model-extracted from the consultation and carries a verbatim
+ * transcript span; this one is spoken deliberately afterwards and confirmed
+ * before it is stored. Merging them would put a model's reading and a doctor's
+ * decision in one array with no way to tell them apart.
+ *
+ * `drug` is free text with an optional `lexiconId`, **not** an enum over the
+ * lexicon. The `z.enum(corpusIds)` pattern exists on `guidelineId` because the
+ * *model* authors citations and must not invent one; here the *doctor* authors
+ * the prescription, and a drug outside a URTI-scoped list is a clinician's
+ * decision rather than a hallucination. `lexiconId` records when they accepted
+ * a lexicon candidate, so provenance is visible without the cliff.
+ *
+ * Every parsed field is nullable. `parseSig` leaves what it could not read as
+ * `null` rather than guessing, and a prescription is stored with the gaps the
+ * doctor left rather than with a value nobody said.
+ *
+ * `dictated` is the verbatim phrase, kept as the evidence the structured fields
+ * were derived from, the same role a transcript span plays elsewhere.
+ */
+export const PrescriptionSchema = z.object({
+  drug: z.string().min(1).max(80),
+  lexiconId: z.string().max(80).optional(),
+  dose: z.string().max(40).nullable(),
+  route: z.enum(SIG_ROUTES).nullable(),
+  frequency: z.enum(SIG_FREQUENCIES).nullable(),
+  duration: z.string().max(40).nullable(),
+  food: z.enum(SIG_FOOD_TIMINGS).nullable(),
+  dictated: z.string().min(1).max(400),
+})
+
+/**
+ * One lexicon match offered for a drug name the recogniser may have garbled.
+ *
+ * `heard` and `generic` both travel because the doctor is choosing between
+ * them, and `start`/`end` locate the span in the dictation. **Together those are
+ * a splice instruction, and nothing may act on it without the doctor.** The
+ * matcher guarantees only that it never rewrites text; the confirm step is a
+ * control this layer and the UI have to keep, not one they inherit.
+ */
+export const MedicationCandidateSchema = z.object({
+  lexiconId: z.string().max(80),
+  generic: z.string().max(80),
+  heard: z.string().max(80),
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+  score: z.number(),
+})
+
+/**
+ * What the parse endpoint returns: a draft, never a stored record.
+ *
+ * `candidates` is ordered by the matcher (score, then span length, then id) and
+ * **must not be re-sorted downstream**. A clinical-safety review on #311 found
+ * a contained single agent outranking the combination the doctor actually said,
+ * so the ordering is a fix, not a presentation choice.
+ */
+export const PrescriptionParseResponseSchema = z.object({
+  sig: PrescriptionSchema.pick({
+    dose: true,
+    route: true,
+    frequency: true,
+    duration: true,
+    food: true,
+  }),
+  candidates: z.array(MedicationCandidateSchema).max(20),
+})
+
 export const ConsultationSchema = z.object({
   id: z.string(),
   status: ConsultationStatusSchema,
@@ -1389,6 +1502,17 @@ export type DispositionInput = z.infer<typeof DispositionInputSchema>
 export const ConsultationDetailSchema = ConsultationSchema.extend({
   editedNote: SoapNoteSchema.nullable(),
   editedMedicalRecordNote: MedicalRecordNoteSchema.nullish().transform((value) => value ?? null),
+  /*
+   * Nullish rather than required, like every field added after launch. Vercel
+   * and Render deploy independently from one merge and the SPA `safeParse`s
+   * every response, so a required new field breaks the SPA against the older
+   * API for the length of one deploy skew.
+   */
+  prescriptions: z
+    .array(PrescriptionSchema)
+    .max(MAX_PRESCRIPTIONS)
+    .nullish()
+    .transform((value) => value ?? null),
   approvedAt: z.coerce.date().nullable(),
   /**
    * The clinician who approved, by name, and `null` until one has.
@@ -1709,6 +1833,9 @@ export const TranscriptCorrectionsResponseSchema = z.object({
 // ─── Inferred types ──────────────────────────────────────────────────────────
 
 export type Speaker = z.infer<typeof SpeakerSchema>
+export type Prescription = z.infer<typeof PrescriptionSchema>
+export type MedicationCandidateWire = z.infer<typeof MedicationCandidateSchema>
+export type PrescriptionParseResponse = z.infer<typeof PrescriptionParseResponseSchema>
 export type MishearProposal = z.infer<typeof MishearProposalSchema>
 export type TranscriptCorrectionsResponse = z.infer<typeof TranscriptCorrectionsResponseSchema>
 export type TextRange = z.infer<typeof TextRangeSchema>
