@@ -696,7 +696,14 @@ export function ConsultationReview() {
             .sort((a, b) => GAP_PRIORITY_ORDER[a.priority] - GAP_PRIORITY_ORDER[b.priority])
             .map((gap) => ({
               id: gap.id,
-              node: <GapCard gap={gap} disposition={undefined} guidelines={[]} />,
+              node: (
+                <GapCard
+                  gap={gap}
+                  disposition={byId(detail.gapDispositions, gap.id)}
+                  onDecide={(decision) => patch.mutate({ gapDispositions: [decision] })}
+                  guidelines={citableGuidelines}
+                />
+              ),
             })),
         })
       }

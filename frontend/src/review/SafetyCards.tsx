@@ -45,6 +45,9 @@ const STATE_LABEL = {
   not_applicable: 'Not clinically applicable, retained in the record',
 } as const
 
+const sourceChipClass =
+  'inline-flex min-h-6 items-center rounded-full border border-line bg-sunken px-2.5 py-1 font-mono text-2xs text-ink'
+
 /**
  * The three-way decision on a finding (issue #10, AC4).
  *
@@ -305,7 +308,12 @@ function SourcesPanel({
   gapSource?: GapSource
 }) {
   if (gapSource?.kind === 'unsourced') {
-    return <p className="text-sm text-ink-muted">{gapSource.reason}</p>
+    return (
+      <div className="flex flex-col gap-2">
+        <span className={sourceChipClass}>record checklist</span>
+        <p className="text-sm text-ink-muted">{gapSource.reason}</p>
+      </div>
+    )
   }
 
   const ids = gapSource?.kind === 'guideline' ? gapSource.guidelineIds : guidelineIds
@@ -314,6 +322,17 @@ function SourcesPanel({
     .filter((chunk): chunk is GuidelineChunk => chunk !== undefined)
 
   if (resolved.length === 0) {
+    if (gapSource?.kind === 'guideline' && ids !== undefined && ids.length > 0) {
+      return (
+        <div className="flex flex-wrap gap-1.5">
+          {ids.map((id) => (
+            <span key={id} className={sourceChipClass}>
+              {id}
+            </span>
+          ))}
+        </div>
+      )
+    }
     return <p className="text-sm text-ink-muted">No guideline citation.</p>
   }
 
@@ -326,9 +345,7 @@ function SourcesPanel({
     <div className="flex flex-col gap-2">
       {resolved.map((chunk) => (
         <div key={chunk.id} className="rounded-control border border-line bg-surface p-3">
-          <span className="inline-flex min-h-6 items-center rounded-full border border-line bg-sunken px-2.5 py-1 font-mono text-2xs text-ink">
-            {chunk.id}
-          </span>
+          <span className={sourceChipClass}>{chunk.id}</span>
           <p className="mt-2 text-xs font-medium text-ink">{chunk.title}</p>
           <ChunkProvenance chunk={chunk} />
           <SourceLink chunk={chunk} />

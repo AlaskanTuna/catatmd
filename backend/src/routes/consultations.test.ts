@@ -1006,6 +1006,45 @@ describe('finding dispositions', () => {
   })
 })
 
+describe('gap provenance on read', () => {
+  it('attaches checklist provenance to persisted gaps that have no source', async () => {
+    const legacyGaps = [
+      {
+        id: 'fever',
+        question: 'Has the patient had a fever?',
+        rationale: 'Fever not documented.',
+        priority: 'medium',
+      },
+      {
+        id: 'model-gap',
+        question: 'A model question?',
+        rationale: 'Model rationale.',
+        priority: 'low',
+      },
+    ]
+    seed('awaiting_review', { analysis: { ...ANALYSIS, gaps: legacyGaps } })
+
+    const res = await call('GET', '/api/consultations/c1')
+    const detail = (await res.json()) as {
+      consultation: {
+        analysis: { gaps: { id: string; source?: { kind: string; guidelineIds?: string[] } }[] }
+      }
+    }
+
+    const fever = detail.consultation.analysis.gaps.find((g) => g.id === 'fever')
+    const model = detail.consultation.analysis.gaps.find((g) => g.id === 'model-gap')
+
+    expect(fever?.source).toEqual({
+      kind: 'guideline',
+      guidelineIds: ['moh-nag-2024-c1-viral-vs-bacterial', 'moh-nag-2024-c1-acute-pharyngitis'],
+    })
+    expect(model?.source).toBeUndefined()
+
+    const stored = store.get('c1')?.analysis as { gaps: { source?: unknown }[] } | undefined
+    expect(stored?.gaps.at(0)?.source).toBeUndefined()
+  })
+})
+
 describe('state machine — approve', () => {
   it('approves from awaiting_review with an analysis attached', async () => {
     seed('awaiting_review', { analysis: ANALYSIS })

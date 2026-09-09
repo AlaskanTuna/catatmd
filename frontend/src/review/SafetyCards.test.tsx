@@ -391,4 +391,23 @@ describe('GapCard sources panel', () => {
     expect(screen.getByText('Payer record field.')).toBeTruthy()
     expect(screen.queryByText('No guideline citation.')).toBeNull()
   })
+
+  it('shows a checklist chip and the reason for an unsourced gap', () => {
+    renderGap({ ...GAP, source: { kind: 'unsourced', reason: 'Payer record field.' } })
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+
+    expect(screen.getByText('record checklist')).toBeTruthy()
+    expect(screen.getByText('Payer record field.')).toBeTruthy()
+    expect(screen.queryByText('No guideline citation.')).toBeNull()
+  })
+
+  it('shows unresolvable guideline ids as chips for a guideline-sourced gap', () => {
+    renderGap({ ...GAP, source: { kind: 'guideline', guidelineIds: ['not-in-list'] } })
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+
+    expect(screen.getByText('not-in-list')).toBeTruthy()
+    expect(screen.queryByText('No guideline citation.')).toBeNull()
+  })
 })
