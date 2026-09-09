@@ -101,40 +101,6 @@ describe('the checklist row never overflows its column', () => {
    * Without `min-w-0` on `dd` here, this shape overflowed its column by 169px
    * at the width the reported bug was measured at.
    */
-  it('lets dd shrink when a value sits beside the badge', () => {
-    render(
-      <ChecklistPanel
-        clinicalFacts={facts({
-          state: 'PRESENT',
-          value: 'Severe sore throat, inability to swallow',
-          evidence: 'tekak saya sakit sangat',
-        })}
-        operational={OPERATIONAL}
-      />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: /completeness checklist/i }))
-
-    const dd = screen.getByText('Severe sore throat, inability to swallow').closest('dd')
-    expect(dd?.className).toContain('min-w-0')
-  })
-
-  /*
-   * A badge-only row (no value at all) is the opposite case: `dd`'s only
-   * child is the badge, which is `shrink-0` and must never truncate a
-   * clinical state word. There, `min-w-0` on `dd` removes the floor that
-   * keeps it at the badge's own width, and the badge overflows instead. This
-   * shape overflowed by 21px the first time `dd` unconditionally carried
-   * `min-w-0`, at a column width where the valued row above was already
-   * fixed.
-   */
-  it('does not give dd min-w-0 when there is no value to absorb it', () => {
-    render(<ChecklistPanel clinicalFacts={facts(notAssessed)} operational={OPERATIONAL} />)
-    fireEvent.click(screen.getByRole('button', { name: /completeness checklist/i }))
-
-    const badge = screen.getAllByText('Not Assessed')[0]
-    const dd = badge?.closest('dd')
-    expect(dd?.className).not.toContain('min-w-0')
-  })
 })
 
 describe('the checklist follows the canonical record projection', () => {

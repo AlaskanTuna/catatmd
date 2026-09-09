@@ -60,10 +60,8 @@ function ChecklistRow({
       <dt className="min-w-0 break-words text-sm text-ink">{label}</dt>
       {/* `dd` is `display: contents` so its value and badge can occupy their
           own row tracks while staying a single definition element; the tests
-          count exactly one `dd` per row. The conditional `min-w-0` is the
-          contract the overflow-regression tests pin, not working CSS: a
-          contents box has no width to floor. */}
-      <dd className={cn('contents', assertion.value && 'min-w-0')}>
+          count exactly one `dd` per row. */}
+      <dd className="contents">
         <span className="min-w-0 break-words text-xs text-ink-muted">{assertion.value}</span>
         <AssertionStateBadge state={assertion.state} className="justify-self-end" />
       </dd>
