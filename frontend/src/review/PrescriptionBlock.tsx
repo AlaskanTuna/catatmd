@@ -507,7 +507,7 @@ export function PrescriptionBlock({
   if (!editable && stored.length === 0) return null
 
   return (
-    <Card className="mt-5 p-4">
+    <Card data-tour="prescription" className="mt-5 p-4">
       <div className="flex items-baseline justify-between gap-4">
         <h2 className="text-sm font-semibold text-ink">Prescriptions</h2>
         <span className="text-2xs text-ink-muted">
