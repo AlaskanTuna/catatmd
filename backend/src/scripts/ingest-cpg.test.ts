@@ -160,6 +160,45 @@ describe('computeRunningHeaders', () => {
     const headers = computeRunningHeaders(pages)
     expect(headers.size).toBe(0)
   })
+
+  it('detects a shared header prefix under a Chrome timestamp and varying section title', () => {
+    const pages = [
+      '9/9/26, 4:34 PM National Antimicrobial Guideline (NAG), Ministry of Health Malaysia - A10: OTORHINOLARYNGOLOGY INFECTIONS\nBody one.',
+      '9/9/26, 4:35 PM National Antimicrobial Guideline (NAG), Ministry of Health Malaysia - A11: RESPIRATORY\nBody two.',
+      '9/9/26, 4:36 PM National Antimicrobial Guideline (NAG), Ministry of Health Malaysia - A12: SKIN\nBody three.',
+    ]
+    const headers = computeRunningHeaders(pages)
+    expect(headers.has('national antimicrobial guideline (nag), ministry of health malaysia')).toBe(
+      true,
+    )
+    expect(
+      headers.has(
+        'national antimicrobial guideline (nag), ministry of health malaysia - a10: otorhinolaryngology infections',
+      ),
+    ).toBe(false)
+  })
+
+  it('never treats a recurring one-word table label as a running header', () => {
+    const pages = Array.from(
+      { length: 10 },
+      (_, i) => `Drug ${i}\nPreferred\nor\nAlternative\nComments`,
+    )
+    const headers = computeRunningHeaders(pages)
+    expect(headers.has('preferred')).toBe(false)
+    expect(headers.has('or')).toBe(false)
+    expect(headers.has('comments')).toBe(false)
+  })
+
+  it('detects a footer URL across pages with varying page counts', () => {
+    const pages = [
+      'Body one.\nhttps://www.moh.gov.my/nag 1/17',
+      'Body two.\nhttps://www.moh.gov.my/nag 2/17',
+      'Body three.\nhttps://www.moh.gov.my/nag 3/17',
+    ]
+    const headers = computeRunningHeaders(pages)
+    expect(headers.has('https://www.moh.gov.my/nag')).toBe(true)
+    expect(headers.has('https://www.moh.gov.my/nag 1/17')).toBe(false)
+  })
 })
 
 describe('cleanPage', () => {
@@ -195,6 +234,43 @@ describe('cleanPage', () => {
     const raw = 'Line   one  here.\n\nLine  two  here.'
     const out = cleanPage(raw, new Set())
     expect(out).toBe('Line one here.\n\nLine two here.')
+  })
+
+  it('strips a Chrome header whose section title varies by page', () => {
+    const pages = [
+      '9/9/26, 4:34 PM National Antimicrobial Guideline (NAG), Ministry of Health Malaysia - A10: OTORHINOLARYNGOLOGY INFECTIONS\nBody one.',
+      '9/9/26, 4:35 PM National Antimicrobial Guideline (NAG), Ministry of Health Malaysia - A11: RESPIRATORY\nBody two.',
+      '9/9/26, 4:36 PM National Antimicrobial Guideline (NAG), Ministry of Health Malaysia - A12: SKIN\nBody three.',
+    ]
+    const headers = computeRunningHeaders(pages)
+    const bodies = ['Body one.', 'Body two.', 'Body three.']
+    for (const [i, page] of pages.entries()) {
+      const out = cleanPage(page, headers)
+      expect(out).not.toContain('National Antimicrobial Guideline')
+      expect(out).not.toContain(`A${10 + i}:`)
+      expect(out).toContain(bodies[i])
+    }
+  })
+
+  it('strips a URL footer with a page count', () => {
+    const headers = new Set(['https://www.moh.gov.my/nag'])
+    const out = cleanPage('Body text.\nhttps://www.moh.gov.my/nag 3/17', headers)
+    expect(out).toBe('Body text.')
+  })
+
+  it('strips a per-section URL footer that never repeats often enough to be a running header', () => {
+    const out = cleanPage(
+      'Body text.\n\nhttps://sites.google.com/moh.gov.my/nag/a10-otorhinolaryngology-infections 1/15\n',
+      new Set(),
+    )
+    expect(out).toBe('Body text.')
+  })
+
+  it('leaves a page without Chrome headers or footers untouched', () => {
+    const pages = ['Title\n\nBody text.', 'Other\n\nOther body.']
+    const headers = computeRunningHeaders(pages)
+    const out = cleanPage('Title\n\nBody text.', headers)
+    expect(out).toBe('Title\n\nBody text.')
   })
 })
 
