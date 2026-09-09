@@ -71,6 +71,24 @@ export function resolveDocumentFields(
   }
 }
 
+/**
+ * What an unchanged PDF still syncs from the manifest on re-ingest. Scope and
+ * licence are metadata, so an operator edits one file and re-runs; the
+ * licence must come through the per-document resolution or a re-run would
+ * quietly reset a `verbatimAllowed: false` document to the manifest default.
+ */
+export function manifestSyncData(
+  doc: Pick<ManifestDocument, 'profiles' | 'publisher' | 'sourceLicence' | 'verbatimAllowed'>,
+  manifest: Pick<Manifest, 'publisher' | 'sourceLicence' | 'verbatimAllowed'>,
+): {
+  profiles: string[]
+  publisher: string
+  sourceLicence: string
+  verbatimAllowed: boolean
+} {
+  return { profiles: [...doc.profiles], ...resolveDocumentFields(doc, manifest) }
+}
+
 export interface ChunkSpec {
   id: string
   documentId: string
@@ -646,12 +664,9 @@ async function processDocument(
   if (!flags.dryRun) {
     const existing = await prisma.guidelineDocument.findUnique({ where: { id: doc.id } })
     if (existing && existing.sha256 === sha256 && !flags.force) {
-      // Scope and licence are manifest metadata, kept in sync without a
-      // re-ingest so an operator can widen or narrow retrieval by editing one
-      // file and re-running.
       await prisma.guidelineDocument.update({
         where: { id: doc.id },
-        data: { profiles: [...doc.profiles], verbatimAllowed: manifest.verbatimAllowed },
+        data: manifestSyncData(doc, manifest),
       })
       logger.info(`unchanged, skipping ${doc.id} (scope synced)`)
       return null

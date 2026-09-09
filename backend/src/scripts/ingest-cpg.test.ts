@@ -6,6 +6,7 @@ import {
   findHeadings,
   findManifestMatch,
   isScannedPage,
+  manifestSyncData,
   normalise,
   parseFlags,
   resolveDocumentFields,
@@ -299,6 +300,32 @@ describe('resolveDocumentFields', () => {
       publisher: MANIFEST.publisher,
       sourceLicence: 'MOH-ARR',
       verbatimAllowed: false,
+    })
+  })
+})
+
+describe('manifestSyncData', () => {
+  const manifest = { publisher: 'MOH', sourceLicence: 'MOH-CPG', verbatimAllowed: true }
+
+  it('carries a per-document licence through the unchanged-file sync', () => {
+    const data = manifestSyncData(
+      { profiles: ['adult-acute-urti'], sourceLicence: 'MOH-ARR', verbatimAllowed: false },
+      manifest,
+    )
+    expect(data).toEqual({
+      profiles: ['adult-acute-urti'],
+      publisher: 'MOH',
+      sourceLicence: 'MOH-ARR',
+      verbatimAllowed: false,
+    })
+  })
+
+  it('inherits the manifest values when the document sets none', () => {
+    expect(manifestSyncData({ profiles: [] }, manifest)).toEqual({
+      profiles: [],
+      publisher: 'MOH',
+      sourceLicence: 'MOH-CPG',
+      verbatimAllowed: true,
     })
   })
 })
