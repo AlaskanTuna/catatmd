@@ -14,12 +14,17 @@ import { Select } from '../ui/Select.js'
 import { ConsultationRow } from './ConsultationRow.js'
 import { StartConsultationDialog } from './StartConsultationDialog.js'
 
-type ConsultationView = 'draft' | 'awaiting_review' | 'approved'
+type ConsultationView = 'all' | 'draft' | 'awaiting_review' | 'approved'
 
 const CATEGORY: Record<
   ConsultationView,
   { label: string; empty: string; matches: (status: ConsultationStatus) => boolean }
 > = {
+  all: {
+    label: 'All',
+    empty: 'No consultations yet.',
+    matches: () => true,
+  },
   draft: {
     label: 'Draft',
     empty: 'No drafts. Start a consultation to begin one.',
@@ -170,7 +175,13 @@ export function ConsultationList() {
           options={VIEW_OPTIONS}
           className="w-52"
           onChange={(value) => {
-            if (value !== 'draft' && value !== 'awaiting_review' && value !== 'approved') return
+            if (
+              value !== 'all' &&
+              value !== 'draft' &&
+              value !== 'awaiting_review' &&
+              value !== 'approved'
+            )
+              return
             setView(value)
             setPicked(new Set())
             setPage(1)
