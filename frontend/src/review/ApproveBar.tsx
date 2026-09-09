@@ -1,7 +1,7 @@
 import type { ConsultationDetail } from '@shared/types'
 import { useMutation } from '@tanstack/react-query'
 import { CheckCircle2 } from 'lucide-react'
-import { useState } from 'react'
+import { type Ref, useState } from 'react'
 import { ApiError } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
@@ -28,6 +28,7 @@ export function ApproveBar({
   approvedBy,
   unacknowledgedCount,
   onApproved,
+  ref,
 }: {
   /**
    * The approval transition itself, supplied by the caller.
@@ -44,6 +45,11 @@ export function ApproveBar({
   approvedBy: string | null
   unacknowledgedCount: number
   onApproved: (next: ConsultationDetail) => void
+  /**
+   * Forwarded to the root element so the review page can measure the bar
+   * for its viewport-fit calculation.
+   */
+  ref?: Ref<HTMLDivElement>
 }) {
   const [confirming, setConfirming] = useState(false)
 
@@ -57,7 +63,10 @@ export function ApproveBar({
 
   if (approved) {
     return (
-      <div className="mt-6 flex items-center gap-2 rounded-card border border-accent/30 bg-accent-soft px-4 py-3">
+      <div
+        ref={ref}
+        className="mt-6 flex items-center gap-2 rounded-card border border-accent/30 bg-accent-soft px-4 py-3"
+      >
         <CheckCircle2 aria-hidden className="size-5 shrink-0 text-accent" />
         {/* The attribution is the point of the approval, not decoration on it,
             so it prints. Issue #26: an exported clinical document that cannot
@@ -98,7 +107,12 @@ export function ApproveBar({
    * blocking trains a doctor to clear flags reflexively to get past the gate.
    */
   return (
-    <div className="flex flex-wrap items-center gap-2" data-print="hide" data-tour="approve">
+    <div
+      ref={ref}
+      className="flex flex-wrap items-center gap-2"
+      data-print="hide"
+      data-tour="approve"
+    >
       {confirming && (
         <Button onClick={() => setConfirming(false)} disabled={approve.isPending}>
           Cancel

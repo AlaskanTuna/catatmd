@@ -740,9 +740,9 @@ export function ConsultationReview() {
   )
 
   return (
-    // The bottom padding clears the sticky bar, which is in flow and would
-    // otherwise sit on top of the last thing in the tallest column.
-    <div className="mx-auto max-w-7xl pb-20">
+    // 80px clears the sticky bar below lg; at lg the hook reserves the bar's
+    // height and margin, so 16px is enough to stop the wrapper touching the edge.
+    <div className="mx-auto max-w-7xl pb-20 lg:pb-4">
       {/*
         One element for the page, not one per turn. The transcript renders in
         both the column and the dialog, and two media elements would let two
@@ -1456,28 +1456,27 @@ export function ConsultationReview() {
           moved under the consultation title, where it is seen without covering
           the columns it sits over. */}
       {analysis && approved && (
-        <div ref={bottomBarRef} className="mt-6">
-          <ApproveBar
-            approve={async () =>
-              isEphemeral
-                ? ({
-                    ...(tour.ephemeral as ConsultationDetail),
-                    status: 'approved',
-                    approvedAt: new Date(),
-                    // The demo has no signed-in identity distinct from the viewer,
-                    // and inventing a clinician name on a screen that teaches what
-                    // approval means would be the wrong thing to fake.
-                    approvedBy: null,
-                  } as ConsultationDetail)
-                : api.approve(id)
-            }
-            approved={approved}
-            approvedAt={detail.approvedAt}
-            approvedBy={detail.approvedBy}
-            unacknowledgedCount={unacknowledged.length}
-            onApproved={isEphemeral ? tour.updateEphemeral : onApproved}
-          />
-        </div>
+        <ApproveBar
+          ref={bottomBarRef}
+          approve={async () =>
+            isEphemeral
+              ? ({
+                  ...(tour.ephemeral as ConsultationDetail),
+                  status: 'approved',
+                  approvedAt: new Date(),
+                  // The demo has no signed-in identity distinct from the viewer,
+                  // and inventing a clinician name on a screen that teaches what
+                  // approval means would be the wrong thing to fake.
+                  approvedBy: null,
+                } as ConsultationDetail)
+              : api.approve(id)
+          }
+          approved={approved}
+          approvedAt={detail.approvedAt}
+          approvedBy={detail.approvedBy}
+          unacknowledgedCount={unacknowledged.length}
+          onApproved={isEphemeral ? tour.updateEphemeral : onApproved}
+        />
       )}
       {/*
        * Rendered inactive on the tour's consultation, which is not stored, so
