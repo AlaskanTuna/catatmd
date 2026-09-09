@@ -5,8 +5,9 @@ import {
   GuidelineChunkSchema,
   LlmClinicalFactsSchema,
   LlmOperationalBlockSchema,
-  makeSuggestionsAndRedFlagsSchema,
+  makeSuggestionsSchema,
   OperationalBlockSchema,
+  RedFlagCandidatesSchema,
 } from '@shared/types'
 import { afterAll, describe, expect, it } from 'vitest'
 import { applyEvidenceCheck } from '../analysis/evidence.js'
@@ -174,12 +175,10 @@ describe('GUARANTEE — deterministic red flags fire and cannot be suppressed', 
 // ─── Citations ───────────────────────────────────────────────────────────────
 
 describe('GUARANTEE — no clinical suggestion is shown without a valid citation', () => {
-  const schema = makeSuggestionsAndRedFlagsSchema(['moh-nag-2024-p348-c1'])
+  const schema = makeSuggestionsSchema(['moh-nag-2024-p348-c1'])
 
   it('rejects a fabricated guideline id (PRD §16 target: 0 uncited)', () => {
     const result = schema.safeParse({
-      outOfScope: false,
-      redFlags: [],
       suggestions: [
         { id: 's1', text: 'Consider a throat swab.', citations: [{ guidelineId: 'NICE-NG84' }] },
       ],
@@ -191,8 +190,6 @@ describe('GUARANTEE — no clinical suggestion is shown without a valid citation
   it('rejects a suggestion carrying zero citations', () => {
     expect(
       schema.safeParse({
-        outOfScope: false,
-        redFlags: [],
         suggestions: [{ id: 's1', text: 'Consider a throat swab.', citations: [] }],
       }).success,
     ).toBe(false)
@@ -200,7 +197,7 @@ describe('GUARANTEE — no clinical suggestion is shown without a valid citation
 
   it('refuses to let a model response impersonate a deterministic rule hit', () => {
     expect(
-      schema.safeParse({
+      RedFlagCandidatesSchema.safeParse({
         outOfScope: false,
         redFlags: [
           {
@@ -212,7 +209,6 @@ describe('GUARANTEE — no clinical suggestion is shown without a valid citation
             ruleId: 'haemoptysis',
           },
         ],
-        suggestions: [],
       }).success,
     ).toBe(false)
   })

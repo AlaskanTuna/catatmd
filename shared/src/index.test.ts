@@ -17,9 +17,10 @@ import {
   MAX_DRAFT_TEXT_CHARACTERS,
   MAX_UNCERTAIN_RANGES_PER_TURN,
   makeCopilotEventSchema,
-  makeSuggestionsAndRedFlagsSchema,
+  makeSuggestionsSchema,
   NoteAndGapsResponseSchema,
   OperationalBlockSchema,
+  RedFlagCandidatesSchema,
   TranscriptSchema,
   TranscriptSourceSchema,
 } from './index.js'
@@ -248,13 +249,11 @@ describe('TranscriptTurn.uncertain', () => {
   })
 })
 
-describe('makeSuggestionsAndRedFlagsSchema', () => {
-  const schema = makeSuggestionsAndRedFlagsSchema(['MY-NAG-2024-A10', 'MY-DELPHI-2024-MCISAAC'])
+describe('makeSuggestionsSchema', () => {
+  const schema = makeSuggestionsSchema(['MY-NAG-2024-A10', 'MY-DELPHI-2024-MCISAAC'])
 
   it('rejects a citation naming an id outside the corpus', () => {
     const result = schema.safeParse({
-      outOfScope: false,
-      redFlags: [],
       suggestions: [
         {
           id: 's1',
@@ -268,8 +267,6 @@ describe('makeSuggestionsAndRedFlagsSchema', () => {
 
   it('accepts a citation naming a corpus id', () => {
     const result = schema.safeParse({
-      outOfScope: false,
-      redFlags: [],
       suggestions: [
         {
           id: 's1',
@@ -283,15 +280,36 @@ describe('makeSuggestionsAndRedFlagsSchema', () => {
 
   it('rejects a suggestion with zero citations', () => {
     const result = schema.safeParse({
-      outOfScope: false,
-      redFlags: [],
       suggestions: [{ id: 's1', text: 'Consider a throat swab.', citations: [] }],
     })
     expect(result.success).toBe(false)
   })
 
+  it('never lets a document reference satisfy the model-facing enum', () => {
+    const scoped = makeSuggestionsSchema(['moh-nag-2024-p348-c1'])
+    const cite = (guidelineId: string) =>
+      scoped.safeParse({
+        suggestions: [{ id: 's1', text: 'Consider a throat swab.', citations: [{ guidelineId }] }],
+      }).success
+    expect(cite('moh-nag-2024-p348-c1')).toBe(true)
+    expect(cite('doc:moh-nag-2024')).toBe(false)
+    expect(cite('doc:moh-nag-2024#p348')).toBe(false)
+  })
+})
+
+/*
+ * Split from the suggestions schema by #340. The empty-corpus case that used to
+ * live next door has no schema to test any more, and that is the point:
+ * `makeSuggestionsSchema` takes a non-empty tuple, so a corpus with nothing in
+ * it cannot produce a schema at all, rather than producing one that widened
+ * `guidelineId` back to a plain string and capped the array at zero. The
+ * guarantee moved up a level and is pinned where it now lives: `corpusIdsFor`
+ * throws on an empty corpus, and `generateSuggestions` makes no suggestions
+ * call at all when retrieval returned nothing.
+ */
+describe('RedFlagCandidatesSchema', () => {
   it('forces every model-sourced red flag to source: model, with no ruleId', () => {
-    const result = schema.safeParse({
+    const result = RedFlagCandidatesSchema.safeParse({
       outOfScope: false,
       redFlags: [
         {
@@ -303,19 +321,17 @@ describe('makeSuggestionsAndRedFlagsSchema', () => {
           ruleId: 'RF-001',
         },
       ],
-      suggestions: [],
     })
     expect(result.success).toBe(false)
   })
 
-  it('allows an empty suggestions array for an out-of-scope presentation', () => {
-    const result = schema.safeParse({ outOfScope: true, redFlags: [], suggestions: [] })
+  it('accepts an out-of-scope verdict alongside red-flag candidates', () => {
+    const result = RedFlagCandidatesSchema.safeParse({ outOfScope: true, redFlags: [] })
     expect(result.success).toBe(true)
   })
 
-  it('parses a response with model red-flag candidates and no corpus ids', () => {
-    const emptySchema = makeSuggestionsAndRedFlagsSchema([])
-    const result = emptySchema.safeParse({
+  it('parses model red-flag candidates without any corpus at all', () => {
+    const result = RedFlagCandidatesSchema.safeParse({
       outOfScope: false,
       redFlags: [
         {
@@ -326,39 +342,25 @@ describe('makeSuggestionsAndRedFlagsSchema', () => {
           source: 'model',
         },
       ],
-      suggestions: [],
     })
     expect(result.success).toBe(true)
   })
 
-  it('never lets a document reference satisfy the model-facing enum', () => {
-    const retrieved = ['moh-nag-2024-p348-c1']
-    const schema = makeSuggestionsAndRedFlagsSchema(retrieved)
-    const cite = (guidelineId: string) =>
-      schema.safeParse({
-        outOfScope: false,
-        redFlags: [],
-        suggestions: [{ id: 's1', text: 'Consider a throat swab.', citations: [{ guidelineId }] }],
-      }).success
-    expect(cite('moh-nag-2024-p348-c1')).toBe(true)
-    expect(cite('doc:moh-nag-2024')).toBe(false)
-    expect(cite('doc:moh-nag-2024#p348')).toBe(false)
-  })
-
-  it('rejects any suggestion when the corpus is empty', () => {
-    const emptySchema = makeSuggestionsAndRedFlagsSchema([])
-    const result = emptySchema.safeParse({
+  it('strips a guidelineIds array a model puts on a red flag', () => {
+    const parsed = RedFlagCandidatesSchema.parse({
       outOfScope: false,
-      redFlags: [],
-      suggestions: [
+      redFlags: [
         {
-          id: 's1',
-          text: 'Consider a throat swab.',
-          citations: [{ guidelineId: 'invented' }],
+          id: 'm1',
+          label: 'Something the model noticed',
+          severity: 'advisory',
+          evidence: 'batuk berdarah',
+          source: 'model',
+          guidelineIds: ['moh-nag-2024-p348-c1'],
         },
       ],
     })
-    expect(result.success).toBe(false)
+    expect(parsed.redFlags[0]).not.toHaveProperty('guidelineIds')
   })
 })
 
@@ -459,8 +461,8 @@ describe('LLM-facing schemas convert to JSON Schema for constrained decoding', (
     expect(keysOf(facts).filter((key) => keysOf(prose).includes(key))).toEqual([])
   })
 
-  it('converts suggestions_and_red_flags with the corpus enum intact', () => {
-    const json = z.toJSONSchema(makeSuggestionsAndRedFlagsSchema(['A', 'B']), {
+  it('converts the suggestions schema with the corpus enum intact', () => {
+    const json = z.toJSONSchema(makeSuggestionsSchema(['A', 'B']), {
       target: 'draft-7',
     })
     expect(JSON.stringify(json)).toContain('"enum":["A","B"]')

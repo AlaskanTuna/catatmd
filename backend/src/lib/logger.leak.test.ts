@@ -265,10 +265,17 @@ describe('no clinical content reaches the log drain', () => {
     expect(records.every((r) => typeof r.requestId === 'string')).toBe(true)
     expect(new Set(records.map((r) => r.requestId)).size).toBe(1)
 
-    // Latency for each stage the issue names.
+    /*
+     * Latency for each stage the issue names, as far as this test can see them.
+     * `extraction` and `note_generation` are absent here only because
+     * `analyseNote` is mocked above: since #340 it times its own two concurrent
+     * calls rather than the route timing the pair, so a mocked implementation
+     * emits neither. That the real one emits both is pinned in
+     * `analysis/index.test.ts`.
+     */
     const stages = records.filter((r) => r.stage).map((r) => r.stage)
     expect(stages).toEqual(
-      expect.arrayContaining(['deidentification', 'rules', 'note_generation', 'retrieval']),
+      expect.arrayContaining(['deidentification', 'rules', 'retrieval', 'persistence']),
     )
     for (const record of records.filter((r) => r.stage)) {
       expect(typeof record.durationMs).toBe('number')

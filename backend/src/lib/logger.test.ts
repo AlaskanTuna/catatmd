@@ -138,7 +138,7 @@ describe('no field accepts free text', () => {
       consultationId: 'cmeg1q2r30000abcd1234efgh',
       method: 'POST',
       route: '/api/consultations/:id/analyze',
-      operation: 'suggestions_and_red_flags',
+      operation: 'red_flags',
       model: 'qwen-flash',
       provider: 'qwen',
       status: 200,

@@ -2,6 +2,7 @@ import { ClinicalFactsResponseSchema, NoteAndGapsResponseSchema, toSoapNote } fr
 import { type ClinicalProfile, getClinicalProfile } from '../clinical-profiles/index.js'
 import type { Deidentified } from '../deid/types.js'
 import { getLLMClient } from '../lib/llm/index.js'
+import { timeStage } from '../lib/logger.js'
 import { stripDiagnosticProse } from './diagnostic-guard.js'
 import { applyEvidenceCheck } from './evidence.js'
 import { buildClinicalFactsSystemPrompt, buildNoteAndGapsSystemPrompt } from './prompt.js'
@@ -38,21 +39,33 @@ export async function analyseNote(
 ): Promise<NoteAndGapsResult> {
   const client = getLLMClient()
 
+  /*
+   * Timed here rather than around the pair, because timing them together is
+   * what made a timeout undiagnosable (#340): the caller wrapped this whole
+   * function in one `note_generation` stage, so a failure named the pair and
+   * never said which of the two calls had actually run long. `extraction` was
+   * already declared in `PIPELINE_STAGES` and unused; this is the call it was
+   * declared for.
+   */
   const [facts, prose] = await Promise.all([
-    client.generate({
-      operation: 'clinical_facts',
-      system: buildClinicalFactsSystemPrompt(profile),
-      content,
-      schema: ClinicalFactsResponseSchema,
-      schemaName: 'clinical_facts',
-    }),
-    client.generate({
-      operation: 'note_and_gaps',
-      system: buildNoteAndGapsSystemPrompt(profile),
-      content,
-      schema: NoteAndGapsResponseSchema,
-      schemaName: 'note_and_gaps',
-    }),
+    timeStage('extraction', () =>
+      client.generate({
+        operation: 'clinical_facts',
+        system: buildClinicalFactsSystemPrompt(profile),
+        content,
+        schema: ClinicalFactsResponseSchema,
+        schemaName: 'clinical_facts',
+      }),
+    ),
+    timeStage('note_generation', () =>
+      client.generate({
+        operation: 'note_and_gaps',
+        system: buildNoteAndGapsSystemPrompt(profile),
+        content,
+        schema: NoteAndGapsResponseSchema,
+        schemaName: 'note_and_gaps',
+      }),
+    ),
   ])
 
   const { clinicalFacts, operational, discardedFieldIds } = applyEvidenceCheck(
