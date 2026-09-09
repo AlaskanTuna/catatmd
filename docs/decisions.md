@@ -88,3 +88,32 @@ The 11 hand-written guideline chunks are retired. The three documents behind the
 - **No new clinical content.** The same three documents, now ingested rather than hand-copied, plus the deterministic layers (red-flag triggers, gap checklist) citing them through stable `doc:<id>[#p<n>]` references instead of a curated chunk id.
 - **Issue #250 stays open.** Whether MOH-ARR spans may be sent to the model for grounding at all, distinct from whether they may be displayed, is not answered by this decision. The current posture is that they are sent, de-identified, and display is off.
 - **Page anchors on `doc:` references are deliberately left unset.** No trigger or checklist entry cites a specific page today; this is a scope boundary of the current content, not a limitation of the reference format.
+
+---
+
+## D-003: One Longer Provider Attempt Instead Of Two Short Ones
+
+|                |                                                       |
+| -------------- | ----------------------------------------------------- |
+| **Date**       | 2026-09-09                                            |
+| **Status**     | Adopted                                               |
+| **Issues**     | #340                                                  |
+| **Supersedes** | The `60_000` / `MAX_RETRIES = 1` pair adopted for #94 |
+
+### Decision
+
+A provider call gets **one attempt of 90 seconds**, not two of 60. `REQUEST_TIMEOUT_MS` moves to `90_000` and `MAX_RETRIES` to `0` on the shared adapter. The embedding client, previously bound by nothing at all, gets its own 10 second bound.
+
+### Reasoning
+
+- **The retry could never succeed.** The SDK retries timeouts. A call needing 70 s of decoding needs 70 s on the second attempt too, so a slow but healthy call spent 120 s and two calls' quota to fail anyway. Measured at `durationMs` 120421 and 120467, provider verified healthy in between.
+- **The pipeline outgrew the old bound.** `note_generation` at 45.8 s and the suggestions call at 53.8 s sit within about 6 s of a 60 s ceiling, so ordinary provider variance tips a healthy consultation into failure.
+- **90 s is chosen by the ceiling above it, not by the model.** A Vercel rewrite to an external origin allows 120 s to first byte, and `/analyze` emits one JSON at the end, so time-to-first-byte is the whole request. 90 s leaves roughly 30 s for every non-model stage. A bound at 120 s would sit on the cap and could never reach the browser.
+- **Losing the retry matches CAP-5**, which already states that nothing retries autonomously and the doctor's press is the retry.
+
+### What This Decision Does Not License
+
+- **No move of the bounds to a call site.** They stay constructor options so every path inherits them (`.claude/rules/security.md`, issue #94). A per-operation bound, if one is ever wanted, is a second adapter instance with its own constructor bound, never a per-request option.
+- **No claim that this makes analysis fast.** It buys headroom. The median is unchanged, and whether synchronous analysis behind the rewrite is viable at all is still open.
+- **No cover for the transient-failure regression.** A 429 or 5xx now fails immediately on **every** chat operation, not just analysis. That is accepted, not unnoticed.
+- **No retrospective trust in the timing table.** `docs/trd.md` Section 19's `retrieval` row measures the suggestions call without retrieval, so production is slower than it reads.

@@ -21,18 +21,31 @@ import {
  * CAP-1's 30-second budget. `max_tokens` below already bounds the response's
  * *size*; nothing bounded its *time*.
  *
- * 60s is roughly 3x the measured worst case (docs/trd.md §19 row 19: mean
- * 19.9s, worst 21.6s through the shipped `analyseNote`), so it cannot fire on a
- * healthy call. One retry is kept because a *fast* transient failure, such as a
- * refused connection inside the first second, still has room to finish inside
- * the budget. It caps the pathological case at two minutes rather than thirty.
+ * **One attempt, not two** (issue #340). 60s with one retry spent the whole
+ * budget reaching a guaranteed failure: the SDK retries timeouts, and a call
+ * needing 70s of decoding needs 70s on the second attempt too, so a slow but
+ * healthy call burned 120s and two calls' quota to fail anyway. Measured at
+ * `durationMs` 120421 and 120467, with the provider verified healthy in
+ * between. Spending that same wall clock on one longer attempt is what lets
+ * those calls finish, and CAP-5 already makes the doctor's press the only
+ * retry this product has.
+ *
+ * **90s, and the ceiling above it picks the number.** The `/api` rewrite in
+ * `vercel.json` proxies to Render, and a Vercel rewrite to an external origin
+ * allows at most 120s to first byte. `/analyze` emits one JSON at the end, so
+ * time-to-first-byte is the whole request. 90s leaves roughly 30s of that
+ * window for routing, auth, de-identification, retrieval, rehydration,
+ * persistence and the audit write. A 120s bound would sit on the cap and could
+ * never reach the browser.
  *
  * Both sit on the constructor rather than on each request, so they cover every
  * call path without opt-in. Same reasoning as the egress guard below: a bound a
- * caller can skip by building the client differently is not a bound.
+ * caller can skip by building the client differently is not a bound. A
+ * per-operation bound, if one is ever wanted, is a second instance of this
+ * class carrying its own constructor bound, never a per-request option.
  */
-const REQUEST_TIMEOUT_MS = 60_000
-const MAX_RETRIES = 1
+const REQUEST_TIMEOUT_MS = 90_000
+const MAX_RETRIES = 0
 
 /**
  * One adapter covers all three providers — Qwen (Model Studio, Singapore),
@@ -266,6 +279,23 @@ export class OpenAICompatibleClient implements LLMClient {
 const EMBEDDING_MAX_BATCH = 10
 
 /**
+ * The embedding client needs its own, much shorter bound (issue #340).
+ *
+ * It was constructed with neither a timeout nor a retry cap, so it inherited
+ * the SDK's 10-minute default and two retries: the exact unbounded-consumption
+ * hole #94 closed for the chat client above, reopened here when retrieval
+ * landed.
+ *
+ * 10s rather than the chat bound, because this call is not concurrent with the
+ * work that follows it. `runAnalysis` awaits `retrieveGuidelines` and only then
+ * calls `generateSuggestions`, so every second spent embedding is a second
+ * added to the critical path. Retrieval is best-effort and degrades to the
+ * curated corpus on failure, which makes failing fast strictly better than
+ * waiting.
+ */
+const EMBEDDING_TIMEOUT_MS = 10_000
+
+/**
  * Lives beside `OpenAICompatibleClient` because `no-stray-provider-sdk.test.ts`
  * pins the provider SDK import to this one file. See `embeddings.ts` for the
  * port and the gate rationale.
@@ -277,7 +307,12 @@ export class OpenAICompatibleEmbeddingClient implements EmbeddingClient {
     readonly model: string,
     options: { apiKey: string; baseURL: string },
   ) {
-    this.client = new OpenAI({ apiKey: options.apiKey, baseURL: options.baseURL, maxRetries: 2 })
+    this.client = new OpenAI({
+      apiKey: options.apiKey,
+      baseURL: options.baseURL,
+      timeout: EMBEDDING_TIMEOUT_MS,
+      maxRetries: 0,
+    })
   }
 
   async embed(inputs: readonly Deidentified[], operation: string): Promise<number[][]> {

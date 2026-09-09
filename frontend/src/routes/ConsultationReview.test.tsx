@@ -504,6 +504,49 @@ describe('consultation hero actions', () => {
     expect(screen.queryByText(/gpu-7/)).toBeNull()
   })
 
+  /*
+   * The failure that is not a failure (#340). The `/api` rewrite gives an
+   * external origin 120s to first byte and nothing cancels the request behind
+   * it, so the API can persist the analysis after the browser has given up.
+   * Telling the doctor nothing was saved then throws away a finished note, and
+   * their retry meets a 409 because the record is still `analyzing`.
+   */
+  it('recovers an analysis that landed after the request was cut off', async () => {
+    vi.mocked(api.analyze).mockRejectedValue(
+      new ApiError(500, 'analysis_failed', 'Analysis could not be completed.'),
+    )
+    vi.mocked(api.getConsultation)
+      .mockResolvedValueOnce({
+        ...APPROVED,
+        status: 'draft',
+        analysis: null,
+        approvedAt: null,
+        approvedBy: null,
+        transcript: {
+          source: 'paste',
+          labelsReviewed: true,
+          turns: [{ speaker: 'patient', text: 'Cough for three days.' }],
+        },
+      } as never)
+      .mockResolvedValue({
+        ...APPROVED,
+        status: 'awaiting_review',
+        approvedAt: null,
+        approvedBy: null,
+      } as never)
+    toastError.mockReset()
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Analyse Consultation' }))
+
+    await waitFor(() => {
+      expect(toastSuccess).toHaveBeenCalledWith(
+        'Analysis finished after the request timed out. Your note is ready.',
+      )
+    })
+    expect(toastError).not.toHaveBeenCalled()
+  })
+
   it('uses the large action dimensions consistently after approval', async () => {
     vi.mocked(api.getConsultation).mockResolvedValue(APPROVED as never)
     setup()

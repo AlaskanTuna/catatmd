@@ -14,8 +14,9 @@ import type { Deidentified } from '../../deid/types.js'
  * PHI boundary.
  */
 
-const { completionsCreate, constructed, envMock } = vi.hoisted(() => ({
+const { completionsCreate, embeddingsCreate, constructed, envMock } = vi.hoisted(() => ({
   completionsCreate: vi.fn(),
+  embeddingsCreate: vi.fn(),
   constructed: vi.fn(),
   envMock: { DEID_FAIL_CLOSED: true },
 }))
@@ -32,6 +33,7 @@ const { completionsCreate, constructed, envMock } = vi.hoisted(() => ({
 vi.mock('openai', () => ({
   default: class {
     chat = { completions: { create: completionsCreate } }
+    embeddings = { create: embeddingsCreate }
     constructor(options: unknown) {
       constructed(options)
     }
@@ -40,7 +42,9 @@ vi.mock('openai', () => ({
 
 vi.mock('../../config/env.js', () => ({ env: envMock }))
 
-const { OpenAICompatibleClient } = await import('./openai-compatible.js')
+const { OpenAICompatibleClient, OpenAICompatibleEmbeddingClient } = await import(
+  './openai-compatible.js'
+)
 
 const Schema = z.object({ ok: z.boolean() })
 
@@ -85,6 +89,11 @@ beforeEach(() => {
  * responding holds one operation for roughly 30 minutes against CAP-1's
  * 30-second budget.
  *
+ * Issue #340 changed the shape from two 60s attempts to one 90s attempt. The
+ * SDK retries timeouts, so the retry could only ever repeat a slow call's
+ * failure at double the cost, and 90s is what fits under the 120s that a Vercel
+ * rewrite to an external origin allows to first byte.
+ *
  * These assert the values rather than merely that something was passed. A
  * regression here is silent by construction: dropping the options restores a
  * working client with defaults nobody chose, which no other test would notice.
@@ -97,16 +106,17 @@ describe('every provider call is bounded in wall-clock time', () => {
     expect(
       constructed.mock.calls[0]?.[0],
       'Without an explicit timeout the SDK waits 10 minutes per attempt.',
-    ).toMatchObject({ timeout: 60_000 })
+    ).toMatchObject({ timeout: 90_000 })
   })
 
-  it('pins maxRetries, which the SDK otherwise defaults to 2', () => {
+  it('spends the budget on one attempt rather than retrying a slow call', () => {
     client()
 
     expect(
       constructed.mock.calls[0]?.[0],
-      'Retries multiply the timeout, so an unpinned count is what turns ' + '10 minutes into 30.',
-    ).toMatchObject({ maxRetries: 1 })
+      'The SDK retries timeouts, so a retry repeats a slow call at double ' +
+        'the cost and cannot succeed where the first attempt could not.',
+    ).toMatchObject({ maxRetries: 0 })
   })
 
   it('applies the bounds to every provider, not just the default one', () => {
@@ -120,7 +130,26 @@ describe('every provider call is bounded in wall-clock time', () => {
       constructed.mock.calls[0]?.[0],
       'The bounds live on the shared adapter precisely so a provider cannot ' +
         'be added without them.',
-    ).toMatchObject({ maxRetries: 1, timeout: 60_000 })
+    ).toMatchObject({ maxRetries: 0, timeout: 90_000 })
+  })
+
+  /**
+   * The embedding client shipped with neither option, inheriting 10 minutes and
+   * two retries, because every assertion above reads `OpenAICompatibleClient`
+   * and nothing read this one. Pinning it is what stops the second client from
+   * drifting out of the bound again.
+   */
+  it('bounds the embedding client too, on its own shorter budget', () => {
+    new OpenAICompatibleEmbeddingClient('text-embedding-v4', {
+      apiKey: 'test-key',
+      baseURL: 'https://example.invalid/v1',
+    })
+
+    expect(
+      constructed.mock.calls[0]?.[0],
+      'Retrieval is awaited before suggestions, so this call is on the ' +
+        'critical path and must fail fast rather than wait.',
+    ).toMatchObject({ maxRetries: 0, timeout: 10_000 })
   })
 })
 
