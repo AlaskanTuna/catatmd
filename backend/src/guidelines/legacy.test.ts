@@ -13,7 +13,7 @@ const LEGACY_CASES = [
   ['abdullah-2024-mcisaac-threshold', 'doc:abdullah-2024-idr-sore-throat'],
   ['abdullah-2024-safety-netting', 'doc:abdullah-2024-idr-sore-throat'],
   ['ooi-2022-urti-epidemiology', 'doc:ooi-2022-mfp-urti'],
-  ['ooi-2022-antibiotic-prescribing', 'doc:ooi-2022-mfp-urti'],
+  ['ooi-2022-antibiotic-prescribing-patterns', 'doc:ooi-2022-mfp-urti'],
 ] as const
 
 describe('modernizeCitationId', () => {
