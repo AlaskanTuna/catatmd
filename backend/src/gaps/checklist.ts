@@ -70,6 +70,14 @@ const UNSOURCED_DRUG_ALLERGIES: GapChecklistSource = {
     'so this prompt rests on prescribing safety, not on a guideline recommendation.',
 }
 
+const UNSOURCED_HAEMOPTYSIS: GapChecklistSource = {
+  kind: 'unsourced',
+  reason:
+    'Haemoptysis is a safety question for any adult cough presentation. No chunk in the curated ' +
+    'corpus names it, so this prompt rests on clinical safety practice, not on a guideline ' +
+    'recommendation in the corpus.',
+}
+
 const UNSOURCED_PAYER_FIELD: GapChecklistSource = {
   kind: 'unsourced',
   reason:
@@ -134,7 +142,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
     rationale:
       'Cough duration is a standard field tracked for adult cough and URTI presentations and ' +
       'is not documented in this consultation.',
-    source: cited('moh-nag-2024-c3-acute-bronchitis', 'moh-nag-2024-c4-uncomplicated-urti'),
+    source: cited('moh-nag-2024-c4-uncomplicated-urti'),
     select: (facts) => facts.symptoms.coughDuration,
     profiles: URTI_PROFILES,
   },
@@ -156,7 +164,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
     rationale:
       'Haemoptysis status is a standard field tracked for adult cough presentations and is ' +
       'not documented in this consultation.',
-    source: NAG_ACUTE_COUGH_PATHWAY,
+    source: UNSOURCED_HAEMOPTYSIS,
     select: (facts) => facts.symptoms.haemoptysis,
     profiles: URTI_PROFILES,
   },
