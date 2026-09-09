@@ -453,7 +453,7 @@ Reuse terms for the AMM-hosted MOH CPG library are unconfirmed (issue #250). Thi
 
 Also deliberately absent (`docs/prd.md` §6):
 
-- **Diagnosis, triage decisions and prescribing.** Safety boundaries, not deferred features
+- **Diagnosis, triage decisions and treatment selection.** Safety boundaries, not deferred features. Recording what the doctor stated is in scope and transcription-bound; producing it is not (`docs/decisions.md` D-001)
 - **Red-flag deletion or silent dismissal.** Flags may be acknowledged, never removed
 - **Any edit after approval**, and any autonomous action
 - **Any confidence or uncertainty score**
@@ -476,6 +476,7 @@ The bar is real and it is clearable. The argument is not that this product escap
 - ID-constrained citations make hallucinated references structurally impossible
 - The doctor-approval state transition is a documented risk control with an audit event
 - The transcription-bound `diagnosis` field is the intended-purpose hinge
+- The same hinge governs medication: a dictated prescription is recorded and confirmed, never generated
 
 The Act 737 intended-purpose statement is written out in `docs/prd.md` §11. This is a prototype, is not placed on the market, and is not for clinical use.
 
