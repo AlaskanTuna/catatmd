@@ -33,6 +33,9 @@ afterEach(() => {
 
 const notAssessed: ClinicalAssertion = { state: 'NOT_ASSESSED' }
 
+const humanise = (key: string) =>
+  key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase())
+
 const OPERATIONAL: OperationalBlock = {
   diagnosis: notAssessed,
   medicationsDispensed: [],
@@ -98,40 +101,6 @@ describe('the checklist row never overflows its column', () => {
    * Without `min-w-0` on `dd` here, this shape overflowed its column by 169px
    * at the width the reported bug was measured at.
    */
-  it('lets dd shrink when a value sits beside the badge', () => {
-    render(
-      <ChecklistPanel
-        clinicalFacts={facts({
-          state: 'PRESENT',
-          value: 'Severe sore throat, inability to swallow',
-          evidence: 'tekak saya sakit sangat',
-        })}
-        operational={OPERATIONAL}
-      />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: /completeness checklist/i }))
-
-    const dd = screen.getByText('Severe sore throat, inability to swallow').closest('dd')
-    expect(dd?.className).toContain('min-w-0')
-  })
-
-  /*
-   * A badge-only row (no value at all) is the opposite case: `dd`'s only
-   * child is the badge, which is `shrink-0` and must never truncate a
-   * clinical state word. There, `min-w-0` on `dd` removes the floor that
-   * keeps it at the badge's own width, and the badge overflows instead. This
-   * shape overflowed by 21px the first time `dd` unconditionally carried
-   * `min-w-0`, at a column width where the valued row above was already
-   * fixed.
-   */
-  it('does not give dd min-w-0 when there is no value to absorb it', () => {
-    render(<ChecklistPanel clinicalFacts={facts(notAssessed)} operational={OPERATIONAL} />)
-    fireEvent.click(screen.getByRole('button', { name: /completeness checklist/i }))
-
-    const badge = screen.getAllByText('Not Assessed')[0]
-    const dd = badge?.closest('dd')
-    expect(dd?.className).not.toContain('min-w-0')
-  })
 })
 
 describe('the checklist follows the canonical record projection', () => {
@@ -204,6 +173,143 @@ describe('the completeness checklist dialog', () => {
     expect(scrollBodies).toHaveLength(1)
     expect(scrollBodies[0]?.querySelectorAll('dd')).toHaveLength(33)
     expect(within(dialog).getByText('0 of 33 established')).toBeTruthy()
+  })
+
+  it('clips the fixed-height dialog shell so only the inner body scrolls', async () => {
+    const dialog = await openChecklistDialog()
+
+    expect(dialog.className).toContain('overflow-hidden')
+    expect(dialog.querySelectorAll('.overflow-y-auto')).toHaveLength(1)
+  })
+
+  it('wraps every label and value cell instead of truncating it', async () => {
+    const dialog = await openChecklistDialog()
+
+    const labelCells = [...dialog.querySelectorAll('dt')]
+    const valueCells = [...dialog.querySelectorAll('dd')].flatMap((dd) =>
+      dd.firstElementChild ? [dd.firstElementChild] : [],
+    )
+    expect(labelCells).toHaveLength(33)
+    expect(valueCells).toHaveLength(33)
+    for (const cell of [...labelCells, ...valueCells]) {
+      expect(cell.getAttribute('class') ?? '').not.toMatch(
+        /truncate|text-ellipsis|whitespace-nowrap|overflow-hidden/,
+      )
+    }
+  })
+
+  it('renders a 40-character label without truncation classes and with its full text', async () => {
+    const longField = 'thisFieldNameIsDeliberatelyMoreThanFortyCharacters'
+    const longLabel = humanise(longField)
+
+    render(
+      <ChecklistPanel
+        clinicalFacts={
+          {
+            symptoms: { [longField]: notAssessed },
+            history: {},
+            observations: {},
+            examination: {},
+          } as unknown as ClinicalFacts
+        }
+        operational={OPERATIONAL}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Completeness Checklist' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Completeness Checklist' })
+
+    const cell = within(dialog).getByText(longLabel).closest('dt')
+    expect(cell?.getAttribute('class') ?? '').not.toMatch(
+      /truncate|text-ellipsis|whitespace-nowrap|overflow-hidden/,
+    )
+    expect(cell?.textContent).toBe(longLabel)
+  })
+
+  it('shares the same fixed-width four-track grid across every row', async () => {
+    const dialog = await openChecklistDialog()
+
+    const rows = [...dialog.querySelectorAll('dd')].flatMap((dd) =>
+      dd.parentElement ? [dd.parentElement] : [],
+    )
+    expect(rows).toHaveLength(33)
+
+    const tracks = rows.map((row) => row.className.match(/grid-cols-\[[^\]]+\]/)?.[0])
+    const unique = new Set(tracks)
+    expect(unique.size).toBe(1)
+    expect([...unique][0]).toBe('grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_1.5rem]')
+  })
+
+  it('does not draw horizontal dividers on rows or their ancestors inside a section', async () => {
+    const dialog = await openChecklistDialog()
+
+    const rows = [...dialog.querySelectorAll('dd')].flatMap((dd) =>
+      dd.parentElement ? [dd.parentElement] : [],
+    )
+    expect(rows).toHaveLength(33)
+
+    for (const row of rows) {
+      let ancestor: Element | null = row
+      while (ancestor && ancestor.tagName !== 'SECTION') {
+        expect(ancestor.getAttribute('class') ?? '').not.toMatch(
+          /(^|\s)border-b(\/|\s|$)|(^|\s)divide-y/,
+        )
+        ancestor = ancestor.parentElement
+      }
+    }
+  })
+
+  /*
+   * `dd` is `display: contents`, so the row's grid items are its `dt`, the
+   * `dd`'s two children (value and badge), and the evidence cell; flattening
+   * the `dd` counts the rendered cells, not the wrapper.
+   */
+  const gridCellsOf = (row: Element) =>
+    [...row.children].flatMap((cell) => (cell.tagName === 'DD' ? [...cell.children] : [cell]))
+
+  it('lays every row out on the same four-cell track, evidence cell included', async () => {
+    const dialog = await openChecklistDialog()
+
+    const rows = [...dialog.querySelectorAll('dd')].flatMap((dd) =>
+      dd.parentElement ? [dd.parentElement] : [],
+    )
+    expect(rows).toHaveLength(33)
+    for (const row of rows) {
+      const cells = gridCellsOf(row)
+      expect(cells).toHaveLength(4)
+      // No evidence was passed, so the evidence cell renders empty rather
+      // than absent; its presence is what keeps the badge column aligned.
+      expect(cells[3]?.childElementCount).toBe(0)
+    }
+  })
+
+  it('keeps the same four-cell track on evidence rows, with the icon populated', async () => {
+    render(
+      <ChecklistPanel
+        clinicalFacts={facts({
+          state: 'PRESENT',
+          value: 'Severe sore throat, inability to swallow',
+          evidence: 'tekak saya sakit sangat',
+        })}
+        operational={OPERATIONAL}
+        evidenceLinks={[
+          {
+            fieldId: 'clinicalFacts.symptoms.soreThroat',
+            state: 'PRESENT',
+            evidence: 'tekak saya sakit sangat',
+            speaker: 'patient',
+          },
+        ]}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Completeness Checklist' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Completeness Checklist' })
+
+    const row = within(dialog).getByRole('button', {
+      name: /show the transcript source for sore throat/i,
+    })
+    const cells = gridCellsOf(row)
+    expect(cells).toHaveLength(4)
+    expect(cells[3]?.querySelector('svg')).toBeTruthy()
   })
 
   it('focuses the Close button on open and closes the dialog when it is activated', async () => {
