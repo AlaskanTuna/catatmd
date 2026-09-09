@@ -18,9 +18,12 @@ import {
   LiveFlagsResponseSchema,
   MAX_LIVE_DELTA_CHARACTERS,
   MAX_LIVE_DELTA_TURNS,
+  MAX_PRESCRIPTIONS,
   type MedicalRecordNote,
   MedicalRecordNoteSchema,
   NoteTemplateSchema,
+  PrescriptionParseResponseSchema,
+  PrescriptionSchema,
   type SoapNote,
   SoapNoteSchema,
   type Transcript,
@@ -50,6 +53,7 @@ import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
 import { logger, timeStage } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
+import { matchMedication, parseSig } from '../medications/index.js'
 import { inFlightGate, parseAudioBody } from '../middleware/audio-body.js'
 import { evaluateRedFlags, mergeRedFlags, proposeMishearCorrections } from '../redflags/index.js'
 import { retrieveGuidelines } from '../retrieval/index.js'
@@ -120,6 +124,7 @@ function toDetail(
     analysis: row.analysis ?? null,
     editedNote: row.editedNote ?? null,
     editedMedicalRecordNote: row.editedMedicalRecordNote ?? null,
+    prescriptions: row.prescriptions ?? null,
     noteTemplate: row.noteTemplate ?? 'soap',
     captureMode: row.captureMode ?? 'manual',
     approvedAt: row.approvedAt,
@@ -782,6 +787,55 @@ const LiveDeltaSchema = TranscriptSchema.superRefine((delta, ctx) => {
   }
 })
 
+const PrescriptionParseBodySchema = z.object({
+  dictated: z.string().min(1).max(400),
+  profileId: ProfileIdSchema.optional(),
+})
+
+/**
+ * Turn one dictated medication phrase into draft fields plus spelling
+ * candidates (#312, `docs/decisions.md` D-001).
+ *
+ * **Read-only, and it stores nothing.** The doctor confirms, and confirming is
+ * an ordinary `PATCH /api/consultations/:id { prescriptions }` down the same
+ * route their manual edits use. That is the same shape #308 took for transcript
+ * corrections and the copilot took before it, and it is why no prescription
+ * write path exists here.
+ *
+ * **No model, anywhere on this path.** `parseSig` is regex over a closed
+ * vocabulary and `matchMedication` is phonetic plus orthographic distance
+ * against a static versioned lexicon. Nothing is de-identified because nothing
+ * egresses, and nothing is proposed that the doctor did not say.
+ *
+ * **Candidates are returned in the matcher's order and must not be re-sorted.**
+ * A clinical-safety review on #311 found a contained single agent outranking
+ * the combination actually dictated, because it scored higher on a shorter
+ * span; the ordering is score, then span length, then id, and it is a fix.
+ *
+ * No audit row. Nothing egresses and no state changes, so there is no act to
+ * record: the precedent is `POST /:id/live-flags` in this same file. The
+ * audited act is the doctor confirming, which lands as
+ * `consultation.prescription_recorded` on the PATCH.
+ */
+consultationsRouter.post('/:id/prescriptions/parse', async (req, res) => {
+  const actor = doctorId(req)
+  await assertOwnedConsultation(req.params.id, actor)
+
+  const body = PrescriptionParseBodySchema.safeParse(req.body)
+  if (!body.success) {
+    throw new HttpError(400, 'invalid_body', 'A dictated medication phrase is required.')
+  }
+
+  const profile = getClinicalProfile(body.data.profileId ?? DEFAULT_PROFILE_ID)
+
+  res.json(
+    PrescriptionParseResponseSchema.parse({
+      sig: parseSig(body.data.dictated),
+      candidates: matchMedication(body.data.dictated, profile.id),
+    }),
+  )
+})
+
 /**
  * Suspected mishears in the stored transcript, for the doctor to accept or
  * reject (#308).
@@ -1057,6 +1111,13 @@ const PatchBodySchema = z
     transcript: TranscriptSchema.optional(),
     editedNote: SoapNoteSchema.partial().optional(),
     editedMedicalRecordNote: MedicalRecordNoteSchema.partial().optional(),
+    /*
+     * The whole confirmed list, not a delta. A prescription is authored by the
+     * doctor rather than merged into a server-side base like the note fields
+     * above, so there is nothing to merge onto and a partial would be
+     * ambiguous about whether an absent entry was removed or untouched.
+     */
+    prescriptions: z.array(PrescriptionSchema).max(MAX_PRESCRIPTIONS).optional(),
     noteTemplate: NoteTemplateSchema.optional(),
     captureMode: CaptureModeSchema.optional(),
     acknowledgedRedFlagIds: z.array(z.string()).optional(),
@@ -1277,6 +1338,7 @@ consultationsRouter.patch('/:id', async (req, res) => {
       ...(nextEditedMedicalRecordNote === undefined
         ? {}
         : { editedMedicalRecordNote: nextEditedMedicalRecordNote }),
+      ...(patch.prescriptions === undefined ? {} : { prescriptions: patch.prescriptions }),
       ...(patch.acknowledgedRedFlagIds === undefined
         ? {}
         : { acknowledgedRedFlagIds: [...previousFlags, ...newFlags] }),
@@ -1325,6 +1387,15 @@ consultationsRouter.patch('/:id', async (req, res) => {
       consultationId: consultation.id,
     })
   }
+  if (patch.prescriptions !== undefined) {
+    await recordAuditEvent({
+      action: 'consultation.prescription_recorded',
+      actorId: actor,
+      consultationId: consultation.id,
+      metadata: { prescriptionCount: patch.prescriptions.length },
+    })
+  }
+
   if (patch.noteTemplate !== undefined) {
     await recordAuditEvent({
       action: 'consultation.template_selected',

@@ -234,6 +234,33 @@ export const liveFlagsRateLimit = rateLimit({
 })
 
 /**
+ * Per-IP limiter for `POST /api/consultations/:id/prescriptions/parse` (#312).
+ *
+ * Runs no model and writes nothing: it is the deterministic sig parser and
+ * lexicon matcher from #311, in process. The limiter exists because every new
+ * route registers one, and because the matcher walks an n-gram window over the
+ * dictation against the whole lexicon, so an unbounded loop is CPU a caller
+ * did not pay for.
+ *
+ * 30 a minute matches the corrections limiter, and for the same reason: the
+ * doctor dictates one prescription, reads the parse, and dictates the next.
+ * That is human cadence, not a stream.
+ */
+export const prescriptionParseRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: {
+      code: 'rate_limited',
+      message: 'Too many prescription checks. Please retry shortly.',
+    },
+  },
+})
+
+/**
  * Per-IP limiter for `POST /api/consultations/:id/transcript-corrections`, the
  * mishear proposal surface (#308).
  *

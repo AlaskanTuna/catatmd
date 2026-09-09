@@ -248,6 +248,15 @@ model Consultation {
   /// Erasure must null this beside `analysis` and `editedNote`.
   editedMedicalRecordNote Json?
 
+  /// `Prescription[]` from @shared/types: medications the doctor dictated and
+  /// then confirmed (`docs/decisions.md` D-001). Doctor-authored, and distinct
+  /// from the model-extracted `operational.medicationsDispensed` inside
+  /// `analysis` for that reason.
+  ///
+  /// A fifth PHI column, and erased with the other four. Never reaches a
+  /// provider: this path runs no model at all.
+  prescriptions           Json?
+
   /// Array of `RedFlag.id` the doctor has acknowledged. Acknowledgment is
   /// additive only — a red flag is never removed or downgraded by it.
   ///

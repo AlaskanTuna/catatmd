@@ -31,7 +31,11 @@ export async function eraseConsultation(consultationId: string, actorId: string)
       analysis: Prisma.DbNull,
       editedNote: Prisma.DbNull,
       editedMedicalRecordNote: Prisma.DbNull,
-      // The fourth PHI column. `title` is doctor-editable free text shown in
+      // Medications the doctor dictated and confirmed (#312). Drug, dose and
+      // the verbatim dictation are all clinical content about one patient, so
+      // this is a PHI column like the four above and erases with them.
+      prescriptions: Prisma.DbNull,
+      // The fifth PHI column. `title` is doctor-editable free text shown in
       // every list, so it holds a patient name whenever one is useful as a
       // filing name, and an erasure that left it behind would leave the name
       // of the person whose record was just erased sitting on the row.
