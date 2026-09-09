@@ -41,6 +41,7 @@ import {
   MedicalRecordNoteEditor,
 } from '../review/MedicalRecordNoteEditor.js'
 import { NoteEditor } from '../review/NoteEditor.js'
+import { PrescriptionBlock } from '../review/PrescriptionBlock.js'
 import { GapCard, RedFlagCard, SuggestionCard } from '../review/SafetyCards.js'
 import { TranscriptCorrections } from '../review/TranscriptCorrections.js'
 import { Button } from '../ui/Button.js'
@@ -1165,6 +1166,23 @@ export function ConsultationReview() {
                   readOnly={approved}
                   saving={patch.isPending}
                   onSave={(editedNote: Partial<SoapNote>) => patch.mutate({ editedNote })}
+                />
+              )}
+              {/*
+                Above the checklist, because a prescription belongs beside the
+                plan it came out of while the checklist is a review of what the
+                note is missing. It is also what keeps the column's
+                `[&>*:last-child]:grow` on the panel that has always carried it.
+
+                Not in the tour: the ephemeral consultation has no row, so the
+                parse route would 404 on an id no database holds.
+              */}
+              {!isEphemeral && (
+                <PrescriptionBlock
+                  consultationId={id}
+                  prescriptions={detail.prescriptions}
+                  status={detail.status}
+                  onSave={(prescriptions) => patch.mutateAsync({ prescriptions })}
                 />
               )}
               <ChecklistPanel
