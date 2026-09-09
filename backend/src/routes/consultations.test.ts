@@ -1081,10 +1081,7 @@ describe('gap provenance on read', () => {
     const fever = detail.consultation.analysis.gaps.find((g) => g.id === 'fever')
     const model = detail.consultation.analysis.gaps.find((g) => g.id === 'model-gap')
 
-    expect(fever?.source).toEqual({
-      kind: 'guideline',
-      guidelineIds: ['moh-nag-2024-c1-viral-vs-bacterial', 'moh-nag-2024-c1-acute-pharyngitis'],
-    })
+    expect(fever?.source).toEqual({ kind: 'guideline', guidelineIds: ['doc:moh-nag-2024'] })
     expect(model?.source).toBeUndefined()
 
     const stored = store.get('c1')?.analysis as { gaps: { source?: unknown }[] } | undefined
