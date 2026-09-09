@@ -1,6 +1,5 @@
 import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
 import { ALL_GAP_CHECKLIST, type GapChecklistEntry } from '../gaps/index.js'
-import { GUIDELINE_CORPUS, type ProfiledGuidelineChunk } from '../guidelines/index.js'
 import { ALL_REDFLAG_TRIGGERS, type RedFlagTrigger } from '../redflags/index.js'
 import { PROFILE_IDS, type ProfileId } from './types.js'
 
@@ -13,7 +12,6 @@ export interface ClinicalProfile {
   readonly noteTemplate: string
   readonly redFlagTriggers: readonly RedFlagTrigger[]
   readonly gapChecklist: readonly GapChecklistEntry[]
-  readonly guidelineCorpus: readonly ProfiledGuidelineChunk[]
 }
 
 export const ADULT_ACUTE_URTI_PROFILE_VERSION: ClinicalArtefactVersion = {
@@ -43,7 +41,7 @@ const PROFILE_DEFINITIONS = {
   },
 } as const satisfies Record<
   ProfileId,
-  Omit<ClinicalProfile, 'id' | 'redFlagTriggers' | 'gapChecklist' | 'guidelineCorpus'>
+  Omit<ClinicalProfile, 'id' | 'redFlagTriggers' | 'gapChecklist'>
 >
 
 function selectProfileContent(
@@ -52,7 +50,6 @@ function selectProfileContent(
   return {
     redFlagTriggers: ALL_REDFLAG_TRIGGERS.filter((trigger) => trigger.profiles.includes(profileId)),
     gapChecklist: ALL_GAP_CHECKLIST.filter((entry) => entry.profiles.includes(profileId)),
-    guidelineCorpus: GUIDELINE_CORPUS.filter((chunk) => chunk.profiles.includes(profileId)),
   }
 }
 

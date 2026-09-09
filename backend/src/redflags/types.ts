@@ -17,10 +17,9 @@ export interface RedFlagTrigger {
   /** Citation for where this trigger comes from (docs/trd.md §10, Q7). */
   clinicalSource: string
   /**
-   * Corpus chunk ids `clinicalSource` refers to, so the prose citation can be
-   * resolved to guidance the doctor can open. Checked against the corpus by
-   * `triggers.test.ts`, which is what stops an id here drifting from a real
-   * chunk.
+   * Document references (`doc:...`) `clinicalSource` refers to, so the prose
+   * citation can be resolved to guidance the doctor can open. Checked against
+   * the citable documents by `citations.test.ts`.
    *
    * Empty where the corpus genuinely backs nothing, which is a finding rather
    * than an omission: see `vital-signs-concern`.

@@ -400,31 +400,47 @@ export function ConsultationReview() {
     queryFn: () => api.getConsultation(id),
     enabled: !isEphemeral,
   })
+  const documents = useQuery({
+    queryKey: ['guideline-documents'],
+    queryFn: api.guidelineDocuments,
+  })
   useViewportFit(gridRef, bottomBarRef, [
     consultation.data?.id,
     consultation.data?.analysis === null,
     consultation.data?.status,
     captureBusy,
   ])
-  const guidelines = useQuery({ queryKey: ['guidelines'], queryFn: api.guidelines })
 
   /*
-   * What a citation id may resolve to: the curated corpus plus the CPG chunks
-   * retrieval attached to this analysis. `retrievedGuidelines` is persisted on
-   * the analysis precisely so this lookup works without re-running retrieval,
-   * which would not be reproducible.
+   * What a citation id may resolve to: the CPG chunks retrieved for this
+   * analysis plus the ingested source documents. `retrievedGuidelines` is
+   * persisted on the analysis so a chunk resolves without re-running retrieval.
+   * Document ids are fetched separately and map to the `doc:` references the
+   * model may emit.
    *
-   * The curated corpus is listed first so an id collision keeps the curated
-   * entry. The dedupe makes that precedence a fact rather than relying on
-   * retrieved ids never overlapping the corpus.
+   * Retrieved chunks are listed first so an id collision keeps the chunk rather
+   * than the document summary.
    */
   const citableGuidelines = useMemo(() => {
-    const curated = guidelines.data ?? []
     const record = isEphemeral ? tour.ephemeral : consultation.data
     const retrieved = record?.analysis?.retrievedGuidelines ?? []
-    const curatedIds = new Set(curated.map((chunk) => chunk.id))
-    return [...curated, ...retrieved.filter((chunk) => !curatedIds.has(chunk.id))]
-  }, [guidelines.data, isEphemeral, tour.ephemeral, consultation.data])
+    const docChunks: GuidelineChunk[] = (documents.data ?? []).map((document) => ({
+      id: document.id,
+      title: document.title,
+      publisher: document.publisher,
+      year: document.year,
+      url: document.sourceUrl,
+      summary: '',
+      sourceLicence: document.sourceLicence,
+      verbatimAllowed: document.verbatimAllowed,
+    }))
+    const byId = new Map<string, GuidelineChunk>()
+    for (const chunk of retrieved) byId.set(chunk.id, chunk)
+    for (const chunk of docChunks) {
+      if (!byId.has(chunk.id)) byId.set(chunk.id, chunk)
+    }
+    return [...byId.values()]
+  }, [documents.data, isEphemeral, tour.ephemeral, consultation.data])
 
   const invalidate = (next: ConsultationDetail) => {
     queryClient.setQueryData(['consultation', id], next)
@@ -1339,11 +1355,18 @@ export function ConsultationReview() {
                      them and the reader deserves the same distinction. Absence
                      is its own case: consultations analysed before `outOfScope`
                      shipped have no value, and reading that as `false` would
-                     assert the corpus was consulted when nobody knows. */
+                     assert the corpus was consulted when nobody knows.
+                     A retrieval that returned no passages is also distinct from
+                     an out-of-scope consultation, so it is not read as the corpus
+                     having nothing to say. */
                   analysis.outOfScope === true
                     ? 'Outside the guideline corpus\u2019s scope, so no suggestions were offered.'
                     : analysis.outOfScope === false
-                      ? 'Within the guideline corpus\u2019s scope, with nothing to suggest for this consultation.'
+                      ? (analysis.retrievedGuidelines == null ||
+                          analysis.retrievedGuidelines.length === 0) &&
+                        analysis.suggestions.length === 0
+                        ? 'No guideline passages were retrieved for this consultation, so no suggestions were offered.'
+                        : 'Within the guideline corpus\u2019s scope, with nothing to suggest for this consultation.'
                       : 'No cited suggestions. This consultation was analysed before scope was recorded, so whether the corpus applied is not known.'
                 }
                 findings={analysis.suggestions.map((suggestion) => ({

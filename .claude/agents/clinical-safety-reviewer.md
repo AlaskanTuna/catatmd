@@ -31,9 +31,9 @@ The system does not diagnose and does not replace clinical judgement. The doctor
 
 ## Citation Invariants
 
-- Citations are ID-constrained. `corpusIdsFor()` (`backend/src/guidelines/corpus.ts`) feeds `z.enum(corpusIds)`, so a hallucinated or free-text reference fails schema validation before it reaches a route. Widening `guidelineId` to a plain string is a BLOCKER needing human sign-off.
+- Citations are ID-constrained. `corpusIdsFor()` (`backend/src/guidelines/documents.ts`) feeds `z.enum(corpusIds)`, so a hallucinated or free-text reference fails schema validation before it reaches a route. Widening `guidelineId` to a plain string is a BLOCKER needing human sign-off.
 - `serialiseCorpusForPrompt` (`backend/src/guidelines/prompt.ts`) sends only `id`, `title`, and `summary` to the model. Do not accept `url`, `sourceLicence`, or `verbatimAllowed` being added.
-- A chunk whose licence sets `verbatimAllowed: false` must never carry a `quote`. The corpus is parsed at import time, so a violation fails at module load; confirm the new chunk actually respects its own licence field.
+- A chunk whose licence sets `verbatimAllowed: false` must never carry a `quote`. `GuidelineChunkSchema` enforces this at parse time, so a violation fails before a chunk reaches a route; confirm the new chunk actually respects its own licence field.
 
 ## Version Stamping
 

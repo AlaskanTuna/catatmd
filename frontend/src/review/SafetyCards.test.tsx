@@ -183,6 +183,16 @@ describe('RedFlagCard sources panel', () => {
       sourceLicence: 'CC-BY',
       verbatimAllowed: true,
     },
+    {
+      id: 'moh-nag-2024',
+      title: 'MOH NAG 2024',
+      publisher: 'MOH Malaysia',
+      year: 2024,
+      url: 'https://example.com/moh-nag-2024.pdf',
+      summary: 'A document summary that must not render.',
+      sourceLicence: 'All rights reserved',
+      verbatimAllowed: false,
+    },
   ]
 
   function renderWithGuidelines(flag: RedFlag) {
@@ -252,6 +262,29 @@ describe('RedFlagCard sources panel', () => {
     fireEvent.click(screen.getByRole('button', { name: /sources/i }))
 
     expect(screen.getByText('Malaysian Ministry of Health Cough Guideline')).toBeTruthy()
+  })
+
+  it('resolves a document reference to title, publisher, year and a page link', () => {
+    renderWithGuidelines({ ...FLAG, guidelineIds: ['doc:moh-nag-2024#p12'] })
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+
+    expect(screen.getByText('MOH NAG 2024')).toBeTruthy()
+    expect(screen.getByText('MOH Malaysia · 2024')).toBeTruthy()
+    const link = screen.getByRole('link', { name: 'Open source, p. 12' })
+    expect(link.getAttribute('href')).toBe('https://example.com/moh-nag-2024.pdf#page=12')
+  })
+
+  it('does not render the span text for a verbatimAllowed: false chunk', () => {
+    renderWithGuidelines({ ...FLAG, guidelineIds: ['my-moh-2024'] })
+    fireEvent.click(screen.getByRole('button', { name: /more options/i }))
+    fireEvent.click(screen.getByRole('button', { name: /sources/i }))
+
+    expect(screen.getByText('Malaysian Ministry of Health Cough Guideline')).toBeTruthy()
+    expect(screen.queryByText('Summary')).toBeNull()
+    expect(
+      screen.getByText('The licence for this source does not permit reproducing the text here.'),
+    ).toBeTruthy()
   })
 })
 
@@ -326,24 +359,22 @@ describe('retrieved CPG chunks', () => {
     ).toBeTruthy()
   })
 
-  it('clamps a long retrieved span behind a disclosure', () => {
-    openCitation({ ...RETRIEVED, summary: 'a span of guideline text '.repeat(30) })
-
-    const toggle = screen.getByRole('button', { name: 'Show more' })
-    expect(toggle.getAttribute('aria-expanded')).toBe('false')
-
-    fireEvent.click(toggle)
-
-    expect(screen.getByRole('button', { name: 'Show less' }).getAttribute('aria-expanded')).toBe(
-      'true',
-    )
-  })
-
-  it('renders a short summary without a toggle', () => {
+  it('does not render the span text for a verbatimAllowed: false chunk', () => {
     openCitation(RETRIEVED)
 
-    expect(screen.getByText('A retrieved span.')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /show more/i })).toBeNull()
+    expect(screen.getByText('Management of Acute Cough in Adults')).toBeTruthy()
+    expect(screen.queryByText('A retrieved span.')).toBeNull()
+    expect(
+      screen.getByText('The licence for this source does not permit reproducing the text here.'),
+    ).toBeTruthy()
+  })
+
+  it('still links a verbatimAllowed: false chunk to the page it came from', () => {
+    openCitation({ ...RETRIEVED, summary: 'a span that should not render' })
+
+    const link = screen.getByRole('link', { name: 'Open source, p. 12' })
+    expect(link.getAttribute('href')).toBe('https://example.com/cpg-cough.pdf#page=12')
+    expect(screen.queryByText('a span that should not render')).toBeNull()
   })
 })
 

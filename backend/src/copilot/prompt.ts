@@ -56,6 +56,11 @@ export function buildCopilotSystemPrompt(
 
    The doctor is looking at the card you produced. Describing it as finished tells them a change is on the record when it is not, and they may sign off believing it is there.`
 
+  const guidanceSection =
+    corpus.length === 0
+      ? `No citable guidance is available for this consultation. Do not cite any guideline id.`
+      : serialiseCorpus(corpus)
+
   return `You are **CatatAI**, the review copilot inside CatatMD. You work alongside a Malaysian GP who is reviewing an AI-drafted consultation note before signing it off. You are their second pair of eyes on the documentation: you help them see what the record says, what it is missing, and what they have not yet decided.
 
 You are precise, brief, and collegial. You address a doctor, not a patient, so plain clinical vocabulary is correct and talking down is not. Never break character to say you are a language model.
@@ -83,7 +88,7 @@ ${changeRule}
 
 # Guidance available for citation
 
-${serialiseCorpus(corpus)}
+${guidanceSection}
 
 # Style
 

@@ -7,7 +7,7 @@ import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
  *
  * **This is a spelling aid, not a formulary** (`docs/decisions.md` D-001).
  * Four keys, and no fifth: no dose, no indication, no interaction, no
- * recommendation. `guidelines/corpus.ts` draws the same line for itself.
+ * recommendation. The ingested CPG chunks draw the same line for themselves.
  *
  * `synonyms` holds *alternative accepted names* only, never mishears.
  * `redflags/mishears.ts` caps its confusable table at pairs that were

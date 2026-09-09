@@ -1,28 +1,34 @@
 import { makeSuggestionsAndRedFlagsSchema } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { GUIDELINE_CORPUS } from '../guidelines/index.js'
+import { CITABLE_DOCUMENT_IDS, parseDocumentRef } from '../guidelines/documents.js'
 import { evaluateRedFlags } from './evaluate.js'
 import { ALL_REDFLAG_TRIGGERS } from './triggers.js'
 
-const corpusIds = new Set(GUIDELINE_CORPUS.map((chunk) => chunk.id))
+const citableDocumentIds = new Set<string>(CITABLE_DOCUMENT_IDS)
 
 /*
  * A trigger's `guidelineIds` is the only thing turning its prose
- * `clinicalSource` into guidance a doctor can open. An id that does not
+ * `clinicalSource` into guidance a doctor can open. A reference that does not
  * resolve renders as nothing on screen, so the citation silently disappears
  * rather than failing loudly. These tests are that failure.
  */
-describe('trigger citations resolve against the corpus', () => {
+describe('trigger citations resolve against citable documents', () => {
   it.each(ALL_REDFLAG_TRIGGERS.map((trigger) => [trigger.id, trigger] as const))(
-    '%s cites only real corpus chunks',
+    '%s cites only citable documents',
     (_id, trigger) => {
       for (const guidelineId of trigger.guidelineIds) {
-        expect(corpusIds).toContain(guidelineId)
+        const parsed = parseDocumentRef(guidelineId)
+        expect(parsed, `${trigger.id} cites unparseable reference ${guidelineId}`).not.toBeNull()
+        if (parsed === null) continue
+        expect(
+          citableDocumentIds.has(parsed.documentId),
+          `${trigger.id} cites uncitable document ${parsed.documentId}`,
+        ).toBe(true)
       }
     },
   )
 
-  it('cites no chunk twice within one trigger', () => {
+  it('cites no document twice within one trigger', () => {
     for (const trigger of ALL_REDFLAG_TRIGGERS) {
       expect(new Set(trigger.guidelineIds).size).toBe(trigger.guidelineIds.length)
     }

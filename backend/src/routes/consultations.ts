@@ -56,6 +56,7 @@ import { getActiveClinicalVersions } from '../clinical-versions/index.js'
 import { env } from '../config/env.js'
 import { DeidentificationError, deidentifyTranscript } from '../deid/index.js'
 import { deriveGaps, withGapProvenance } from '../gaps/index.js'
+import { withLegacyCitations } from '../guidelines/index.js'
 import { assertOwnedConsultation, assertOwnedPatient } from '../lib/authz.js'
 import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
@@ -122,7 +123,9 @@ function toDetail(
   const analysis =
     row.analysis === null || row.analysis === undefined
       ? null
-      : withGapProvenance(row.analysis as unknown as ConsultationAnalysis)
+      : withGapProvenance(
+          withLegacyCitations(row.analysis as unknown as ConsultationAnalysis | null),
+        )
 
   const detail = ConsultationDetailSchema.parse({
     id: row.id,
@@ -420,9 +423,10 @@ async function runAnalysis(
       try {
         retrieved = await retrieveGuidelines(text, { profileId: profile.id })
       } catch (error) {
-        // Retrieval widens the supplied corpus; a failure leaves the curated
-        // corpus in use rather than failing the whole analysis.
-        logger.warn('guideline retrieval failed; using the curated corpus only', {
+        // Retrieval is the only source of a citable corpus. A failure means no
+        // citable corpus is available for this consultation; it does not fall
+        // back to any previously curated corpus.
+        logger.warn('guideline retrieval failed; no citable corpus available', {
           errorClass: 'retrieval_error',
           errorName: error instanceof Error ? error.name : 'unknown',
         })

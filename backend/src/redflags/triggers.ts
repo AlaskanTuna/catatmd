@@ -1,6 +1,7 @@
 import type { Transcript, TranscriptTurn } from '@shared/types'
 import type { ProfileId } from '../clinical-profiles/types.js'
 import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
+import { documentRef } from '../guidelines/documents.js'
 import { type Expansion, expandMishears, isRecorded, originalSpan } from './mishears.js'
 import type { RedFlagTrigger } from './types.js'
 
@@ -37,12 +38,15 @@ import type { RedFlagTrigger } from './types.js'
  * expansion applies, to the ambient transcript source added by #268, and that
  * is a matcher change under the rule above even though no transcript that
  * could exist under v8 gets a different answer.
+ * v12 changes all citations to `doc:` document references against the NAG,
+ * Abdullah et al. 2024 and Ooi et al. 2022, removing the dependency of the
+ * deterministic layer on the curated chunk corpus.
  * Citations count because they now travel on the flag itself, so a stored
  * analysis and this list can otherwise disagree about what backed a hit.
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v11',
-  effectiveDate: '2026-09-08',
+  id: 'redflag-list-v12',
+  effectiveDate: '2026-09-09',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -427,19 +431,11 @@ const DELPHI_AIRWAY_NOTE =
   'airway or swallowing compromise; this finding sits outside that pathway.'
 
 /*
- * The corpus chunks each prose note above refers to, kept beside the note so
- * the two cannot drift apart. `triggers.test.ts` checks every id resolves.
+ * Document references for each prose note above, kept beside the note so the
+ * two cannot drift apart. `citations.test.ts` checks every reference resolves.
  */
-const NAG_SCOPE_IDS = [
-  'moh-nag-2024-c1-acute-pharyngitis',
-  'moh-nag-2024-c3-acute-bronchitis',
-] as const
-
-const DELPHI_AIRWAY_IDS = [
-  'abdullah-2024-mcisaac-criteria',
-  'abdullah-2024-mcisaac-threshold',
-  'abdullah-2024-safety-netting',
-] as const
+const NAG_SCOPE_REFS = [documentRef('moh-nag-2024')] as const
+const DELPHI_AIRWAY_REFS = [documentRef('abdullah-2024-idr-sore-throat')] as const
 
 export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
   {
@@ -503,7 +499,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /darah\s+[^.!?]{0,20}?(?:bila|masa|waktu|semasa)\s+(?:saya\s+)?batuk/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
-    guidelineIds: NAG_SCOPE_IDS,
+    guidelineIds: NAG_SCOPE_REFS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: URTI_PROFILES,
   },
@@ -569,7 +565,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /can\s+you\s+breathe/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
-    guidelineIds: NAG_SCOPE_IDS,
+    guidelineIds: NAG_SCOPE_REFS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: URTI_PROFILES,
   },
@@ -589,7 +585,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /nyeri\s+dada/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
-    guidelineIds: NAG_SCOPE_IDS,
+    guidelineIds: NAG_SCOPE_REFS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: URTI_PROFILES,
   },
@@ -613,7 +609,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /meleleh\s+air\s+liur/i,
       ]),
     clinicalSource: DELPHI_AIRWAY_NOTE,
-    guidelineIds: DELPHI_AIRWAY_IDS,
+    guidelineIds: DELPHI_AIRWAY_REFS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: URTI_PROFILES,
   },
@@ -662,7 +658,7 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /(?<!\bnot\s)\bable\s+to\s+(?:swallow|eat|drink)/i,
       ]),
     clinicalSource: DELPHI_AIRWAY_NOTE,
-    guidelineIds: DELPHI_AIRWAY_IDS,
+    guidelineIds: DELPHI_AIRWAY_REFS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: URTI_PROFILES,
   },
@@ -715,13 +711,10 @@ const UTI_SCOPE_NOTE =
   'has reviewed this trigger content.'
 
 /*
- * The one UTI chunk in the corpus. It is the scope statement rather than a
- * feature-by-feature source: it names the presentation, not the fever, flank
- * pain or pregnancy findings the triggers below match on, so this is a
- * bibliographic link and not evidence that the guidance substantiates each
- * one.
+ * The UTI trigger cites the same NAG document as a bibliographic link, not as
+ * evidence that the guidance substantiates each feature matched below.
  */
-const UTI_SCOPE_IDS = ['moh-nag-2024-acute-uti-scope'] as const
+const UTI_SCOPE_REFS = [documentRef('moh-nag-2024')] as const
 
 export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
   {
@@ -740,7 +733,7 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /seram\s+sejuk/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
-    guidelineIds: UTI_SCOPE_IDS,
+    guidelineIds: UTI_SCOPE_REFS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: UTI_PROFILES,
   },
@@ -760,7 +753,7 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /belakang\s+(?:(?:te)?rasa\s+)?sakit/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
-    guidelineIds: UTI_SCOPE_IDS,
+    guidelineIds: UTI_SCOPE_REFS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: UTI_PROFILES,
   },
@@ -785,7 +778,7 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /tak\s+larat\s+(?:nak\s+)?bangun/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
-    guidelineIds: UTI_SCOPE_IDS,
+    guidelineIds: UTI_SCOPE_REFS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: UTI_PROFILES,
   },
@@ -805,7 +798,7 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /(?:tak\s+datang|lambat|lewat)\s+(?:period|haid)/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
-    guidelineIds: UTI_SCOPE_IDS,
+    guidelineIds: UTI_SCOPE_REFS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: UTI_PROFILES,
   },
@@ -856,7 +849,7 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /can\s+you\s+(?:pass\s+urine|pee|urinate)/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
-    guidelineIds: UTI_SCOPE_IDS,
+    guidelineIds: UTI_SCOPE_REFS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: UTI_PROFILES,
   },
@@ -883,7 +876,7 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /\b(?:lelaki|laki-laki)\b/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
-    guidelineIds: UTI_SCOPE_IDS,
+    guidelineIds: UTI_SCOPE_REFS,
     listVersion: RED_FLAG_LIST_VERSION.id,
     profiles: UTI_PROFILES,
   },

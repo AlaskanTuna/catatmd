@@ -36,7 +36,7 @@ backend/         Express 5 API (tsx dev, tsc build)
   src/deid/      PHI detection, tokenisation, re-hydration vault  ← the trust boundary
   src/lib/llm/   LLMClient port + qwen/gemini/deepseek adapters   ← the only egress point
   src/redflags/  deterministic escalation-trigger rules engine
-  src/guidelines/ curated citation corpus (ID-constrained)
+  src/guidelines/ retrieved citation corpus (ID-constrained)
   src/routes/    HTTP surface
 frontend/        Vite + React 19 SPA (Tailwind 4, Radix, TanStack Query)
 prisma/          schema.prisma + migrations (Supabase Postgres)

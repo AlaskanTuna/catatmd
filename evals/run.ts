@@ -5,7 +5,6 @@ import {
   type Transcript,
 } from '@shared/types'
 import { FIXTURE_RUBRICS, FIXTURES } from '../backend/src/fixtures/index.js'
-import { corpusIds } from '../backend/src/guidelines/index.js'
 import { type Finding, gradeAll } from './graders.js'
 
 /**
@@ -139,7 +138,7 @@ async function main() {
     const at = Date.now()
     try {
       const analysis = await analyse(fixture.transcript, cookie)
-      const findings = gradeAll(analysis, fixture.transcript, rubric.expectedRedFlagIds, corpusIds)
+      const findings = gradeAll(analysis, fixture.transcript, rubric.expectedRedFlagIds)
       const ok = findings.every((f) => f.severity !== 'critical' || f.passed)
       results.push({
         fixtureId: fixture.id,

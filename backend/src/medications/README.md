@@ -6,7 +6,7 @@ Deterministic support for a prescription the doctor dictates: a versioned list o
 
 ## The Boundary
 
-**This is a spelling aid, not a formulary.** It holds drug names and nothing else: no dose, no indication, no interaction, no recommendation, and no brand names. It never proposes a drug the doctor did not say, never validates one, and never edits the text it was given. Its whole output is a candidate the doctor accepts or rejects, because look-alike sound-alike confusion is a leading medication-error class and published guidance on speech recognition names selection from a list as the control. `docs/decisions.md` D-001 is the recorded scope decision and its Not Built table governs; `guidelines/corpus.ts` draws the identical line for itself.
+**This is a spelling aid, not a formulary.** It holds drug names and nothing else: no dose, no indication, no interaction, no recommendation, and no brand names. It never proposes a drug the doctor did not say, never validates one, and never edits the text it was given. Its whole output is a candidate the doctor accepts or rejects, because look-alike sound-alike confusion is a leading medication-error class and published guidance on speech recognition names selection from a list as the control. `docs/decisions.md` D-001 is the recorded scope decision and its Not Built table governs; the ingested CPG chunks draw the identical line for themselves.
 
 ---
 

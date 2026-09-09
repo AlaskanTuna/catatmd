@@ -134,10 +134,10 @@ describe('gap text never implies a diagnosis', () => {
   }
 })
 
-describe('gap checklist v6 question wording', () => {
-  it('uses the effective v6 checklist artefact', () => {
+describe('gap checklist v7 question wording', () => {
+  it('uses the effective v7 checklist artefact', () => {
     expect(GAP_CHECKLIST_VERSION).toEqual({
-      id: 'gap-checklist-v6',
+      id: 'gap-checklist-v7',
       effectiveDate: '2026-09-09',
     })
   })
