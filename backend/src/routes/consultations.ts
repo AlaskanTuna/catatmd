@@ -24,6 +24,7 @@ import {
   type SoapNote,
   SoapNoteSchema,
   type Transcript,
+  TranscriptCorrectionsResponseSchema,
   TranscriptSchema,
   toSoapNote,
 } from '@shared/types'
@@ -50,7 +51,7 @@ import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
 import { logger, timeStage } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
 import { inFlightGate, parseAudioBody } from '../middleware/audio-body.js'
-import { evaluateRedFlags, mergeRedFlags } from '../redflags/index.js'
+import { evaluateRedFlags, mergeRedFlags, proposeMishearCorrections } from '../redflags/index.js'
 import { retrieveGuidelines } from '../retrieval/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
 import type { SuppressedSuggestionId } from '../suggestions/safety.js'
@@ -779,6 +780,62 @@ const LiveDeltaSchema = TranscriptSchema.superRefine((delta, ctx) => {
       message: `A live window may be at most ${MAX_LIVE_DELTA_CHARACTERS} characters.`,
     })
   }
+})
+
+/**
+ * Suspected mishears in the stored transcript, for the doctor to accept or
+ * reject (#308).
+ *
+ * **Read-only, and that is the point.** It proposes; it never repairs. Accepting
+ * is an ordinary `PATCH /api/consultations/:id { transcript }` issued by the
+ * client, so this route needs no write path of its own and the correction lands
+ * through the same validation, ownership check and audit the doctor's manual
+ * edits already use. `shared/src/index.ts` sets that precedent for the copilot
+ * and the reasoning transfers unchanged.
+ *
+ * **Draft only.** Past `draft` the transcript is what the note was built from,
+ * so editing it would leave a note grounded in words the record no longer holds.
+ * `PATCH` already refuses a transcript outside `awaiting_review`; refusing here
+ * as well means the doctor never sees an Accept button that cannot work.
+ *
+ * The audit row is written before the response and unguarded, so proposals the
+ * trail did not record are never observable by a client. It carries a count and
+ * never the words: `original` is patient speech and `suggested` is the table's
+ * reading of it, and both are content.
+ */
+consultationsRouter.post('/:id/transcript-corrections', async (req, res) => {
+  const actor = doctorId(req)
+  const consultation = await assertOwnedConsultation(req.params.id, actor)
+
+  if (consultation.status !== 'draft') {
+    throw new HttpError(
+      409,
+      'invalid_state',
+      `Corrections cannot be proposed while the consultation is ${consultation.status}.`,
+    )
+  }
+
+  const transcript = TranscriptSchema.safeParse(consultation.transcript)
+  if (!transcript.success) {
+    await recordAuditEvent({
+      action: 'consultation.corrections_failed',
+      actorId: actor,
+      consultationId: consultation.id,
+      metadata: { reason: 'no_transcript' },
+    })
+    throw new HttpError(409, 'invalid_state', 'This consultation has no usable transcript.')
+  }
+
+  const proposals = proposeMishearCorrections(transcript.data)
+
+  await recordAuditEvent({
+    action: 'consultation.corrections_proposed',
+    actorId: actor,
+    consultationId: consultation.id,
+    metadata: { proposalCount: proposals.length },
+  })
+
+  res.json(TranscriptCorrectionsResponseSchema.parse({ proposals }))
 })
 
 const LiveFlagsBodySchema = z.object({
