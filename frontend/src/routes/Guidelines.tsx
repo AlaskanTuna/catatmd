@@ -135,7 +135,7 @@ export function Guidelines() {
   )
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div data-tour="corpus" className="mx-auto max-w-4xl">
       <PageHeader
         title="Guideline Documents"
         subtitle="The closed set of source documents the model may cite. Anything outside it fails validation."

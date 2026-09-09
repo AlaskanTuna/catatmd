@@ -892,6 +892,7 @@ export function ConsultationReview() {
               />
             )}
             <Button
+              data-tour="capture-settings"
               variant="neutral"
               size="lg"
               aria-label="Consultation Settings"
