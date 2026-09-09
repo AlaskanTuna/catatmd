@@ -1,4 +1,4 @@
-import type { GuidelineChunk, GuidelineDocument } from '@shared/types'
+import type { GuidelineDocument } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,21 +8,9 @@ import { Guidelines } from './Guidelines.js'
 vi.mock('../lib/api.js', () => ({
   ApiError: class extends Error {},
   api: {
-    guidelines: vi.fn(),
     guidelineDocuments: vi.fn(),
   },
 }))
-
-const CHUNK: GuidelineChunk = {
-  id: 'nice-ng120-cough',
-  title: 'NICE Acute Cough Guideline',
-  publisher: 'NICE',
-  year: 2023,
-  url: 'https://example.com/nice-cough',
-  summary: 'A curated summary.',
-  sourceLicence: 'CC-BY',
-  verbatimAllowed: true,
-}
 
 const URTI_DOCUMENT: GuidelineDocument = {
   id: 'cpg-urti',
@@ -36,7 +24,7 @@ const URTI_DOCUMENT: GuidelineDocument = {
   chunkCount: 412,
   ingestedAt: new Date('2026-09-01T00:00:00.000Z'),
   profiles: ['adult-acute-urti'],
-  verbatimAllowed: true,
+  verbatimAllowed: false,
 }
 
 const SORE_THROAT_DOCUMENT: GuidelineDocument = {
@@ -44,15 +32,6 @@ const SORE_THROAT_DOCUMENT: GuidelineDocument = {
   id: 'cpg-sore-throat',
   title: 'CPG Management of Sore Throat',
   sourceUrl: 'https://example.com/cpg-sore-throat.pdf',
-}
-
-function makeChunks(count: number): GuidelineChunk[] {
-  return Array.from({ length: count }, (_, index) => ({
-    ...CHUNK,
-    id: `chunk-${index + 1}`,
-    title: `Guideline ${index + 1}`,
-    summary: `Summary ${index + 1}`,
-  }))
 }
 
 function makeDocuments(count: number): GuidelineDocument[] {
@@ -77,8 +56,6 @@ function setup() {
 
 describe('the CPG document library', () => {
   beforeEach(() => {
-    vi.mocked(api.guidelines).mockReset()
-    vi.mocked(api.guidelines).mockResolvedValue([CHUNK])
     vi.mocked(api.guidelineDocuments).mockReset()
     vi.mocked(api.guidelineDocuments).mockResolvedValue([URTI_DOCUMENT])
   })
@@ -86,17 +63,20 @@ describe('the CPG document library', () => {
   it('lists ingested documents in their own section', async () => {
     setup()
 
-    const cpgSection = screen.getByRole('region', {
+    const cpgSection = await screen.findByRole('region', {
       name: 'Malaysian Clinical Practice Guidelines',
     })
     expect(
       await screen.findByText('CPG Management of Upper Respiratory Tract Infection'),
     ).toBeTruthy()
     expect(screen.getByText('88 pages')).toBeTruthy()
-    expect(within(cpgSection).getByText(/1 documents/)).toBeTruthy()
+    expect(screen.getByText('1 documents')).toBeTruthy()
     expect(screen.getByRole('link', { name: /open guideline/i }).getAttribute('href')).toBe(
       'https://example.com/cpg-urti.pdf',
     )
+    expect(
+      within(cpgSection).getByText('CPG Management of Upper Respiratory Tract Infection'),
+    ).toBeTruthy()
   })
 
   it('says when no CPG documents have been ingested', async () => {
@@ -127,7 +107,11 @@ describe('the CPG document library', () => {
     expect(screen.getByRole('link', { name: 'Open Guideline' })).toBeTruthy()
   })
 
-  it('lists a publisher that exists only in documents and filters both sections when selected', async () => {
+  it('lists a publisher and filters the documents when selected', async () => {
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([
+      URTI_DOCUMENT,
+      { ...SORE_THROAT_DOCUMENT, publisher: 'NICE' },
+    ])
     setup()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Filter by publisher' }))
@@ -136,7 +120,7 @@ describe('the CPG document library', () => {
 
     fireEvent.click(mohOption)
 
-    expect(screen.queryByText('NICE Acute Cough Guideline')).toBeNull()
+    expect(screen.queryByText('CPG Management of Sore Throat')).toBeNull()
     expect(
       await screen.findByText('CPG Management of Upper Respiratory Tract Infection'),
     ).toBeTruthy()
@@ -144,21 +128,17 @@ describe('the CPG document library', () => {
 })
 
 describe('the lead copy', () => {
-  it('shows both curated and document counts', async () => {
-    vi.mocked(api.guidelines).mockResolvedValue([
-      CHUNK,
-      { ...CHUNK, id: 'nice-2', title: 'NICE 2' },
-    ])
+  it('shows the in-scope document count and omits any curated copy', async () => {
     vi.mocked(api.guidelineDocuments).mockResolvedValue([
       URTI_DOCUMENT,
       { ...SORE_THROAT_DOCUMENT, profiles: [] },
     ])
     setup()
 
-    await screen.findByText('NICE Acute Cough Guideline')
+    await screen.findByText('CPG Management of Upper Respiratory Tract Infection')
     const leadCopy = screen.getByText(/Free-text references are rejected/)
-    expect(leadCopy.textContent).toMatch(/2 curated entries/)
     expect(leadCopy.textContent).toMatch(/1 of the 2 documents/)
+    expect(leadCopy.textContent).not.toMatch(/curated/)
   })
 
   it('shows when each document was ingested', async () => {
@@ -169,90 +149,51 @@ describe('the lead copy', () => {
   })
 })
 
-describe('the curated corpus pagination', () => {
-  it('shows the first six chunks on page one and the next page reveals the rest', async () => {
-    vi.mocked(api.guidelines).mockResolvedValue(makeChunks(7))
-    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
+describe('the CPG document pagination', () => {
+  it('shows the first six documents on page one and the next page reveals the rest', async () => {
+    vi.mocked(api.guidelineDocuments).mockResolvedValue(makeDocuments(7))
     setup()
 
     for (let index = 1; index <= 6; index++) {
-      expect(await screen.findByText(`Guideline ${index}`)).toBeTruthy()
+      expect(await screen.findByText(`CPG Document ${index}`)).toBeTruthy()
     }
-    expect(screen.queryByText('Guideline 7')).toBeNull()
+    expect(screen.queryByText('CPG Document 7')).toBeNull()
     expect(screen.getByText('Page 1 of 2')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
 
-    expect(await screen.findByText('Guideline 7')).toBeTruthy()
-    expect(screen.queryByText('Guideline 1')).toBeNull()
+    expect(await screen.findByText('CPG Document 7')).toBeTruthy()
+    expect(screen.queryByText('CPG Document 1')).toBeNull()
     expect(screen.getByText('Page 2 of 2')).toBeTruthy()
   })
 
   it('resets to the first page when the search query changes', async () => {
-    vi.mocked(api.guidelines).mockResolvedValue(makeChunks(7))
-    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
-    setup()
-
-    await screen.findByText('Guideline 6')
-    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
-    await screen.findByText('Guideline 7')
-
-    fireEvent.change(screen.getByLabelText('Search the guideline corpus'), {
-      target: { value: 'Guideline' },
-    })
-
-    expect(await screen.findByText('Page 1 of 2')).toBeTruthy()
-    expect(await screen.findByText('Guideline 1')).toBeTruthy()
-    expect(screen.queryByText('Guideline 7')).toBeNull()
-  })
-
-  it('hides pagination for a single page of chunks', async () => {
-    vi.mocked(api.guidelines).mockResolvedValue(makeChunks(6))
-    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
-    setup()
-
-    expect(await screen.findByText('Guideline 6')).toBeTruthy()
-    expect(screen.queryByText(/Page \d+ of \d+/)).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
-  })
-})
-
-describe('the CPG document pagination', () => {
-  it('pages documents independently of the curated corpus', async () => {
-    vi.mocked(api.guidelines).mockResolvedValue(makeChunks(7))
     vi.mocked(api.guidelineDocuments).mockResolvedValue(makeDocuments(7))
     setup()
 
-    await screen.findByText('CPG Document 1')
+    await screen.findByText('CPG Document 6')
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+    await screen.findByText('CPG Document 7')
 
-    const cpgSection = screen.getByRole('region', {
-      name: 'Malaysian Clinical Practice Guidelines',
+    fireEvent.change(screen.getByLabelText('Search the guideline corpus'), {
+      target: { value: 'Document' },
     })
-    const corpusSection = screen.getByRole('region', { name: 'Curated corpus pagination' })
 
-    for (let index = 1; index <= 6; index++) {
-      expect(screen.getByText(`CPG Document ${index}`)).toBeTruthy()
-    }
+    expect(await screen.findByText('Page 1 of 2')).toBeTruthy()
+    expect(await screen.findByText('CPG Document 1')).toBeTruthy()
     expect(screen.queryByText('CPG Document 7')).toBeNull()
-    expect(within(cpgSection).getByText('Page 1 of 2')).toBeTruthy()
+  })
 
-    fireEvent.click(within(cpgSection).getByRole('button', { name: 'Next page' }))
+  it('hides pagination for a single page of documents', async () => {
+    vi.mocked(api.guidelineDocuments).mockResolvedValue(makeDocuments(6))
+    setup()
 
-    expect(await within(cpgSection).findByText('CPG Document 7')).toBeTruthy()
-    expect(within(cpgSection).queryByText('CPG Document 1')).toBeNull()
-    expect(within(cpgSection).getByText('Page 2 of 2')).toBeTruthy()
-
-    expect(screen.getByText('Guideline 1')).toBeTruthy()
-    expect(screen.queryByText('Guideline 7')).toBeNull()
-
-    fireEvent.click(within(corpusSection).getByRole('button', { name: 'Next page' }))
-
-    expect(await screen.findByText('Guideline 7')).toBeTruthy()
-    expect(within(cpgSection).getByText('Page 2 of 2')).toBeTruthy()
+    expect(await screen.findByText('CPG Document 6')).toBeTruthy()
+    expect(screen.queryByText(/Page \d+ of \d+/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
   })
 
   it('does not show pagination when no documents match the search', async () => {
-    vi.mocked(api.guidelines).mockResolvedValue([CHUNK])
     vi.mocked(api.guidelineDocuments).mockResolvedValue([URTI_DOCUMENT])
     setup()
 
@@ -262,8 +203,8 @@ describe('the CPG document pagination', () => {
       target: { value: 'no-such-match' },
     })
 
-    expect(await screen.findByText('No CPG documents match that search.')).toBeTruthy()
-    expect(screen.queryByText('Page 1 of 1')).toBeNull()
+    expect(await screen.findByText(/Nothing in the library matches that./)).toBeTruthy()
+    expect(screen.queryByText(/Page \d+ of \d+/)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
   })
 
@@ -276,16 +217,12 @@ describe('the CPG document pagination', () => {
       writable: true,
     })
     try {
-      vi.mocked(api.guidelines).mockResolvedValue([CHUNK])
       vi.mocked(api.guidelineDocuments).mockResolvedValue(makeDocuments(7))
       setup()
 
       await screen.findByText('CPG Document 1')
 
-      const cpgSection = screen.getByRole('region', {
-        name: 'Malaysian Clinical Practice Guidelines',
-      })
-      fireEvent.click(within(cpgSection).getByRole('button', { name: 'Next page' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
 
       expect(scrollIntoViewSpy).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' })
       expect(scrollIntoViewSpy.mock.instances[0]).toBe(
