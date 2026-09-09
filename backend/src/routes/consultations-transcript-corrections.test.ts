@@ -1,6 +1,7 @@
 import type { Server } from 'node:http'
 import { TranscriptCorrectionsResponseSchema } from '@shared/types'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { getLLMClient } from '../lib/llm/index.js'
 
 /**
  * Route tests for the mishear proposal surface (#308).
@@ -38,9 +39,17 @@ const testEnv = vi.hoisted(() => ({
   SONIOX_RT_MODEL: 'stt-rt-v5',
   LOG_LEVEL: 'info',
   DEID_FAIL_CLOSED: true,
+  // Flipped per test. The route reads this per request rather than at import,
+  // so mutating it here is enough and no module needs re-importing.
+  TRANSCRIPT_CLEANUP: 'off' as 'on' | 'off',
 }))
 
 vi.mock('../config/env.js', () => ({ env: testEnv }))
+
+vi.mock('../lib/llm/index.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/llm/index.js')>()
+  return { ...actual, getLLMClient: vi.fn() }
+})
 
 const sessionState = vi.hoisted(() => ({ doctorId: 'doctor-1' as string | undefined }))
 
@@ -161,7 +170,43 @@ beforeEach(() => {
   db.auditWrites.length = 0
   db.consultationUpdates.length = 0
   upstream.mockReset()
+  testEnv.TRANSCRIPT_CLEANUP = 'off'
+  vi.mocked(getLLMClient).mockReset()
 })
+
+/*
+ * Every test below shares one rate-limit bucket, because they share a client
+ * address and the limiter is real rather than mocked. `transcriptCorrections`
+ * allows 20 a minute, so a suite that grows past that starts failing with 429s
+ * that look nothing like the assertion that broke. If that happens, reset the
+ * limiter here rather than raising a production bound to fit a test.
+ */
+
+/**
+ * The same consultation, with the recogniser's own doubt recorded on it (#309).
+ *
+ * `uncertain` is the gate: without it the constrained pass short-circuits before
+ * de-identifying anything, so a cleanup test has to supply one.
+ */
+const UNCERTAIN = {
+  source: 'asr_live',
+  turns: [
+    { speaker: 'doctor', text: 'Ada apa hari ini?' },
+    {
+      speaker: 'patient',
+      text: 'Saya ada teman dua hari.',
+      uncertain: [{ start: 9, end: 14 }],
+    },
+  ],
+}
+
+const stubClient = (generate: () => Promise<unknown>) => {
+  vi.mocked(getLLMClient).mockReturnValue({
+    provider: 'qwen',
+    model: 'test-model',
+    generate: vi.fn(generate),
+  } as never)
+}
 
 const post = async (id = 'consultation-1') =>
   realFetch(`${origin}/api/consultations/${id}/transcript-corrections`, { method: 'POST' })
@@ -176,7 +221,7 @@ describe('POST /api/consultations/:id/transcript-corrections', () => {
     const parsed = TranscriptCorrectionsResponseSchema.safeParse(await response.json())
     expect(parsed.success).toBe(true)
     expect(parsed.success && parsed.data.proposals).toEqual([
-      { turnIndex: 1, start: 9, original: 'teman', suggested: 'demam' },
+      { turnIndex: 1, start: 9, original: 'teman', suggested: 'demam', source: 'mishear' },
     ])
   })
 
@@ -199,7 +244,12 @@ describe('POST /api/consultations/:id/transcript-corrections', () => {
 
     expect(auditActions()).toEqual(['consultation.corrections_proposed'])
     const metadata = db.auditWrites[0]?.data.metadata
-    expect(metadata).toEqual({ proposalCount: 1 })
+    expect(metadata).toEqual({
+      proposalCount: 1,
+      modelProposalCount: 0,
+      droppedCount: 0,
+      cleanup: 'disabled',
+    })
     // `original` is patient speech and `suggested` is the table's reading of it.
     expect(JSON.stringify(db.auditWrites)).not.toMatch(/teman|demam/)
   })
@@ -234,8 +284,15 @@ describe('POST /api/consultations/:id/transcript-corrections', () => {
     const response = await post()
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ proposals: [] })
-    expect(db.auditWrites[0]?.data.metadata).toEqual({ proposalCount: 0 })
+    // `cleanup: 'disabled'` rather than a bare empty list. A pass that never
+    // ran and a pass that found nothing are different facts (#309).
+    expect(await response.json()).toEqual({ proposals: [], cleanup: 'disabled' })
+    expect(db.auditWrites[0]?.data.metadata).toEqual({
+      proposalCount: 0,
+      modelProposalCount: 0,
+      droppedCount: 0,
+      cleanup: 'disabled',
+    })
   })
 
   it('registers its own rate limiter ahead of the router', async () => {
@@ -249,5 +306,83 @@ describe('POST /api/consultations/:id/transcript-corrections', () => {
     expect(app).toContain(
       "app.post('/api/consultations/:id/transcript-corrections', transcriptCorrectionsRateLimit)",
     )
+  })
+})
+
+describe('the constrained cleanup pass on the same route (#309)', () => {
+  it('reaches no provider while it is switched off, even with uncertainty recorded', async () => {
+    db.transcript = structuredClone(UNCERTAIN)
+    stubClient(async () => ({ edits: [{ original: 'teman', replacement: 'demam' }] }))
+
+    const body = TranscriptCorrectionsResponseSchema.safeParse(await (await post()).json())
+
+    expect(vi.mocked(getLLMClient)).not.toHaveBeenCalled()
+    expect(body.success && body.data.cleanup).toBe('disabled')
+  })
+
+  it('adds a model proposal beside the measured one, each naming its source', async () => {
+    db.transcript = structuredClone(UNCERTAIN)
+    testEnv.TRANSCRIPT_CLEANUP = 'on'
+    // "ada" sits inside the uncertain span and is not a table pair, so it can
+    // only have come from the model.
+    stubClient(async () => ({ edits: [{ original: 'dua', replacement: 'due' }] }))
+    db.transcript = {
+      source: 'asr_live',
+      turns: [
+        { speaker: 'doctor', text: 'Ada apa hari ini?' },
+        {
+          speaker: 'patient',
+          text: 'Saya ada teman dua hari.',
+          uncertain: [
+            { start: 9, end: 14 },
+            { start: 15, end: 18 },
+          ],
+        },
+      ],
+    }
+
+    const response = await post()
+    const parsed = TranscriptCorrectionsResponseSchema.safeParse(await response.json())
+
+    expect(response.status).toBe(200)
+    expect(parsed.success).toBe(true)
+    const sources = parsed.success ? parsed.data.proposals.map((p) => p.source) : []
+    expect(sources).toEqual(['mishear', 'model'])
+    expect(parsed.success && parsed.data.cleanup).toBe('ok')
+  })
+
+  it('still serves the measured proposals with 200 when the provider fails', async () => {
+    // The acceptance criterion this route exists to keep: layer 2 shipped
+    // unconditionally and layer 3 falling over must not take it off the screen.
+    db.transcript = structuredClone(UNCERTAIN)
+    testEnv.TRANSCRIPT_CLEANUP = 'on'
+    stubClient(async () => {
+      throw new Error('provider exploded')
+    })
+
+    const response = await post()
+    const parsed = TranscriptCorrectionsResponseSchema.safeParse(await response.json())
+
+    expect(response.status).toBe(200)
+    expect(parsed.success && parsed.data.cleanup).toBe('failed')
+    expect(parsed.success && parsed.data.proposals).toEqual([
+      { turnIndex: 1, start: 9, original: 'teman', suggested: 'demam', source: 'mishear' },
+    ])
+  })
+
+  it('records the model counts and still never the words', async () => {
+    db.transcript = structuredClone(UNCERTAIN)
+    testEnv.TRANSCRIPT_CLEANUP = 'on'
+    stubClient(async () => ({ edits: [{ original: 'hari', replacement: 'har' }] }))
+
+    await post()
+
+    expect(db.auditWrites[0]?.data.metadata).toEqual({
+      proposalCount: 1,
+      modelProposalCount: 0,
+      droppedCount: 1,
+      cleanup: 'ok',
+    })
+    expect(JSON.stringify(db.auditWrites)).not.toMatch(/teman|demam|hari/)
   })
 })

@@ -264,19 +264,28 @@ export const prescriptionParseRateLimit = rateLimit({
  * Per-IP limiter for `POST /api/consultations/:id/transcript-corrections`, the
  * mishear proposal surface (#308).
  *
- * Spends no model budget and writes nothing: the route runs the same in-process
- * confusable table the red-flag matcher uses. The limiter exists because every
- * new route registers one, and because the matcher walks every token of every
- * turn, so an unbounded loop is CPU a caller did not pay for.
+ * **It now spends model budget, which it did not when it was written.** #309
+ * added the constrained cleanup pass behind `TRANSCRIPT_CLEANUP`, so this route
+ * can fan out to several concurrent provider calls per request. The old comment
+ * here said it spent nothing and sized the allowance accordingly; that reasoning
+ * is gone rather than merely stale, and the number moved with it.
  *
- * 30 a minute is sized from how the surface is actually used. The doctor opens
- * one transcript and asks once, then again after an edit; this is a review-time
- * action at human cadence, not a streaming one, so it needs nothing like the
- * live pane's allowance and a clinic behind one address still has ample room.
+ * 20 a minute matches `liveAnalysisRateLimit`, which is the closest thing in
+ * this file: a model-backed route at a cadence a person sets rather than a
+ * stream. It is deliberately not `analyzeRateLimit`'s 10, because that route
+ * always spends a model call and this one usually spends none: the cleanup pass
+ * is off by default, and even switched on the client keys its query on the
+ * stored transcript text, so a doctor opening one consultation asks once and
+ * asks again only after saving an edit.
+ *
+ * **The floor it must not drop below is the deterministic half.** Layer 2 ships
+ * unconditionally and is free, so this limiter refusing a request also refuses
+ * the measured mishear proposals. That is the cost of the two sharing a route,
+ * and it is why the number did not simply follow the paid egress down.
  */
 export const transcriptCorrectionsRateLimit = rateLimit({
   windowMs: 60_000,
-  limit: 30,
+  limit: 20,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator: clientKey,

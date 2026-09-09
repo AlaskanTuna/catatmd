@@ -84,6 +84,11 @@ const LLM_OPERATIONS = [
   // its response schema, because it reads one window rather than a whole
   // consultation and its cost shows up per cycle rather than once.
   'live_facts',
+  // The constrained correction pass over uncertain spans (issue #309). An enum
+  // member on the existing `operation` field, so no `LogFields` member is added
+  // and nothing new may be written: this widens which call sites can be named,
+  // never what may be said about them.
+  'transcript_cleanup',
 ] as const
 
 export type LlmOperation = (typeof LLM_OPERATIONS)[number]

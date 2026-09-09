@@ -19,6 +19,7 @@ import {
   MAX_LIVE_DELTA_CHARACTERS,
   MAX_LIVE_DELTA_TURNS,
   MAX_PRESCRIPTIONS,
+  MAX_TRANSCRIPT_TURNS,
   type MedicalRecordNote,
   MedicalRecordNoteSchema,
   NoteTemplateSchema,
@@ -27,6 +28,7 @@ import {
   type SoapNote,
   SoapNoteSchema,
   type Transcript,
+  type TranscriptCleanupStatus,
   TranscriptCorrectionsResponseSchema,
   TranscriptSchema,
   toSoapNote,
@@ -38,7 +40,12 @@ import { analyseLiveWindow, foldFacts, foldOperational } from '../analysis/live.
 import { deriveConsultationTitle } from '../analysis/title.js'
 import { audioRetentionEnabled, readAudio, storeAudio, sweepExpiredAudio } from '../audio/index.js'
 import { eraseConsultation } from '../audit/erasure.js'
-import { type AnalysisFailureReason, getAuditHistory, recordAuditEvent } from '../audit/index.js'
+import {
+  type AnalysisFailureReason,
+  getAuditHistory,
+  recordAuditEvent,
+  type TranscriptCleanupFailureReason,
+} from '../audit/index.js'
 import {
   type ClinicalProfile,
   DEFAULT_PROFILE_ID,
@@ -46,6 +53,7 @@ import {
   ProfileIdSchema,
 } from '../clinical-profiles/index.js'
 import { getActiveClinicalVersions } from '../clinical-versions/index.js'
+import { env } from '../config/env.js'
 import { DeidentificationError, deidentifyTranscript } from '../deid/index.js'
 import { deriveGaps, withGapProvenance } from '../gaps/index.js'
 import { assertOwnedConsultation, assertOwnedPatient } from '../lib/authz.js'
@@ -59,6 +67,7 @@ import { evaluateRedFlags, mergeRedFlags, proposeMishearCorrections } from '../r
 import { retrieveGuidelines } from '../retrieval/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
 import type { SuppressedSuggestionId } from '../suggestions/safety.js'
+import { proposeModelCorrections } from '../transcript-cleanup/index.js'
 
 export const consultationsRouter = Router()
 
@@ -861,6 +870,14 @@ consultationsRouter.post('/:id/prescriptions/parse', async (req, res) => {
  * trail did not record are never observable by a client. It carries a count and
  * never the words: `original` is patient speech and `suggested` is the table's
  * reading of it, and both are content.
+ *
+ * **The constrained model pass runs second and may only add (#309).** The
+ * measured table above is layer 2 and ships unconditionally; layer 3 reads only
+ * spans the recogniser itself doubted, cannot touch a span a fired rule flag
+ * matched, and is off unless `TRANSCRIPT_CLEANUP` says otherwise. Its failure is
+ * reported in `cleanup` and never takes the deterministic proposals off the
+ * screen, which is why this responds 200 with a possibly non-empty array even
+ * when the provider is down.
  */
 consultationsRouter.post('/:id/transcript-corrections', async (req, res) => {
   const actor = doctorId(req)
@@ -887,14 +904,71 @@ consultationsRouter.post('/:id/transcript-corrections', async (req, res) => {
 
   const proposals = proposeMishearCorrections(transcript.data)
 
+  /*
+   * The red-flag protection is deliberately **not** wired from here. It runs
+   * inside `transcript-cleanup/policy.ts`, over every trigger there is, chosen
+   * where a caller cannot reach it. This route briefly took a `profileId` from
+   * the request body and passed `profile.redFlagTriggers` down; that was a hole,
+   * because the profiles share one trigger out of twelve and nothing ties a
+   * consultation to the profile it was analysed under, so the body could shrink
+   * what the model was forbidden to touch.
+   */
+  let cleanup: TranscriptCleanupStatus = 'disabled'
+  let cleanupReason: TranscriptCleanupFailureReason | undefined
+  let modelProposalCount = 0
+  let droppedCount = 0
+
+  if (env.TRANSCRIPT_CLEANUP === 'on') {
+    try {
+      const outcome = await proposeModelCorrections(transcript.data)
+      cleanup = outcome.status
+      cleanupReason = outcome.reason
+      modelProposalCount = outcome.proposals.length
+      droppedCount = outcome.dropped
+      proposals.push(...outcome.proposals)
+    } catch (error) {
+      /*
+       * The egress guard firing is the one alarm the log taxonomy exists to
+       * surface, so it is named in the audit row as well as classed in the log.
+       * A row that read identically to a provider timeout would not surface it
+       * at all. The deterministic proposals still ship: they never left the API,
+       * and taking them away would punish the doctor for an incident on a
+       * different layer.
+       */
+      const deid = error instanceof DeidentificationError
+      cleanup = 'failed'
+      cleanupReason = deid ? 'deid_failed' : 'llm_failed'
+      logger.warn('transcript cleanup failed', {
+        consultationId: consultation.id,
+        operation: 'transcript_cleanup',
+        errorClass: deid ? 'deidentification_error' : 'internal_error',
+        errorName: error instanceof Error ? error.constructor.name : 'Error',
+      })
+    }
+  }
+
+  /*
+   * Capped before the audit row rather than at `res.json`. The response schema
+   * bounds `proposals`, and the model half can now push a long transcript's
+   * count toward it, so parsing after the write could throw a 500 behind a row
+   * that already claimed success.
+   */
+  const served = proposals.slice(0, MAX_TRANSCRIPT_TURNS)
+
   await recordAuditEvent({
     action: 'consultation.corrections_proposed',
     actorId: actor,
     consultationId: consultation.id,
-    metadata: { proposalCount: proposals.length },
+    metadata: {
+      proposalCount: served.length,
+      modelProposalCount,
+      droppedCount,
+      cleanup,
+      ...(cleanupReason === undefined ? {} : { cleanupReason }),
+    },
   })
 
-  res.json(TranscriptCorrectionsResponseSchema.parse({ proposals }))
+  res.json(TranscriptCorrectionsResponseSchema.parse({ proposals: served, cleanup }))
 })
 
 const LiveFlagsBodySchema = z.object({
