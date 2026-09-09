@@ -1,4 +1,4 @@
-import type { ConsultationDetail } from '@shared/types'
+import type { ConsultationDetail, GuidelineChunk } from '@shared/types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { StreamChunk, StreamRequest } from '../lib/llm/types.js'
 import { hasPhantomClickInstruction } from './phantom-click.js'
@@ -33,6 +33,19 @@ const { runCopilotTurn } = await import('./index.js')
 
 /** Synthetic. The NRIC is structurally valid but invented, per AGENTS.md. */
 const PATIENT = 'Siti Nurhaliza'
+
+const RETRIEVED: GuidelineChunk = {
+  id: 'retrieved-cpg-p3',
+  title: 'Clinical Practice Guideline, p. 3: Antibiotics',
+  publisher: 'MOH',
+  year: 2024,
+  url: 'https://example.com/cpg',
+  summary: 'Summary text.',
+  sourceLicence: 'MOH-ARR',
+  verbatimAllowed: true,
+  documentId: 'doc-1',
+  page: 3,
+}
 
 function consultation(): ConsultationDetail {
   return {
@@ -285,30 +298,29 @@ describe('a signed note', () => {
   })
 })
 
-describe('copilot corpus scoping', () => {
-  it('uses the persisted UTI profile corpus rather than the global corpus', async () => {
+function withRetrieved(): ConsultationDetail {
+  return {
+    ...consultation(),
+    analysis: { ...consultation().analysis, retrievedGuidelines: [RETRIEVED] },
+  } as unknown as ConsultationDetail
+}
+
+describe('copilot citable set', () => {
+  it('serialises the consultation retrievedGuidelines into the prompt', async () => {
     chunks = [{ type: 'text', text: 'The plan mentions follow-up.' }]
 
-    const detail = consultation()
-    const baseAnalysis = detail.analysis
-    detail.analysis = {
-      ...baseAnalysis,
-      profileId: 'adult-acute-uncomplicated-uti',
-    } as ConsultationDetail['analysis']
+    await drain('What guidelines apply?', withRetrieved())
 
-    await drain('What guidelines apply?', detail)
-
-    expect(captured?.system).toContain('moh-nag-2024-acute-uti-scope')
-    expect(captured?.system).not.toContain('abdullah-2024-safety-netting')
+    expect(captured?.system).toContain(RETRIEVED.id)
   })
 
-  it('falls back to the default URTI corpus for a legacy analysis without a profile', async () => {
+  it('cites nothing when there are no retrievedGuidelines', async () => {
     chunks = [{ type: 'text', text: 'The plan mentions follow-up.' }]
 
     await drain('What guidelines apply?')
 
-    expect(captured?.system).toContain('abdullah-2024-safety-netting')
-    expect(captured?.system).not.toContain('moh-nag-2024-acute-uti-scope')
+    expect(captured?.system).not.toContain(RETRIEVED.id)
+    expect(captured?.system).toMatch(/no citable guidance|do not cite any guideline id/i)
   })
 })
 

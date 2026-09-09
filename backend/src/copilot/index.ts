@@ -1,9 +1,4 @@
 import type { ConsultationDetail, CopilotProposal, CopilotTurn } from '@shared/types'
-import {
-  DEFAULT_PROFILE_ID,
-  getClinicalProfile,
-  ProfileIdSchema,
-} from '../clinical-profiles/index.js'
 import { deidentify } from '../deid/index.js'
 import type { TokenVault } from '../deid/types.js'
 import { RequestTokenVault } from '../deid/vault.js'
@@ -49,14 +44,6 @@ export async function* runCopilotTurn(options: {
    */
   const vault = new RequestTokenVault()
   const digestResult = deidentify(renderDigest(consultation), vault)
-  const profileId = ProfileIdSchema.safeParse(
-    consultation.analysis &&
-      typeof consultation.analysis === 'object' &&
-      'profileId' in consultation.analysis
-      ? (consultation.analysis as Record<string, unknown>).profileId
-      : undefined,
-  ).data
-  const profile = getClinicalProfile(profileId ?? DEFAULT_PROFILE_ID)
 
   /*
    * A signed note gets a copilot with no tools at all.
@@ -71,7 +58,9 @@ export async function* runCopilotTurn(options: {
   const signed = consultation.status === 'approved'
 
   const system = deidentify(
-    buildCopilotSystemPrompt(digestResult.text, profile.guidelineCorpus, { signed }),
+    buildCopilotSystemPrompt(digestResult.text, consultation.analysis?.retrievedGuidelines ?? [], {
+      signed,
+    }),
     vault,
   ).text
 

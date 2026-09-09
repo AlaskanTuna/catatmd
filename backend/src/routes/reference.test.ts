@@ -33,6 +33,13 @@ beforeEach(() => {
   findMany.mockReset()
 })
 
+describe('GET /api/guidelines', () => {
+  it('is not exposed', async () => {
+    const res = await fetch(`${origin}/api/guidelines`)
+    expect(res.status).toBe(404)
+  })
+})
+
 describe('GET /api/guidelines/documents', () => {
   it('returns parsed GuidelineDocument rows ordered by title', async () => {
     findMany.mockResolvedValueOnce([
