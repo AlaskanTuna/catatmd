@@ -1337,6 +1337,22 @@ The `migrations` job in `.github/workflows/ci.yml` reads the migrations director
 
 It also deliberately holds **no production credential**. A check that could verify the database itself would need `DIRECT_URL` in Actions, and putting a production database credential in CI is a decision for an owner rather than a convenience for a workflow. That option stays open and unchosen.
 
+**Warning on the PR was not enough, because the reminder died at the merge** (issue #341). A step summary and inline annotations hang off the pull request, so they stop being read at the moment the apply first becomes possible. PR #320 then merged with `prescriptions` absent from production, and because `assertOwnedConsultation` reads a row with no `select`, Prisma emitted the missing column on every consultation query: the detail, history, `PATCH`, approve, erase and prescription-parse routes all returned 500 together, behind a green deploy.
+
+The `migration-reminder` job closes that gap from the other side. On a push to `main` that adds a migration, it opens an issue titled `db: apply <migration> to production`, labelled `priority:p0`, skipping any title already open so a re-run cannot duplicate one. An issue is the forcing function rather than a louder warning because it persists and carries an assignee.
+
+It is assigned to the **author of the merge**, who knows what the migration needs. That author may not hold `DIRECT_URL`, so the body tells them to reassign rather than close, and two cases fall back to the platform owner: a commit whose author is not a GitHub user, and an author who is not an assignable collaborator. A reminder assigned to nobody is the state the job exists to prevent.
+
+Three further properties are load-bearing and should not be traded away:
+
+| Property                                                   | Why                                                                             |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Needs only `GITHUB_TOKEN`                                  | Keeps the credential decision above unchosen rather than quietly making it      |
+| Nothing depends on it (`deploy` needs `[verify, changes]`) | A missing reminder must never be able to hold up a ship                         |
+| Fails the job when the issue cannot be opened              | A reminder lost in silence is the exact defect being fixed, so it must be noisy |
+
+It still applies nothing. The manual step remains the design; this only makes forgetting it loud.
+
 |                             |                                                 |
 | --------------------------- | ----------------------------------------------- |
 | `bun run db:status`         | What is pending against the configured database |
