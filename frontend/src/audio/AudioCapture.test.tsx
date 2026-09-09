@@ -1,12 +1,8 @@
 import { type DraftTurn, MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  AudioCapture,
-  LABEL_TIMEOUT_MS,
-  STALL_TIMEOUT_MS,
-  UPLOAD_TIMEOUT_MS,
-} from './AudioCapture.js'
+import { AudioCapture, LABEL_TIMEOUT_MS, UPLOAD_TIMEOUT_MS } from './AudioCapture.js'
+import { STALL_TIMEOUT_MS } from './dictation.js'
 import type { WorkerResponse } from './protocol.js'
 
 /**

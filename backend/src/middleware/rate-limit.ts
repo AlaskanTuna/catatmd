@@ -234,6 +234,61 @@ export const liveFlagsRateLimit = rateLimit({
 })
 
 /**
+ * Per-IP limiter for `POST /api/consultations/:id/prescriptions/parse` (#312).
+ *
+ * Runs no model and writes nothing: it is the deterministic sig parser and
+ * lexicon matcher from #311, in process. The limiter exists because every new
+ * route registers one, and because the matcher walks an n-gram window over the
+ * dictation against the whole lexicon, so an unbounded loop is CPU a caller
+ * did not pay for.
+ *
+ * 30 a minute matches the corrections limiter, and for the same reason: the
+ * doctor dictates one prescription, reads the parse, and dictates the next.
+ * That is human cadence, not a stream.
+ */
+export const prescriptionParseRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: {
+      code: 'rate_limited',
+      message: 'Too many prescription checks. Please retry shortly.',
+    },
+  },
+})
+
+/**
+ * Per-IP limiter for `POST /api/consultations/:id/transcript-corrections`, the
+ * mishear proposal surface (#308).
+ *
+ * Spends no model budget and writes nothing: the route runs the same in-process
+ * confusable table the red-flag matcher uses. The limiter exists because every
+ * new route registers one, and because the matcher walks every token of every
+ * turn, so an unbounded loop is CPU a caller did not pay for.
+ *
+ * 30 a minute is sized from how the surface is actually used. The doctor opens
+ * one transcript and asks once, then again after an edit; this is a review-time
+ * action at human cadence, not a streaming one, so it needs nothing like the
+ * live pane's allowance and a clinic behind one address still has ample room.
+ */
+export const transcriptCorrectionsRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: {
+      code: 'rate_limited',
+      message: 'Too many correction checks. Please retry shortly.',
+    },
+  },
+})
+
+/**
  * Per-IP limiter for `POST /api/consultations/:id/live-analysis`, the
  * model-backed half of the live panes (#219).
  *

@@ -6,13 +6,14 @@ import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
 import { InfoTip } from '../ui/InfoTip.js'
 import { ConsentGate } from './ConsentGate.js'
-import { InputMeter } from './InputMeter.js'
 import {
-  TARGET_SAMPLE_RATE,
-  type TranscriptSegment,
-  type WorkerRequest,
-  type WorkerResponse,
-} from './protocol.js'
+  belowHardwareFloor,
+  DICTATION_AUDIO_CONSTRAINTS,
+  STALL_TIMEOUT_MS,
+  toMono16k,
+} from './dictation.js'
+import { InputMeter } from './InputMeter.js'
+import type { TranscriptSegment, WorkerRequest, WorkerResponse } from './protocol.js'
 
 /**
  * Record a consultation and transcribe it on the device (issue #2).
@@ -45,59 +46,6 @@ import {
  * hosted, and an on-device failure degrades to typing or pasting, never to the
  * cloud (docs/trd.md section 20).
  */
-
-/**
- * `whisper-small` on WASM against a browser on a thin machine is a plausible
- * out-of-memory kill in the middle of a consultation, which is a far worse
- * failure than not offering the feature (docs/prd.md §12).
- *
- * So the floor is a default, not a lock: a doctor who knows their machine can
- * proceed. Both signals are advisory. `deviceMemory` is coarse and Chromium
- * only, and `hardwareConcurrency` is missing on some browsers, so an unknown
- * value is treated as capable rather than blocked. The check is there to stop
- * someone stumbling into a crash, not to police hardware.
- */
-function belowHardwareFloor() {
-  const nav = navigator as Navigator & { deviceMemory?: number }
-  const cores = navigator.hardwareConcurrency
-  const memory = nav.deviceMemory
-  return (cores !== undefined && cores < 4) || (memory !== undefined && memory < 8)
-}
-
-/**
- * Whisper wants 16 kHz mono. `OfflineAudioContext` does the resample and the
- * channel downmix in one pass, which is both less code and more correct than
- * decimating by hand.
- */
-async function toMono16k(blob: Blob): Promise<Float32Array> {
-  const bytes = await blob.arrayBuffer()
-  const decoder = new AudioContext()
-  // Closed in a finally: browsers cap live AudioContexts, so one leaked by a
-  // throwing decode would cost a later recording its decoder.
-  const decoded = await decoder.decodeAudioData(bytes).finally(() => void decoder.close())
-
-  const frames = Math.ceil(decoded.duration * TARGET_SAMPLE_RATE)
-  const offline = new OfflineAudioContext(1, frames, TARGET_SAMPLE_RATE)
-  const source = offline.createBufferSource()
-  source.buffer = decoded
-  source.connect(offline.destination)
-  source.start()
-  const rendered = await offline.startRendering()
-  return rendered.getChannelData(0)
-}
-
-/**
- * The silence budget: how long the record path may go without a worker
- * message before the run is declared wedged and terminated (issue #139).
- *
- * A budget on silence rather than on the whole job, because a
- * consultation-length recording legitimately transcribes for many minutes
- * (docs/trd.md section 20.1 measures a real-time factor of 1.5 to 3.0) and a
- * total deadline would abort exactly the recordings most expensive to lose.
- * The floor is set by ONNX session creation, which blocks the worker thread
- * on a roughly 240 MB decoder and is legitimately silent throughout.
- */
-export const STALL_TIMEOUT_MS = 180_000
 
 /**
  * How long a hosted upload may run before it is abandoned (issue #155).
@@ -694,24 +642,10 @@ export function AudioCapture({
     // microphone would otherwise offer Try Again on the previous recording.
     setRetryBlob(null)
     try {
-      /*
-       * Dictation constraints, not the defaults: the browser's voice-call DSP
-       * attenuates exactly the low-energy consonant bursts that separate b/p
-       * and d/t, the devoicing family docs/trd.md §20.3 measured on both ASR
-       * arms ("patut" for "batuk"), and echo cancellation has no far end to
-       * cancel here. Gain control stays on because two speakers sit at
-       * different distances from one microphone, and a quiet track costs more
-       * than gain pumping. Values are ideals per the mediacapture spec, never
-       * OverconstrainedError; track.getSettings() reports what was actually
-       * applied, which every TRD §20 measurement must record.
-       */
+      // Dictation constraints rather than the browser's voice-call defaults,
+      // for the reasons `./dictation.js` records against them.
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: true,
-          channelCount: 1,
-        },
+        audio: DICTATION_AUDIO_CONSTRAINTS,
       })
       const media = new MediaRecorder(stream)
       chunks.current = []

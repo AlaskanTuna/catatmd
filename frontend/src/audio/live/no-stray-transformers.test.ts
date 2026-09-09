@@ -4,8 +4,8 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Ambient capture must never pull the speech-inference library into the main
- * bundle (#219).
+ * No surface that drives the speech worker may pull the inference library into
+ * the main bundle (#219, widened to `review/` by #313).
  *
  * `protocol.ts` records the measurement: importing a *value* from the worker's
  * module graph took the main chunk from 458 kB to 982 kB, which is why
@@ -17,6 +17,13 @@ import { describe, expect, it } from 'vitest'
  * the shipped labelling path rather than reimplementing it, which is the right
  * call and also the first edge along which the library could arrive. So the
  * rule gets a test.
+ *
+ * **`review/` is an entry directory for the same reason, since #313.**
+ * `PrescriptionBlock.tsx` drives the same worker from the review page, so it
+ * sits on the same edge; and unlike ambient capture it is on a route every
+ * doctor opens for every consultation, whether or not they ever dictate. The
+ * guard living under `audio/live/` now understates what it covers, which is
+ * cheaper than moving a file with history for a one-line scope change.
  *
  * Two scoping decisions, both deliberate:
  *
@@ -30,6 +37,7 @@ import { describe, expect, it } from 'vitest'
  */
 const SRC = join(process.cwd(), 'src')
 const LIVE = join(SRC, 'audio', 'live')
+const REVIEW = join(SRC, 'review')
 const REPO_ROOT = join(process.cwd(), '..')
 
 const FORBIDDEN = '@huggingface/transformers'
@@ -38,16 +46,21 @@ const EXTENSIONS = ['.ts', '.tsx']
 
 const asPosix = (absolute: string) => relative(REPO_ROOT, absolute).replaceAll('\\', '/')
 
-/** Entry points: every non-test module under `audio/live/`. */
-function liveModules(): string[] {
-  return readdirSync(LIVE, { withFileTypes: true })
+/** Every non-test module directly under one directory. */
+function modulesIn(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true })
     .filter(
       (entry) =>
         entry.isFile() &&
         EXTENSIONS.includes(extname(entry.name)) &&
         !entry.name.includes('.test.'),
     )
-    .map((entry) => join(LIVE, entry.name))
+    .map((entry) => join(directory, entry.name))
+}
+
+/** Entry points: the two directories that drive the speech worker. */
+function entryModules(): string[] {
+  return [...modulesIn(LIVE), ...modulesIn(REVIEW)]
 }
 
 /** Resolves a relative specifier the way the bundler does, `.js` to `.ts` included. */
@@ -146,35 +159,40 @@ function reachable(entries: readonly string[]): { visited: Set<string>; offender
   return { visited, offenders }
 }
 
-describe('ambient capture never reaches the inference library (issue #219)', () => {
+describe('no worker-driving surface reaches the inference library (issues #219, #313)', () => {
   it('finds modules to scan, so an empty pass means something', () => {
-    const entries = liveModules()
+    const entries = entryModules().map(asPosix)
     expect(
       entries.length,
-      'scanned almost nothing under audio/live; the walk is broken or the tree moved',
+      'scanned almost nothing; the walk is broken or the tree moved',
     ).toBeGreaterThan(3)
 
-    // The module that made this guard necessary must actually be an entry.
-    expect(entries.map(asPosix)).toContain('frontend/src/audio/live/live-fold.ts')
+    // The two modules that made this guard necessary, one per directory. Named
+    // so a refactor cannot quietly drop a directory and still pass.
+    expect(entries).toContain('frontend/src/audio/live/live-fold.ts')
+    expect(entries).toContain('frontend/src/review/PrescriptionBlock.tsx')
   })
 
   it('follows imports past the first hop', () => {
-    const { visited } = reachable(liveModules())
+    const { visited } = reachable(entryModules())
     const seen = [...visited].map(asPosix)
 
     // `live-fold.ts` imports `../draft-turns.js`, so a one-hop check would miss
     // anything that module goes on to reach.
     expect(seen).toContain('frontend/src/audio/draft-turns.ts')
+    // The same edge on the review side: `PrescriptionBlock.tsx` imports the
+    // resampler and the hardware floor out of `audio/`.
+    expect(seen).toContain('frontend/src/audio/dictation.ts')
   })
 
   it('reaches no path into the inference library', () => {
-    const { offenders } = reachable(liveModules())
+    const { offenders } = reachable(entryModules())
 
     expect(
       offenders,
-      'a module under audio/live can now reach @huggingface/transformers by a ' +
-        'value import. protocol.ts measured that at 458 kB to 982 kB on the main ' +
-        'chunk, and ambient capture is the surface a doctor waits on.',
+      'a module under audio/live or review can now reach @huggingface/transformers ' +
+        'by a value import. protocol.ts measured that at 458 kB to 982 kB on the ' +
+        'main chunk, and both are surfaces a doctor waits on.',
     ).toEqual([])
   })
 

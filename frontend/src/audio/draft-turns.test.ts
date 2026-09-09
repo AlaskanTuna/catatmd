@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  carryUncertain,
   type DraftLine,
   draftToTurns,
+  type MarkedSegment,
   proseToDraft,
   segmentsToDraft,
   timeDraftLines,
@@ -359,5 +361,80 @@ describe('segment end times', () => {
     expect(turns.every((t) => t.endSeconds === undefined || t.offsetSeconds !== undefined)).toBe(
       true,
     )
+  })
+})
+
+describe('carryUncertain', () => {
+  const line = (id: string, text: string): DraftLine => ({ id, speaker: 'doctor', text })
+
+  const marked = (segments: MarkedSegment[], lines: DraftLine[]) =>
+    carryUncertain(lines, segments).map((drafted) =>
+      (drafted.uncertain ?? []).map((range) => drafted.text.slice(range.start, range.end)),
+    )
+
+  /** "Saya teman dua hari" with "teman" doubted, then a clean second segment. */
+  const segments: MarkedSegment[] = [
+    { start: 0, end: 2, text: 'Saya teman dua hari', uncertain: [{ start: 5, end: 10 }] },
+    { start: 2, end: 5, text: 'Demam tu tinggi tak?' },
+  ]
+
+  it('re-bases a range onto the line built from that segment', () => {
+    const lines = [line('a', 'Saya teman dua hari'), line('b', 'Demam tu tinggi tak?')]
+    expect(marked(segments, lines)).toEqual([['teman'], []])
+  })
+
+  it('follows the words when one segment is split across two lines', () => {
+    expect(marked(segments, [line('a', 'Saya teman'), line('b', 'dua hari')])).toEqual([
+      ['teman'],
+      [],
+    ])
+  })
+
+  it('follows the words when two segments are merged into one line', () => {
+    expect(marked(segments, [line('a', 'Saya teman dua hari Demam tu tinggi tak?')])).toEqual([
+      ['teman'],
+    ])
+  })
+
+  it('takes the occurrence after the previous line, not the first in the consultation', () => {
+    // A repeated word is what a plain search gets wrong. The cursor only moves
+    // forward, so the second line's "demam" is the second one spoken.
+    const repeated: MarkedSegment[] = [
+      { start: 0, end: 2, text: 'demam ya' },
+      { start: 2, end: 4, text: 'demam lagi', uncertain: [{ start: 0, end: 5 }] },
+    ]
+    expect(marked(repeated, [line('a', 'demam ya'), line('b', 'demam lagi')])).toEqual([
+      [],
+      ['demam'],
+    ])
+  })
+
+  it('gives a line it cannot locate nothing at all', () => {
+    expect(marked(segments, [line('a', 'words that were never spoken')])).toEqual([[]])
+  })
+
+  it('drops a segment whose text is not normalised rather than shifting its ranges', () => {
+    // The offsets describe the un-normalised string, so applying them to the
+    // collapsed one would underline the neighbouring word.
+    const untidy: MarkedSegment[] = [
+      { start: 0, end: 2, text: ' Saya  teman', uncertain: [{ start: 7, end: 12 }] },
+    ]
+    expect(marked(untidy, [line('a', 'Saya teman')])).toEqual([[]])
+  })
+
+  it('says nothing when no segment carried a range', () => {
+    const plain: MarkedSegment[] = [{ start: 0, end: 2, text: 'Saya teman dua hari' }]
+    expect(carryUncertain([line('a', 'Saya teman dua hari')], plain)[0]?.uncertain).toBeUndefined()
+  })
+
+  it('leaves the lines alone when there are no segments to align against', () => {
+    // The hosted relay arrives here with none, exactly as it does at
+    // `timeDraftLines`.
+    expect(carryUncertain([line('a', 'Saya teman')], [])).toEqual([line('a', 'Saya teman')])
+  })
+
+  it('carries the ranges onto the turn, so they survive draftToTurns', () => {
+    const turns = draftToTurns(carryUncertain([line('a', 'Saya teman dua hari')], segments))
+    expect(turns[0]?.uncertain).toEqual([{ start: 5, end: 10 }])
   })
 })

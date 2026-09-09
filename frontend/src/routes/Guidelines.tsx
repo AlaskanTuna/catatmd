@@ -1,11 +1,12 @@
-import type { GuidelineChunk } from '@shared/types'
+import type { GuidelineChunk, GuidelineDocument } from '@shared/types'
 import { useQuery } from '@tanstack/react-query'
 import { ExternalLink, Search, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { InfoTip } from '../ui/InfoTip.js'
 import { PageHeader } from '../ui/PageHeader.js'
+import { clampPage, Pagination, paginate } from '../ui/Pagination.js'
 import { Select } from '../ui/Select.js'
 
 /**
@@ -35,6 +36,8 @@ function groupByPublisher(guidelines: GuidelineChunk[]) {
 }
 
 const ALL_PUBLISHERS = 'all'
+const CORPUS_PAGE_SIZE = 12
+const DOCUMENT_PAGE_SIZE = 15
 
 /*
  * The ID is searchable alongside the prose, and that is the point rather than a
@@ -53,12 +56,37 @@ function matches(guideline: GuidelineChunk, query: string) {
     .every((term) => haystack.includes(term))
 }
 
+function matchesDocument(document: GuidelineDocument, query: string) {
+  const haystack = `${document.title} ${document.publisher}`.toLowerCase()
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((term) => haystack.includes(term))
+}
+
+const formatIngested = (value: Date) =>
+  new Intl.DateTimeFormat('en-MY', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(value)
+
 export function Guidelines() {
   const guidelines = useQuery({ queryKey: ['guidelines'], queryFn: api.guidelines })
+  const documents = useQuery({
+    queryKey: ['guideline-documents'],
+    queryFn: api.guidelineDocuments,
+  })
   const [query, setQuery] = useState('')
   const [publisher, setPublisher] = useState(ALL_PUBLISHERS)
+  const [corpusPage, setCorpusPage] = useState(1)
+  const [documentPage, setDocumentPage] = useState(1)
+  const corpusTopRef = useRef<HTMLParagraphElement | null>(null)
+  const cpgHeadingRef = useRef<HTMLHeadingElement | null>(null)
 
   const all = useMemo(() => guidelines.data ?? [], [guidelines.data])
+  const allDocuments = useMemo(() => documents.data ?? [], [documents.data])
 
   const publishers = useMemo(
     () => [
@@ -80,8 +108,43 @@ export function Guidelines() {
     [all, publisher, query],
   )
 
-  const groups = groupByPublisher(filtered)
   const filtering = query.trim() !== '' || publisher !== ALL_PUBLISHERS
+
+  const handleQueryChange = (value: string) => {
+    setQuery(value)
+    setCorpusPage(1)
+    setDocumentPage(1)
+  }
+
+  const handlePublisherChange = (value: string) => {
+    setPublisher(value)
+    setCorpusPage(1)
+  }
+
+  const corpusPageCount = useMemo(() => Math.ceil(filtered.length / CORPUS_PAGE_SIZE), [filtered])
+  const currentCorpusPage = clampPage(corpusPage, corpusPageCount)
+  const pagedCorpus = useMemo(
+    () => paginate(filtered, currentCorpusPage, CORPUS_PAGE_SIZE),
+    [filtered, currentCorpusPage],
+  )
+  const pagedGroups = useMemo(() => groupByPublisher(pagedCorpus), [pagedCorpus])
+
+  /* The one search box covers both lists: a reader checking where a cited
+     span could have come from is asking the same question of each. */
+  const filteredDocuments = useMemo(
+    () => allDocuments.filter((document) => matchesDocument(document, query)),
+    [allDocuments, query],
+  )
+
+  const documentPageCount = useMemo(
+    () => Math.ceil(filteredDocuments.length / DOCUMENT_PAGE_SIZE),
+    [filteredDocuments],
+  )
+  const currentDocumentPage = clampPage(documentPage, documentPageCount)
+  const pagedDocuments = useMemo(
+    () => paginate(filteredDocuments, currentDocumentPage, DOCUMENT_PAGE_SIZE),
+    [filteredDocuments, currentDocumentPage],
+  )
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -143,7 +206,7 @@ export function Guidelines() {
               <input
                 type="search"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => handleQueryChange(event.target.value)}
                 placeholder="Search by title, summary or guideline ID"
                 aria-label="Search the guideline corpus"
                 className="h-11 w-full rounded-control border border-line bg-surface pr-10 pl-10 text-sm text-ink transition-colors duration-150 hover:border-accent focus:border-accent"
@@ -151,7 +214,7 @@ export function Guidelines() {
               {query && (
                 <button
                   type="button"
-                  onClick={() => setQuery('')}
+                  onClick={() => handleQueryChange('')}
                   aria-label="Clear search"
                   className="absolute top-1/2 right-2 flex size-7 -translate-y-1/2 items-center justify-center rounded-control text-ink-muted transition-colors duration-150 hover:bg-sunken hover:text-ink"
                 >
@@ -164,7 +227,7 @@ export function Guidelines() {
               label="Filter by publisher"
               value={publisher}
               options={publishers}
-              onChange={setPublisher}
+              onChange={handlePublisherChange}
               className="sm:w-56"
             />
           </div>
@@ -172,7 +235,7 @@ export function Guidelines() {
           {/* Announced politely rather than silently re-rendered: a filter that
               changes the list under a screen-reader user without saying so
               leaves them reading a page that is no longer the one they heard. */}
-          <p aria-live="polite" className="mt-3 text-sm text-ink-muted">
+          <p ref={corpusTopRef} aria-live="polite" className="mt-3 text-sm text-ink-muted">
             {filtering
               ? `Showing ${filtered.length} of ${all.length} entries`
               : `${all.length} entries`}
@@ -188,7 +251,7 @@ export function Guidelines() {
             </Card>
           )}
 
-          {groups.map(([groupPublisher, entries]) => (
+          {pagedGroups.map(([groupPublisher, entries]) => (
             <section key={groupPublisher} className="mt-8">
               <h2 className="text-sm font-semibold text-ink-muted">{groupPublisher}</h2>
               <div className="mt-3 flex flex-col gap-2">
@@ -225,8 +288,91 @@ export function Guidelines() {
               </div>
             </section>
           ))}
+
+          {filtered.length > 0 && (
+            <section aria-labelledby="corpus-pagination-heading" className="mt-6">
+              <h2 id="corpus-pagination-heading" className="sr-only">
+                Curated corpus pagination
+              </h2>
+              <Pagination
+                page={currentCorpusPage}
+                pageCount={corpusPageCount}
+                onPageChange={setCorpusPage}
+                scrollTo={corpusTopRef}
+              />
+            </section>
+          )}
         </>
       )}
+
+      <section className="mt-10" aria-labelledby="cpg-documents-heading">
+        <h2 id="cpg-documents-heading" ref={cpgHeadingRef} className="text-base font-semibold">
+          Malaysian Clinical Practice Guidelines
+        </h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          Retrieved per consultation from the ingested CPG library; the assistant may cite a span
+          only when it was retrieved for that consultation.
+        </p>
+
+        {documents.isPending && (
+          <div className="mt-4 flex flex-col gap-2">
+            {[0, 1].map((key) => (
+              <Skeleton key={key} className="h-20 w-full rounded-card" />
+            ))}
+          </div>
+        )}
+
+        {documents.data && allDocuments.length === 0 && (
+          <p className="mt-4 text-sm text-ink-muted">No CPG documents ingested yet.</p>
+        )}
+
+        {documents.data && allDocuments.length > 0 && filteredDocuments.length === 0 && (
+          <p className="mt-4 text-sm text-ink-muted">No CPG documents match that search.</p>
+        )}
+
+        {filteredDocuments.length > 0 && (
+          <div className="mt-4 flex flex-col gap-2">
+            {pagedDocuments.map((document) => (
+              <Card key={document.id} className="p-5">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <h3 className="font-semibold leading-snug">{document.title}</h3>
+                  <span className="text-sm text-ink-muted">{document.year}</span>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <span className="text-2xs text-ink-muted">{document.publisher}</span>
+                  <span className="text-2xs text-ink-muted">{document.pageCount} pages</span>
+                  <span className="text-2xs text-ink-muted">{document.chunkCount} chunks</span>
+                  <span className="text-2xs text-ink-muted">
+                    Ingested {formatIngested(document.ingestedAt)}
+                  </span>
+                  <a
+                    href={document.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-accent transition-colors hover:text-accent-hover"
+                  >
+                    Source
+                    <ExternalLink aria-hidden className="size-3.5" />
+                  </a>
+                </div>
+              </Card>
+            ))}
+
+            <nav aria-labelledby="cpg-documents-pagination-heading">
+              <h3 id="cpg-documents-pagination-heading" className="sr-only">
+                CPG documents pagination
+              </h3>
+              <Pagination
+                page={currentDocumentPage}
+                pageCount={documentPageCount}
+                onPageChange={setDocumentPage}
+                scrollTo={cpgHeadingRef}
+              />
+            </nav>
+          </div>
+        )}
+      </section>
     </div>
   )
 }

@@ -85,16 +85,16 @@ It does double duty, and both jobs are load-bearing enough that neither would ju
 
 ### Clinical Note & Analysis
 
-| Schema                       | Fields                                                                                                                                                          |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SoapNoteSchema`             | `subjective`, `objective`, `assessment`, `plan` — all `string`                                                                                                  |
-| `NoteTemplateSchema`         | `enum(['soap','malaysian'])`                                                                                                                                    |
-| `MedicalRecordNoteSchema`    | `presentingComplaint`, `historyOfPresentingComplaint`, `pastMedicalHistory`, `socialHistory`, `familyHistory`, `objective`, `assessment`, `plan` — all `string` |
-| `InformationGapSchema`       | `id: string`, `question: string`, `rationale: string`, `priority: enum(['high','medium','low'])`, `source?: GapSource`                                          |
-| `RedFlagSchema`              | `id: string`, `label: string`, `severity: enum(['emergency','urgent','advisory'])`, `evidence: string`, `source: enum(['rule','model'])`, `ruleId?: string`     |
-| `CitationSchema`             | `guidelineId: string`, `quote?: string`                                                                                                                         |
-| `ClinicalSuggestionSchema`   | `id: string`, `text: string`, `citations: Citation[]` — `.min(1)`                                                                                               |
-| `ConsultationAnalysisSchema` | `note: SoapNote`, `medicalRecordNote?: MedicalRecordNote`, `gaps: InformationGap[]`, `redFlags: RedFlag[]`, `suggestions: ClinicalSuggestion[]`                 |
+| Schema                       | Fields                                                                                                                                                                                                                                                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SoapNoteSchema`             | `subjective`, `objective`, `assessment`, `plan` — all `string`                                                                                                                                                                                                                                                |
+| `NoteTemplateSchema`         | `enum(['soap','malaysian'])`                                                                                                                                                                                                                                                                                  |
+| `MedicalRecordNoteSchema`    | `presentingComplaint`, `historyOfPresentingComplaint`, `pastMedicalHistory`, `socialHistory`, `familyHistory`, `objective`, `assessment`, `plan` — all `string`                                                                                                                                               |
+| `InformationGapSchema`       | `id: string`, `question: string`, `rationale: string`, `priority: enum(['high','medium','low'])`, `source?: GapSource`                                                                                                                                                                                        |
+| `RedFlagSchema`              | `id: string`, `label: string`, `severity: enum(['emergency','urgent','advisory'])`, `evidence: string`, `source: enum(['rule','model'])`, `ruleId?: string`                                                                                                                                                   |
+| `CitationSchema`             | `guidelineId: string`, `quote?: string`                                                                                                                                                                                                                                                                       |
+| `ClinicalSuggestionSchema`   | `id: string`, `text: string`, `citations: Citation[]` — `.min(1)`                                                                                                                                                                                                                                             |
+| `ConsultationAnalysisSchema` | `note: SoapNote`, `medicalRecordNote?: MedicalRecordNote`, `gaps: InformationGap[]`, `redFlags: RedFlag[]`, `suggestions: ClinicalSuggestion[]`, `retrievedGuidelines?: GuidelineChunk[]` (the retrieved CPG chunks offered to the model, persisted so a citation resolves without re-running retrieval; §11) |
 
 #### Note Template Projections
 
@@ -617,7 +617,7 @@ interface RedFlagTrigger {
 }
 ```
 
-`listVersion` is `RED_FLAG_LIST_VERSION.id`, and every entry carries the same value. The list is one of the four versioned clinical artefacts stamped on each analysis; see §15 (Clinical Content Versioning).
+`listVersion` is `RED_FLAG_LIST_VERSION.id`, and every entry carries the same value. The list is one of the five versioned clinical artefacts stamped on each analysis; see §15 (Clinical Content Versioning).
 
 ### Evaluation
 
@@ -683,7 +683,7 @@ interface GuidelineChunk {
 }
 ```
 
-The corpus as a whole carries `GUIDELINE_CORPUS_VERSION`, one of the four versioned clinical artefacts stamped on each analysis; see §15 (Clinical Content Versioning). Per-chunk source versions are not modelled, and the reason is recorded there.
+The corpus as a whole carries `GUIDELINE_CORPUS_VERSION`, one of the five versioned clinical artefacts stamped on each analysis; see §15 (Clinical Content Versioning). Per-chunk source versions are not modelled, and the reason is recorded there.
 
 `sourceLicence` and `verbatimAllowed` were added 13/08/26 because the licensing difference between sources is legally load-bearing and the schema previously had no way to express it. `verbatimAllowed: false` means the chunk may be summarised and linked but never quoted; a `quote` present on such a chunk is a corpus-authoring defect and should fail a corpus validation test.
 
@@ -710,13 +710,83 @@ Merging them into one "Centor threshold" chunk would manufacture a consensus tha
 
 ### Candidate Set Reaching The Prompt
 
-The whole corpus (Q16) — every chunk's `id`, `title`, and `summary` — is serialised into the system prompt for the `suggestions_and_red_flags` call (§12). No retrieval step; unjustifiable complexity at 10–15 chunks.
+The whole corpus (Q16) — every chunk's `id`, `title`, and `summary` — is serialised into the system prompt for the `suggestions_and_red_flags` call (§12). This is the floor, not the ceiling: the retrieved tier below widens the candidate set per consultation, while the curated corpus reaches every call regardless.
 
 ### Schema-Enforced Rejection
 
 `ClinicalSuggestionSchema.citations[].guidelineId` is `z.string()` in the shared schema (§3) — the shared package cannot depend on a backend-only corpus. The request-time schema used for the suggestions call (§12) narrows this field to `z.enum(corpusIds)`, where `corpusIds` is the live list of chunk ids at request time. A citation naming an id outside that set fails `request.schema.safeParse()` inside `OpenAICompatibleClient.generate()` (§6, `Built`) and throws `LLMResponseError` — the suggestion never reaches the doctor. This is a schema-enforced rejection path, not a prompt instruction the model could choose to ignore.
 
-**Resolved 13/08/26** — source selection and the redistribution stance are settled above, and `verbatimAllowed` now carries the distinction in the schema rather than in a comment. §19 row 3 is closed. Two residual items are **not** settled and are deliberately not represented as such: whether a MaHTAS/MOH _Clinical Practice Guideline_ distinct from the NAG exists for URTI (the MaHTAS portal refused connection during research; the working assumption is that NAG is the operative Malaysian source), and the fact that no clinician has reviewed the summaries corrected by the 07/09/26 primary-source audit (`docs/prd.md` §12, issue #240).
+**Resolved 13/08/26** — source selection and the redistribution stance are settled above, and `verbatimAllowed` now carries the distinction in the schema rather than in a comment. §19 row 3 is closed. **Resolved 09/09/26:** the MaHTAS residual is answered. A Malaysian CPG for this territory does exist: the Academy of Medicine library lists _Management of Sore Throat_ (2003, portal file id 284), 23 years old, now ingested into the retrieved tier below alongside the NAG 2024 anchoring. One residual remains, still deliberately not represented as settled: no clinician has reviewed the summaries corrected by the 07/09/26 primary-source audit (`docs/prd.md` §12, issue #240).
+
+### Retrieved Tier: CPG Library (Built 09/09/26)
+
+A second, per-consultation corpus sits beside the curated one. `docs/README.md` ("Guardrails Against Fabrication", "Guideline Grounding: Two Tiers, One Constraint") carries the reader-facing narrative; this subsection is the implementation reference.
+
+**Why two tiers rather than one merged corpus:**
+
+- **The curated corpus is the floor.** The eleven chunks above are audited and licence-aware, and they remain the only ids the red-flag triggers (§10) and the gap checklist may cite, because deterministic artefacts need ids that survive a re-ingest.
+- **The retrieved library is the ceiling.** `corpus/cpg/manifest.json` indexes 109 CPG documents from the Academy of Medicine portal; the top chunks for each consultation join the `suggestions_and_red_flags` candidate set (§12), cited only by the model under the same `z.enum` as curated ids.
+- **Retrieved ids are not stable identifiers.** They are generated per document, page, and chunk ordinal at ingest and change on re-ingest, so nothing outside the prompt names one. The review UI resolves them from `ConsultationAnalysis.retrievedGuidelines` (§3), persisted with the analysis because re-running retrieval would not be reproducible.
+
+#### Data Model
+
+Two Prisma models, added by migrations `20260909000000_add_guideline_retrieval`, `20260909000100_add_guideline_chunk_ocr`, and `20260909000200_scope_guideline_documents`:
+
+| Model               | Columns                                                                                                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GuidelineDocument` | `id`, `title`, `publisher`, `year`, `sourceUrl`, `jurisdiction`, `sourceLicence`, `sha256`, `storagePath?`, `pageCount`, `ingestedAt`, `profiles[]`, `verbatimAllowed` |
+| `GuidelineChunk`    | `id`, `documentId` → `GuidelineDocument` (`onDelete: Cascade`), `page`, `ordinal`, `heading?`, `text`, `ocr`, `embedding vector(1024)?`, `tsv tsvector?`               |
+
+`embedding` and `tsv` are `Unsupported` to Prisma and written by raw SQL at ingest. `tsv` is a stored generated column (`to_tsvector('english', coalesce(heading, '') || ' ' || text)`) behind a GIN index, and `embedding` carries an HNSW index (`vector_cosine_ops`). `@@index([documentId, ordinal])` preserves per-document chunk order.
+
+#### Retrieval Algorithm
+
+`retrieveGuidelines(content: Deidentified, { profileId })` in `backend/src/retrieval/retrieve.ts` runs six steps:
+
+1. **Guard.** Count chunks in the requested jurisdiction (default `'MY'`) whose document is tagged with the active `profileId`; nothing in scope returns `[]` before any other work. A document with no profile tag is never retrievable, which is the default for every manifest entry until an operator scopes it.
+2. **Lexical.** `buildLexicalQuery` reduces the text to its 12 most frequent non-stopword terms (English and Malay stop lists, de-id tokens stripped) and ORs them into `to_tsquery('english')`, ranked by `ts_rank_cd` over `tsv`, top 20, then floored at `ts_rank_cd >= 0.2` (at least two query terms).
+3. **Semantic.** The content, truncated to 6,000 characters, is embedded through the gated `EmbeddingClient` (below) and matched by pgvector cosine distance (`<=>`) against `embedding`, top 20, then floored at cosine similarity `>= 0.42` (calibrated 09/09/26 on the scoped CPGs).
+4. **Fuse.** Reciprocal rank fusion over both floored lists with `k = 60`; the fused order supplies up to 6 ids. The floors are what keep the citation constraint meaningful: without them retrieval always returns six chunks, and the `z.enum` would guarantee only that an id exists, not that it applies.
+5. **Load.** `prisma.guidelineChunk.findMany` with `include: { document: true }` for the winning ids, reordered to the fused ranking.
+6. **Map.** Each row is parsed through `GuidelineChunkSchema` with `summary` set to the chunk text and `title` carrying the page (`"Document title, p. 12: heading"`), plus `documentId`, `page`, and `ocr`, so the review UI can link `url#page=N` and flag OCR spans.
+
+#### Embedding Egress
+
+`backend/src/lib/llm/embeddings.ts` exports a second egress point beside `LLMClient`, gated the same way: `embed()` accepts only `readonly Deidentified[]`. It is always Qwen regardless of `LLM_PROVIDER`, because the stored vectors were produced by one model and a query embedded by another would silently match nothing; it shares `QWEN_API_KEY` and `QWEN_BASE_URL` and selects the model from `QWEN_EMBEDDING_MODEL` (default `text-embedding-v4`).
+
+#### Failure Behaviour
+
+| Condition                              | Behaviour                                                                                                                   |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Chunk table empty for the jurisdiction | Returns `[]` before any embedding call; the analysis runs on the curated corpus                                             |
+| Embedding call fails                   | Logs `embedding_unavailable` and continues lexical-only                                                                     |
+| `retrieveGuidelines` throws            | The `/analyze` handler logs `retrieval_error` and proceeds with the curated corpus alone; analysis never fails on retrieval |
+| Nothing ranks                          | Returns `[]`; `retrievedGuidelines` is omitted from the persisted analysis rather than stored empty                         |
+
+#### Ingestion Pipeline
+
+`bun run corpus:ingest` runs `backend/src/scripts/ingest-cpg.ts`:
+
+1. **Match.** Each PDF in `corpus/cpg/raw/` (gitignored) is matched to a `corpus/cpg/manifest.json` entry by filename, falling back to first-page title text; unmatched files are skipped.
+2. **Extract.** Text is extracted per page with poppler `pdftotext -layout`. A page under 80 non-whitespace characters is treated as scanned: rendered by `pdftoppm` at 200 dpi and OCRed with Tesseract `eng+msa`, and its chunks are flagged `ocr`.
+3. **Chunk.** Within one page only, never across a page boundary, at up to 1,200 characters with 150 overlap, merging undersized fragments.
+4. **Embed And Write.** Every chunk is embedded through the same gated client (guideline text passes through `deidentify` too, so there is one rule and no exemption list) and written in a single transaction: the document's chunks are replaced, the document row upserted, and vectors set by raw SQL. An unchanged `sha256` short-circuits the file unless `--force`.
+5. **Upload.** The PDF is PUT to the private Supabase Storage bucket when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set, and `storagePath` records the object key. Skipped when they are absent.
+
+Flags: `--dry-run` (match, extract, and chunk with no writes), `--only <id>`, `--skip-upload`, `--force`. Requires poppler and Tesseract with the `eng` and `msa` language packs on the machine.
+
+#### Environment
+
+| Variable                     | Constraint       | Role                                                                          |
+| ---------------------------- | ---------------- | ----------------------------------------------------------------------------- |
+| `QWEN_EMBEDDING_MODEL`       | `string()`       | Embedding model for retrieval queries and ingest; default `text-embedding-v4` |
+| `SUPABASE_URL`               | `string().url()` | Ingest upload only; optional, the upload step is skipped when absent          |
+| `SUPABASE_SERVICE_ROLE_KEY`  | `string()`       | Ingest upload only; optional, the upload step is skipped when absent          |
+| `SUPABASE_GUIDELINES_BUCKET` | `string()`       | Ingest upload only; default `guidelines`                                      |
+
+#### Licence Status
+
+AMM/MOH reuse terms for the CPG library are unconfirmed (issue #250); every ingested document carries `sourceLicence: 'MOH-CPG-unconfirmed'`. This is a private prototype and nothing is redistributed.
 
 ---
 
@@ -776,6 +846,8 @@ Splitting the prompt was a second, unbudgeted gain: each half now carries only t
 | response schema | Proposed `z.object({ redFlags: z.array(RedFlagSchema.omit({ source: true, ruleId: true }).extend({ source: z.literal('model') })), suggestions: z.array(ClinicalSuggestionSchema.extend({ citations: z.array(CitationSchema.extend({ guidelineId: z.enum(corpusIds) })).min(1) })) })` |
 | `schemaName`    | `"suggestions_and_red_flags"`                                                                                                                                                                                                                                                          |
 | `temperature`   | Default `0.2` (§6)                                                                                                                                                                                                                                                                     |
+
+The candidate set named in the `system` row is the union of the active profile's curated corpus and the chunks `retrieveGuidelines` returned for this transcript (`generateSuggestions` concatenates `[...profile.guidelineCorpus, ...retrieved]`), and the `corpusIds` feeding the `z.enum` above are built from that union, so a retrieved chunk id is citable exactly like a curated one (§11).
 
 ### Scope Notice For Non-URTI Presentations
 
@@ -839,14 +911,15 @@ The harness prints counts and durations only, never transcript or model text.
 
 All of these were proposed here first, under this document's Q17 mandate ("the TRD proposes, the human ratifies"), and have since been ratified and built. They now live in `shared/src/index.ts`.
 
-| Schema                       | Shape                                                                                                                                                                                                                                                                                                                                                                                              |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ConsultationListItemSchema` | `id`, `status`, `createdAt`, `updatedAt` — no transcript/analysis body, for the consultation-list view (Q2)                                                                                                                                                                                                                                                                                        |
-| `ConsultationDetailSchema`   | `ConsultationSchema` (§3) extended with `editedNote: SoapNoteSchema.nullable()`, rollout-safe `editedMedicalRecordNote: MedicalRecordNoteSchema.nullable()`, approval attribution, and review dispositions                                                                                                                                                                                         |
-| `ErrorEnvelopeSchema`        | `z.object({ error: z.object({ code: z.string(), message: z.string() }) })` — uniform across every route                                                                                                                                                                                                                                                                                            |
-| `FixtureSchema`              | `id: string`, `label: string`, `transcript: Transcript` — names the shape `GET /api/fixtures` already returns, so no route response is an inline anonymous type                                                                                                                                                                                                                                    |
-| `GuidelineChunkSchema`       | Mirrors §11's `GuidelineChunk` interface (`id`, `title`, `publisher`, `year: number`, `url`, `summary`, `sourceLicence`, `verbatimAllowed: boolean`, `quote?`) — new export enabling `GET /api/guidelines`. `verbatimAllowed` must be surfaced, not stripped: the citation-detail view is where a licence-restricted chunk's absent `quote` needs explaining rather than looking like missing data |
-| `HostedAsrResultSchema`      | `{ text: z.string(), durationSeconds: z.number(), segments: z.array(HostedAsrSegmentSchema) }`, `Built` with #154. `segments` stays `[]` until the provider honours `verbose_json` (§20.3 finding 5); `HostedAsrSegmentSchema` is `{ text, start, end: number \| null }`, field-for-field with the local worker's segment so either source can feed the draft-labels gate                          |
+| Schema                       | Shape                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ConsultationListItemSchema` | `id`, `status`, `createdAt`, `updatedAt` — no transcript/analysis body, for the consultation-list view (Q2)                                                                                                                                                                                                                                                                                                                                                              |
+| `ConsultationDetailSchema`   | `ConsultationSchema` (§3) extended with `editedNote: SoapNoteSchema.nullable()`, rollout-safe `editedMedicalRecordNote: MedicalRecordNoteSchema.nullable()`, approval attribution, and review dispositions                                                                                                                                                                                                                                                               |
+| `ErrorEnvelopeSchema`        | `z.object({ error: z.object({ code: z.string(), message: z.string() }) })` — uniform across every route                                                                                                                                                                                                                                                                                                                                                                  |
+| `FixtureSchema`              | `id: string`, `label: string`, `transcript: Transcript` — names the shape `GET /api/fixtures` already returns, so no route response is an inline anonymous type                                                                                                                                                                                                                                                                                                          |
+| `GuidelineChunkSchema`       | Mirrors §11's `GuidelineChunk` interface (`id`, `title`, `publisher`, `year: number`, `url`, `summary`, `sourceLicence`, `verbatimAllowed: boolean`, `quote?`, plus `documentId?`, `page?`, `ocr?` set on retrieved CPG chunks only) — new export enabling `GET /api/guidelines`. `verbatimAllowed` must be surfaced, not stripped: the citation-detail view is where a licence-restricted chunk's absent `quote` needs explaining rather than looking like missing data |
+| `GuidelineDocumentSchema`    | `id`, `title`, `publisher`, `year: number`, `sourceUrl`, `jurisdiction`, `sourceLicence`, `pageCount`, `chunkCount`, `ingestedAt`. Backs `GET /api/guidelines/documents`, the ingested-CPG listing on the Guidelines page (§11); `sha256` and `storagePath` are ingest-side provenance and deliberately not serialised                                                                                                                                                   |
+| `HostedAsrResultSchema`      | `{ text: z.string(), durationSeconds: z.number(), segments: z.array(HostedAsrSegmentSchema) }`, `Built` with #154. `segments` stays `[]` until the provider honours `verbose_json` (§20.3 finding 5); `HostedAsrSegmentSchema` is `{ text, start, end: number \| null }`, field-for-field with the local worker's segment so either source can feed the draft-labels gate                                                                                                |
 
 ### Routes
 
@@ -937,7 +1010,7 @@ The `User → Consultation` relation still uses `onDelete: Cascade`. With the au
 
 ### Clinical Content Versioning
 
-**Status: `Built`** (issue #16). Clinical content changes on a different cadence from code, so it is versioned data rather than conditionals spread through the application. Four artefacts carry a version, each defined in the file it describes:
+**Status: `Built`** (issue #16). Clinical content changes on a different cadence from code, so it is versioned data rather than conditionals spread through the application. Five artefacts carry a version, each defined in the file it describes:
 
 | Artefact                | Version Constant                  | Defined In                            |
 | ----------------------- | --------------------------------- | ------------------------------------- |
@@ -945,6 +1018,7 @@ The `User → Consultation` relation still uses `onDelete: Cascade`. With the au
 | Gap checklist           | `GAP_CHECKLIST_VERSION`           | `backend/src/gaps/checklist.ts`       |
 | Guideline corpus        | `GUIDELINE_CORPUS_VERSION`        | `backend/src/guidelines/corpus.ts`    |
 | Medical-record template | `MEDICAL_RECORD_TEMPLATE_VERSION` | `backend/src/note-templates/index.ts` |
+| Medication lexicon      | `MEDICATION_LEXICON_VERSION`      | `backend/src/medications/lexicon.ts`  |
 
 Each is a `ClinicalArtefactVersion` (`backend/src/clinical-versions/types.ts`):
 
@@ -957,7 +1031,7 @@ interface ClinicalArtefactVersion {
 
 `id` and `effectiveDate` are separate because they answer different questions. `id` must stay stable once a run has recorded it; `effectiveDate` is editorial and may be set ahead of the authoring date.
 
-**One stamping path.** `backend/src/clinical-versions/index.ts` collects the four into `ACTIVE_CLINICAL_VERSIONS`, which is what the analyse route writes. The metadata on `consultation.analysis_completed` as built:
+**One stamping path.** `backend/src/clinical-versions/index.ts` collects the five into `ACTIVE_CLINICAL_VERSIONS`, which is what the analyse route writes. **`medicationLexicon` is registered ahead of any consumer, and no consumer exists yet**: nothing in the analysis pipeline reads it, because dictated prescription capture (`docs/decisions.md` D-001) will run on its own route once #312 and #313 land. It is stamped here anyway, because this registry is the one home a version constant may have and the alternative is a clinical artefact whose version nothing records. Until those land, an analysis stamp carries a version that analysis did not use, so read the stamp as the clinical content active at the time rather than a claim that each artefact was exercised. The metadata on `consultation.analysis_completed` as built:
 
 ```
 {
@@ -972,6 +1046,7 @@ interface ClinicalArtefactVersion {
       gapChecklist,
       guidelineCorpus,
       medicalRecordTemplate, // `malaysian-medical-record-v1`, effective 2026-09-07
+      medicationLexicon,     // registered ahead of a consumer; see below
       clinicalProfile,
     },
   },
@@ -1179,6 +1254,17 @@ Source: `render.yaml` (repo root).
 
 `QWEN_MODEL` pins the same untested default flagged in Open #6 below — the value is already committed to the deploy config before the exact model id has been confirmed against a live Model Studio account.
 
+The retrieved tier (§11) adds four `EnvSchema` fields, all deliberately absent from `render.yaml`:
+
+| Variable                     | Constraint       | Where It Is Needed                                                                                              |
+| ---------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------- |
+| `QWEN_EMBEDDING_MODEL`       | `string()`       | Nowhere unless the model changes: the committed default `text-embedding-v4` matches the stored vectors          |
+| `SUPABASE_URL`               | `string().url()` | The machine running `bun run corpus:ingest`, for the private-bucket PDF upload; the step is skipped when absent |
+| `SUPABASE_SERVICE_ROLE_KEY`  | `string()`       | Same; the upload credential, never the running service                                                          |
+| `SUPABASE_GUIDELINES_BUCKET` | `string()`       | Same; default `guidelines`                                                                                      |
+
+The running service needs none of the `SUPABASE_*` set: citation links resolve to each document's `sourceUrl` on the AMM portal, and ingestion is a developer-machine script rather than a service path.
+
 #### `render.yaml` Is Not Authoritative For Env Vars On A Live Service
 
 **Learned the hard way on 14/08/26.** A Blueprint seeds environment variables when the service is created. After that the service's own values win, and editing `render.yaml` in the repository changes nothing on a service that already exists.
@@ -1325,7 +1411,7 @@ Every `Open` item in this document, collected in one place. **Resolved rows are 
 | 12  | Should automated CI (lint/typecheck/test, previously `.github/workflows/ci.yml`) be reinstated, and on what trigger?                                                                                                                                | §17                  | Human decision on whether CI is worth the Actions minutes/scope for a prototype evaluated externally, and if so, restoring the workflow definition                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Human (CI decision)                                                 |
 | 13  | ~~How should the client-side Whisper model be delivered, and what model size trades accuracy against download weight?~~ **Resolved 13/08/26**                                                                                                       | §20                  | **Revised 13/08/26 by measurement (§20.1): `whisper-small`, not `whisper-base`** — `base` substitutes and drops content words on Manglish. Fetched from the HF CDN on first use and browser-cached, `@huggingface/transformers` v4 directly, WASM first-class, desktop Chromium only, `language` always `'en'` and never a language the audio is not in                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | — (closed)                                                          |
 | 14  | ~~Which keep-alive mechanism should run against the free-tier Render and Supabase projects?~~ **Resolved 13/08/26**                                                                                                                                 | §17                  | External scheduled ping every 10 minutes against `/api/health` and the frontend origin, run off-platform so it survives a cold API. Both projects stay on free tiers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | — (closed)                                                          |
-| 15  | Should the ASR low-confidence indicator and VAD silence-trimming (§20) be built in this window, or named as unmitigated?                                                                                                                            | §20                  | A build-cost call against the remaining runway. Neither closes the second-fabrication-surface gap; both bound it. Paste-first demo path already reduces the exposure                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Human (scope call)                                                  |
+| 15  | Should the ASR low-confidence indicator and VAD silence-trimming (§20) be built in this window, or named as unmitigated? **Half answered 09/09/26: the indicator is built.**                                                                        | §20                  | **The low-confidence indicator ships on ambient capture (§20.10, issue #309).** Soniox's per-token confidence is folded into character ranges and rendered as a dotted underline in the live pane and the review transcript; nothing is gated on it and the threshold is unmeasured, both stated in §20.10 rather than softened. It covers ambient only, because it is the one path whose recogniser reports a confidence: the on-device and relayed paths still have none, so the indicator's absence there is a gap rather than a claim of certainty. **VAD silence-trimming remains unbuilt and unscoped.** Neither closes the second-fabrication-surface gap; both bound it                                                                                                                                                                                                                                                                                                                                                                                                                      | Human (VAD trimming outstanding)                                    |
 | 16  | Does the structured schema (§3) reduce or increase fabrication versus free-form output on the same sparse transcripts? **First data point 13/08/26 — encouraging, not settled.**                                                                    | §3, §21              | Running §3's ratification condition 2 — a schema-versus-free-form eval against the §21.1 fixtures. **Early signal:** on §21.1's Transcript A, the exact input that produced a fabricated negative in 5/5 free-form runs, the structured schema returned `haemoptysis`, `chestPain` and `diagnosis` as `NOT_ASSESSED` rather than `DENIED`. **This is n=1 on one transcript and is not a result** — the 5-run comparison is issue #13's deliverable. It does not yet discharge the concern: Asgari et al. measured template-imposed generation _increasing_ major hallucinations, and one clean run does not answer that. A second measured caveat cuts the other way: **none** of the model's `PRESENT`/`DENIED` assertions carried a verbatim span, so the §21.4 check downgrades aggressively and the note may be sparser than it should be                                                                                                                                                                                                                                                        | PG, issue #13                                                       |
 | 17  | Should note-to-transcript evidence spans be surfaced in the review UI as clickable traceability, or stay data-only?                                                                                                                                 | §21.4                | The data already exists as a by-product of §21.4. Abridge Linked Evidence and Dragon's evidence summary are top-of-market trust features; `docs/prd.md` §12 currently scopes this out in one sentence rather than leaving it silent                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Human (scope call)                                                  |
 | 18  | ~~What exactly does the hosted-ASR consent gate say and require, such that hosted stays **findable but not funnelled** (§20)?~~ **Resolved 16/08/26; the gate was split 02/09/26 and half of it restored 06/09/26, see §20.4**                      | §20                  | A muted consent block on the Record tab, never a button and never highlighted, carrying an unticked checkbox that resets on every mount (#155, #254, §20.4). It sits above the controls it enables rather than at the foot, and renders only where the device engine is hosted. The funnel tension is answered structurally rather than by wording: the block is identically present and styled whether the doctor arrived fresh or after a failure, and the on-device failure copy never mentions hosted, pinned by a negative test. Retention and training are stated as ILMU's standard early-access terms rather than as a carve-out, because no separate agreement exists to support one                                                                                                                                                                                                                                                                                                                                                                                                        | Resolved by #155; the relay itself shipped first with #154, UI-less |
@@ -2543,6 +2629,52 @@ Two properties of that flow are load-bearing rather than incidental. The microph
 | Tamil                             | Listed by the vendor and unverified. §20.7's honest-limitation position stands until measured          |
 | Safari and iOS                    | `MediaRecorder` emits `audio/mp4` there, untested over a chunked stream                                |
 | Behaviour on silence-heavy audio  | §20.8 records that ASR hallucination tracks silence. Any invention would be disqualifying              |
+
+#### Observed 09/09/26: The Devoicing Family Reaches This Provider Too
+
+**§20.3's consonant-devoicing family is now recorded on a third arm.** A captured ambient consultation returned _"saya **teman** since 3 days ago"_ where the audio was _"saya **demam**"_, in a turn whose next line transcribed _"demam tu tinggi tak?"_ correctly and whose patient answer gave _"38.5"_. The same capture returned _"**Are there checked** temperature dekat rumah"_ for _"**Ada check** temperature dekat rumah"_.
+
+|                              |                                                                                                                                                                                                                                  |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What it closes**           | `redflags/mishears.ts` states that its table applies to ambient capture without anything proving those pairs occur on that provider. `demam` to `teman` is now recorded on Soniox as well as on ILMU and `whisper-small` (§20.3) |
+| **What it does not close**   | One turn of one consultation, no ground-truth corpus, no word error rate. It is an existence proof for one pair, not a measurement of the family                                                                                 |
+| **Consequence for layer 2**  | The confusable table earns its ambient scope on evidence rather than on the additive argument the module header falls back to                                                                                                    |
+| **Consequence for the note** | `expandMishears` reaches `redflags/triggers.ts` only, so the rules engine saw `demam` and the note pipeline saw `teman`. The safety net held and the structured note did not. Issue #308                                         |
+
+**The second error is deliberately not being fixed.** "Are there checked" for "Ada check" is a code-switch boundary error, and the clinical meaning survives it. Repairing it means letting a model rewrite grammar, which is the paraphrase risk `draft-turns/reconstruction.ts` exists to prevent. Recorded here so a later reader does not mistake the omission for an oversight.
+
+#### Built 09/09/26: Layer 1 Vocabulary, And What It Is Not Evidence Of
+
+`liveSessionConfig()` now sends a `terms` array alongside `general` (issue #307). `backend/src/lib/asr/vocabulary.ts` holds it: Malay consultation register, drug names in English, and `CONFUSABLE_TARGETS` derived from the `mishears.ts` map so layer 1 and layer 2 cannot disagree about what they are aiming at.
+
+**The evidence behind it is §20.7.1, and §20.7.1 was measured on Qwen.** That section carried a Malay clip from unusable to one word wrong with a clinical Malay vocabulary containing none of the sentence's content words, and it measured "batuk" returning as "betul", a pair no confusable table can claim without raising a cough flag on every sentence agreeing with the doctor. Both findings argue for the layer. Neither was measured on Soniox, and Soniox's `terms` is a vendor-documented array rather than the system context §20.7.1 varied, so **the mechanism is an inference and the outcome is unmeasured here.**
+
+Two specific things a later measurement should settle:
+
+- **Whether the array does anything at all.** §20.3 finding 5 recorded ILMU's `prompt` biasing field as a no-op. A vendor field that is accepted and ignored is a live possibility, and nothing in the test suite can see it: `soniox.test.ts` proves the terms are _sent_, never that they are _used_.
+- **Whether English drug names cost anything.** §20.7.1's fifth condition scored an English clinical context worse than no context at all on Malay audio, and the language-detection follow-up found a four-language context failing to rescue an acoustically ambiguous clip where a single-language one succeeded. Drug names are in the list because Malaysian doctors speak them in English, so priming them in Malay could not match the audio; that is a domain fact, and its interaction with the language-priming effect is untested. Dropping `ENGLISH_DRUG_TERMS` is a one-line A/B if a measurement disagrees.
+
+#### Built 09/09/26: Per-Token Confidence, Shown As A Cue (Issue #309)
+
+Soniox returns a confidence with every token and `SonioxTokenSchema` did not declare it, so Zod's implicit strip discarded it at the same line that discards `error_message`. Nothing in the product told a doctor which words the recogniser was unsure of. This is the first half of §19 row 15.
+
+**What was built.** The field is carried into `LiveToken`, folded per segment into character ranges on `LiveSegment`, re-based onto turns by `carryUncertain` in `frontend/src/audio/draft-turns.ts`, stored inside `TranscriptTurnSchema.uncertain`, and rendered as a dotted underline in the live pane and the review transcript.
+
+| Decision                                    | Why                                                                                                                                                                                                                                                            |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ranges, not a per-segment score             | A minimum or a mean says something here is shaky without saying which word to re-read, and the word is the only part a doctor can act on                                                                                                                       |
+| Absent confidence maps to `null`            | An unknown is not an uncertainty. A vendor that stops sending the field must produce no cues rather than underlining every word                                                                                                                                |
+| An out-of-range value is refused, not fatal | `.catch(undefined)` on the bounded schema. Enforcing 0 to 1 by failing the message would end a live consultation mid-sentence over one token; the value becomes an unknown instead. `speaker` records that this vendor has already changed a field's type once |
+| A dotted underline, not a filled mark       | A filled mark is what this codebase uses for a finding the doctor must decide about. Nothing here claims a word is wrong                                                                                                                                       |
+| Nothing is gated on it                      | No red flag, suggestion or note field reads `uncertain`. It is display metadata, the same posture `RedFlagSchema.evidenceLink` holds                                                                                                                           |
+
+**The threshold has no measurement behind it.** `UNCERTAIN_CONFIDENCE_THRESHOLD` is 0.6, chosen to mark the visibly shaky words in the captures seen so far. Nothing in this repo has scored this provider's confidence against a ground-truth transcript in any language, so it sits on the same pile as the vocabulary array above. What settles it is a labelled sample: the threshold that catches most real errors without underlining correct speech. Until then the cost of it being wrong is bounded by what the cue does, which is nothing except ask a doctor to look.
+
+**The offset hazard, which is the part worth reading.** `tokensToSegments` built its text with a tidy step that collapses whitespace runs and trims the ends, and then discarded the tokens. Offsets computed on the raw token join are therefore wrong in the emitted text, and wrong silently: Soniox tokens carry their own leading spaces, so a segment cut on a speaker change begins with one and every naive offset lands a character early, putting the highlight on the neighbouring word with nothing thrown. The text and the per-token spans are now built in a single pass, and `live-tokens.test.ts` slices the ranges back out of the segment's own text and compares them to the expected words, because a comparison of range numbers would pass while the highlight sat in the wrong place.
+
+**Everything downstream fails closed.** A turn that cannot be located in the segments carries no ranges; a segment or line whose text is not already normalised carries none, because the offsets describe the un-normalised string; ranges past the per-turn cap are dropped rather than allowed to fail the transcript; and a line the doctor edited carries none, because the re-attachment across the textarea is an exact-text match. A missing cue costs a doctor nothing. A cue on the wrong word tells them a correct transcription is suspect.
+
+**What this is not.** It is not a correction and it proposes nothing. Issue #309's second half, the constrained model pass that reads these ranges as its gate, is not built here; §19 row 22 still governs whether it earns its place.
 
 #### Measured 06/09/26: The Policy Pins The Host, And The Host Answers
 

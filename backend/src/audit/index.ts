@@ -32,6 +32,17 @@ export type AnalysisFailureReason =
   | 'internal_error'
 
 /**
+ * Short failure categories for `consultation.corrections_failed`. Closed for the
+ * same reason as the set above: the matcher runs over transcript text, so a
+ * thrown value on this path can carry a fragment of the consultation.
+ *
+ * `no_transcript` is a real outcome rather than an error. A draft can exist with
+ * no transcript stored yet, and the row records that the surface was asked for
+ * and had nothing to work on.
+ */
+export type TranscriptCorrectionsFailureReason = 'no_transcript' | 'internal_error'
+
+/**
  * Which versions of the system produced one analysis (issue #12). Enough to
  * answer "what generated this note?" months later without guessing.
  *
@@ -39,6 +50,11 @@ export type AnalysisFailureReason =
  * set of fields (issue #16), so adding a versioned artefact cannot leave the
  * stamp behind: the only way to satisfy this type is to write the whole of
  * `ACTIVE_CLINICAL_VERSIONS`.
+ *
+ * That aggregator can therefore be wider than the analysis: `medicationLexicon`
+ * is registered ahead of any consumer (issue #311), so "produced" is true of
+ * every key here except that one. Read the stamp as the clinical content
+ * active at the time, not as a claim that each artefact was exercised.
  */
 export interface AnalysisVersions {
   provider: string
@@ -102,6 +118,37 @@ export type ConsultationAuditEvent =
       }
     }
   | { action: 'consultation.live_analysis_failed'; metadata: { reason: AnalysisFailureReason } }
+  /*
+   * Mishear proposals served to the doctor (#308).
+   *
+   * A count, never the words. The proposals are drawn from the transcript, so
+   * `original` is patient speech and `suggested` is the table's reading of it;
+   * both are content and neither may reach a row. The count is what makes the
+   * trail answerable: it records that a correction surface was shown, and how
+   * much of it, without reproducing the consultation in the audit log.
+   *
+   * **Accepting a proposal writes no row of its own.** It becomes an ordinary
+   * `PATCH`, so it lands as `consultation.edited` and is indistinguishable from
+   * a manual edit. That is a known gap, identical to the copilot's, and closing
+   * it would take a second write path to the clinical record.
+   */
+  | { action: 'consultation.corrections_proposed'; metadata: { proposalCount: number } }
+  | {
+      action: 'consultation.corrections_failed'
+      metadata: { reason: TranscriptCorrectionsFailureReason }
+    }
+  /*
+   * Prescriptions the doctor confirmed (#312).
+   *
+   * A count, never a drug name. `consultation.renamed` sets the precedent by
+   * carrying no metadata at all, on the reasoning that the old and new titles
+   * are exactly the free text a row must not hold; a drug, a dose and a
+   * verbatim dictation are the same class of content.
+   *
+   * The count is what makes the row answerable: it records that a clinician
+   * confirmed a prescription, and how many, without reproducing it.
+   */
+  | { action: 'consultation.prescription_recorded'; metadata: { prescriptionCount: number } }
   | { action: 'consultation.edited' }
   | {
       action: 'consultation.template_selected'

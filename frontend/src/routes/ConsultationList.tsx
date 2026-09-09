@@ -65,7 +65,7 @@ export function ConsultationList() {
     queryFn: api.listConsultations,
   })
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
-  const [view, setView] = useState<ConsultationView>('draft')
+  const [view, setView] = useState<ConsultationView>('awaiting_review')
   const [page, setPage] = useState(1)
   /**
    * Which row is open for renaming, owned here rather than inside the field.

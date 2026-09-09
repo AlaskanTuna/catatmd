@@ -1,6 +1,22 @@
 import type { ClinicalSuggestion } from '@shared/types'
 import { containsDiagnosticProse } from '../analysis/diagnostic-guard.js'
+// Imported from the file, never the barrel: `medications/index.js` reaches the
+// matcher, which would put an npm phonetics package in this guard's graph.
+import {
+  DOSE_RATE,
+  DOSE_UNIT,
+  DURATION_DAYS,
+  FREQUENCY_ABBREVIATION,
+  FREQUENCY_WORD,
+} from '../medications/vocabulary.js'
 
+/**
+ * Kept private, and deliberately not derived from `MEDICATION_LEXICON`. This
+ * wants maximum breadth (suffix patterns, any drug, any indication) so an
+ * order naming an unexpected drug is still caught. The lexicon is the
+ * opposite: profile-scoped and narrow, so a spelling candidate stays
+ * plausible. Deriving this from that would quietly narrow the guard.
+ */
 const MEDICATION_TERM =
   '(?:antibiotics?|antimicrobials?|medications?|medicines?|drugs?|tablets?|capsules?|inhalers?|steroids?|nitrofurantoin|aspirin|insulin|paracetamol|ibuprofen|salbutamol|amoxicillin|[a-z]+(?:cillin|mycin|cycline|floxacin|azole|pril|sartan|olol|statin|prazole|caine|vir|mab|tadine|zine|butamol|terol))'
 
@@ -20,8 +36,12 @@ const MODAL_MEDICATION_ORDER =
   /\b(?:should|must|needs? to)\s+(?!not\b)(?:prescrib(?:e|ing)|start|give|administer|dispense)\b/i
 const RECOMMENDED_MEDICATION_ORDER =
   /\brecommend(?:s|ed|ing)?\s+(?:prescribing|starting|giving|administering|dispensing)\b/i
+// The unit sits in the required prefix; the rate, frequency and duration tail
+// is one optional group, so `500 mg wibble wobble` already matches. Only the
+// unit branch is reachable by a behavioural test, and `safety.test.ts` covers
+// every alternative of it.
 const BARE_DOSE_REGIMEN = new RegExp(
-  `^\\s*(?:${MEDICATION_TERM}(?:\\s*:\\s*|\\s+))?\\d+(?:\\.\\d+)?\\s*(?:mg|g|mcg|μg|ug|ml|units?|iu)\\b(?:\\s*(?:/|per)\\s*(?:kg|day|dose)|[\\s,]*(?:once|twice|thrice|daily|every\\s+\\d+\\s*(?:hours?|h)|(?:one|two|three|four)\\s+times?(?:\\s+daily)?|(?:q|od|bd|bid|tds|tid|qid|qhs|qds|stat)\\b)|[\\s,]*for\\s+\\d+\\s+days?)?`,
+  `^\\s*(?:${MEDICATION_TERM}(?:\\s*:\\s*|\\s+))?\\d+(?:\\.\\d+)?\\s*(?:${DOSE_UNIT})\\b(?:\\s*(?:/|per)\\s*(?:${DOSE_RATE})|[\\s,]*(?:${FREQUENCY_WORD}|(?:${FREQUENCY_ABBREVIATION})\\b)|[\\s,]*${DURATION_DAYS})?`,
   'i',
 )
 

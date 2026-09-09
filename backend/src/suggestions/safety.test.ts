@@ -90,6 +90,22 @@ describe('filterUnsafeModelSuggestions', () => {
     ])
   })
 
+  // Every unit the bare-dose pattern accepts, because only `mg` was covered.
+  // The unit sits in the *required* prefix while everything after it (rate,
+  // frequency, duration) is one optional group, so `500 mg wibble wobble` is
+  // already suppressed and no behavioural test can reach those branches.
+  // Losing a unit here is therefore a silent under-suppression, and it is the
+  // only part of that regex a refactor can actually break (issue #311).
+  it.each(['500 mg', '1 g', '250 mcg', '10 μg', '10 ug', '2 ml', '400 units', '1 unit', '5 iu'])(
+    'suppresses the bare dose regimen %s twice daily, one case per accepted unit',
+    (dose) => {
+      const result = filterUnsafeModelSuggestions([suggestion('regimen', `${dose} twice daily.`)])
+
+      expect(result.suggestions).toEqual([])
+      expect(result.suppressedSuggestionIds).toEqual(['model-suggestion-1'])
+    },
+  )
+
   it('suppresses named medication orders without a dose', () => {
     const result = filterUnsafeModelSuggestions([
       suggestion('named-order', 'Start amoxicillin.'),
