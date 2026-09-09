@@ -37,6 +37,9 @@ import {
 const mocks = vi.hoisted(() => ({ parsePrescription: vi.fn() }))
 vi.mock('../lib/api.js', () => ({ api: { parsePrescription: mocks.parsePrescription } }))
 
+const useDemoTour = vi.hoisted(() => vi.fn())
+vi.mock('../demo/DemoTour.js', () => ({ useDemoTour }))
+
 afterEach(cleanup)
 
 const candidate = (over: Partial<MedicationCandidateWire> = {}): MedicationCandidateWire => ({
@@ -236,8 +239,18 @@ const renderBlock = ({
   return onSave
 }
 
+const getToggle = () => screen.getByRole('button', { name: /prescriptions/i })
+
+const expand = () => {
+  const toggle = getToggle()
+  if (toggle.getAttribute('aria-expanded') === 'false') {
+    fireEvent.click(toggle)
+  }
+}
+
 /** Type a phrase and press Check, then wait for the parse to land. */
 const check = async (phrase: string) => {
+  expand()
   fireEvent.change(screen.getByLabelText('What You Prescribed'), { target: { value: phrase } })
   fireEvent.click(screen.getByRole('button', { name: 'Check' }))
   await waitFor(() => expect(mocks.parsePrescription).toHaveBeenCalled())
@@ -246,6 +259,7 @@ const check = async (phrase: string) => {
 describe('PrescriptionBlock', () => {
   beforeEach(() => {
     mocks.parsePrescription.mockReset()
+    useDemoTour.mockReturnValue({ active: false, currentStep: -1, steps: [] })
     // Above the floor by default, so the microphone is on offer. The floor's
     // own behaviour gets its own test below.
     setCores(8)
@@ -365,6 +379,7 @@ describe('PrescriptionBlock', () => {
   it('removes by sending the list that remains', async () => {
     const onSave = renderBlock({ prescriptions: [STORED] })
 
+    expand()
     fireEvent.click(screen.getByRole('button', { name: 'Remove paracetamol' }))
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith([]))
@@ -375,6 +390,7 @@ describe('PrescriptionBlock', () => {
     // screen readers miss, so it is mounted empty rather than conditionally.
     renderBlock()
 
+    expand()
     expect(screen.getByRole('status')).toBeTruthy()
   })
 
@@ -384,6 +400,7 @@ describe('PrescriptionBlock', () => {
     setCores(2)
     renderBlock()
 
+    expand()
     expect(screen.queryByRole('button', { name: 'Dictate' })).toBeNull()
     expect(screen.getByLabelText('What You Prescribed')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Check' })).toBeTruthy()
@@ -394,6 +411,7 @@ describe('PrescriptionBlock', () => {
     // control here would be one that cannot work.
     renderBlock({ prescriptions: [STORED], status: 'approved' })
 
+    expand()
     expect(screen.getByText('paracetamol')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Dictate' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Remove paracetamol' })).toBeNull()
@@ -438,5 +456,61 @@ describe('PrescriptionBlock', () => {
     expect(
       screen.getByText(`${MAX_PRESCRIPTIONS} of ${MAX_PRESCRIPTIONS}, limit reached`),
     ).toBeTruthy()
+  })
+
+  it('is collapsed by default and the count stays visible', () => {
+    renderBlock({ prescriptions: [STORED] })
+
+    const toggle = getToggle()
+    const body = document.getElementById(toggle.getAttribute('aria-controls') ?? '')
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByText('1 prescription')).toBeTruthy()
+    expect(body).toBeTruthy()
+    expect(body?.classList.contains('hidden')).toBe(true)
+  })
+
+  it('toggles the body open and closed', () => {
+    renderBlock({ prescriptions: [STORED] })
+
+    const toggle = getToggle()
+    const body = document.getElementById(toggle.getAttribute('aria-controls') ?? '')
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(body?.classList.contains('hidden')).toBe(true)
+
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(body?.classList.contains('hidden')).toBe(false)
+
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(body?.classList.contains('hidden')).toBe(true)
+  })
+
+  it('marks the body to expand in print', () => {
+    renderBlock({ prescriptions: [STORED] })
+
+    const toggle = getToggle()
+    const body = document.getElementById(toggle.getAttribute('aria-controls') ?? '')
+
+    expect(body?.getAttribute('data-print')).toBe('block')
+  })
+
+  it('defaults open when the Prescriptions tour step is current', () => {
+    useDemoTour.mockReturnValue({
+      active: true,
+      currentStep: 0,
+      steps: [{ target: '[data-tour="prescription"]' }],
+    })
+
+    renderBlock({ prescriptions: [STORED] })
+
+    const toggle = getToggle()
+    const body = document.getElementById(toggle.getAttribute('aria-controls') ?? '')
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(body?.classList.contains('hidden')).toBe(false)
+    expect(screen.getByText('paracetamol')).toBeTruthy()
   })
 })

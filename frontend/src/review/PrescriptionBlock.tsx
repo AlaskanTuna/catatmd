@@ -12,8 +12,8 @@ import {
   type SigRoute,
 } from '@shared/types'
 import { useMutation } from '@tanstack/react-query'
-import { Check, Mic, Square, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Check, ChevronDown, Mic, Square, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
   belowHardwareFloor,
@@ -23,6 +23,7 @@ import {
 } from '../audio/dictation.js'
 import { InputMeter } from '../audio/InputMeter.js'
 import type { WorkerRequest, WorkerResponse } from '../audio/protocol.js'
+import { useDemoTour } from '../demo/DemoTour.js'
 import { api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
 import { count } from '../lib/plural.js'
@@ -249,6 +250,15 @@ export function PrescriptionBlock({
   // exactly as `approved` does. `!approved` would be the wrong predicate.
   const editable = status === 'awaiting_review'
   const full = stored.length >= MAX_PRESCRIPTIONS
+
+  const tour = useDemoTour()
+  const isPrescriptionStep =
+    tour.active === true && tour.steps?.[tour.currentStep]?.target === '[data-tour="prescription"]'
+  const [isOpen, setIsOpen] = useState(isPrescriptionStep)
+  useEffect(() => {
+    if (isPrescriptionStep) setIsOpen(true)
+  }, [isPrescriptionStep])
+  const bodyId = useId()
 
   const [thin] = useState(belowHardwareFloor)
   const [dictation, setDictation] = useState('')
@@ -508,288 +518,317 @@ export function PrescriptionBlock({
 
   return (
     <Card data-tour="prescription" className="mt-5 p-4">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2 className="text-sm font-semibold text-ink">Prescriptions</h2>
-        <span className="text-2xs text-ink-muted">
-          {full
-            ? `${stored.length} of ${MAX_PRESCRIPTIONS}, limit reached`
-            : count(stored.length, 'prescription')}
-        </span>
-      </div>
-
-      {stored.length === 0 ? (
-        <p className="mt-2 text-xs text-ink-muted">
-          Nothing recorded yet. Dictate or type a medication below, check it, and confirm it.
-        </p>
-      ) : (
-        <ul className="mt-3 space-y-2">
-          {stored.map((prescription, index) => (
-            <li
-              key={`${prescription.drug}:${prescription.dictated}`}
-              className="flex items-start justify-between gap-3 rounded-control bg-ground p-3"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-ink">{prescription.drug}</p>
-                <p className="mt-0.5 text-xs text-ink-muted">{summarise(prescription)}</p>
-                <p className="mt-1 text-2xs italic text-ink-muted">
-                  Dictated: {prescription.dictated}
-                </p>
-              </div>
-              {editable && (
-                <Button
-                  size="sm"
-                  variant="neutral"
-                  icon={<Trash2 aria-hidden className="size-3.5" />}
-                  aria-label={`Remove ${prescription.drug}`}
-                  disabled={save.isPending}
-                  onClick={() => save.mutate(stored.filter((_, at) => at !== index))}
-                >
-                  Remove
-                </Button>
+      <h2 className="text-sm font-semibold text-ink">
+        <button
+          type="button"
+          onClick={() => setIsOpen((value) => !value)}
+          aria-expanded={isOpen}
+          aria-controls={bodyId}
+          className="flex w-full items-center justify-between gap-4 rounded-control text-left transition-colors duration-150 hover:bg-sunken-soft"
+        >
+          <span>Prescriptions</span>
+          <span className="flex items-center gap-2 font-normal text-2xs text-ink-muted">
+            {full
+              ? `${stored.length} of ${MAX_PRESCRIPTIONS}, limit reached`
+              : count(stored.length, 'prescription')}
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                'size-4 shrink-0 text-ink-muted transition-transform duration-150',
+                isOpen && 'rotate-180',
               )}
-            </li>
-          ))}
-        </ul>
-      )}
+            />
+          </span>
+        </button>
+      </h2>
 
-      {editable && full && (
-        <p className="mt-3 text-xs text-ink-muted">
-          Ten is the most this record holds. Remove one to add another.
-        </p>
-      )}
-
-      {editable && !full && (
-        <section className="mt-4 border-t border-line pt-4" aria-label="Add a prescription">
-          <div className="flex items-baseline justify-between gap-3">
-            <span className={FIELD_LABEL} id="dictation-label">
-              What You Prescribed
-            </span>
-            <div className="flex items-center gap-2">
-              {!thin && phase !== 'recording' && (
-                <Button
-                  size="sm"
-                  variant="neutral"
-                  icon={<Mic aria-hidden className="size-3.5" />}
-                  disabled={busy}
-                  onClick={() => void startRecording()}
-                >
-                  Dictate
-                </Button>
-              )}
-              {phase === 'recording' && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  icon={<Square aria-hidden className="size-3.5" />}
-                  onClick={stopRecording}
-                >
-                  Stop
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="neutral"
-                disabled={busy || dictation.trim().length === 0}
-                loading={parse.isPending}
-                onClick={() => parse.mutate(dictation.trim())}
+      <div id={bodyId} data-print="block" className={cn(!isOpen && 'hidden')}>
+        {stored.length === 0 ? (
+          <p className="mt-2 text-xs text-ink-muted">
+            Nothing recorded yet. Dictate or type a medication below, check it, and confirm it.
+          </p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {stored.map((prescription, index) => (
+              <li
+                key={`${prescription.drug}:${prescription.dictated}`}
+                className="flex items-start justify-between gap-3 rounded-control bg-ground p-3"
               >
-                Check
-              </Button>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-ink">{prescription.drug}</p>
+                  <p className="mt-0.5 text-xs text-ink-muted">{summarise(prescription)}</p>
+                  <p className="mt-1 text-2xs italic text-ink-muted">
+                    Dictated: {prescription.dictated}
+                  </p>
+                </div>
+                {editable && (
+                  <Button
+                    size="sm"
+                    variant="neutral"
+                    icon={<Trash2 aria-hidden className="size-3.5" />}
+                    aria-label={`Remove ${prescription.drug}`}
+                    disabled={save.isPending}
+                    onClick={() => save.mutate(stored.filter((_, at) => at !== index))}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {editable && full && (
+          <p className="mt-3 text-xs text-ink-muted">
+            Ten is the most this record holds. Remove one to add another.
+          </p>
+        )}
+
+        {editable && !full && (
+          <section className="mt-4 border-t border-line pt-4" aria-label="Add a prescription">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className={FIELD_LABEL} id="dictation-label">
+                What You Prescribed
+              </span>
+              <div className="flex items-center gap-2">
+                {!thin && phase !== 'recording' && (
+                  <Button
+                    size="sm"
+                    variant="neutral"
+                    icon={<Mic aria-hidden className="size-3.5" />}
+                    disabled={busy}
+                    onClick={() => void startRecording()}
+                  >
+                    Dictate
+                  </Button>
+                )}
+                {phase === 'recording' && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={<Square aria-hidden className="size-3.5" />}
+                    onClick={stopRecording}
+                  >
+                    Stop
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="neutral"
+                  disabled={busy || dictation.trim().length === 0}
+                  loading={parse.isPending}
+                  onClick={() => parse.mutate(dictation.trim())}
+                >
+                  Check
+                </Button>
+              </div>
             </div>
-          </div>
 
-          <textarea
-            aria-labelledby="dictation-label"
-            className="mt-1.5 h-20 w-full resize-y rounded-control border border-line bg-surface p-3 text-sm leading-relaxed transition-colors hover:border-accent focus:border-accent"
-            placeholder="amoxicillin 500 mg, three times a day, after food, for five days"
-            maxLength={MAX_DICTATED_CHARACTERS}
-            value={dictation}
-            onChange={(event) => setDictation(event.target.value)}
-            disabled={phase !== 'idle'}
-          />
+            <textarea
+              aria-labelledby="dictation-label"
+              className="mt-1.5 h-20 w-full resize-y rounded-control border border-line bg-surface p-3 text-sm leading-relaxed transition-colors hover:border-accent focus:border-accent"
+              placeholder="amoxicillin 500 mg, three times a day, after food, for five days"
+              maxLength={MAX_DICTATED_CHARACTERS}
+              value={dictation}
+              onChange={(event) => setDictation(event.target.value)}
+              disabled={phase !== 'idle'}
+            />
 
-          {liveStream && <InputMeter stream={liveStream} className="mt-2" />}
+            {liveStream && <InputMeter stream={liveStream} className="mt-2" />}
 
-          {/* Always mounted, because a live region added to the DOM alongside
+            {/* Always mounted, because a live region added to the DOM alongside
               its first content is the shape screen readers miss. Empty it
               carries no margin and so takes no room. */}
-          <p role="status" className={cn('text-xs text-ink-muted', statusLine() !== '' && 'mt-2')}>
-            {statusLine()}
-          </p>
-
-          {error !== null && (
-            <p role="alert" className="mt-2 text-xs text-emergency">
-              {error}
+            <p
+              role="status"
+              className={cn('text-xs text-ink-muted', statusLine() !== '' && 'mt-2')}
+            >
+              {statusLine()}
             </p>
-          )}
 
-          {thin && (
-            <p className="mt-2 text-xs text-ink-muted">
-              This device does not have the memory to run the speech model, so type the medication
-              above instead.
-            </p>
-          )}
-
-          {open.length > 0 && parsedFrom !== null && (
-            <div className="mt-4">
-              <h3 className="text-xs font-semibold text-ink">
-                Drug name candidates ({open.length})
-              </h3>
-              <p className="mt-1 text-xs text-ink-muted">
-                Each is a separate decision, and nothing fills the drug name until you accept one.
+            {error !== null && (
+              <p role="alert" className="mt-2 text-xs text-emergency">
+                {error}
               </p>
+            )}
 
-              <ul className="mt-2 space-y-2">
-                {open.map((candidate) => {
-                  const heardIsGeneric = candidate.heard.toLowerCase() === candidate.generic
-                  return (
-                    <li
-                      key={candidateKey(candidate)}
-                      className="rounded-control bg-ground p-3 text-xs text-ink-muted"
-                    >
-                      {/* Sliced from the text the offsets belong to, never from
+            {thin && (
+              <p className="mt-2 text-xs text-ink-muted">
+                This device does not have the memory to run the speech model, so type the medication
+                above instead.
+              </p>
+            )}
+
+            {open.length > 0 && parsedFrom !== null && (
+              <div className="mt-4">
+                <h3 className="text-xs font-semibold text-ink">
+                  Drug name candidates ({open.length})
+                </h3>
+                <p className="mt-1 text-xs text-ink-muted">
+                  Each is a separate decision, and nothing fills the drug name until you accept one.
+                </p>
+
+                <ul className="mt-2 space-y-2">
+                  {open.map((candidate) => {
+                    const heardIsGeneric = candidate.heard.toLowerCase() === candidate.generic
+                    return (
+                      <li
+                        key={candidateKey(candidate)}
+                        className="rounded-control bg-ground p-3 text-xs text-ink-muted"
+                      >
+                        {/* Sliced from the text the offsets belong to, never from
                           the live box, so the marked span stays truthful while
                           the doctor is mid-edit. */}
-                      <p className="font-mono leading-relaxed">
-                        {parsedFrom.slice(0, candidate.start)}
-                        <mark className="bg-transparent font-semibold text-ink underline decoration-accent decoration-2 underline-offset-2">
-                          {parsedFrom.slice(candidate.start, candidate.end)}
-                        </mark>
-                        {parsedFrom.slice(candidate.end)}
-                      </p>
+                        <p className="font-mono leading-relaxed">
+                          {parsedFrom.slice(0, candidate.start)}
+                          <mark className="bg-transparent font-semibold text-ink underline decoration-accent decoration-2 underline-offset-2">
+                            {parsedFrom.slice(candidate.start, candidate.end)}
+                          </mark>
+                          {parsedFrom.slice(candidate.end)}
+                        </p>
 
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span className="text-ink">
-                          {heardIsGeneric ? 'Record as' : 'Read as'}{' '}
-                          <strong className="font-semibold">{candidate.generic}</strong>?
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          icon={<Check aria-hidden className="size-3.5" />}
-                          disabled={dirty}
-                          onClick={() => setDraft((current) => acceptCandidate(current, candidate))}
-                        >
-                          Accept
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="neutral"
-                          icon={<X aria-hidden className="size-3.5" />}
-                          onClick={() =>
-                            setRejected((current) => new Set(current).add(candidateKey(candidate)))
-                          }
-                        >
-                          Reject
-                        </Button>
-                        {dirty && <span>Check the dictation again first.</span>}
-                      </div>
-                    </li>
-                  )
-                })}
-              </ul>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <span className="text-ink">
+                            {heardIsGeneric ? 'Record as' : 'Read as'}{' '}
+                            <strong className="font-semibold">{candidate.generic}</strong>?
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            icon={<Check aria-hidden className="size-3.5" />}
+                            disabled={dirty}
+                            onClick={() =>
+                              setDraft((current) => acceptCandidate(current, candidate))
+                            }
+                          >
+                            Accept
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="neutral"
+                            icon={<X aria-hidden className="size-3.5" />}
+                            onClick={() =>
+                              setRejected((current) =>
+                                new Set(current).add(candidateKey(candidate)),
+                              )
+                            }
+                          >
+                            Reject
+                          </Button>
+                          {dirty && <span>Check the dictation again first.</span>}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            )}
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5 sm:col-span-2">
+                <span className={FIELD_LABEL}>Drug</span>
+                <input
+                  className={TEXT_INPUT}
+                  value={draft.drug}
+                  placeholder="Accept a candidate above, or type the name"
+                  onChange={(event) =>
+                    setDraft((current) => setDrugByHand(current, event.target.value))
+                  }
+                />
+              </label>
+
+              <label className="flex flex-col gap-1.5">
+                <span className={FIELD_LABEL}>Dose</span>
+                <input
+                  className={TEXT_INPUT}
+                  value={draft.dose}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, dose: event.target.value }))
+                  }
+                />
+              </label>
+
+              <div className="flex flex-col gap-1.5">
+                <span className={FIELD_LABEL}>Route</span>
+                <Select
+                  label="Route"
+                  value={draft.route}
+                  options={ROUTE_OPTIONS}
+                  onChange={(route) =>
+                    setDraft((current) => ({ ...current, route: route as SigRoute | '' }))
+                  }
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span className={FIELD_LABEL}>Frequency</span>
+                <Select
+                  label="Frequency"
+                  value={draft.frequency}
+                  options={FREQUENCY_OPTIONS}
+                  onChange={(frequency) =>
+                    setDraft((current) => ({
+                      ...current,
+                      frequency: frequency as SigFrequency | '',
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span className={FIELD_LABEL}>With Food</span>
+                <Select
+                  label="With Food"
+                  value={draft.food}
+                  options={FOOD_OPTIONS}
+                  onChange={(food) =>
+                    setDraft((current) => ({ ...current, food: food as SigFoodTiming | '' }))
+                  }
+                />
+              </div>
+
+              <label className="flex flex-col gap-1.5">
+                <span className={FIELD_LABEL}>Duration</span>
+                <input
+                  className={TEXT_INPUT}
+                  value={draft.duration}
+                  onChange={(event) =>
+                    setDraft((current) => ({ ...current, duration: event.target.value }))
+                  }
+                />
+              </label>
             </div>
-          )}
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5 sm:col-span-2">
-              <span className={FIELD_LABEL}>Drug</span>
-              <input
-                className={TEXT_INPUT}
-                value={draft.drug}
-                placeholder="Accept a candidate above, or type the name"
-                onChange={(event) =>
-                  setDraft((current) => setDrugByHand(current, event.target.value))
-                }
-              />
-            </label>
-
-            <label className="flex flex-col gap-1.5">
-              <span className={FIELD_LABEL}>Dose</span>
-              <input
-                className={TEXT_INPUT}
-                value={draft.dose}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, dose: event.target.value }))
-                }
-              />
-            </label>
-
-            <div className="flex flex-col gap-1.5">
-              <span className={FIELD_LABEL}>Route</span>
-              <Select
-                label="Route"
-                value={draft.route}
-                options={ROUTE_OPTIONS}
-                onChange={(route) =>
-                  setDraft((current) => ({ ...current, route: route as SigRoute | '' }))
-                }
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <span className={FIELD_LABEL}>Frequency</span>
-              <Select
-                label="Frequency"
-                value={draft.frequency}
-                options={FREQUENCY_OPTIONS}
-                onChange={(frequency) =>
-                  setDraft((current) => ({
-                    ...current,
-                    frequency: frequency as SigFrequency | '',
-                  }))
-                }
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <span className={FIELD_LABEL}>With Food</span>
-              <Select
-                label="With Food"
-                value={draft.food}
-                options={FOOD_OPTIONS}
-                onChange={(food) =>
-                  setDraft((current) => ({ ...current, food: food as SigFoodTiming | '' }))
-                }
-              />
-            </div>
-
-            <label className="flex flex-col gap-1.5">
-              <span className={FIELD_LABEL}>Duration</span>
-              <input
-                className={TEXT_INPUT}
-                value={draft.duration}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, duration: event.target.value }))
-                }
-              />
-            </label>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              icon={<Check aria-hidden className="size-3.5" />}
-              disabled={ready === null || busy}
-              loading={save.isPending}
-              onClick={addPrescription}
-            >
-              Confirm Prescription
-            </Button>
-            {dictation.trim().length > 0 && (
-              <Button size="sm" variant="neutral" disabled={busy || save.isPending} onClick={reset}>
-                Discard
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<Check aria-hidden className="size-3.5" />}
+                disabled={ready === null || busy}
+                loading={save.isPending}
+                onClick={addPrescription}
+              >
+                Confirm Prescription
               </Button>
-            )}
-            {ready === null && started && (
-              <span className="text-xs text-ink-muted">
-                A drug name and what you said are both needed.
-              </span>
-            )}
-          </div>
-        </section>
-      )}
+              {dictation.trim().length > 0 && (
+                <Button
+                  size="sm"
+                  variant="neutral"
+                  disabled={busy || save.isPending}
+                  onClick={reset}
+                >
+                  Discard
+                </Button>
+              )}
+              {ready === null && started && (
+                <span className="text-xs text-ink-muted">
+                  A drug name and what you said are both needed.
+                </span>
+              )}
+            </div>
+          </section>
+        )}
+      </div>
     </Card>
   )
 }
