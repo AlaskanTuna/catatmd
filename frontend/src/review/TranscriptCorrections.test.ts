@@ -22,6 +22,7 @@ const proposal: MishearProposal = {
   start: 9,
   original: 'teman',
   suggested: 'demam',
+  source: 'mishear',
 }
 
 describe('applyProposal', () => {
@@ -61,8 +62,13 @@ describe('applyProposal', () => {
       turns: [{ speaker: 'patient', text: 'Tekak saya penkak.' }],
     }
     expect(
-      applyProposal(longer, { turnIndex: 0, start: 11, original: 'penkak', suggested: 'bengkak' })
-        .turns[0]?.text,
+      applyProposal(longer, {
+        turnIndex: 0,
+        start: 11,
+        original: 'penkak',
+        suggested: 'bengkak',
+        source: 'mishear',
+      }).turns[0]?.text,
     ).toBe('Tekak saya bengkak.')
   })
 })

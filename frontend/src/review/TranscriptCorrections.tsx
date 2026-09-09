@@ -36,8 +36,14 @@ export function applyProposal(transcript: Transcript, proposal: MishearProposal)
   }
 }
 
-/** A stable identity for a proposal, so rejecting one does not dismiss another. */
-const keyOf = (p: MishearProposal) => `${p.turnIndex}:${p.start}:${p.original}`
+/**
+ * A stable identity for a proposal, so rejecting one does not dismiss another.
+ *
+ * `source` is part of it because the two layers can land on the same word: the
+ * measured table and the model may both propose a correction at one position,
+ * and rejecting the model's guess must not silently dismiss the measured one.
+ */
+const keyOf = (p: MishearProposal) => `${p.source}:${p.turnIndex}:${p.start}:${p.original}`
 
 /**
  * The words on either side of the proposed span, so the doctor judges the
@@ -111,7 +117,14 @@ export function TranscriptCorrections({
     save.mutate({ ...transcript, turns })
   }
 
-  const open = (proposals.data ?? []).filter((p) => !rejected.has(keyOf(p)))
+  const open = (proposals.data?.proposals ?? []).filter((p) => !rejected.has(keyOf(p)))
+  /*
+   * Surfaced only when the constrained pass ran and fell over, never when it is
+   * switched off. A doctor has no use for an env flag, but they do need to know
+   * that a check they might assume happened did not: an empty list after a
+   * failure is not the same claim as an empty list after a clean run.
+   */
+  const cleanupFailed = proposals.data?.cleanup === 'failed'
 
   return (
     <Card className="p-5">
@@ -154,6 +167,13 @@ export function TranscriptCorrections({
         </p>
       )}
 
+      {cleanupFailed && !editing && (
+        <p className="mt-2 text-xs text-ink-muted">
+          The additional check for less common mishears did not run this time. Anything it would
+          have found is not listed below.
+        </p>
+      )}
+
       {open.length > 0 && (
         <section className="mt-4" aria-label="Suspected mishears">
           <h3 className="text-xs font-semibold text-ink">Suspected mishears ({open.length})</h3>
@@ -166,6 +186,7 @@ export function TranscriptCorrections({
             {open.map((proposal) => {
               const turn = transcript.turns[proposal.turnIndex]
               const { before, after } = context(turn?.text ?? '', proposal)
+              const measured = proposal.source === 'mishear'
 
               return (
                 <li
@@ -174,15 +195,36 @@ export function TranscriptCorrections({
                 >
                   <p className="font-mono leading-relaxed">
                     {before}
-                    <mark className="rounded bg-warning-soft px-1 font-semibold text-ink">
+                    {/*
+                      A solid underline rather than a filled mark (#321). The
+                      class this used, `bg-warning-soft`, names a theme variable
+                      that does not exist, so Tailwind emitted no rule and the
+                      browser default took over. It is an underline rather than
+                      a new colour because that is a design-system decision this
+                      PR should not be making, and because it puts the span on
+                      the axis PR #322 already established in this workflow: a
+                      dotted underline means the recogniser was unsure, and a
+                      solid one means a correction is on offer.
+                    */}
+                    <span className="font-semibold text-ink underline decoration-ink decoration-2 underline-offset-4">
                       {proposal.original}
-                    </mark>
+                    </span>
                     {after}
                   </p>
 
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <span className="text-ink">
                       Read as <strong className="font-semibold">{proposal.suggested}</strong>?
+                    </span>
+                    {/*
+                      Which layer proposed this, said plainly. The measured table
+                      has a recorded failure behind every pair it offers; the
+                      model pass does not, and a doctor deciding between two
+                      words is entitled to know which kind of claim they are
+                      being shown.
+                    */}
+                    <span className="rounded-pill bg-sunken px-2 py-0.5 text-2xs font-medium text-ink-muted">
+                      {measured ? 'Known mishear' : 'Model suggestion'}
                     </span>
                     <Button
                       size="sm"

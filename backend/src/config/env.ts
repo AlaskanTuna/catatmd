@@ -94,6 +94,21 @@ const EnvSchema = z.object({
   // than a rule.
   AUDIO_RETENTION_HOURS: z.coerce.number().int().positive().optional(),
 
+  // The constrained model pass that proposes transcript corrections beyond the
+  // measured confusable table (issue #309).
+  //
+  // Off by default, and that is a clinical decision rather than a rollout one.
+  // docs/trd.md §20.9 sets the bar this feature has to clear before it is worth
+  // running at all: "the model pass earns its place only if it finds correct
+  // corrections the table does not", and nothing has measured that yet. Turning
+  // it on is a decision someone should make with a number in front of them,
+  // which is what `evals/transcript-cleanup.ts` exists to produce.
+  //
+  // An enum rather than a boolean because `z.coerce.boolean()` reads every
+  // non-empty string as true, so `TRANSCRIPT_CLEANUP=false` would enable it.
+  // Every other switch in this file is an enum for the same reason.
+  TRANSCRIPT_CLEANUP: z.enum(['on', 'off']).default('off'),
+
   // Verbosity only. No level widens what may be written: redaction in
   // lib/logger.ts is unconditional, so there is no debug flag that unlocks raw
   // content (GitHub issue #15, non-goals).

@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { type DispositionState, type NoteTemplate, NotificationActionSchema } from '@shared/types'
+import {
+  type DispositionState,
+  type NoteTemplate,
+  NotificationActionSchema,
+  type TranscriptCleanupStatus,
+} from '@shared/types'
 import type { ProfileId } from '../clinical-profiles/index.js'
 import type { ActiveClinicalVersions } from '../clinical-versions/index.js'
 import { prisma } from '../lib/prisma.js'
@@ -132,7 +137,25 @@ export type ConsultationAuditEvent =
    * a manual edit. That is a known gap, identical to the copilot's, and closing
    * it would take a second write path to the clinical record.
    */
-  | { action: 'consultation.corrections_proposed'; metadata: { proposalCount: number } }
+  /*
+   * Counts and a status, still never the words (#309 extends #308).
+   *
+   * `modelProposalCount` and `droppedCount` are what make the constrained pass
+   * observable without reproducing it: the drop rate is the signal that says
+   * whether the model is proposing sensible edits or being caught by the policy
+   * every time, and neither number is content. `cleanup` distinguishes a pass
+   * that ran and found nothing from one that never ran, which an empty
+   * `proposalCount` alone cannot.
+   */
+  | {
+      action: 'consultation.corrections_proposed'
+      metadata: {
+        proposalCount: number
+        modelProposalCount: number
+        droppedCount: number
+        cleanup: TranscriptCleanupStatus
+      }
+    }
   | {
       action: 'consultation.corrections_failed'
       metadata: { reason: TranscriptCorrectionsFailureReason }

@@ -27,6 +27,7 @@ import {
   type SoapNote,
   SoapNoteSchema,
   type Transcript,
+  type TranscriptCleanupStatus,
   TranscriptCorrectionsResponseSchema,
   TranscriptSchema,
   toSoapNote,
@@ -46,6 +47,7 @@ import {
   ProfileIdSchema,
 } from '../clinical-profiles/index.js'
 import { getActiveClinicalVersions } from '../clinical-versions/index.js'
+import { env } from '../config/env.js'
 import { DeidentificationError, deidentifyTranscript } from '../deid/index.js'
 import { deriveGaps } from '../gaps/index.js'
 import { assertOwnedConsultation, assertOwnedPatient } from '../lib/authz.js'
@@ -59,6 +61,7 @@ import { evaluateRedFlags, mergeRedFlags, proposeMishearCorrections } from '../r
 import { retrieveGuidelines } from '../retrieval/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
 import type { SuppressedSuggestionId } from '../suggestions/safety.js'
+import { proposeModelCorrections } from '../transcript-cleanup/index.js'
 
 export const consultationsRouter = Router()
 
@@ -856,7 +859,19 @@ consultationsRouter.post('/:id/prescriptions/parse', async (req, res) => {
  * trail did not record are never observable by a client. It carries a count and
  * never the words: `original` is patient speech and `suggested` is the table's
  * reading of it, and both are content.
+ *
+ * **The constrained model pass runs second and may only add (#309).** The
+ * measured table above is layer 2 and ships unconditionally; layer 3 reads only
+ * spans the recogniser itself doubted, cannot touch a span a fired rule flag
+ * matched, and is off unless `TRANSCRIPT_CLEANUP` says otherwise. Its failure is
+ * reported in `cleanup` and never takes the deterministic proposals off the
+ * screen, which is why this responds 200 with a possibly non-empty array even
+ * when the provider is down.
  */
+const TranscriptCorrectionsBodySchema = z.object({
+  profileId: ProfileIdSchema.optional(),
+})
+
 consultationsRouter.post('/:id/transcript-corrections', async (req, res) => {
   const actor = doctorId(req)
   const consultation = await assertOwnedConsultation(req.params.id, actor)
@@ -868,6 +883,10 @@ consultationsRouter.post('/:id/transcript-corrections', async (req, res) => {
       `Corrections cannot be proposed while the consultation is ${consultation.status}.`,
     )
   }
+
+  const body = TranscriptCorrectionsBodySchema.safeParse(req.body ?? {})
+  if (!body.success) throw new HttpError(400, 'invalid_body', 'Invalid profile.')
+  const profile = getClinicalProfile(body.data.profileId ?? DEFAULT_PROFILE_ID)
 
   const transcript = TranscriptSchema.safeParse(consultation.transcript)
   if (!transcript.success) {
@@ -882,14 +901,53 @@ consultationsRouter.post('/:id/transcript-corrections', async (req, res) => {
 
   const proposals = proposeMishearCorrections(transcript.data)
 
+  /*
+   * Run in-process over the raw transcript, before any egress and never on
+   * model output, which is the ordering `.claude/rules/security.md` fixes for
+   * the analyse route and the reason this one can enforce the overlap rule at
+   * all. The engine is a pure function library, so this costs a walk of the
+   * turns and nothing else.
+   */
+  const ruleFlags = evaluateRedFlags(transcript.data, profile.redFlagTriggers)
+
+  let cleanup: TranscriptCleanupStatus = 'disabled'
+  let modelProposalCount = 0
+  let droppedCount = 0
+
+  if (env.TRANSCRIPT_CLEANUP === 'on') {
+    try {
+      const outcome = await proposeModelCorrections(transcript.data, ruleFlags)
+      cleanup = outcome.status
+      modelProposalCount = outcome.proposals.length
+      droppedCount = outcome.dropped
+      proposals.push(...outcome.proposals)
+    } catch (error) {
+      /*
+       * The egress guard firing is the one alarm the log taxonomy exists to
+       * surface, so it gets its own class rather than being folded into a
+       * provider failure. The deterministic proposals still ship: they never
+       * left the API, and taking them away would punish the doctor for an
+       * incident on a different layer.
+       */
+      cleanup = 'failed'
+      logger.warn('transcript cleanup failed', {
+        consultationId: consultation.id,
+        operation: 'transcript_cleanup',
+        errorClass:
+          error instanceof DeidentificationError ? 'deidentification_error' : 'internal_error',
+        errorName: error instanceof Error ? error.constructor.name : 'Error',
+      })
+    }
+  }
+
   await recordAuditEvent({
     action: 'consultation.corrections_proposed',
     actorId: actor,
     consultationId: consultation.id,
-    metadata: { proposalCount: proposals.length },
+    metadata: { proposalCount: proposals.length, modelProposalCount, droppedCount, cleanup },
   })
 
-  res.json(TranscriptCorrectionsResponseSchema.parse({ proposals }))
+  res.json(TranscriptCorrectionsResponseSchema.parse({ proposals, cleanup }))
 })
 
 const LiveFlagsBodySchema = z.object({
