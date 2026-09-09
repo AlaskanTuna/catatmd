@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { type DispositionState, type NoteTemplate, NotificationActionSchema } from '@shared/types'
+import {
+  type DispositionState,
+  type NoteTemplate,
+  NotificationActionSchema,
+  type TranscriptCleanupStatus,
+} from '@shared/types'
 import type { ProfileId } from '../clinical-profiles/index.js'
 import type { ActiveClinicalVersions } from '../clinical-versions/index.js'
 import { prisma } from '../lib/prisma.js'
@@ -41,6 +46,18 @@ export type AnalysisFailureReason =
  * and had nothing to work on.
  */
 export type TranscriptCorrectionsFailureReason = 'no_transcript' | 'internal_error'
+
+/**
+ * Why the constrained cleanup pass did not produce proposals (#309).
+ *
+ * Closed for the reason every other enum on this path is, and separate from
+ * `cleanup` because `failed` alone collapses two very different events. A
+ * provider timeout is routine; `deid_failed` is the de-identification guard
+ * firing, which `.claude/rules/security.md` calls the one alarm the log
+ * taxonomy exists to surface, and an alarm that reads identically to a timeout
+ * in the audit trail is not surfaced at all.
+ */
+export type TranscriptCleanupFailureReason = 'llm_failed' | 'deid_failed' | 'too_long'
 
 /**
  * Which versions of the system produced one analysis (issue #12). Enough to
@@ -132,7 +149,27 @@ export type ConsultationAuditEvent =
    * a manual edit. That is a known gap, identical to the copilot's, and closing
    * it would take a second write path to the clinical record.
    */
-  | { action: 'consultation.corrections_proposed'; metadata: { proposalCount: number } }
+  /*
+   * Counts and a status, still never the words (#309 extends #308).
+   *
+   * `modelProposalCount` and `droppedCount` are what make the constrained pass
+   * observable without reproducing it: the drop rate is the signal that says
+   * whether the model is proposing sensible edits or being caught by the policy
+   * every time, and neither number is content. `cleanup` distinguishes a pass
+   * that ran and found nothing from one that never ran, which an empty
+   * `proposalCount` alone cannot.
+   */
+  | {
+      action: 'consultation.corrections_proposed'
+      metadata: {
+        proposalCount: number
+        modelProposalCount: number
+        droppedCount: number
+        cleanup: TranscriptCleanupStatus
+        /** Present only when `cleanup` is `failed`, and never free text. */
+        cleanupReason?: TranscriptCleanupFailureReason
+      }
+    }
   | {
       action: 'consultation.corrections_failed'
       metadata: { reason: TranscriptCorrectionsFailureReason }

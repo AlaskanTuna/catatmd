@@ -200,6 +200,12 @@ export const proposeMishearCorrections = (transcript: Transcript): MishearPropos
         start,
         original: turn.text.slice(start, start + word.length),
         suggested,
+        // Measured, and the constrained model pass beside it is not (#309). The
+        // distinction is load-bearing rather than cosmetic: a `model` proposal
+        // overlapping a fired flag's evidence is dropped before the doctor sees
+        // it, and one of these is not, because accepting it only moves the
+        // transcript the way `expandMishears` already read it.
+        source: 'mishear',
       })
     }
   }
