@@ -798,7 +798,7 @@ export const GuidelineChunkSchema = z
     sourceLicence: z.string(),
     verbatimAllowed: z.boolean(),
     quote: z.string().optional(),
-    /** Set on retrieved CPG chunks only; the curated corpus has no pages. */
+    /** The ingested document and page a retrieved chunk came from. */
     documentId: z.string().optional(),
     page: z.number().int().optional(),
     /** True when the span was OCRed from a scanned page, so it may carry recognition errors. */
