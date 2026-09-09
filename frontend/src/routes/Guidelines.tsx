@@ -151,7 +151,7 @@ export function Guidelines() {
       )}
 
       {documents.data && (
-        <>
+        <div data-tour="corpus">
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <div className="relative flex-1">
               <Search
@@ -249,7 +249,7 @@ export function Guidelines() {
               />
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   )

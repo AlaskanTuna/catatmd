@@ -60,7 +60,7 @@ export const DEMO_CONSULTATION_ID = 'demo-ephemeral'
  * with citations have no flags. A tour pinned to a single consultation
  * therefore has to point one of its stops at an element that does not exist.
  */
-type Subject = 'flagged' | 'cited'
+type Subject = 'flagged' | 'cited' | 'prescribed'
 
 export interface TourStep {
   label: string
@@ -83,41 +83,55 @@ export const TOUR_STEPS: TourStep[] = [
     label: 'Patients',
     route: '/patients',
     target: '[data-tour="patients"]',
-    hint: 'Reception registers the patient first, as they would on paper. Once a name and identity number are on file, de-identification matches them exactly rather than having to detect them.',
+    hint: "Reception registers the patient as on paper. The record is the doctor's, and identifiers are removed by detection before anything leaves the server.",
   },
   {
     label: 'Consultations',
     route: '/consultations',
     target: '[data-tour="consultation-list"]',
-    hint: 'Consultations are grouped into Draft, Awaiting Review, and Approved. The list opens on Awaiting Review and paginates 15 rows at a time.',
+    hint: 'Consultations are filed under Draft, Awaiting Review, and Approved. The list opens on Awaiting Review and paginates so each category stays scannable.',
+  },
+  {
+    label: 'Capture',
+    route: '/consultations/:id',
+    subject: 'flagged',
+    target: '[data-tour="capture-settings"]',
+    hint: 'Consultation Settings chooses the capture mode and the note template. Ambient streams to Soniox; press to record uses the engine set in Audio Settings, on the device by default or uploaded to ILMU in Malaysia.',
   },
   {
     label: 'Transcript',
     route: '/consultations/:id',
     subject: 'flagged',
     target: '[data-tour="transcript"]',
-    hint: 'The source, kept beside the output for the whole review. Nothing on this screen is unattributable to it.',
+    hint: 'The source is shown beside the output, and underlined words can be corrected or a recorded turn can be played back. The recogniser is primed for Malay clinical terms and proposes mishear corrections, so the text the doctor reads is the one most likely said.',
   },
   {
     label: 'Red Flags',
     route: '/consultations/:id',
     subject: 'flagged',
     target: '[data-tour^="flag-"]',
-    hint: 'Escalation triggers. "Rule" means a deterministic rules engine fired; the model may add candidates but can never suppress or downgrade one.',
+    hint: 'Escalation triggers. A "Rule" badge means a deterministic rules engine fired; the model may add candidates but can never suppress or downgrade one.',
   },
   {
     label: 'Gaps',
     route: '/consultations/:id',
     subject: 'flagged',
     target: '[data-tour="gap"]',
-    hint: 'What the consultation never established. A sparse transcript yields twenty-five of these; a thorough one yields six. That gap is the product.',
+    hint: 'Each prompt is a question the consultation never answered. The Sources chips show whether it came from a guideline document or the record checklist, and why that source expects it.',
   },
   {
     label: 'Checklist',
     route: '/consultations/:id',
     subject: 'flagged',
     target: '[data-tour="checklist"]',
-    hint: 'A fixed checklist. A field nobody asked about reads "Not Assessed" rather than vanishing, so a fabricated denial is visible.',
+    hint: 'The Completeness Checklist opens in a scroller with aligned rows. Every field is listed, so an unasked question reads as "Not Assessed" rather than vanishing.',
+  },
+  {
+    label: 'Prescriptions',
+    route: '/consultations/:id',
+    subject: 'prescribed',
+    target: '[data-tour="prescription"]',
+    hint: 'The doctor dictates a medication, checks the parsed fields, and confirms it. Confirmed prescriptions, when there are any, are listed under the plan.',
   },
   {
     // Deliberately before Approval: the claim that lands hardest here is the
@@ -127,14 +141,14 @@ export const TOUR_STEPS: TourStep[] = [
     route: '/consultations/:id',
     subject: 'flagged',
     target: '[data-tour="catatai"]',
-    hint: 'The review copilot. It reads the consultation as it stands, including your own edits, and proposes changes you choose to apply. It can never approve a note or retract a red flag. It is inactive here, because the consultation this tour analyses is never saved, and nothing on this screen is a scripted conversation.',
+    hint: "The review copilot reads the consultation as it stands, including the doctor's own edits, and proposes changes that the doctor chooses to apply. It can never approve a note or retract a red flag, and it is inactive here because the tour's consultation is never saved.",
   },
   {
     label: 'Approval',
     route: '/consultations/:id',
     subject: 'flagged',
     target: '[data-tour="approve"]',
-    hint: 'Nothing is final until the doctor approves it, in two deliberate steps. The tour will not press this for you.',
+    hint: 'Nothing is final until the doctor approves it through a two-step confirmation. The tour will not press this for you.',
   },
   {
     // A different consultation on purpose: the one with red flags has no cited
@@ -143,13 +157,13 @@ export const TOUR_STEPS: TourStep[] = [
     route: '/consultations/:id',
     subject: 'cited',
     target: '[data-tour="suggestion"]',
-    hint: 'Suggestions cite guideline IDs from a closed corpus. Free text fails schema validation, so a hallucinated reference cannot reach this card.',
+    hint: 'Each suggestion carries a guideline ID chip that expands to its source, and the model may only cite IDs it was given, so a citation cannot be invented. Open-licence sources show the quoted span with a page link; the National Antimicrobial Guideline is attributed and linked without a quote.',
   },
   {
     label: 'Corpus',
     route: '/guidelines',
     target: '[data-tour="corpus"]',
-    hint: 'The whole closed set the model may cite, browsable. That is what makes the citation claim checkable rather than merely stated.',
+    hint: "The corpus is the retrieved Malaysian guideline library, shown as one browsable list with a source dropdown. Red flags and Missing Information prompts cite whole documents; the model cites retrieved passages with page anchors, and the Ministry of Health's copyrighted text is attributed, not quoted.",
   },
 ]
 
@@ -233,13 +247,12 @@ const DemoTourContext = createContext<DemoTourValue | null>(null)
  * Pick the consultation the tour walks.
  *
  * **Scored by how many of the tour's stops it can actually show, not by which
- * is newest.** Six of the nine steps point at something inside one
- * consultation, and any of those anchors can be legitimately absent: a
- * consultation with no red flags renders no flag card, one whose findings sit
- * outside the guideline corpus renders no suggestion. Pointing a coachmark at
- * an element that does not exist is the failure this scoring prevents, and it
- * is not hypothetical: the seeded spread contains a consultation with flags but
- * no citations.
+ * is newest.** Most of the steps point at something inside one consultation,
+ * and any of those anchors can be legitimately absent: a consultation with no
+ * red flags renders no flag card, one whose findings sit outside the guideline
+ * corpus renders no suggestion. Pointing a coachmark at an element that does
+ * not exist is the failure this scoring prevents, and it is not hypothetical:
+ * the seeded spread contains a consultation with flags but no citations.
  *
  * Red flags are weighted highest because the rule-versus-model distinction is
  * the single thing this product most needs to demonstrate.
@@ -249,37 +262,37 @@ const DemoTourContext = createContext<DemoTourValue | null>(null)
  * against an account holding five, paid once at start, and it warms the cache
  * the review screen is about to use anyway.
  */
-interface ScoredAnalysis {
-  redFlags?: unknown[]
-  suggestions?: unknown[]
-}
 
 export type Subjects = Record<Subject, string | null>
 
 async function pickConsultations(
-  fetchDetail: (id: string) => Promise<{ analysis: unknown }>,
+  fetchDetail: (id: string) => Promise<ConsultationDetail>,
 ): Promise<Subjects> {
   const list = await api.listConsultations()
-  // A draft has no analysis at all, so none of the six anchors exist on it.
+  // A draft has no analysis at all, so none of the review-page anchors exist on it.
   const analysed = list.filter((item) => item.status !== 'draft')
   const fallback = analysed[0]?.id ?? list[0]?.id ?? null
-  if (analysed.length === 0) return { flagged: fallback, cited: fallback }
+  if (analysed.length === 0) return { flagged: fallback, cited: fallback, prescribed: fallback }
 
   const details = (
     await Promise.all(
       analysed.map((item) =>
         fetchDetail(item.id)
-          .then((detail) => ({ id: item.id, analysis: detail.analysis as ScoredAnalysis | null }))
+          .then((detail) => ({ id: item.id, detail }))
           .catch(() => null),
       ),
     )
-  ).filter((entry) => entry !== null)
+  ).filter((entry): entry is { id: string; detail: ConsultationDetail } => entry !== null)
 
   // The approval stop needs the *unapproved* bar, which only renders while the
   // consultation is still awaiting review, so an approved one cannot be the
   // flagged subject even if it has the most flags.
   const approvedIds = new Set(
     list.filter((item) => item.status === 'approved').map((item) => item.id),
+  )
+
+  const awaitingIds = new Set(
+    list.filter((item) => item.status === 'awaiting_review').map((item) => item.id),
   )
 
   /*
@@ -297,14 +310,20 @@ async function pickConsultations(
    * for its flags and is never approved.
    */
   const flagged =
-    details.find((entry) => entry.analysis?.redFlags?.length && !approvedIds.has(entry.id))?.id ??
-    details.find((entry) => entry.analysis?.redFlags?.length)?.id ??
+    details.find((entry) => entry.detail.analysis?.redFlags?.length && !approvedIds.has(entry.id))
+      ?.id ??
+    details.find((entry) => entry.detail.analysis?.redFlags?.length)?.id ??
     details.find((entry) => !approvedIds.has(entry.id))?.id ??
     fallback
 
-  const cited = details.find((entry) => entry.analysis?.suggestions?.length)?.id ?? flagged
+  const cited = details.find((entry) => entry.detail.analysis?.suggestions?.length)?.id ?? flagged
 
-  return { flagged, cited }
+  const prescribed =
+    details.find((entry) => entry.detail.prescriptions?.length)?.id ??
+    details.find((entry) => awaitingIds.has(entry.id))?.id ??
+    fallback
+
+  return { flagged, cited, prescribed }
 }
 
 /**
@@ -320,7 +339,7 @@ async function pickConsultations(
  * Not `fixtures[0]`, and the difference decides whether the demo works.
  *
  * The corpus is ordered for the intake screen, and its first entry is the
- * gap-heavy case, which yields twenty-four gaps and **no red flags at all**.
+ * gap-heavy case, which yields many gaps and **no red flags at all**.
  * The tour's headline stop is the rule-versus-model distinction, so analysing
  * that fixture would leave the single most important screen empty while every
  * other step looked fine.
@@ -384,8 +403,8 @@ function resolveStepRoute(
 
   if (ephemeral) {
     /*
-     * Live mode has one consultation, so every consultation step points at the
-     * same in-memory record, with one measured exception.
+     * Live mode has one consultation, so most consultation steps point at the
+     * same in-memory record, with measured exceptions.
      *
      * The Citations stop needs a cited suggestion to point at, and whether the
      * analysis produces one is a property of the transcript rather than a
@@ -396,15 +415,23 @@ function resolveStepRoute(
      * would leave the closed-corpus claim pointing at an element that does not
      * exist.
      *
-     * So that one step falls back to a stored consultation that does have a
-     * citation. Reading a seeded row persists nothing, so this costs the
-     * ephemeral guarantee nothing; the tour simply stops narrating its own
-     * analysis for the one stop its own analysis cannot illustrate.
+     * The Prescriptions stop needs a stored consultation, because the tour's own
+     * analysis is never persisted and a demo record has no id to record a
+     * prescription against.
+     *
+     * Those two stops fall back to stored consultations that carry the anchor.
+     * Reading a seeded row persists nothing, so this costs the ephemeral
+     * guarantee nothing; the tour simply stops narrating its own analysis for
+     * the stops its own analysis cannot illustrate.
      */
     const wantsCitation = step.subject === 'cited'
     const hasCitation = (ephemeral.analysis?.suggestions?.length ?? 0) > 0
     if (wantsCitation && !hasCitation && resolved.cited) {
       return step.route.replace(':id', resolved.cited)
+    }
+    if (step.subject === 'prescribed') {
+      const id = resolved.prescribed ?? resolved.flagged ?? resolved.cited
+      if (id) return step.route.replace(':id', id)
     }
     return step.route.replace(':id', DEMO_CONSULTATION_ID)
   }
@@ -431,7 +458,11 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<TourMode>('live')
   const [fallbackReason, setFallbackReason] = useState<FallbackReason>('failed')
   const [ephemeral, setEphemeral] = useState<ConsultationDetail | null>(null)
-  const [subjects, setSubjects] = useState<Subjects>({ flagged: null, cited: null })
+  const [subjects, setSubjects] = useState<Subjects>({
+    flagged: null,
+    cited: null,
+    prescribed: null,
+  })
   /** Where the tour last sent the browser, so a user-driven navigation is
       distinguishable from the tour's own. */
   const expectedPath = useRef<string | null>(null)
@@ -471,7 +502,7 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
     setMode('live')
     setFallbackReason('failed')
     setEphemeral(null)
-    setSubjects({ flagged: null, cited: null })
+    setSubjects({ flagged: null, cited: null, prescribed: null })
     settled.current = null
 
     data.current = (async () => {
@@ -485,11 +516,13 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
        * about to use.
        */
       const seeded = pickConsultations((consultation) =>
-        queryClient.fetchQuery({
-          queryKey: ['consultation', consultation],
-          queryFn: () => api.getConsultation(consultation),
-        }),
-      ).catch(() => ({ flagged: null, cited: null }) as Subjects)
+        queryClient
+          .fetchQuery({
+            queryKey: ['consultation', consultation],
+            queryFn: () => api.getConsultation(consultation),
+          })
+          .then((detail) => detail as ConsultationDetail),
+      ).catch(() => ({ flagged: null, cited: null, prescribed: null }) as Subjects)
 
       // Live first. The seeded walk is the fallback, not the plan.
       //
@@ -574,7 +607,7 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
     setCurrentStep(-1)
     setPreparing(false)
     setEphemeral(null)
-    setSubjects({ flagged: null, cited: null })
+    setSubjects({ flagged: null, cited: null, prescribed: null })
     expectedPath.current = null
     // Dropped so the next tour analyses afresh. Keeping it would hand a second
     // run the first run's consultation, which is a persisted demo by another
