@@ -20,6 +20,7 @@ function withGapSource(gap: InformationGap): InformationGap {
 export function withGapProvenance(
   analysis: ConsultationAnalysis | null,
 ): ConsultationAnalysis | null {
-  if (analysis === null) return null
-  return { ...analysis, gaps: analysis.gaps.map(withGapSource) }
+  if (analysis === null || typeof analysis !== 'object') return analysis
+  if (!Array.isArray((analysis as Record<string, unknown>).gaps)) return analysis
+  return { ...analysis, gaps: (analysis as ConsultationAnalysis).gaps.map(withGapSource) }
 }

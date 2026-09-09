@@ -97,4 +97,21 @@ describe('withGapProvenance', () => {
 
     expect(JSON.stringify(analysis)).toBe(before)
   })
+
+  it('returns the input unchanged when analysis is not an object', () => {
+    expect(withGapProvenance('not-an-object' as unknown as ConsultationAnalysis)).toBe(
+      'not-an-object',
+    )
+  })
+
+  it('returns the input unchanged when gaps is not an array', () => {
+    const malformed = {
+      note: NOTE,
+      redFlags: [],
+      suggestions: [],
+      gaps: 'not-an-array',
+    }
+
+    expect(withGapProvenance(malformed as unknown as ConsultationAnalysis)).toEqual(malformed)
+  })
 })

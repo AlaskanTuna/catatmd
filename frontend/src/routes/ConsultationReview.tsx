@@ -701,7 +701,7 @@ export function ConsultationReview() {
                   gap={gap}
                   disposition={byId(detail.gapDispositions, gap.id)}
                   onDecide={(decision) => patch.mutate({ gapDispositions: [decision] })}
-                  guidelines={guidelines.data ?? []}
+                  guidelines={citableGuidelines}
                 />
               ),
             })),
