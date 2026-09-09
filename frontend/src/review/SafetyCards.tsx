@@ -236,6 +236,9 @@ function unquote(evidence: string): string {
   return text
 }
 
+const sourceChipClass =
+  'inline-flex min-h-6 items-center rounded-full border border-line bg-sunken px-2.5 py-1 font-mono text-2xs text-ink'
+
 function SourcesPanel({
   guidelineIds,
   guidelines,
@@ -246,7 +249,15 @@ function SourcesPanel({
   gapSource?: GapSource
 }) {
   if (gapSource?.kind === 'unsourced') {
-    return <p className="text-sm text-ink-muted">{gapSource.reason}</p>
+    const version = (gapSource as { version?: { id: string } }).version?.id
+    return (
+      <div className="flex flex-col gap-2">
+        <span className={sourceChipClass}>
+          {version ? `checklist ${version}` : 'record checklist'}
+        </span>
+        <p className="text-sm text-ink-muted">{gapSource.reason}</p>
+      </div>
+    )
   }
 
   const ids = gapSource?.kind === 'guideline' ? gapSource.guidelineIds : guidelineIds
@@ -254,38 +265,48 @@ function SourcesPanel({
     .map((id) => guidelines.find((g) => g.id === id))
     .filter((chunk): chunk is GuidelineChunk => chunk !== undefined)
 
-  if (resolved.length === 0) {
-    return <p className="text-sm text-ink-muted">No guideline citation.</p>
+  if (resolved.length > 0) {
+    /*
+     * Each row sits on `surface`, not `sunken`, so the id chip keeps the
+     * contrast it has on a Suggestion card. A `sunken` chip on a `sunken` row is
+     * the same fill twice and reads as flat.
+     */
+    return (
+      <div className="flex flex-col gap-2">
+        {resolved.map((chunk) => (
+          <div key={chunk.id} className="rounded-control border border-line bg-surface p-3">
+            <span className={sourceChipClass}>{chunk.id}</span>
+            <p className="mt-2 text-xs font-medium text-ink">{chunk.title}</p>
+            <p className="mt-0.5 text-2xs text-ink-muted">
+              {chunk.publisher} · {chunk.year}
+            </p>
+            <a
+              href={chunk.url}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="mt-2 inline-block text-xs font-medium text-accent underline underline-offset-2"
+            >
+              Open Guideline
+            </a>
+          </div>
+        ))}
+      </div>
+    )
   }
 
-  /*
-   * Each row sits on `surface`, not `sunken`, so the id chip keeps the
-   * contrast it has on a Suggestion card. A `sunken` chip on a `sunken` row is
-   * the same fill twice and reads as flat.
-   */
-  return (
-    <div className="flex flex-col gap-2">
-      {resolved.map((chunk) => (
-        <div key={chunk.id} className="rounded-control border border-line bg-surface p-3">
-          <span className="inline-flex min-h-6 items-center rounded-full border border-line bg-sunken px-2.5 py-1 font-mono text-2xs text-ink">
-            {chunk.id}
+  if (gapSource?.kind === 'guideline') {
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {gapSource.guidelineIds.map((id) => (
+          <span key={id} className={sourceChipClass}>
+            {id}
           </span>
-          <p className="mt-2 text-xs font-medium text-ink">{chunk.title}</p>
-          <p className="mt-0.5 text-2xs text-ink-muted">
-            {chunk.publisher} · {chunk.year}
-          </p>
-          <a
-            href={chunk.url}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="mt-2 inline-block text-xs font-medium text-accent underline underline-offset-2"
-          >
-            Open Guideline
-          </a>
-        </div>
-      ))}
-    </div>
-  )
+        ))}
+      </div>
+    )
+  }
+
+  return <p className="text-sm text-ink-muted">No guideline citation.</p>
 }
 
 export function RedFlagCard({

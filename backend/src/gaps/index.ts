@@ -6,3 +6,4 @@ export {
   UTI_GAP_CHECKLIST,
 } from './checklist.js'
 export { deriveGaps } from './derive.js'
+export { withGapProvenance } from './provenance.js'

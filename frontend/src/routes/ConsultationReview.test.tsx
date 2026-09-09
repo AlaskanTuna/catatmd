@@ -1017,3 +1017,12 @@ describe('reopening the settled conversation', () => {
     expect(screen.queryByRole('button', { name: /view conversation/i })).toBeNull()
   })
 })
+
+describe('Missing Information overflow dialog', () => {
+  it.skip('passes a non-empty guideline list so a cited gap can resolve its Sources', () => {
+    // The existing SafetyCards.js mock renders GapCard as a plain <div>,
+    // so asserting that a cited chunk title appears after opening Sources
+    // would need a large fixture unmocking the real card. Skipped per the
+    // work order: "if it cannot without large fixture work, say so and skip".
+  })
+})
