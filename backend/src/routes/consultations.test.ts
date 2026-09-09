@@ -560,6 +560,53 @@ describe('analyse output', () => {
 
     expect(detail.consultation.analysis.profileId).toBe('adult-acute-uncomplicated-uti')
   })
+
+  it('completes with no citable corpus when retrieval fails, preserving red flags', async () => {
+    const { retrieveGuidelines } = await import('../retrieval/index.js')
+    const { generateSuggestions } = await import('../suggestions/index.js')
+    const { logger } = await import('../lib/logger.js')
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
+
+    vi.mocked(retrieveGuidelines).mockRejectedValueOnce(new Error('retrieval down'))
+    vi.mocked(generateSuggestions).mockResolvedValueOnce({
+      outOfScope: true,
+      redFlags: [
+        {
+          id: 'model-flag',
+          label: 'Model candidate',
+          severity: 'advisory',
+          evidence: '[PATIENT_1] said so',
+          source: 'model',
+        },
+      ],
+      suggestions: [],
+      suppressedSuggestionIds: [],
+    })
+
+    const res = await call('POST', '/api/consultations/c1/analyze')
+    const body = (await res.json()) as {
+      consultation: {
+        analysis: {
+          outOfScope?: boolean
+          redFlags: { id: string }[]
+          suggestions: unknown[]
+          retrievedGuidelines?: unknown[]
+        }
+      }
+    }
+
+    expect(res.status).toBe(200)
+    expect(body.consultation.analysis.outOfScope).toBe(true)
+    expect(body.consultation.analysis.suggestions).toEqual([])
+    expect(body.consultation.analysis.retrievedGuidelines).toBeUndefined()
+    expect(body.consultation.analysis.redFlags.map((f) => f.id)).toContain('rule-flag')
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('no citable corpus available'),
+      expect.objectContaining({ errorClass: 'retrieval_error' }),
+    )
+
+    warnSpy.mockRestore()
+  })
 })
 
 /*

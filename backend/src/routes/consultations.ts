@@ -411,9 +411,10 @@ async function runAnalysis(
       try {
         retrieved = await retrieveGuidelines(text, { profileId: profile.id })
       } catch (error) {
-        // Retrieval widens the supplied corpus; a failure leaves the curated
-        // corpus in use rather than failing the whole analysis.
-        logger.warn('guideline retrieval failed; using the curated corpus only', {
+        // Retrieval is the only source of a citable corpus. A failure means no
+        // citable corpus is available for this consultation; it does not fall
+        // back to any previously curated corpus.
+        logger.warn('guideline retrieval failed; no citable corpus available', {
           errorClass: 'retrieval_error',
           errorName: error instanceof Error ? error.name : 'unknown',
         })
