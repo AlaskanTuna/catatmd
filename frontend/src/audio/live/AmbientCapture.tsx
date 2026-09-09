@@ -6,6 +6,7 @@ import { ApiError, api } from '../../lib/api.js'
 import { Button } from '../../ui/Button.js'
 import { InfoTip } from '../../ui/InfoTip.js'
 import { ConsentGate } from '../ConsentGate.js'
+import type { MarkedSegment } from '../draft-turns.js'
 import { InputMeter } from '../InputMeter.js'
 import type { TranscriptSegment } from '../protocol.js'
 import { LiveConversation } from './LiveConversation.js'
@@ -103,7 +104,13 @@ export function AmbientCapture({
 }: {
   onTranscript: (result: {
     text: string
-    segments: readonly TranscriptSegment[]
+    /*
+     * `MarkedSegment` rather than `TranscriptSegment`, because ambient capture
+     * measures a per-token confidence and folds it into character ranges the
+     * doctor is shown (#309). Declaring the narrower type would have carried the
+     * ranges anyway and hidden them from every reader.
+     */
+    segments: readonly MarkedSegment[]
     source: 'asr_live'
     draftTurns?: readonly DraftTurn[]
     /** The consultation's audio, for playing a sentence back in review (#293). */

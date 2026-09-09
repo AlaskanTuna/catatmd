@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../../lib/cn.js'
+import { UncertainLegend, UncertainText } from '../../ui/UncertainText.js'
 import type { LiveSegment } from './live-tokens.js'
 
 /**
@@ -257,7 +258,7 @@ export function LiveConversation({
                   time={opensTurn ? elapsed(segment.start) : null}
                   opensTurn={opensTurn}
                 >
-                  {segment.text}
+                  <UncertainText text={segment.text} uncertain={segment.uncertain} />
                   {isLast && interimJoinsLastTurn && (
                     <span className="text-ink-muted"> {interim}</span>
                   )}
@@ -274,6 +275,12 @@ export function LiveConversation({
               </Turn>
             )}
           </ol>
+        )}
+
+        {/* Only once anything is actually underlined, so a stream that reports
+            no confidence never explains a convention it is not using. */}
+        {segments.some((segment) => segment.uncertain !== undefined) && (
+          <UncertainLegend className="mt-4 text-2xs text-ink-muted" />
         )}
       </div>
 

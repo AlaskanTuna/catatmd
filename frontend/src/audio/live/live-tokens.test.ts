@@ -5,10 +5,12 @@ import {
   EMPTY_LIVE_TRANSCRIPT,
   interimSpeaker,
   interimText,
+  type LiveSegment,
   type LiveToken,
   SEGMENT_GAP_MS,
   tokensToSegments,
   tokensToText,
+  UNCERTAIN_CONFIDENCE_THRESHOLD,
 } from './live-tokens.js'
 
 const token = (text: string, overrides: Partial<LiveToken> = {}): LiveToken => ({
@@ -18,6 +20,9 @@ const token = (text: string, overrides: Partial<LiveToken> = {}): LiveToken => (
   isFinal: true,
   speaker: '1',
   language: 'en',
+  // Unknown by default, so a test that says nothing about confidence asserts
+  // the shape of a stream that reports none.
+  confidence: null,
   endpoint: false,
   ...overrides,
 })
@@ -144,6 +149,107 @@ describe('tokensToSegments', () => {
 
   it('returns nothing for no tokens', () => {
     expect(tokensToSegments([])).toEqual([])
+  })
+})
+
+describe('uncertain ranges', () => {
+  /**
+   * The assertion that matters, written once and used everywhere below.
+   *
+   * Cutting the ranges back out of the segment's own text is the only check
+   * that catches the failure this feature is most likely to have: the tidy step
+   * collapses whitespace and trims the ends, so an offset computed on the raw
+   * token join is wrong in the emitted text, and it is wrong silently. A
+   * comparison of range numbers would pass while the highlight sat on the
+   * neighbouring word.
+   */
+  const marked = (segment: LiveSegment | undefined): string[] =>
+    (segment?.uncertain ?? []).map((range) => segment?.text.slice(range.start, range.end) ?? '')
+
+  const unsure = { confidence: 0.2 }
+  const sure = { confidence: 0.95 }
+
+  it('slices back out to the words the recogniser doubted', () => {
+    const segments = tokensToSegments([
+      token('Saya', { ...sure, startMs: 0, endMs: 400 }),
+      token(' teman', { ...unsure, startMs: 400, endMs: 900 }),
+      token(' dua', { ...sure, startMs: 900, endMs: 1_200 }),
+      token(' hari', { ...sure, startMs: 1_200, endMs: 1_500 }),
+    ])
+
+    expect(segments[0]?.text).toBe('Saya teman dua hari')
+    expect(marked(segments[0])).toEqual(['teman'])
+  })
+
+  it('survives the leading space every cut segment starts with', () => {
+    // The trim is the common case, not the edge case: tokens carry their own
+    // leading spaces, so the first token of a group after a cut begins with
+    // one and every naive offset lands a character early.
+    const segments = tokensToSegments([
+      token(' demam', { ...unsure, startMs: 0, endMs: 500 }),
+      token(' tinggi', { ...sure, startMs: 500, endMs: 900 }),
+    ])
+
+    expect(segments[0]?.text).toBe('demam tinggi')
+    expect(marked(segments[0])).toEqual(['demam'])
+  })
+
+  it('survives a collapsed whitespace run', () => {
+    const segments = tokensToSegments([
+      token('batuk', { ...sure, startMs: 0, endMs: 400 }),
+      token('   ', { ...sure, startMs: 400, endMs: 420 }),
+      token(' kering', { ...unsure, startMs: 420, endMs: 900 }),
+    ])
+
+    expect(segments[0]?.text).toBe('batuk kering')
+    expect(marked(segments[0])).toEqual(['kering'])
+  })
+
+  it('merges neighbours across the space between them, so a phrase reads as one cue', () => {
+    const segments = tokensToSegments([
+      token('sakit', { ...unsure, startMs: 0, endMs: 400 }),
+      token(' tekak', { ...unsure, startMs: 400, endMs: 800 }),
+      token(' sejak', { ...sure, startMs: 800, endMs: 1_100 }),
+    ])
+
+    expect(marked(segments[0])).toEqual(['sakit tekak'])
+  })
+
+  it('slices correctly where no spaces were inserted at all', () => {
+    const segments = tokensToSegments([
+      token('我', { ...sure, startMs: 0, endMs: 300 }),
+      token('咳嗽', { ...unsure, startMs: 300, endMs: 700 }),
+      token('三天', { ...sure, startMs: 700, endMs: 1_100 }),
+    ])
+
+    expect(segments[0]?.text).toBe('我咳嗽三天')
+    expect(marked(segments[0])).toEqual(['咳嗽'])
+  })
+
+  it('says nothing at all when the recogniser reported no confidence', () => {
+    // An unknown is not an uncertainty. A stream that stops sending the field
+    // must produce no cues rather than underlining every word.
+    const segments = tokensToSegments(run(['Selamat', ' pagi']))
+
+    expect(segments[0]?.uncertain).toBeUndefined()
+  })
+
+  it('leaves a token on the threshold alone', () => {
+    const segments = tokensToSegments([
+      token('demam', { confidence: UNCERTAIN_CONFIDENCE_THRESHOLD, startMs: 0, endMs: 400 }),
+    ])
+
+    expect(segments[0]?.uncertain).toBeUndefined()
+  })
+
+  it('never marks a control token, which contributes no text', () => {
+    const segments = tokensToSegments([
+      token('demam', { ...sure, startMs: 0, endMs: 400 }),
+      token('<end>', { ...unsure, endpoint: true, startMs: 400, endMs: 400 }),
+    ])
+
+    expect(segments[0]?.text).toBe('demam')
+    expect(segments[0]?.uncertain).toBeUndefined()
   })
 })
 
