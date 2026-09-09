@@ -36,6 +36,11 @@ function groupByPublisher(guidelines: GuidelineChunk[]) {
 }
 
 const ALL_PUBLISHERS = 'all'
+const formatIngested = (value: Date) =>
+  new Intl.DateTimeFormat('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }).format(
+    value,
+  )
+
 const CORPUS_PAGE_SIZE = 6
 const DOCUMENT_PAGE_SIZE = 6
 
@@ -80,6 +85,12 @@ export function Guidelines() {
 
   const all = useMemo(() => guidelines.data ?? [], [guidelines.data])
   const allDocuments = useMemo(() => documents.data ?? [], [documents.data])
+  // Retrieval only reaches documents tagged with the consultation's profile;
+  // an untagged document is in the library but never in the citation set.
+  const inScopeDocuments = useMemo(
+    () => allDocuments.filter((document) => document.profiles.length > 0),
+    [allDocuments],
+  )
 
   const publishers = useMemo(
     () => [
@@ -186,8 +197,11 @@ export function Guidelines() {
               A suggestion carries a guideline ID, never free text. The model may cite these{' '}
               <span className="font-medium text-ink">{all.length} curated entries</span> and
               passages retrieved from the{' '}
-              <span className="font-medium text-ink">{allDocuments.length} documents</span> below.
-              Free-text references are rejected.
+              <span className="font-medium text-ink">
+                {inScopeDocuments.length} of the {allDocuments.length} documents
+              </span>{' '}
+              below that are tagged for a consultation&apos;s clinical scope. Free-text references
+              are rejected.
             </p>
             <InfoTip label="How the citation constraint is enforced" align="right">
               The request-time schema narrows the citation field to exactly the IDs above, so a
@@ -365,6 +379,9 @@ export function Guidelines() {
                   {document.pageCount > 0 && (
                     <span className="text-2xs text-ink-muted">{document.pageCount} pages</span>
                   )}
+                  <span className="text-2xs text-ink-muted">
+                    Ingested {formatIngested(document.ingestedAt)}
+                  </span>
                   <a
                     href={document.sourceUrl}
                     target="_blank"

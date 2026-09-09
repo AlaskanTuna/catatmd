@@ -149,13 +149,23 @@ describe('the lead copy', () => {
       CHUNK,
       { ...CHUNK, id: 'nice-2', title: 'NICE 2' },
     ])
-    vi.mocked(api.guidelineDocuments).mockResolvedValue([URTI_DOCUMENT, SORE_THROAT_DOCUMENT])
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([
+      URTI_DOCUMENT,
+      { ...SORE_THROAT_DOCUMENT, profiles: [] },
+    ])
     setup()
 
     await screen.findByText('NICE Acute Cough Guideline')
     const leadCopy = screen.getByText(/Free-text references are rejected/)
     expect(leadCopy.textContent).toMatch(/2 curated entries/)
-    expect(leadCopy.textContent).toMatch(/2 documents/)
+    expect(leadCopy.textContent).toMatch(/1 of the 2 documents/)
+  })
+
+  it('shows when each document was ingested', async () => {
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([URTI_DOCUMENT])
+    setup()
+
+    expect(await screen.findByText(/Ingested 1 Sept 2026/)).toBeTruthy()
   })
 })
 
