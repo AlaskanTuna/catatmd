@@ -1,12 +1,7 @@
 export {
-  corpusIds,
-  corpusIdsFor,
-  GUIDELINE_CORPUS,
-  type ProfiledGuidelineChunk,
-} from './corpus.js'
-export {
   CITABLE_DOCUMENT_IDS,
   type CitableDocumentId,
+  corpusIdsFor,
   documentRef,
   GUIDELINE_CORPUS_VERSION,
   parseDocumentRef,

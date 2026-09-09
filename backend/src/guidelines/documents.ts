@@ -1,3 +1,4 @@
+import type { GuidelineChunk } from '@shared/types'
 import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
 
 /**
@@ -17,10 +18,12 @@ export const GUIDELINE_CORPUS_VERSION: ClinicalArtefactVersion = {
  * reference can never satisfy that enum, so it can cite a span but never a
  * whole document.
  *
- * These are the ingested source documents, not the curated chunk ids that live
- * in `corpus.ts`. A test in `documents.test.ts` asserts that every id here is
- * present in `corpus/cpg/manifest.json`, so a document missing from the
- * manifest fails at test time rather than rendering as a broken citation.
+ * These are the ingested source documents, not the retrieved chunk ids the
+ * model sees.
+ *
+ * A test in `documents.test.ts` asserts that every id here is present in
+ * `corpus/cpg/manifest.json`, so a document missing from the manifest fails at
+ * test time rather than rendering as a broken citation.
  */
 export const CITABLE_DOCUMENT_IDS = [
   'moh-nag-2024',
@@ -43,4 +46,15 @@ export function parseDocumentRef(ref: string): { documentId: string; page?: numb
   const page = Number(pageString)
   if (!Number.isFinite(page) || !Number.isInteger(page) || page <= 0) return null
   return { documentId, page }
+}
+
+/**
+ * `makeSuggestionsAndRedFlagsSchema` needs a non-empty tuple type at request
+ * time, not `string[]`, so `z.enum` can narrow `guidelineId`. The cast is
+ * checked immediately below by the length guard.
+ */
+export function corpusIdsFor(chunks: readonly GuidelineChunk[]): readonly [string, ...string[]] {
+  const ids = chunks.map((chunk) => chunk.id)
+  if (ids.length === 0) throw new Error('guideline corpus must not be empty')
+  return ids as [string, ...string[]]
 }

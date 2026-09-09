@@ -665,7 +665,12 @@ The concrete trigger content — the actual list of clinical triggers, their thr
 
 ## 11. Guideline Corpus
 
-**Status: `Built`** — implemented 13/08/26 (issue #8). Eleven chunks live in `backend/src/guidelines/corpus.ts`. Every summary was checked against its linked primary source on 07/09/26 (issue #240); clinician review of the corrected summaries remains required. No `quote` is populated because the corpus uses short, non-verbatim summaries throughout.
+**Status: `Built`:** implemented 13/08/26 (issue #8), then migrated to the retrieved CPG tier on 09/09/26.
+
+- The citable document list and prompt serialisation live in `backend/src/guidelines/documents.ts` and `backend/src/guidelines/prompt.ts`.
+- The full CPG library is indexed in `corpus/cpg/manifest.json` and stored in `guideline_document` and `guideline_chunk`.
+- Clinician review of the corrected summaries remains required.
+- No `quote` reaches the model because `serialiseCorpusForPrompt` emits only `id`, `title`, and `summary`.
 
 ### Chunk Record Shape
 
@@ -710,7 +715,7 @@ Merging them into one "Centor threshold" chunk would manufacture a consensus tha
 
 ### Candidate Set Reaching The Prompt
 
-The whole corpus (Q16) — every chunk's `id`, `title`, and `summary` — is serialised into the system prompt for the `suggestions_and_red_flags` call (§12). This is the floor, not the ceiling: the retrieved tier below widens the candidate set per consultation, while the curated corpus reaches every call regardless.
+The retrieved corpus for the consultation is serialised into the system prompt for the `suggestions_and_red_flags` call (§12). `CITABLE_DOCUMENT_IDS` in `backend/src/guidelines/documents.ts` are the only stable document references the deterministic layers may cite.
 
 ### Schema-Enforced Rejection
 
@@ -720,12 +725,12 @@ The whole corpus (Q16) — every chunk's `id`, `title`, and `summary` — is ser
 
 ### Retrieved Tier: CPG Library (Built 09/09/26)
 
-A second, per-consultation corpus sits beside the curated one. `docs/README.md` ("Guardrails Against Fabrication", "Guideline Grounding: Two Tiers, One Constraint") carries the reader-facing narrative; this subsection is the implementation reference.
+A per-consultation corpus is retrieved for each consultation. `docs/README.md` ("Guardrails Against Fabrication", "Guideline Grounding: Two Tiers, One Constraint") carries the reader-facing narrative; this subsection is the implementation reference.
 
-**Why two tiers rather than one merged corpus:**
+**Why the citable set is split between stable documents and retrieved chunks:**
 
-- **The curated corpus is the floor.** The eleven chunks above are audited and licence-aware, and they remain the only ids the red-flag triggers (§10) and the gap checklist may cite, because deterministic artefacts need ids that survive a re-ingest.
-- **The retrieved library is the ceiling.** `corpus/cpg/manifest.json` indexes 109 CPG documents from the Academy of Medicine portal; the top chunks for each consultation join the `suggestions_and_red_flags` candidate set (§12), cited only by the model under the same `z.enum` as curated ids.
+- **Citable documents are the stable references.** `CITABLE_DOCUMENT_IDS` in `backend/src/guidelines/documents.ts` are the only ids the red-flag triggers (§10) and the gap checklist may cite, because deterministic artefacts need ids that survive a re-ingest.
+- **The retrieved library is the per-consultation corpus.** `corpus/cpg/manifest.json` indexes 109 CPG documents from the Academy of Medicine portal; the top chunks for each consultation join the `suggestions_and_red_flags` candidate set (§12), cited only by the model.
 - **Retrieved ids are not stable identifiers.** They are generated per document, page, and chunk ordinal at ingest and change on re-ingest, so nothing outside the prompt names one. The review UI resolves them from `ConsultationAnalysis.retrievedGuidelines` (§3), persisted with the analysis because re-running retrieval would not be reproducible.
 
 #### Data Model
@@ -1016,7 +1021,7 @@ The `User → Consultation` relation still uses `onDelete: Cascade`. With the au
 | ----------------------- | --------------------------------- | ------------------------------------- |
 | Red-flag rule set       | `RED_FLAG_LIST_VERSION`           | `backend/src/redflags/triggers.ts`    |
 | Gap checklist           | `GAP_CHECKLIST_VERSION`           | `backend/src/gaps/checklist.ts`       |
-| Guideline corpus        | `GUIDELINE_CORPUS_VERSION`        | `backend/src/guidelines/corpus.ts`    |
+| Guideline corpus        | `GUIDELINE_CORPUS_VERSION`        | `backend/src/guidelines/documents.ts` |
 | Medical-record template | `MEDICAL_RECORD_TEMPLATE_VERSION` | `backend/src/note-templates/index.ts` |
 | Medication lexicon      | `MEDICATION_LEXICON_VERSION`      | `backend/src/medications/lexicon.ts`  |
 

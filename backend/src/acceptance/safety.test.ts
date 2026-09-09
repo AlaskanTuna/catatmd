@@ -2,6 +2,7 @@ import {
   type ClinicalAssertion,
   ClinicalAssertionSchema,
   ClinicalFactsSchema,
+  GuidelineChunkSchema,
   LlmClinicalFactsSchema,
   LlmOperationalBlockSchema,
   makeSuggestionsAndRedFlagsSchema,
@@ -12,7 +13,6 @@ import { applyEvidenceCheck } from '../analysis/evidence.js'
 import { assertNoIdentifiers, deidentifyTranscript } from '../deid/index.js'
 import { FIXTURES } from '../fixtures/index.js'
 import { deriveGaps } from '../gaps/index.js'
-import { corpusIds, GUIDELINE_CORPUS } from '../guidelines/index.js'
 import { evaluateRedFlags, mergeRedFlags, REDFLAG_TRIGGERS } from '../redflags/index.js'
 import { formatReport, record } from './report.js'
 
@@ -174,7 +174,7 @@ describe('GUARANTEE — deterministic red flags fire and cannot be suppressed', 
 // ─── Citations ───────────────────────────────────────────────────────────────
 
 describe('GUARANTEE — no clinical suggestion is shown without a valid citation', () => {
-  const schema = makeSuggestionsAndRedFlagsSchema(corpusIds)
+  const schema = makeSuggestionsAndRedFlagsSchema(['moh-nag-2024-p348-c1'])
 
   it('rejects a fabricated guideline id (PRD §16 target: 0 uncited)', () => {
     const result = schema.safeParse({
@@ -217,10 +217,19 @@ describe('GUARANTEE — no clinical suggestion is shown without a valid citation
     ).toBe(false)
   })
 
-  it('never quotes a source whose licence forbids verbatim reuse', () => {
-    for (const chunk of GUIDELINE_CORPUS) {
-      if (!chunk.verbatimAllowed) expect(chunk.quote).toBeUndefined()
-    }
+  it('rejects a guideline chunk that quotes a source whose licence forbids verbatim reuse', () => {
+    const result = GuidelineChunkSchema.safeParse({
+      id: 'moh-nag-2024-p348-c1',
+      title: 'Acute pharyngitis',
+      publisher: 'Ministry of Health Malaysia',
+      year: 2024,
+      url: 'https://example.gov.my/nag',
+      summary: 'Modified Centor scoring for acute pharyngitis.',
+      sourceLicence: 'MOH-ARR',
+      verbatimAllowed: false,
+      quote: 'Antibiotics are indicated at a score of 3 or more.',
+    })
+    expect(result.success).toBe(false)
   })
 })
 

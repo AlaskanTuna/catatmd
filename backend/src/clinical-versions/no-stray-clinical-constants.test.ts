@@ -34,7 +34,7 @@ const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 const VERSIONED_DATA_FILES = [
   'backend/src/redflags/triggers.ts',
   'backend/src/gaps/checklist.ts',
-  'backend/src/guidelines/corpus.ts',
+  'backend/src/guidelines/documents.ts',
 ]
 
 const SCANNED_TREES = [
@@ -121,8 +121,8 @@ describe('clinical constants live only in the versioned data files (issue #16)',
   it('names no guideline scoring system outside the versioned data', () => {
     expect(
       violations((line) => SCORING_SYSTEMS.test(line)),
-      'A guideline scoring system is named outside the corpus, where no version stamp ' +
-        'covers it and the two Malaysian sources disagree. Render it from a GUIDELINE_CORPUS ' +
+      'A guideline scoring system is named outside the versioned data, where no version stamp ' +
+        'covers it and the two Malaysian sources disagree. Render it from a retrieved CPG ' +
         'chunk instead.',
     ).toEqual([])
   })
