@@ -1120,6 +1120,17 @@ describe('transcript column layout', () => {
     vi.mocked(api.guidelineDocuments).mockResolvedValue([])
   })
 
+  it('keeps 80px of bottom padding below lg and 16px above lg', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue(APPROVED as never)
+    setup()
+
+    const rail = await screen.findByRole('complementary', { name: 'Clinical safety' })
+    const wrapper = rail.parentElement?.parentElement as HTMLElement
+
+    expect(wrapper.className).toContain('pb-20')
+    expect(wrapper.className).toContain('lg:pb-4')
+  })
+
   it('holds the transcript column to the floor the other columns cap at', async () => {
     setup()
 
