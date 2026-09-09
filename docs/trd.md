@@ -617,7 +617,7 @@ interface RedFlagTrigger {
 }
 ```
 
-`listVersion` is `RED_FLAG_LIST_VERSION.id`, and every entry carries the same value. The list is one of the four versioned clinical artefacts stamped on each analysis; see §15 (Clinical Content Versioning).
+`listVersion` is `RED_FLAG_LIST_VERSION.id`, and every entry carries the same value. The list is one of the five versioned clinical artefacts stamped on each analysis; see §15 (Clinical Content Versioning).
 
 ### Evaluation
 
@@ -683,7 +683,7 @@ interface GuidelineChunk {
 }
 ```
 
-The corpus as a whole carries `GUIDELINE_CORPUS_VERSION`, one of the four versioned clinical artefacts stamped on each analysis; see §15 (Clinical Content Versioning). Per-chunk source versions are not modelled, and the reason is recorded there.
+The corpus as a whole carries `GUIDELINE_CORPUS_VERSION`, one of the five versioned clinical artefacts stamped on each analysis; see §15 (Clinical Content Versioning). Per-chunk source versions are not modelled, and the reason is recorded there.
 
 `sourceLicence` and `verbatimAllowed` were added 13/08/26 because the licensing difference between sources is legally load-bearing and the schema previously had no way to express it. `verbatimAllowed: false` means the chunk may be summarised and linked but never quoted; a `quote` present on such a chunk is a corpus-authoring defect and should fail a corpus validation test.
 
@@ -1010,7 +1010,7 @@ The `User → Consultation` relation still uses `onDelete: Cascade`. With the au
 
 ### Clinical Content Versioning
 
-**Status: `Built`** (issue #16). Clinical content changes on a different cadence from code, so it is versioned data rather than conditionals spread through the application. Four artefacts carry a version, each defined in the file it describes:
+**Status: `Built`** (issue #16). Clinical content changes on a different cadence from code, so it is versioned data rather than conditionals spread through the application. Five artefacts carry a version, each defined in the file it describes:
 
 | Artefact                | Version Constant                  | Defined In                            |
 | ----------------------- | --------------------------------- | ------------------------------------- |
@@ -1018,6 +1018,7 @@ The `User → Consultation` relation still uses `onDelete: Cascade`. With the au
 | Gap checklist           | `GAP_CHECKLIST_VERSION`           | `backend/src/gaps/checklist.ts`       |
 | Guideline corpus        | `GUIDELINE_CORPUS_VERSION`        | `backend/src/guidelines/corpus.ts`    |
 | Medical-record template | `MEDICAL_RECORD_TEMPLATE_VERSION` | `backend/src/note-templates/index.ts` |
+| Medication lexicon      | `MEDICATION_LEXICON_VERSION`      | `backend/src/medications/lexicon.ts`  |
 
 Each is a `ClinicalArtefactVersion` (`backend/src/clinical-versions/types.ts`):
 
@@ -1030,7 +1031,7 @@ interface ClinicalArtefactVersion {
 
 `id` and `effectiveDate` are separate because they answer different questions. `id` must stay stable once a run has recorded it; `effectiveDate` is editorial and may be set ahead of the authoring date.
 
-**One stamping path.** `backend/src/clinical-versions/index.ts` collects the four into `ACTIVE_CLINICAL_VERSIONS`, which is what the analyse route writes. The metadata on `consultation.analysis_completed` as built:
+**One stamping path.** `backend/src/clinical-versions/index.ts` collects the five into `ACTIVE_CLINICAL_VERSIONS`, which is what the analyse route writes. **`medicationLexicon` is registered ahead of any consumer, and no consumer exists yet**: nothing in the analysis pipeline reads it, because dictated prescription capture (`docs/decisions.md` D-001) will run on its own route once #312 and #313 land. It is stamped here anyway, because this registry is the one home a version constant may have and the alternative is a clinical artefact whose version nothing records. Until those land, an analysis stamp carries a version that analysis did not use, so read the stamp as the clinical content active at the time rather than a claim that each artefact was exercised. The metadata on `consultation.analysis_completed` as built:
 
 ```
 {
@@ -1045,6 +1046,7 @@ interface ClinicalArtefactVersion {
       gapChecklist,
       guidelineCorpus,
       medicalRecordTemplate, // `malaysian-medical-record-v1`, effective 2026-09-07
+      medicationLexicon,     // registered ahead of a consumer; see below
       clinicalProfile,
     },
   },

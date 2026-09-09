@@ -50,6 +50,11 @@ export type TranscriptCorrectionsFailureReason = 'no_transcript' | 'internal_err
  * set of fields (issue #16), so adding a versioned artefact cannot leave the
  * stamp behind: the only way to satisfy this type is to write the whole of
  * `ACTIVE_CLINICAL_VERSIONS`.
+ *
+ * That aggregator can therefore be wider than the analysis: `medicationLexicon`
+ * is registered ahead of any consumer (issue #311), so "produced" is true of
+ * every key here except that one. Read the stamp as the clinical content
+ * active at the time, not as a claim that each artefact was exercised.
  */
 export interface AnalysisVersions {
   provider: string
