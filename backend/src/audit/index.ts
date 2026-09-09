@@ -48,6 +48,18 @@ export type AnalysisFailureReason =
 export type TranscriptCorrectionsFailureReason = 'no_transcript' | 'internal_error'
 
 /**
+ * Why the constrained cleanup pass did not produce proposals (#309).
+ *
+ * Closed for the reason every other enum on this path is, and separate from
+ * `cleanup` because `failed` alone collapses two very different events. A
+ * provider timeout is routine; `deid_failed` is the de-identification guard
+ * firing, which `.claude/rules/security.md` calls the one alarm the log
+ * taxonomy exists to surface, and an alarm that reads identically to a timeout
+ * in the audit trail is not surfaced at all.
+ */
+export type TranscriptCleanupFailureReason = 'llm_failed' | 'deid_failed' | 'too_long'
+
+/**
  * Which versions of the system produced one analysis (issue #12). Enough to
  * answer "what generated this note?" months later without guessing.
  *
@@ -154,6 +166,8 @@ export type ConsultationAuditEvent =
         modelProposalCount: number
         droppedCount: number
         cleanup: TranscriptCleanupStatus
+        /** Present only when `cleanup` is `failed`, and never free text. */
+        cleanupReason?: TranscriptCleanupFailureReason
       }
     }
   | {

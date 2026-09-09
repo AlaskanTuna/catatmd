@@ -71,4 +71,59 @@ describe('applyProposal', () => {
       }).turns[0]?.text,
     ).toBe('Tekak saya bengkak.')
   })
+
+  it('shifts uncertain ranges that sit after a length-changing correction', () => {
+    /*
+     * "penkak" to "bengkak" is one of the two measured pairs that change length.
+     * A cue after it left unshifted would drift a character off the word it
+     * describes, and the server reads these same ranges as the gate deciding
+     * where a model edit may land, so a stale one moves that gate too.
+     */
+    const before: Transcript = {
+      source: 'asr_live',
+      turns: [
+        {
+          speaker: 'patient',
+          text: 'Tekak saya penkak dan sakit',
+          uncertain: [
+            { start: 11, end: 17 },
+            { start: 22, end: 27 },
+          ],
+        },
+      ],
+    }
+
+    const after = applyProposal(before, {
+      turnIndex: 0,
+      start: 11,
+      original: 'penkak',
+      suggested: 'bengkak',
+      source: 'mishear',
+    })
+
+    // The corrected span's own range is gone: those words no longer exist. The
+    // later one moved by exactly the length delta, and still cuts out "sakit".
+    expect(after.turns[0]?.uncertain).toEqual([{ start: 23, end: 28 }])
+    const range = after.turns[0]?.uncertain?.[0]
+    expect(after.turns[0]?.text.slice(range?.start ?? 0, range?.end ?? 0)).toBe('sakit')
+  })
+
+  it('drops the ranges entirely when the only one covered the corrected word', () => {
+    const before: Transcript = {
+      source: 'asr_live',
+      turns: [
+        { speaker: 'patient', text: 'Saya teman dua hari', uncertain: [{ start: 5, end: 10 }] },
+      ],
+    }
+
+    const after = applyProposal(before, {
+      turnIndex: 0,
+      start: 5,
+      original: 'teman',
+      suggested: 'demam',
+      source: 'mishear',
+    })
+
+    expect(after.turns[0]?.uncertain).toBeUndefined()
+  })
 })

@@ -2684,18 +2684,24 @@ The third accuracy layer, built and shipped **off**. Layer 1 primes the recognis
 
 **Every control is in `policy.ts` or the response schema. None is the prompt.**
 
-| Control                                                   | What it stops                                                                                                             |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Model schema is `{ original, replacement }` and no more   | A response asserting a position, or claiming it came from the measured table. Positions are located server-side           |
-| Span must overlap a recogniser-flagged uncertain range    | Rewriting words nothing ever doubted, which is the regime arXiv 2407.21414 measured as degrading a transcript             |
-| **`source: 'model'` overlapping a fired flag is dropped** | A doctor's accepted edit silently removing a red flag on re-analysis. `source: 'mishear'` is exempt, for the reason below |
-| Word delta at most one, bounded anchor                    | A sentence rewrite wearing a word's clothes. §20.10 records the code-switch boundary error as deliberately not repaired   |
-| Character class on the replacement                        | Digits, brackets, and therefore a rehydrated vault token, reaching a proposal                                             |
-| Single-occurrence anchor across the whole transcript      | Correcting the wrong instance of a repeated word                                                                          |
+| Control                                                      | What it stops                                                                                                                                |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model schema is `{ original, replacement }` and no more      | A response asserting a position, or claiming it came from the measured table. Positions are located server-side                              |
+| Span must overlap a recogniser-flagged uncertain range       | Rewriting words nothing ever doubted, which is the regime arXiv 2407.21414 measured as degrading a transcript                                |
+| **A `model` edit that would remove a fired flag is dropped** | A doctor's accepted edit silently removing a red flag on re-analysis. Differential, not positional; see below. `source: 'mishear'` is exempt |
+| Word delta at most one, bounded anchor                       | A sentence rewrite wearing a word's clothes. §20.10 records the code-switch boundary error as deliberately not repaired                      |
+| Character class on the replacement                           | Digits, brackets, and therefore a rehydrated vault token, reaching a proposal                                                                |
+| Single-occurrence anchor across the whole transcript         | Correcting the wrong instance of a repeated word                                                                                             |
 
 **Why the two sources are treated differently** is the part worth keeping. `expandMishears` already reaches `redflags/triggers.ts`, so a rule that fired on a table pair fired _because_ the engine read the corrected word; accepting that same correction moves the stored text to where the engine already was. A model edit has no such relationship, so accepting one can change a word a rule matched and stop the flag firing. `mergeRedFlags` is untouched and the doctor is the actor, so the invariant is not breached in letter; running the engine before proposing is what stops exercising it being one click away.
 
-**A flag whose evidence cannot be located protects the whole transcript.** A `RedFlag` carries quoted text and no position: `evidence` is a bare string and `evidenceLink` is audio timing that may never influence a flag. Evidence appearing in no turn is therefore a span the policy cannot reason about, and refusing every model edit is the only answer that cannot be wrong in the dangerous direction.
+**The suppression check is differential, and the first design was not.** Protecting each fired flag's evidence span looks sufficient and is not, because whether a match becomes a flag depends on text outside the span it matched: `isNegated` reads sixty characters before it, `isSafetyNetting` a hundred and twenty, and `asserts` and `findDeniedAbility` read the neighbouring turn entirely.
+
+The case that settled it, found in review rather than in testing: a patient turn reading "Ada batuk berdarah" raises `haemoptysis` on "batuk berdarah". An edit changing "Ada" to "Tiada" is one word, letters only, zero word delta, sits inside an uncertain range, and touches no protected span, so every positional bound admits it. `tiada` is a Malay negator, so on re-analysis the emergency flag is gone. A `RedFlag` also carries no position at all (`evidence` is a bare string; `evidenceLink` is audio timing that may never influence a flag), which is what made the positional version awkward as well as wrong.
+
+So the policy asks the question that actually matters: run the engine over the transcript the proposal would produce, and refuse it if any rule that fired before does not fire after. `evaluateRedFlags` is pure, which is what makes asking affordable. Each proposal is judged alone, which is sufficient because the client refetches against the stored text after every accept, so a second correction is judged against a transcript already carrying the first.
+
+**The trigger set is chosen inside the policy, not passed in.** It was a parameter taking the caller's clinical profile, which was a hole of the same family: `profile.redFlagTriggers` is a filtered slice, the two shipped profiles share one trigger out of twelve, `profileId` arrived in the request body, and nothing ties a consultation to the profile it was analysed under. Every trigger is the only safe set, and over-protecting can only drop more model edits.
 
 ##### The Deviation From §20.9, Recorded Rather Than Left As Drift
 

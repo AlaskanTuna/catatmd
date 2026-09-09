@@ -1,7 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import type { Transcript } from '@shared/types'
-import { evaluateRedFlags, proposeMishearCorrections } from '../backend/src/redflags/index.js'
-import { REDFLAG_TRIGGERS } from '../backend/src/redflags/triggers.js'
+import { proposeMishearCorrections } from '../backend/src/redflags/index.js'
 import { proposeModelCorrections } from '../backend/src/transcript-cleanup/index.js'
 
 /**
@@ -159,9 +158,10 @@ async function main() {
 
   for (const probe of CASES) {
     const transcript = asTranscript(probe)
-    const ruleFlags = evaluateRedFlags(transcript, REDFLAG_TRIGGERS)
+    // No trigger set is passed. The pass evaluates every trigger itself, where
+    // no caller can shrink what the model is forbidden to touch.
     const table = proposeMishearCorrections(transcript)
-    const model = await proposeModelCorrections(transcript, ruleFlags)
+    const model = await proposeModelCorrections(transcript)
 
     const matches = (p: { original: string; suggested: string }) =>
       probe.expect !== null &&

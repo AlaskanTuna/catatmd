@@ -1,4 +1,4 @@
-import type { MishearProposal, RedFlag, Transcript } from '@shared/types'
+import type { MishearProposal, Transcript } from '@shared/types'
 import { z } from 'zod'
 import { DeidentificationError, deidentifyTranscript, sliceDeidentified } from '../deid/index.js'
 import type { Deidentified } from '../deid/types.js'
@@ -68,12 +68,45 @@ const CleanupResponseSchema = z.object({
  */
 const CHUNK_CHARS = 1_500
 
+/**
+ * The most transcript this pass will read, and therefore the fan-out ceiling.
+ *
+ * **Without it the bound is the schema's, which is far too generous here.**
+ * `TranscriptSchema` allows 600 turns of 4,000 characters, so a stored
+ * transcript can reach millions of characters and slice into over a thousand
+ * chunks, each a provider call with a 60 s timeout and a retry behind it.
+ * `MAX_CONCURRENT_CHUNKS` bounds how many run at once, not how many run, and
+ * the limiter allows twenty such requests a minute per caller (OWASP LLM10).
+ *
+ * 30,000 matches `MAX_DRAFT_TEXT_CHARACTERS`, the equivalent bound on the
+ * labelling pass, which is comfortably above the longest consultation measured
+ * in development (about 3,000 words). Past it the pass declines rather than
+ * truncating, because a silently half-read transcript would report `ok` while
+ * having skipped the end of the consultation, which is where a plan usually is.
+ */
+const MAX_CLEANUP_CHARACTERS = 30_000
+
 /** The same fan-out bound `draft-turns` carries, for the same OWASP LLM10 reason. */
 const MAX_CONCURRENT_CHUNKS = 4
+
+/**
+ * A minted pseudonym, as it appears before rehydration.
+ *
+ * Not global: `RegExp.prototype.test` on a `/g` pattern carries `lastIndex`
+ * between calls and would skip every other match.
+ */
+const VAULT_TOKEN = /\[[A-Z]+_\d+\]/
 
 export type CleanupOutcome = {
   /** `failed` means the provider or its schema did; the caller still serves layer 2. */
   status: 'ok' | 'failed'
+  /**
+   * Why it failed, for the audit row. Closed, because anything thrown on this
+   * path can carry a fragment of the consultation, and absent on success.
+   * `deid_failed` is not one of these: that error leaves this module unwrapped
+   * so the route can name it as the alarm it is.
+   */
+  reason?: 'llm_failed' | 'too_long'
   proposals: MishearProposal[]
   dropped: number
 }
@@ -87,19 +120,36 @@ export type CleanupOutcome = {
  * through untouched, because the egress guard firing is an alarm rather than a
  * correction outcome and must not be softened into one.
  */
-export async function proposeModelCorrections(
-  transcript: Transcript,
-  ruleFlags: readonly RedFlag[],
-): Promise<CleanupOutcome> {
+export async function proposeModelCorrections(transcript: Transcript): Promise<CleanupOutcome> {
   /*
-   * **No uncertain span means no egress at all.** The gate is checked before the
-   * transcript is de-identified rather than after the edits come back, so a
+   * **No uncertain range means no egress at all.** The gate is checked before
+   * the transcript is de-identified rather than after the edits come back, so a
    * consultation with nothing to correct never leaves the API in the first
-   * place. Every typed, pasted, uploaded and relayed transcript takes this
-   * branch, because only ambient capture reports a per-token confidence.
+   * place. In practice that is every typed, pasted, uploaded and relayed
+   * transcript, because only ambient capture measures a per-token confidence.
+   *
+   * **The ranges are client-asserted, exactly like `source` and
+   * `labelsReviewed`.** `TranscriptSchema` carries `uncertain` and `PATCH
+   * /api/consultations/:id` accepts a whole transcript on a draft, so a client
+   * can write them. What this gate guarantees is that no ranges means no
+   * egress; it does not guarantee that a range came from a recogniser. That is
+   * the same posture the rest of the transcript contract takes, and no safety
+   * control rests on it alone: the suppression check in `policy.ts` is what
+   * protects the words that matter, and it asks the engine rather than the
+   * client.
    */
   const hasUncertainty = transcript.turns.some((turn) => (turn.uncertain?.length ?? 0) > 0)
   if (!hasUncertainty) return { status: 'ok', proposals: [], dropped: 0 }
+
+  /*
+   * Declines rather than truncating. A half-read transcript would report `ok`
+   * having skipped the end of the consultation, which is where a plan usually
+   * is, and `failed` is the honest word for a pass that did not run.
+   */
+  const totalCharacters = transcript.turns.reduce((sum, turn) => sum + turn.text.length, 0)
+  if (totalCharacters > MAX_CLEANUP_CHARACTERS) {
+    return { status: 'failed', reason: 'too_long', proposals: [], dropped: 0 }
+  }
 
   const { text, vault } = deidentifyTranscript(transcript)
   // After the gate, never before. Detection is context-sensitive, so chunking
@@ -120,18 +170,35 @@ export async function proposeModelCorrections(
   })
 
   /*
-   * Rehydrated before the policy sees them, so `original` is matched against the
-   * transcript as stored rather than against its tokenised form. An edit whose
-   * anchor spanned a pseudonym is not special-cased: it simply fails to locate,
-   * and the policy drops it.
+   * **Any edit naming a vault token is dropped before rehydration, not after.**
+   * The policy's character class rejects brackets, but it never sees them:
+   * rehydration runs first, so a model echoing `[PATIENT_1]` as a replacement
+   * would have it expanded to the real name, and two letter-only words then pass
+   * both the character class and the word-delta bound. That is not an egress
+   * leak, since the value came from this consultation's own vault and returns to
+   * its owner, but it would let the model move an identifier into a span the
+   * recogniser doubted and offer it to the doctor as a correction. Checked on
+   * the pre-rehydration string, which is the only point the token is still
+   * visible as a token.
    */
-  const edits: CleanupEdit[] = perChunk.flat().map((edit) => ({
+  const returned = perChunk.flat()
+  const admissible = returned.filter(
+    (edit) => !VAULT_TOKEN.test(edit.original) && !VAULT_TOKEN.test(edit.replacement),
+  )
+  const edits: CleanupEdit[] = admissible.map((edit) => ({
     original: vault.rehydrate(edit.original),
     replacement: vault.rehydrate(edit.replacement),
   }))
 
-  const { proposals, dropped } = applyEditPolicy(edits, transcript, ruleFlags)
-  return { status: failed ? 'failed' : 'ok', proposals, dropped }
+  const { proposals, dropped } = applyEditPolicy(edits, transcript)
+  return {
+    status: failed ? 'failed' : 'ok',
+    ...(failed ? { reason: 'llm_failed' as const } : {}),
+    proposals,
+    // Edits refused for naming a token are drops like any other, so the audit
+    // row's rate stays a count of everything the model offered and lost.
+    dropped: dropped + (returned.length - admissible.length),
+  }
 }
 
 async function cleanChunk(content: Deidentified): Promise<CleanupEdit[]> {

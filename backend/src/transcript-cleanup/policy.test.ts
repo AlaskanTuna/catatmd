@@ -1,7 +1,11 @@
-import type { RedFlag, Transcript } from '@shared/types'
+import { applyMishearProposal, type Transcript } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { proposeMishearCorrections } from '../redflags/index.js'
-import { applyEditPolicy, type CleanupEdit, protectedSpans } from './policy.js'
+import {
+  ALL_REDFLAG_TRIGGERS,
+  evaluateRedFlags,
+  proposeMishearCorrections,
+} from '../redflags/index.js'
+import { applyEditPolicy, type CleanupEdit } from './policy.js'
 
 /*
  * One case per drop rule, because the policy is the entire safety surface of
@@ -21,18 +25,12 @@ const transcript: Transcript = {
 
 const edit = (original: string, replacement: string): CleanupEdit[] => [{ original, replacement }]
 
-const flag = (evidence: string): RedFlag => ({
-  id: 'test-trigger',
-  label: 'A trigger fired',
-  severity: 'urgent',
-  evidence,
-  source: 'rule',
-  ruleId: 'test-trigger',
-})
+const ruleIds = (t: Transcript) =>
+  evaluateRedFlags(t, ALL_REDFLAG_TRIGGERS).map((flag) => flag.ruleId ?? flag.id)
 
 describe('applyEditPolicy', () => {
   it('accepts a well-formed edit inside an uncertain span, stamped as model', () => {
-    const { proposals, dropped } = applyEditPolicy(edit('teman', 'demam'), transcript, [])
+    const { proposals, dropped } = applyEditPolicy(edit('teman', 'demam'), transcript)
 
     expect(dropped).toBe(0)
     expect(proposals).toEqual([
@@ -41,7 +39,7 @@ describe('applyEditPolicy', () => {
   })
 
   it('drops a no-op', () => {
-    expect(applyEditPolicy(edit('teman', 'teman'), transcript, [])).toEqual({
+    expect(applyEditPolicy(edit('teman', 'teman'), transcript)).toEqual({
       proposals: [],
       dropped: 1,
     })
@@ -49,17 +47,17 @@ describe('applyEditPolicy', () => {
 
   it('drops an oversized anchor, because a long one is a sentence rewrite', () => {
     const long = 'Saya teman dua hari dan sakit kepala juga'
-    expect(applyEditPolicy(edit(long, 'demam'), transcript, []).proposals).toEqual([])
+    expect(applyEditPolicy(edit(long, 'demam'), transcript).proposals).toEqual([])
   })
 
   it('drops a replacement carrying anything but letters', () => {
     for (const bad of ['demam 3', 'demam!', '[PATIENT_1]', '38.5', '']) {
-      expect(applyEditPolicy(edit('teman', bad), transcript, []).proposals).toEqual([])
+      expect(applyEditPolicy(edit('teman', bad), transcript).proposals).toEqual([])
     }
   })
 
   it('drops a replacement more than one word away from the original', () => {
-    expect(applyEditPolicy(edit('teman', 'demam sudah lama'), transcript, []).proposals).toEqual([])
+    expect(applyEditPolicy(edit('teman', 'demam sudah lama'), transcript).proposals).toEqual([])
   })
 
   it('drops an anchor that occurs more than once, since the model gave no position', () => {
@@ -67,18 +65,18 @@ describe('applyEditPolicy', () => {
       source: 'asr_live',
       turns: [{ speaker: 'patient', text: 'teman dan teman', uncertain: [{ start: 0, end: 5 }] }],
     }
-    expect(applyEditPolicy(edit('teman', 'demam'), repeated, []).proposals).toEqual([])
+    expect(applyEditPolicy(edit('teman', 'demam'), repeated).proposals).toEqual([])
   })
 
   it('drops an anchor that occurs nowhere at all', () => {
-    expect(applyEditPolicy(edit('tiada', 'demam'), transcript, []).proposals).toEqual([])
+    expect(applyEditPolicy(edit('tiada', 'demam'), transcript).proposals).toEqual([])
   })
 
   it('drops an edit outside every uncertain span', () => {
     // "hari" is real text the recogniser was confident about. Correcting words
     // nothing doubted is the unconstrained rewriting arXiv 2407.21414 measured
     // as making a transcript worse.
-    expect(applyEditPolicy(edit('hari', 'har'), transcript, []).proposals).toEqual([])
+    expect(applyEditPolicy(edit('hari', 'har'), transcript).proposals).toEqual([])
   })
 
   it('accepts nothing at all on a turn carrying no uncertainty', () => {
@@ -86,71 +84,7 @@ describe('applyEditPolicy', () => {
       source: 'paste',
       turns: [{ speaker: 'patient', text: 'Saya teman dua hari' }],
     }
-    expect(applyEditPolicy(edit('teman', 'demam'), typed, []).proposals).toEqual([])
-  })
-})
-
-describe('the red-flag overlap rule', () => {
-  it('drops a model edit that overlaps the evidence of a fired rule flag', () => {
-    // The single most important case in this feature. `evaluateRedFlags` runs
-    // over whatever transcript is stored, so a doctor accepting this edit would
-    // change the word the rule matched and the flag would stop firing.
-    const { proposals, dropped } = applyEditPolicy(edit('teman', 'demam'), transcript, [
-      flag('teman dua hari'),
-    ])
-
-    expect(proposals).toEqual([])
-    expect(dropped).toBe(1)
-  })
-
-  it('leaves a model edit alone when the flag fired somewhere else', () => {
-    const { proposals } = applyEditPolicy(edit('teman', 'demam'), transcript, [
-      flag('Demam tu tinggi tak'),
-    ])
-
-    expect(proposals).toHaveLength(1)
-  })
-
-  it('does not stop the measured table proposing the same correction', () => {
-    // The other half of the pair, and the reason `source` exists. A `mishear`
-    // proposal never passes through this policy: it only moves the transcript
-    // the way `expandMishears` already read it inside the engine, so the flag
-    // it would touch fired *because* of that reading.
-    const blocked = applyEditPolicy(edit('teman', 'demam'), transcript, [flag('teman dua hari')])
-    const measured = proposeMishearCorrections(transcript)
-
-    expect(blocked.proposals).toEqual([])
-    expect(measured).toContainEqual(
-      expect.objectContaining({ original: 'teman', suggested: 'demam', source: 'mishear' }),
-    )
-  })
-
-  it("protects the whole transcript when a flag's evidence cannot be located", () => {
-    // A RedFlag carries quoted text and no position, so evidence that appears in
-    // no turn is a span this cannot reason about. Refusing every model edit is
-    // the only answer that cannot be wrong in the dangerous direction.
-    expect(protectedSpans(transcript, [flag('words nobody said')])).toBe('all')
-    expect(
-      applyEditPolicy(edit('teman', 'demam'), transcript, [flag('words nobody said')]),
-    ).toEqual({ proposals: [], dropped: 1 })
-  })
-
-  it('records every occurrence when evidence appears more than once', () => {
-    const twice: Transcript = {
-      source: 'asr_live',
-      turns: [{ speaker: 'patient', text: 'demam dan demam' }],
-    }
-    expect(protectedSpans(twice, [flag('demam')])).toEqual(
-      new Map([
-        [
-          0,
-          [
-            [0, 5],
-            [10, 15],
-          ],
-        ],
-      ]),
-    )
+    expect(applyEditPolicy(edit('teman', 'demam'), typed).proposals).toEqual([])
   })
 
   it('counts drops without reporting the words', () => {
@@ -159,9 +93,102 @@ describe('the red-flag overlap rule', () => {
       { original: 'tiada', replacement: 'demam' },
       { original: 'teman', replacement: 'demam' },
     ]
-    const result = applyEditPolicy(edits, transcript, [])
+    const result = applyEditPolicy(edits, transcript)
 
     expect(result.dropped).toBe(2)
     expect(result.proposals).toHaveLength(1)
+  })
+})
+
+describe('the suppression check, which is differential rather than positional', () => {
+  /** "Ada batuk berdarah" raises `haemoptysis`, with "Ada" marked uncertain. */
+  const haemoptysis: Transcript = {
+    source: 'asr_live',
+    turns: [{ speaker: 'patient', text: 'Ada batuk berdarah', uncertain: [{ start: 0, end: 3 }] }],
+  }
+
+  it('fires the flag this section depends on', () => {
+    expect(ruleIds(haemoptysis)).toContain('haemoptysis')
+  })
+
+  it('refuses a negation flip that never touches the flag evidence', () => {
+    /*
+     * The case that killed the positional design. "Ada" to "Tiada" is one word,
+     * letters only, zero word delta, sits inside an uncertain range, and does
+     * not overlap "batuk berdarah" at all, so every span-based bound admits it.
+     * `isNegated` reads sixty characters *before* the match, so on re-analysis
+     * the emergency flag is gone.
+     */
+    const { proposals, dropped } = applyEditPolicy(edit('Ada', 'Tiada'), haemoptysis)
+
+    expect(proposals).toEqual([])
+    expect(dropped).toBe(1)
+
+    // And the reason, stated as the property rather than taken on trust.
+    const flipped = applyMishearProposal(haemoptysis, {
+      turnIndex: 0,
+      start: 0,
+      original: 'Ada',
+      suggested: 'Tiada',
+      source: 'model',
+    })
+    expect(ruleIds(flipped)).not.toContain('haemoptysis')
+  })
+
+  it('refuses an edit to the flag evidence itself', () => {
+    const onEvidence: Transcript = {
+      source: 'asr_live',
+      turns: [
+        { speaker: 'patient', text: 'Ada batuk berdarah', uncertain: [{ start: 4, end: 9 }] },
+      ],
+    }
+    expect(applyEditPolicy(edit('batuk', 'bapak'), onEvidence).proposals).toEqual([])
+  })
+
+  it('allows an edit that changes nothing the engine reads', () => {
+    // A transcript raising no flag at all cannot lose one, so the check is a
+    // no-op and the ordinary bounds decide.
+    expect(applyEditPolicy(edit('teman', 'demam'), transcript).proposals).toHaveLength(1)
+  })
+})
+
+describe('the measured table is never gated by this policy', () => {
+  it('keeps proposing a correction the model would be refused for', () => {
+    // The reason `source` exists. A `mishear` proposal never passes through
+    // `applyEditPolicy`: the engine already expands the table internally, so a
+    // flag matched on a table pair fired *because* of the corrected reading.
+    const measured = proposeMishearCorrections(transcript)
+    expect(measured).toContainEqual(
+      expect.objectContaining({ original: 'teman', suggested: 'demam', source: 'mishear' }),
+    )
+  })
+
+  it('never loses a rule hit when any measured proposal is accepted', () => {
+    /*
+     * The property the `mishear` exemption rests on, pinned rather than argued.
+     * `findSpan` scans both the raw text and `expandMishears` of it, and no
+     * table value is also a table key, so accepting a measured correction can
+     * only move the raw text toward the expansion the engine already read. That
+     * holds only while every devoiced pattern has a target-form twin; adding one
+     * without the other would turn every measured proposal into a suppression
+     * path, and this test is what would catch it.
+     */
+    const samples: Transcript[] = [
+      { source: 'asr_live', turns: [{ speaker: 'patient', text: 'Ada patut berdarah' }] },
+      { source: 'asr_live', turns: [{ speaker: 'patient', text: 'Saya sempuk teruk' }] },
+      { source: 'asr_live', turns: [{ speaker: 'patient', text: 'Saya teman dua hari' }] },
+      { source: 'asr_live', turns: [{ speaker: 'patient', text: 'Tekak saya pengkat' }] },
+      { source: 'asr_live', turns: [{ speaker: 'patient', text: 'Ada tenggi dan kekak' }] },
+    ]
+
+    for (const sample of samples) {
+      const before = ruleIds(sample)
+      for (const proposal of proposeMishearCorrections(sample)) {
+        const after = ruleIds(applyMishearProposal(sample, proposal))
+        for (const id of before) {
+          expect(after, `${proposal.original} to ${proposal.suggested} lost ${id}`).toContain(id)
+        }
+      }
+    }
   })
 })

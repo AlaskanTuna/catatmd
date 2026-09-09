@@ -1854,6 +1854,59 @@ export const MishearProposalSchema = z.object({
 export const TranscriptCleanupStatusSchema = z.enum(['ok', 'failed', 'disabled'])
 
 /**
+ * The transcript as it would be if the doctor accepted this proposal.
+ *
+ * **Shared because two very different callers must agree exactly.** The client
+ * uses it to build the `PATCH` body when the doctor taps Accept; the server uses
+ * it to ask whether accepting would remove a red flag, and drops the proposal if
+ * it would. If those two ever computed a different result, the safety check
+ * would be checking a transcript nobody was about to store.
+ *
+ * **A range overlapping the replaced span is dropped rather than moved.** The
+ * words under it are gone, so a recogniser's doubt about them is no longer about
+ * anything; ranges after it shift by the length delta, because two of the
+ * measured pairs change length ("penkak" to "bengkak", "tongsel" to "tonsil")
+ * and leaving them unshifted would drift every later cue one character off the
+ * word it describes.
+ *
+ * `source` and `labelsReviewed` are carried through untouched. The second is the
+ * trap: it gates the red-flag engine's question-denial suppression, and
+ * accepting a spelling is not confirming every speaker on every turn.
+ */
+export function applyMishearProposal(
+  transcript: Transcript,
+  proposal: MishearProposal,
+): Transcript {
+  const delta = proposal.suggested.length - proposal.original.length
+  const from = proposal.start
+  const to = proposal.start + proposal.original.length
+
+  return {
+    ...transcript,
+    turns: transcript.turns.map((turn, index) => {
+      if (index !== proposal.turnIndex) return turn
+
+      const next: TranscriptTurn = {
+        ...turn,
+        text: turn.text.slice(0, from) + proposal.suggested + turn.text.slice(to),
+      }
+
+      if (turn.uncertain === undefined) return next
+
+      const moved = turn.uncertain
+        .filter((range) => range.end <= from || range.start >= to)
+        .map((range) =>
+          range.start >= to ? { start: range.start + delta, end: range.end + delta } : range,
+        )
+
+      if (moved.length === 0) delete next.uncertain
+      else next.uncertain = moved
+      return next
+    }),
+  }
+}
+
+/**
  * Bounded for the same reason `medicationsDispensed` is: an unbounded array is
  * an unbounded response. The cap is generous against the 11-entry table, which
  * can only fire on whole tokens, and it is a bound rather than a target.

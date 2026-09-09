@@ -1,4 +1,4 @@
-import type { MishearProposal, Transcript } from '@shared/types'
+import { applyMishearProposal, type MishearProposal, type Transcript } from '@shared/types'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Check, X } from 'lucide-react'
 import { useState } from 'react'
@@ -11,30 +11,19 @@ import { Card } from '../ui/Card.js'
 /**
  * Splice one accepted correction into the transcript it was proposed against.
  *
- * **`source` and `labelsReviewed` are carried through untouched.** The second
- * is the trap this feature has to avoid: it gates the red-flag engine's
- * question-denial suppression, and flipping it would weaken the engine on the
- * strength of the doctor having corrected a single word. Accepting a spelling
- * is not confirming every speaker label on every turn.
+ * **The body moved to `shared/` in #309 and this is now a re-export**, because
+ * the server has to compute the same thing: before offering a model proposal it
+ * asks whether accepting it would remove a red flag, and it can only ask that of
+ * the exact transcript this function would produce. Two implementations would
+ * have let the safety check drift off the transcript the doctor actually saves.
  *
- * Exported for its test, and pure so that test needs no component.
+ * `source` and `labelsReviewed` are still carried through untouched. The second
+ * is the trap: it gates the red-flag engine's question-denial suppression, and
+ * accepting a spelling is not confirming every speaker label on every turn.
+ *
+ * Still exported here for its test, and still pure.
  */
-export function applyProposal(transcript: Transcript, proposal: MishearProposal): Transcript {
-  return {
-    ...transcript,
-    turns: transcript.turns.map((turn, index) =>
-      index === proposal.turnIndex
-        ? {
-            ...turn,
-            text:
-              turn.text.slice(0, proposal.start) +
-              proposal.suggested +
-              turn.text.slice(proposal.start + proposal.original.length),
-          }
-        : turn,
-    ),
-  }
-}
+export const applyProposal = applyMishearProposal
 
 /**
  * A stable identity for a proposal, so rejecting one does not dismiss another.
@@ -177,9 +166,15 @@ export function TranscriptCorrections({
       {open.length > 0 && (
         <section className="mt-4" aria-label="Suspected mishears">
           <h3 className="text-xs font-semibold text-ink">Suspected mishears ({open.length})</h3>
+          {/*
+            Deliberately no longer says "speech recognition confuses these words
+            in Malay". That is a measured claim about the confusable table, and
+            this list can now also carry model suggestions, which are measured by
+            nothing. Each row says which it is; this line no longer says
+            something true of only half of them.
+          */}
           <p className="mt-1 text-xs text-ink-muted">
-            Speech recognition confuses these words in Malay. Each is a separate decision, and
-            nothing changes until you accept it.
+            Each is a separate decision, and nothing changes until you accept it.
           </p>
 
           <ul className="mt-3 space-y-2">
@@ -223,8 +218,14 @@ export function TranscriptCorrections({
                       words is entitled to know which kind of claim they are
                       being shown.
                     */}
+                    {/*
+                      "Known confusable" rather than "known mishear": the pair is
+                      what has evidence behind it, not this instance. Calling it a
+                      mishear would assert that this word is wrong, which is the
+                      doctor's call and the reason nothing here auto-applies.
+                    */}
                     <span className="rounded-pill bg-sunken px-2 py-0.5 text-2xs font-medium text-ink-muted">
-                      {measured ? 'Known mishear' : 'Model suggestion'}
+                      {measured ? 'Known confusable' : 'Model suggestion'}
                     </span>
                     <Button
                       size="sm"

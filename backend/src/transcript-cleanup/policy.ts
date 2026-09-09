@@ -1,4 +1,5 @@
-import type { MishearProposal, RedFlag, Transcript } from '@shared/types'
+import { applyMishearProposal, type MishearProposal, type Transcript } from '@shared/types'
+import { ALL_REDFLAG_TRIGGERS, evaluateRedFlags } from '../redflags/index.js'
 
 /**
  * What a model edit has to survive before a doctor is ever shown it (#309).
@@ -41,8 +42,12 @@ const MAX_ORIGINAL_CHARACTERS = 32
  *
  * Letters and combining marks, plus the apostrophe and hyphen that appear inside
  * real words ("cirit-birit"). One or two words, never more. No digits, because a
- * dose or a temperature is not a mishear this pass may touch; no brackets, which
- * is also what stops a rehydrated vault token being proposed as a word.
+ * dose or a temperature is not a mishear this pass may touch.
+ *
+ * **This is not what stops a negation flip.** `tak`, `tidak` and `tiada` are all
+ * ordinary one-word letter strings and pass here; the differential check below
+ * is what refuses them, and it refuses them for what they do rather than for
+ * how they are spelled.
  */
 const REPLACEMENT = /^\p{L}[\p{L}\p{M}'’-]*(?: \p{L}[\p{L}\p{M}'’-]*)?$/u
 
@@ -64,48 +69,51 @@ function occurrences(haystack: string, needle: string): number[] {
 const overlaps = (aStart: number, aEnd: number, bStart: number, bEnd: number): boolean =>
   aStart < bEnd && bStart < aEnd
 
+/** The rule ids a transcript raises, evaluated over every trigger there is. */
+function firedIds(transcript: Transcript): Set<string> {
+  return new Set(
+    evaluateRedFlags(transcript, ALL_REDFLAG_TRIGGERS).map((flag) => flag.ruleId ?? flag.id),
+  )
+}
+
 /**
- * The spans a fired rule flag matched, per turn, which no model edit may touch.
+ * Whether accepting this proposal would take a red flag away.
  *
- * **This is the most important function in the feature.** `evaluateRedFlags`
- * runs over whatever transcript is stored, so a doctor accepting a model edit to
- * a word a rule matched makes the flag stop firing on re-analysis. AGENTS.md:
- * "Do not let the LLM suppress, downgrade, or filter a deterministic red-flag
- * hit." `mergeRedFlags` is untouched and the doctor is the actor, so the
- * invariant is not breached in letter; running the engine here and refusing to
- * offer the edit at all is what keeps it from being one click away.
+ * **This is the safety control of the whole feature, and it is differential
+ * rather than positional for a reason that took a review to find.** The obvious
+ * design protects the evidence span of each fired flag and refuses edits that
+ * overlap it. That is not enough, because whether a match becomes a flag depends
+ * on text *outside* the span it matched: `isNegated` reads sixty characters
+ * before it, `isSafetyNetting` a hundred and twenty, and `asserts` and
+ * `findDeniedAbility` read the neighbouring turn entirely.
  *
- * **A flag whose evidence cannot be located protects the whole transcript.** A
- * `RedFlag` carries quoted text and no position (`RedFlagSchema`: `evidence` is
- * a bare string, and `evidenceLink` is audio timing that may never influence a
- * flag), so an evidence span that does not appear in any turn is a span this
- * function cannot reason about. Dropping every model edit is the only answer
- * that cannot be wrong in the dangerous direction.
+ * The case that killed the positional version: a patient turn reading "Ada batuk
+ * berdarah" raises `haemoptysis` on "batuk berdarah". An edit changing "Ada" to
+ * "Tiada" is one word, letters only, zero word delta, and does not touch the
+ * protected span, so every positional bound admits it. `tiada` is a Malay
+ * negator, so on re-analysis `isNegated` reads it and the emergency flag is
+ * gone.
+ *
+ * So the question asked here is the one that actually matters: run the engine
+ * over the transcript this proposal would produce, and refuse it if any rule
+ * that fired before does not fire after. `evaluateRedFlags` is pure, which is
+ * what makes asking affordable.
+ *
+ * **Each proposal is judged alone, and that is sufficient.** Two accepted
+ * corrections could in principle combine to remove a flag neither removes by
+ * itself, but the client refetches proposals against the stored text after every
+ * accept, so the second correction is re-judged against a transcript that
+ * already contains the first.
  */
-export function protectedSpans(
+function wouldSuppress(
   transcript: Transcript,
-  ruleFlags: readonly RedFlag[],
-): Map<number, [number, number][]> | 'all' {
-  const spans = new Map<number, [number, number][]>()
-
-  for (const flag of ruleFlags) {
-    const evidence = flag.evidence.trim()
-    if (evidence === '') continue
-
-    let located = false
-    for (const [turnIndex, turn] of transcript.turns.entries()) {
-      for (const at of occurrences(turn.text, evidence)) {
-        located = true
-        const forTurn = spans.get(turnIndex) ?? []
-        forTurn.push([at, at + evidence.length])
-        spans.set(turnIndex, forTurn)
-      }
-    }
-
-    if (!located) return 'all'
-  }
-
-  return spans
+  proposal: MishearProposal,
+  before: Set<string>,
+): boolean {
+  if (before.size === 0) return false
+  const after = firedIds(applyMishearProposal(transcript, proposal))
+  for (const id of before) if (!after.has(id)) return true
+  return false
 }
 
 /**
@@ -129,6 +137,14 @@ const uncertainIn = (transcript: Transcript, turnIndex: number): readonly [numbe
  * guesses, which is noise about a process they did not ask to watch. The count
  * reaches the audit row so the drop rate is observable without the words being.
  *
+ * **The trigger set is not a parameter.** It was one, taking the caller's
+ * clinical profile, and that was a hole: `profile.redFlagTriggers` is a filtered
+ * slice, the two shipped profiles share one trigger out of twelve, and the
+ * profile came from the request body. A caller naming the other profile shrank
+ * the protected set. Nothing ties a consultation to the profile it was analysed
+ * under, so the only safe answer is every trigger, chosen here where a caller
+ * cannot reach it.
+ *
  * `source: 'model'` is stamped here rather than accepted from anywhere, which is
  * the same move `makeSuggestionsAndRedFlagsSchema` makes to stop a model red
  * flag impersonating a rule hit.
@@ -136,10 +152,8 @@ const uncertainIn = (transcript: Transcript, turnIndex: number): readonly [numbe
 export function applyEditPolicy(
   edits: readonly CleanupEdit[],
   transcript: Transcript,
-  ruleFlags: readonly RedFlag[],
 ): PolicyResult {
-  const protectedByTurn = protectedSpans(transcript, ruleFlags)
-  if (protectedByTurn === 'all') return { proposals: [], dropped: edits.length }
+  const before = firedIds(transcript)
 
   const proposals: MishearProposal[] = []
   let dropped = 0
@@ -179,22 +193,26 @@ export function applyEditPolicy(
     const inUncertain = uncertainIn(transcript, site.turnIndex).some(([from, to]) =>
       overlaps(site.start, end, from, to),
     )
-    const onFlag = (protectedByTurn.get(site.turnIndex) ?? []).some(([from, to]) =>
-      overlaps(site.start, end, from, to),
-    )
-
-    if (!inUncertain || onFlag) {
+    if (!inUncertain) {
       dropped += 1
       continue
     }
 
-    proposals.push({
+    const proposal: MishearProposal = {
       turnIndex: site.turnIndex,
       start: site.start,
       original,
       suggested: replacement,
       source: 'model',
-    })
+    }
+
+    // Last, because it is the only rule that costs a pass of the engine.
+    if (wouldSuppress(transcript, proposal, before)) {
+      dropped += 1
+      continue
+    }
+
+    proposals.push(proposal)
   }
 
   return { proposals, dropped }
