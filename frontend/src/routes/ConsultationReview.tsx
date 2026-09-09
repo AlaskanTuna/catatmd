@@ -1006,8 +1006,8 @@ export function ConsultationReview() {
             // columns only bottom-align if this one is held to the floor and
             // its card is let grow into it.
             // The floor is conditional on an analysis being present.
-            // Without one, the note and rail are empty cards, and a fixed height
-            // would stretch them to a full viewport of whitespace.
+            // Without one, the note and rail are short empty cards, and a fixed
+            // height would stand this column a full viewport tall beside them.
             analysis
               ? captureBusy
                 ? 'lg:h-[calc(100vh-26rem)]'
