@@ -1005,7 +1005,16 @@ export function ConsultationReview() {
             // capped column ends where its content ends, so the three
             // columns only bottom-align if this one is held to the floor and
             // its card is let grow into it.
-            captureBusy ? 'lg:h-[calc(100vh-26rem)]' : 'lg:h-[calc(100vh-13rem)]',
+            // The floor is conditional on an analysis being present.
+            // Without one, the note and rail are empty cards, and a fixed height
+            // would stretch them to a full viewport of whitespace.
+            analysis
+              ? captureBusy
+                ? 'lg:h-[calc(100vh-26rem)]'
+                : 'lg:h-[calc(100vh-13rem)]'
+              : captureBusy
+                ? 'lg:max-h-[calc(100vh-26rem)]'
+                : 'lg:max-h-[calc(100vh-13rem)]',
             'lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
             // The mobile show/hide belongs to a transcript that already
             // exists. Capture is the one thing on this screen a doctor has
