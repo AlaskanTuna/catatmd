@@ -33,6 +33,9 @@ afterEach(() => {
 
 const notAssessed: ClinicalAssertion = { state: 'NOT_ASSESSED' }
 
+const humanise = (key: string) =>
+  key.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase())
+
 const OPERATIONAL: OperationalBlock = {
   diagnosis: notAssessed,
   medicationsDispensed: [],
@@ -224,8 +227,68 @@ describe('the completeness checklist dialog', () => {
     expect(valueCells).toHaveLength(33)
     for (const cell of [...labelCells, ...valueCells]) {
       expect(cell.getAttribute('class') ?? '').not.toMatch(
-        /truncate|text-ellipsis|whitespace-nowrap/,
+        /truncate|text-ellipsis|whitespace-nowrap|overflow-hidden/,
       )
+    }
+  })
+
+  it('renders a 40-character label without truncation classes and with its full text', async () => {
+    const longField = 'thisFieldNameIsDeliberatelyMoreThanFortyCharacters'
+    const longLabel = humanise(longField)
+
+    render(
+      <ChecklistPanel
+        clinicalFacts={
+          {
+            symptoms: { [longField]: notAssessed },
+            history: {},
+            observations: {},
+            examination: {},
+          } as unknown as ClinicalFacts
+        }
+        operational={OPERATIONAL}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Completeness Checklist' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Completeness Checklist' })
+
+    const cell = within(dialog).getByText(longLabel).closest('dt')
+    expect(cell?.getAttribute('class') ?? '').not.toMatch(
+      /truncate|text-ellipsis|whitespace-nowrap|overflow-hidden/,
+    )
+    expect(cell?.textContent).toBe(longLabel)
+  })
+
+  it('shares the same fixed-width four-track grid across every row', async () => {
+    const dialog = await openChecklistDialog()
+
+    const rows = [...dialog.querySelectorAll('dd')].flatMap((dd) =>
+      dd.parentElement ? [dd.parentElement] : [],
+    )
+    expect(rows).toHaveLength(33)
+
+    const tracks = rows.map((row) => row.className.match(/grid-cols-\[[^\]]+\]/)?.[0])
+    const unique = new Set(tracks)
+    expect(unique.size).toBe(1)
+    expect([...unique][0]).toBe('grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_1.5rem]')
+  })
+
+  it('does not draw horizontal dividers on rows or their ancestors inside a section', async () => {
+    const dialog = await openChecklistDialog()
+
+    const rows = [...dialog.querySelectorAll('dd')].flatMap((dd) =>
+      dd.parentElement ? [dd.parentElement] : [],
+    )
+    expect(rows).toHaveLength(33)
+
+    for (const row of rows) {
+      let ancestor: Element | null = row
+      while (ancestor && ancestor.tagName !== 'SECTION') {
+        expect(ancestor.getAttribute('class') ?? '').not.toMatch(
+          /(^|\s)border-b(\/|\s|$)|(^|\s)divide-y/,
+        )
+        ancestor = ancestor.parentElement
+      }
     }
   })
 

@@ -17,15 +17,13 @@ const humanise = (key: string) =>
 
 /*
  * One fixed four-track grid for every row: label, value, badge, evidence.
- * `auto` on the badge track sizes it to the badge and can never squeeze it,
- * which is the failure the old flex row kept hitting (a badge-only row once
- * overflowed by 21px, a valued one by 169px). `minmax(0, …)` on the two text
- * tracks lets labels and values wrap instead of truncating, and the fixed
- * evidence track holds its width whether the row has a link or not, so
- * badges keep the same right edge.
+ * The badge track is a fixed width so every row shares the same third column
+ * and the value column is not pushed around by different badge lengths.
+ * `minmax(0, …)` on the two text tracks lets labels and values wrap, and the
+ * fixed evidence track holds its width whether the row has a link or not.
  */
 const ROW_GRID =
-  'grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_1.5rem] items-center gap-x-3'
+  'grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem_1.5rem] items-center gap-x-3'
 
 /**
  * One checklist row, and its evidence when the field has any (issue #10, AC7).
@@ -78,7 +76,7 @@ function ChecklistRow({
   // the list would look ragged for a reason the reader cannot see.
   if (!link) {
     return (
-      <div className={cn(ROW_GRID, 'border-b border-line/60 px-2 py-2 last:border-0')}>
+      <div className={cn(ROW_GRID, 'px-2 py-2')}>
         {summary}
         {/* The evidence track renders even when empty, so the badge column
             keeps the same right edge on rows that have no link. */}
@@ -88,7 +86,7 @@ function ChecklistRow({
   }
 
   return (
-    <div className="min-w-0 border-b border-line/60 last:border-0">
+    <div className="min-w-0">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -380,7 +378,7 @@ export function ChecklistPanel({
                   key={section}
                   className="rounded-card border border-line bg-surface p-4 page-break-avoid"
                 >
-                  <h3 className="mb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                  <h3 className="mb-1 border-b border-line/60 pb-1 text-2xs font-semibold uppercase tracking-[0.08em] text-ink-muted">
                     {CHECKLIST_SECTION_LABELS[section]}
                   </h3>
                   <dl className="mt-1 grid gap-x-10 @[640px]:grid-cols-2">
