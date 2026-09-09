@@ -36,8 +36,13 @@ function groupByPublisher(guidelines: GuidelineChunk[]) {
 }
 
 const ALL_PUBLISHERS = 'all'
-const CORPUS_PAGE_SIZE = 12
-const DOCUMENT_PAGE_SIZE = 15
+const formatIngested = (value: Date) =>
+  new Intl.DateTimeFormat('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }).format(
+    value,
+  )
+
+const CORPUS_PAGE_SIZE = 6
+const DOCUMENT_PAGE_SIZE = 6
 
 /*
  * The ID is searchable alongside the prose, and that is the point rather than a
@@ -65,13 +70,6 @@ function matchesDocument(document: GuidelineDocument, query: string) {
     .every((term) => haystack.includes(term))
 }
 
-const formatIngested = (value: Date) =>
-  new Intl.DateTimeFormat('en-MY', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(value)
-
 export function Guidelines() {
   const guidelines = useQuery({ queryKey: ['guidelines'], queryFn: api.guidelines })
   const documents = useQuery({
@@ -87,15 +85,26 @@ export function Guidelines() {
 
   const all = useMemo(() => guidelines.data ?? [], [guidelines.data])
   const allDocuments = useMemo(() => documents.data ?? [], [documents.data])
+  // Retrieval only reaches documents tagged with the consultation's profile;
+  // an untagged document is in the library but never in the citation set.
+  const inScopeDocuments = useMemo(
+    () => allDocuments.filter((document) => document.profiles.length > 0),
+    [allDocuments],
+  )
 
   const publishers = useMemo(
     () => [
       { value: ALL_PUBLISHERS, label: 'All Publishers' },
-      ...[...new Set(all.map((guideline) => guideline.publisher))]
+      ...[
+        ...new Set([
+          ...all.map((guideline) => guideline.publisher),
+          ...allDocuments.map((document) => document.publisher),
+        ]),
+      ]
         .sort()
         .map((name) => ({ value: name, label: name })),
     ],
-    [all],
+    [all, allDocuments],
   )
 
   const filtered = useMemo(
@@ -119,6 +128,7 @@ export function Guidelines() {
   const handlePublisherChange = (value: string) => {
     setPublisher(value)
     setCorpusPage(1)
+    setDocumentPage(1)
   }
 
   const corpusPageCount = useMemo(() => Math.ceil(filtered.length / CORPUS_PAGE_SIZE), [filtered])
@@ -132,8 +142,13 @@ export function Guidelines() {
   /* The one search box covers both lists: a reader checking where a cited
      span could have come from is asking the same question of each. */
   const filteredDocuments = useMemo(
-    () => allDocuments.filter((document) => matchesDocument(document, query)),
-    [allDocuments, query],
+    () =>
+      allDocuments.filter(
+        (document) =>
+          (publisher === ALL_PUBLISHERS || document.publisher === publisher) &&
+          matchesDocument(document, query),
+      ),
+    [allDocuments, publisher, query],
   )
 
   const documentPageCount = useMemo(
@@ -179,9 +194,14 @@ export function Guidelines() {
           */}
           <Card data-tour="corpus" className="mt-6 flex items-start gap-2 p-5">
             <p className="text-sm leading-relaxed text-ink-muted">
-              A suggestion carries a guideline ID, never free text. The model is given only these{' '}
-              <span className="font-medium text-ink">{all.length} entries</span> and can cite
-              nothing else.
+              A suggestion carries a guideline ID, never free text. The model may cite these{' '}
+              <span className="font-medium text-ink">{all.length} curated entries</span> and
+              passages retrieved from the{' '}
+              <span className="font-medium text-ink">
+                {inScopeDocuments.length} of the {allDocuments.length} documents
+              </span>{' '}
+              below that are tagged for a consultation&apos;s clinical scope. Free-text references
+              are rejected.
             </p>
             <InfoTip label="How the citation constraint is enforced" align="right">
               The request-time schema narrows the citation field to exactly the IDs above, so a
@@ -326,6 +346,14 @@ export function Guidelines() {
           <p className="mt-4 text-sm text-ink-muted">No CPG documents ingested yet.</p>
         )}
 
+        {documents.data && allDocuments.length > 0 && (
+          <p aria-live="polite" className="mt-3 text-sm text-ink-muted">
+            {filtering
+              ? `Showing ${filteredDocuments.length} of ${allDocuments.length} documents`
+              : `${allDocuments.length} documents`}
+          </p>
+        )}
+
         {documents.data && allDocuments.length > 0 && filteredDocuments.length === 0 && (
           <p className="mt-4 text-sm text-ink-muted">No CPG documents match that search.</p>
         )}
@@ -334,15 +362,23 @@ export function Guidelines() {
           <div className="mt-4 flex flex-col gap-2">
             {pagedDocuments.map((document) => (
               <Card key={document.id} className="p-5">
-                <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                  <h3 className="font-semibold leading-snug">{document.title}</h3>
-                  <span className="text-sm text-ink-muted">{document.year}</span>
-                </div>
+                <h3 className="font-semibold leading-snug">{document.title}</h3>
 
                 <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-                  <span className="text-2xs text-ink-muted">{document.publisher}</span>
-                  <span className="text-2xs text-ink-muted">{document.pageCount} pages</span>
-                  <span className="text-2xs text-ink-muted">{document.chunkCount} chunks</span>
+                  <span className="text-2xs text-ink-muted">
+                    {document.publisher} · {document.year}
+                  </span>
+                  {document.profiles.map((profile) => (
+                    <code
+                      key={profile}
+                      className="rounded-control bg-sunken px-2 py-1 font-mono text-2xs text-ink-muted"
+                    >
+                      {profile}
+                    </code>
+                  ))}
+                  {document.pageCount > 0 && (
+                    <span className="text-2xs text-ink-muted">{document.pageCount} pages</span>
+                  )}
                   <span className="text-2xs text-ink-muted">
                     Ingested {formatIngested(document.ingestedAt)}
                   </span>
@@ -352,7 +388,7 @@ export function Guidelines() {
                     rel="noreferrer noopener"
                     className="inline-flex items-center gap-1.5 text-sm font-medium text-accent transition-colors hover:text-accent-hover"
                   >
-                    Source
+                    Open Guideline
                     <ExternalLink aria-hidden className="size-3.5" />
                   </a>
                 </div>
