@@ -1606,9 +1606,43 @@ export const LiveFlagsResponseSchema = z.object({
   redFlags: z.array(RedFlagSchema),
 })
 
+// ─── Transcript corrections ──────────────────────────────────────────────────
+
+/**
+ * One suspected mishear the doctor may accept or reject (#308).
+ *
+ * Both words travel. The doctor is choosing between them, so a payload carrying
+ * only `suggested` would ask them to approve a replacement without showing what
+ * it displaces, and `docs/trd.md` §20.7 admits this feature only as "a proposal
+ * on screen, never an automatic edit".
+ *
+ * `start` is a character offset into the turn's stored text, so the client can
+ * splice the correction back without re-running the matcher. It is a position in
+ * the transcript the server read, which is why Accept sends the whole corrected
+ * transcript rather than the offset: a stale offset applied to an edited turn
+ * would corrupt a word nobody chose.
+ */
+export const MishearProposalSchema = z.object({
+  turnIndex: z.number().int().nonnegative(),
+  start: z.number().int().nonnegative(),
+  original: z.string().min(1).max(MAX_TURN_CHARACTERS),
+  suggested: z.string().min(1).max(MAX_TURN_CHARACTERS),
+})
+
+/**
+ * Bounded for the same reason `medicationsDispensed` is: an unbounded array is
+ * an unbounded response. The cap is generous against the 11-entry table, which
+ * can only fire on whole tokens, and it is a bound rather than a target.
+ */
+export const TranscriptCorrectionsResponseSchema = z.object({
+  proposals: z.array(MishearProposalSchema).max(MAX_TRANSCRIPT_TURNS),
+})
+
 // ─── Inferred types ──────────────────────────────────────────────────────────
 
 export type Speaker = z.infer<typeof SpeakerSchema>
+export type MishearProposal = z.infer<typeof MishearProposalSchema>
+export type TranscriptCorrectionsResponse = z.infer<typeof TranscriptCorrectionsResponseSchema>
 export type TranscriptTurn = z.infer<typeof TranscriptTurnSchema>
 export type TranscriptSource = z.infer<typeof TranscriptSourceSchema>
 export type Transcript = z.infer<typeof TranscriptSchema>

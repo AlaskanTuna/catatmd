@@ -1,4 +1,4 @@
-import type { Transcript } from '@shared/types'
+import type { MishearProposal, Transcript } from '@shared/types'
 
 /**
  * Measured Malay ASR confusables (docs/trd.md §20.3, issue #193).
@@ -155,4 +155,54 @@ export const originalSpan = (
   const last = expansion.origin[start + length - 1]
   if (first === undefined || last === undefined) return source
   return source.slice(first, last + 1)
+}
+
+/**
+ * Every measured mishear in a transcript, as proposals rather than repairs.
+ *
+ * This is the same table `expandMishears` uses for the red-flag matcher, reached
+ * a second way. The matcher expands text it never shows anyone, so a flag can
+ * fire on "demam" while quoting "teman". Here the doctor is the one deciding, so
+ * nothing is expanded: each hit is returned in place and the stored transcript
+ * is untouched until they accept one. §20.7 fixes this as the only admissible
+ * form of post-correction, "a proposal on screen, never an automatic edit, and
+ * never a rewrite of stored text".
+ *
+ * **`original` is sliced from the turn, never rebuilt from the table.** Slicing
+ * is what makes the proposal quote the record: a reconstructed token would be
+ * this function's idea of what is there, and the doctor would be accepting a
+ * correction to a word nobody had verified was written.
+ *
+ * **Recorded transcripts only**, for the reason the table's own header gives: a
+ * typed transcript has no recogniser between the doctor and the text, so "teman"
+ * there is the everyday word for a companion and proposing "demam" would be
+ * offering to edit a sentence that is already correct.
+ */
+export const proposeMishearCorrections = (transcript: Transcript): MishearProposal[] => {
+  if (!isRecorded(transcript)) return []
+
+  const proposals: MishearProposal[] = []
+
+  for (const [turnIndex, turn] of transcript.turns.entries()) {
+    for (const match of turn.text.matchAll(TOKEN)) {
+      const word = match[0]
+      const replacement = CONFUSABLES.get(word.toLowerCase())
+      if (replacement === undefined) continue
+
+      const start = match.index
+      const suggested =
+        word.charAt(0) === word.charAt(0).toUpperCase()
+          ? replacement.charAt(0).toUpperCase() + replacement.slice(1)
+          : replacement
+
+      proposals.push({
+        turnIndex,
+        start,
+        original: turn.text.slice(start, start + word.length),
+        suggested,
+      })
+    }
+  }
+
+  return proposals
 }
