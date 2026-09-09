@@ -1,21 +1,7 @@
 import { type GuidelineChunk, GuidelineChunkSchema } from '@shared/types'
 import type { ProfileId } from '../clinical-profiles/types.js'
-import type { ClinicalArtefactVersion } from '../clinical-versions/types.js'
 
 export type ProfiledGuidelineChunk = GuidelineChunk & { readonly profiles: readonly ProfileId[] }
-
-/**
- * Bumped whenever a chunk is added, removed, or its summary/threshold
- * changes. Recorded with every analysis (docs/trd.md §11, §15) so a past
- * suggestion can be traced back to the corpus state that produced it.
- *
- * This is the version of the corpus as an artefact. Each chunk separately
- * carries its own source's `publisher` and `year`.
- */
-export const GUIDELINE_CORPUS_VERSION: ClinicalArtefactVersion = {
-  id: 'guideline-corpus-v4',
-  effectiveDate: '2026-09-07',
-}
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
 const UTI_PROFILES: readonly ProfileId[] = ['adult-acute-uncomplicated-uti']

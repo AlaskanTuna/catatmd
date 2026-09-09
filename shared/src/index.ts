@@ -1146,8 +1146,18 @@ export const NoteAndGapsResponseSchema = z.object({
  * point a doctor at a moment that says something else, or at nothing at all.
  * It is resolved from the transcript afterwards, never accepted from a model.
  */
-export const makeSuggestionsAndRedFlagsSchema = (corpusIds: readonly [string, ...string[]]) =>
-  z.object({
+export const makeSuggestionsAndRedFlagsSchema = (corpusIds: readonly string[]) => {
+  const hasIds = corpusIds.length > 0
+  const suggestionSchema = ClinicalSuggestionSchema.extend({
+    citations: z
+      .array(
+        CitationSchema.extend({
+          guidelineId: hasIds ? z.enum(corpusIds as [string, ...string[]]) : z.string(),
+        }),
+      )
+      .min(1),
+  })
+  return z.object({
     outOfScope: z.boolean(),
     redFlags: z.array(
       RedFlagSchema.omit({
@@ -1159,12 +1169,9 @@ export const makeSuggestionsAndRedFlagsSchema = (corpusIds: readonly [string, ..
         source: z.literal('model'),
       }),
     ),
-    suggestions: z.array(
-      ClinicalSuggestionSchema.extend({
-        citations: z.array(CitationSchema.extend({ guidelineId: z.enum(corpusIds) })).min(1),
-      }),
-    ),
+    suggestions: hasIds ? z.array(suggestionSchema) : z.array(suggestionSchema).max(0),
   })
+}
 
 // ─── API contracts (docs/trd.md §13) ─────────────────────────────────────────
 
@@ -1685,8 +1692,14 @@ export const CopilotProposalSchema = z.discriminatedUnion('tool', [
  * streaming that to a log-adjacent surface is how transcript bodies end up
  * somewhere `AGENTS.md` forbids them.
  */
-export const makeCopilotEventSchema = (corpusIds: readonly [string, ...string[]]) =>
-  z.discriminatedUnion('type', [
+export const makeCopilotEventSchema = (corpusIds: readonly string[]) => {
+  const hasIds = corpusIds.length > 0
+  const citations = z.array(
+    z.object({
+      guidelineId: hasIds ? z.enum(corpusIds as [string, ...string[]]) : z.string(),
+    }),
+  )
+  return z.discriminatedUnion('type', [
     z.object({ type: z.literal('tool'), name: z.string(), label: z.string() }),
     z.object({ type: z.literal('token'), text: z.string() }),
     z.object({ type: z.literal('proposal'), proposal: CopilotProposalSchema }),
@@ -1695,10 +1708,11 @@ export const makeCopilotEventSchema = (corpusIds: readonly [string, ...string[]]
       messageId: z.string(),
       /** Same constraint as every other citation path: an id from the supplied
        *  corpus or nothing. Free text fails here rather than reaching a doctor. */
-      citations: z.array(z.object({ guidelineId: z.enum(corpusIds) })),
+      citations: hasIds ? citations : citations.max(0),
     }),
     z.object({ type: z.literal('error'), message: z.string() }),
   ])
+}
 
 export const ErrorEnvelopeSchema = z.object({
   error: z.object({ code: z.string(), message: z.string() }),
