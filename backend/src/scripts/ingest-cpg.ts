@@ -222,16 +222,67 @@ export function isScannedPage(text: string): boolean {
   return text.replace(/\s/g, '').length < SCANNED_THRESHOLD
 }
 
+const CHROME_DATE_TIME_PATTERN =
+  /^\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4}),\s+\d{1,2}:\d{2}(?:\s*[AP]M)?\s+/i
+const FOOTER_URL_PATTERN = /^\s*(\S+?:\/\/\S+?)(?:\s+\d{1,4}\/\d{1,4})?\s*$/
+
+function collapseSpaces(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+function stripChromeDateTime(line: string): string {
+  return line.replace(CHROME_DATE_TIME_PATTERN, '').trim()
+}
+
+function parseChromeFooterUrl(line: string): string | null {
+  const match = line.match(FOOTER_URL_PATTERN)
+  return match?.[1] ?? null
+}
+
+function isFooterLine(line: string, headerSet: Set<string>): boolean {
+  const url = parseChromeFooterUrl(line)
+  if (!url) return false
+  return headerSet.has(collapseSpaces(url))
+}
+
 export function computeRunningHeaders(rawPages: string[]): Set<string> {
   const counts = new Map<string, number>()
   for (const page of rawPages) {
     const seen = new Set<string>()
-    for (const line of page.split('\n')) {
-      const normalised = line.replace(/\s+/g, ' ').trim().toLowerCase()
-      if (!normalised || /^\d+$/.test(normalised)) continue
-      if (!seen.has(normalised)) {
-        seen.add(normalised)
-        counts.set(normalised, (counts.get(normalised) ?? 0) + 1)
+    const lines = page.split('\n')
+    let firstIndex = -1
+    let lastIndex = -1
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? ''
+      if (!line.trim() || /^\d+$/.test(line.trim())) continue
+      if (firstIndex === -1) firstIndex = i
+      lastIndex = i
+    }
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? ''
+      if (!line.trim() || /^\d+$/.test(line.trim())) continue
+      let key: string
+      if (i === firstIndex) {
+        const stripped = stripChromeDateTime(line)
+        key = collapseSpaces(stripped)
+        const dashIndex = key.indexOf(' - ')
+        if (dashIndex > 0) {
+          const prefix = key.slice(0, dashIndex).trim()
+          if (prefix && !seen.has(prefix)) {
+            seen.add(prefix)
+            counts.set(prefix, (counts.get(prefix) ?? 0) + 1)
+          }
+        }
+      } else if (i === lastIndex) {
+        const url = parseChromeFooterUrl(line)
+        key = url ? collapseSpaces(url) : collapseSpaces(line)
+      } else {
+        key = collapseSpaces(line)
+      }
+      if (!key || /^\d+$/.test(key)) continue
+      if (!seen.has(key)) {
+        seen.add(key)
+        counts.set(key, (counts.get(key) ?? 0) + 1)
       }
     }
   }
@@ -256,11 +307,33 @@ function isPageNumberLine(line: string): boolean {
 export function cleanPage(rawText: string, headerSet: Set<string>): string {
   const rawLines = rawText.split('\n')
   const keep: string[] = []
+  let firstContent = true
   for (const line of rawLines) {
     if (isPageNumberLine(line)) continue
-    const collapsed = line.replace(/\s+/g, ' ').trim().toLowerCase()
-    if (headerSet.has(collapsed)) continue
+    if (firstContent && line.trim()) {
+      const stripped = collapseSpaces(stripChromeDateTime(line))
+      if (stripped && headerSet.has(stripped)) {
+        firstContent = false
+        continue
+      }
+      const dashIndex = stripped.indexOf(' - ')
+      if (dashIndex >= 0) {
+        const prefix = stripped.slice(0, dashIndex).trim()
+        if (prefix && headerSet.has(prefix)) {
+          firstContent = false
+          continue
+        }
+      }
+      firstContent = false
+    } else if (!firstContent) {
+      const collapsed = collapseSpaces(line)
+      if (headerSet.has(collapsed)) continue
+    }
     keep.push(line)
+  }
+
+  if (keep.length > 0 && isFooterLine(keep[keep.length - 1] ?? '', headerSet)) {
+    keep.pop()
   }
 
   for (let i = 0; i < keep.length; ) {
