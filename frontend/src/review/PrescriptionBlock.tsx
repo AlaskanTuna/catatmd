@@ -518,27 +518,29 @@ export function PrescriptionBlock({
 
   return (
     <Card data-tour="prescription" className="mt-5 p-4">
-      <button
-        type="button"
-        onClick={() => setIsOpen((value) => !value)}
-        aria-expanded={isOpen}
-        aria-controls={bodyId}
-        className="flex w-full items-center justify-between gap-4 rounded-control text-left transition-colors duration-150 hover:bg-sunken-soft"
-      >
-        <span className="text-sm font-semibold text-ink">Prescriptions</span>
-        <span className="flex items-center gap-2 text-2xs text-ink-muted">
-          {full
-            ? `${stored.length} of ${MAX_PRESCRIPTIONS}, limit reached`
-            : count(stored.length, 'prescription')}
-          <ChevronDown
-            aria-hidden
-            className={cn(
-              'size-4 shrink-0 text-ink-muted transition-transform duration-150',
-              isOpen && 'rotate-180',
-            )}
-          />
-        </span>
-      </button>
+      <h2 className="text-sm font-semibold text-ink">
+        <button
+          type="button"
+          onClick={() => setIsOpen((value) => !value)}
+          aria-expanded={isOpen}
+          aria-controls={bodyId}
+          className="flex w-full items-center justify-between gap-4 rounded-control text-left transition-colors duration-150 hover:bg-sunken-soft"
+        >
+          <span>Prescriptions</span>
+          <span className="flex items-center gap-2 font-normal text-2xs text-ink-muted">
+            {full
+              ? `${stored.length} of ${MAX_PRESCRIPTIONS}, limit reached`
+              : count(stored.length, 'prescription')}
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                'size-4 shrink-0 text-ink-muted transition-transform duration-150',
+                isOpen && 'rotate-180',
+              )}
+            />
+          </span>
+        </button>
+      </h2>
 
       <div id={bodyId} data-print="block" className={cn(!isOpen && 'hidden')}>
         {stored.length === 0 ? (
