@@ -298,6 +298,43 @@ function ClampedSummary({ text }: { text: string }) {
   )
 }
 
+function parseDocumentRef(ref: string): { documentId: string; page?: number } | null {
+  const match = ref.match(/^doc:([^#]+)(?:#p(\d+))?$/)
+  if (!match) return null
+  const [, documentId, pageString] = match
+  if (documentId === undefined) return null
+  if (pageString === undefined) return { documentId }
+  const page = Number(pageString)
+  if (!Number.isFinite(page) || !Number.isInteger(page) || page <= 0) return null
+  return { documentId, page }
+}
+
+function resolveSource(
+  id: string,
+  guidelines: GuidelineChunk[],
+): { chunk: GuidelineChunk; isDocumentRef: boolean } | undefined {
+  const exact = guidelines.find((chunk) => chunk.id === id)
+  if (exact) return { chunk: exact, isDocumentRef: false }
+  const ref = parseDocumentRef(id)
+  if (!ref) return undefined
+  const base = guidelines.find((chunk) => chunk.id === ref.documentId)
+  if (!base) return undefined
+  return { chunk: { ...base, page: ref.page ?? base.page }, isDocumentRef: true }
+}
+
+function AttributionSource({ chunk }: { chunk: GuidelineChunk }) {
+  return (
+    <>
+      <p className="mt-2 text-xs font-medium text-ink">{chunk.title}</p>
+      <ChunkProvenance chunk={chunk} />
+      <SourceLink chunk={chunk} />
+      <p className="mt-2 text-2xs text-ink-muted">
+        The licence for this source does not permit reproducing the text here.
+      </p>
+    </>
+  )
+}
+
 function SourcesPanel({
   guidelineIds,
   guidelines,
@@ -317,12 +354,19 @@ function SourcesPanel({
   }
 
   const ids = gapSource?.kind === 'guideline' ? gapSource.guidelineIds : guidelineIds
-  const resolved = (ids ?? [])
-    .map((id) => guidelines.find((g) => g.id === id))
-    .filter((chunk): chunk is GuidelineChunk => chunk !== undefined)
+  if (ids === undefined || ids.length === 0) {
+    return <p className="text-sm text-ink-muted">No guideline citation.</p>
+  }
+
+  const resolved = ids
+    .map((id) => ({ id, source: resolveSource(id, guidelines) }))
+    .filter(
+      (entry): entry is { id: string; source: { chunk: GuidelineChunk; isDocumentRef: boolean } } =>
+        entry.source !== undefined,
+    )
 
   if (resolved.length === 0) {
-    if (gapSource?.kind === 'guideline' && ids !== undefined && ids.length > 0) {
+    if (gapSource?.kind === 'guideline') {
       return (
         <div className="flex flex-wrap gap-1.5">
           {ids.map((id) => (
@@ -343,12 +387,18 @@ function SourcesPanel({
    */
   return (
     <div className="flex flex-col gap-2">
-      {resolved.map((chunk) => (
-        <div key={chunk.id} className="rounded-control border border-line bg-surface p-3">
-          <span className={sourceChipClass}>{chunk.id}</span>
-          <p className="mt-2 text-xs font-medium text-ink">{chunk.title}</p>
-          <ChunkProvenance chunk={chunk} />
-          <SourceLink chunk={chunk} />
+      {resolved.map(({ id, source: { chunk, isDocumentRef } }) => (
+        <div key={id} className="rounded-control border border-line bg-surface p-3">
+          <span className={sourceChipClass}>{id}</span>
+          {isDocumentRef || !chunk.verbatimAllowed ? (
+            <AttributionSource chunk={chunk} />
+          ) : (
+            <>
+              <p className="mt-2 text-xs font-medium text-ink">{chunk.title}</p>
+              <ChunkProvenance chunk={chunk} />
+              <SourceLink chunk={chunk} />
+            </>
+          )}
         </div>
       ))}
     </div>
@@ -569,7 +619,7 @@ export function SuggestionCard({
       <p className="text-sm text-ink">{suggestion.text}</p>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {suggestion.citations.map((citation) => {
-          const chunk = guidelines.find((g) => g.id === citation.guidelineId)
+          const resolved = resolveSource(citation.guidelineId, guidelines)
           const open = openId === citation.guidelineId
           return (
             <div key={citation.guidelineId} className="w-full">
@@ -585,27 +635,34 @@ export function SuggestionCard({
               >
                 {citation.guidelineId}
               </button>
-              {open && chunk && (
+              {open && resolved && (
                 <div className="mt-2 rounded-control border border-line bg-sunken p-3">
-                  <p className="text-xs font-medium text-ink">{chunk.title}</p>
-                  <ChunkProvenance chunk={chunk} />
-                  {chunk.summary.length > 600 ? (
-                    <ClampedSummary text={chunk.summary} />
+                  {resolved.isDocumentRef || !resolved.chunk.verbatimAllowed ? (
+                    <AttributionSource chunk={resolved.chunk} />
                   ) : (
-                    <p className="mt-2 text-xs text-ink-muted">{chunk.summary}</p>
+                    <>
+                      <p className="text-xs font-medium text-ink">{resolved.chunk.title}</p>
+                      <ChunkProvenance chunk={resolved.chunk} />
+                      {resolved.chunk.summary.length > 600 ? (
+                        <ClampedSummary text={resolved.chunk.summary} />
+                      ) : (
+                        <p className="mt-2 text-xs text-ink-muted">{resolved.chunk.summary}</p>
+                      )}
+                      {resolved.chunk.quote ? (
+                        <blockquote className="mt-2 border-l-2 border-line pl-2 text-xs italic text-ink-muted">
+                          {resolved.chunk.quote}
+                        </blockquote>
+                      ) : (
+                        /* Absence of a quote is a licence fact, not missing data,
+                           and saying so stops it reading as a bug. */
+                        <p className="mt-2 text-2xs text-ink-muted">
+                          Licence ({resolved.chunk.sourceLicence}) does not permit verbatim
+                          quotation.
+                        </p>
+                      )}
+                      <SourceLink chunk={resolved.chunk} />
+                    </>
                   )}
-                  {chunk.quote ? (
-                    <blockquote className="mt-2 border-l-2 border-line pl-2 text-xs italic text-ink-muted">
-                      {chunk.quote}
-                    </blockquote>
-                  ) : (
-                    /* Absence of a quote is a licence fact, not missing data,
-                       and saying so stops it reading as a bug. */
-                    <p className="mt-2 text-2xs text-ink-muted">
-                      Licence ({chunk.sourceLicence}) does not permit verbatim quotation.
-                    </p>
-                  )}
-                  <SourceLink chunk={chunk} />
                 </div>
               )}
             </div>

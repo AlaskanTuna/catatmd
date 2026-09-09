@@ -17,8 +17,6 @@ import {
   ErrorEnvelopeSchema,
   type Fixture,
   FixtureSchema,
-  type GuidelineChunk,
-  GuidelineChunkSchema,
   type GuidelineDocument,
   GuidelineDocumentSchema,
   type HostedAsrResult,
@@ -109,7 +107,6 @@ const PatientEnvelope = z.object({ patient: PatientSchema })
 const PatientDetailEnvelope = z.object({ patient: PatientDetailSchema })
 const ErasePatientEnvelope = z.object({ erasure: ErasePatientResultSchema })
 const FixturesEnvelope = z.object({ fixtures: z.array(FixtureSchema) })
-const GuidelinesEnvelope = z.object({ guidelines: z.array(GuidelineChunkSchema) })
 const GuidelineDocumentsEnvelope = z.object({ documents: z.array(GuidelineDocumentSchema) })
 const NotificationsEnvelope = z.object({ notifications: z.array(NotificationItemSchema) })
 
@@ -492,9 +489,6 @@ export const api = {
    * audit row it stops showing is still in the append-only log.
    */
   clearNotifications: () => request('/notifications/clear', z.null(), { method: 'POST' }),
-
-  guidelines: (): Promise<GuidelineChunk[]> =>
-    request('/guidelines', GuidelinesEnvelope).then((r) => r.guidelines),
 
   guidelineDocuments: (): Promise<GuidelineDocument[]> =>
     request('/guidelines/documents', GuidelineDocumentsEnvelope).then((r) => r.documents),
