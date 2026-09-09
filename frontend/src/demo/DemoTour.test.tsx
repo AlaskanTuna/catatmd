@@ -1,7 +1,15 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { TOUR_STEP_COUNT, TOUR_STEPS } from './DemoTour.js'
+import type { ConsultationDetail, ConsultationListItem, Fixture } from '@shared/types'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { api } from '../lib/api.js'
+import { DemoStepBar } from './DemoStepBar.js'
+import { DemoTourProvider, TOUR_STEP_COUNT, TOUR_STEPS } from './DemoTour.js'
+import { HelpButton } from './HelpButton.js'
+import { Spotlight } from './Spotlight.js'
 
 /**
  * The tour's honesty contract (issue #179).
@@ -85,5 +93,161 @@ describe('the no-mocking promise', () => {
 
   it('is still accompanied by the real-pipeline claim it qualifies', () => {
     expect(source).toMatch(/runs the real pipeline on a simulated transcript/i)
+  })
+})
+
+/**
+ * Regression for the tour stalling when the live analysis falls back to seeded
+ * consultations. The fallback must not leave the Next control disabled, and the
+ * fallback notice must stay visible.
+ */
+describe('fallback handling', () => {
+  beforeAll(() => {
+    global.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    global.MutationObserver = class {
+      observe() {}
+      disconnect() {}
+      takeRecords() {
+        return []
+      }
+    }
+    global.requestAnimationFrame = (cb: FrameRequestCallback) => setTimeout(cb, 0)
+    Element.prototype.scrollIntoView = () => {}
+
+    const native = {
+      showModal: HTMLDialogElement.prototype.showModal,
+      close: HTMLDialogElement.prototype.close,
+    }
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true
+    }
+    HTMLDialogElement.prototype.close = function () {
+      this.open = false
+    }
+    return () => {
+      Object.assign(HTMLDialogElement.prototype, native)
+    }
+  })
+
+  const fixture: Fixture = {
+    id: 'urti-hard-red-flag',
+    label: 'Hard red flag',
+    transcript: {
+      source: 'fixture',
+      turns: [{ speaker: 'doctor', text: 'test' }],
+    },
+  } as unknown as Fixture
+
+  const listItem: ConsultationListItem = {
+    id: 'seeded-1',
+    status: 'awaiting_review',
+    title: 'Seeded consultation',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as unknown as ConsultationListItem
+
+  const detail: ConsultationDetail = {
+    id: 'seeded-1',
+    status: 'awaiting_review',
+    noteTemplate: 'soap',
+    captureMode: 'manual',
+    title: 'Seeded consultation',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    transcript: fixture.transcript,
+    analysis: {
+      note: { subjective: '', objective: '', assessment: '', plan: '' },
+      gaps: [],
+      redFlags: [
+        {
+          id: 'rf-1',
+          label: 'Airway compromise',
+          severity: 'emergency',
+          evidence: 'stridor',
+          source: 'rule',
+        },
+      ],
+      suggestions: [
+        {
+          id: 's-1',
+          text: 'Escalate immediately',
+          citations: [{ guidelineId: 'g1' }],
+        },
+      ],
+    },
+    editedNote: null,
+    editedMedicalRecordNote: null,
+    prescriptions: null,
+    approvedAt: null,
+    approvedBy: null,
+    patient: null,
+    acknowledgedRedFlagIds: [],
+    reviewedGapIds: [],
+    redFlagDispositions: [],
+    gapDispositions: [],
+  } as unknown as ConsultationDetail
+
+  it('keeps the Next control enabled and shows the fallback notice after the live analysis fails', async () => {
+    vi.spyOn(api, 'fixtures').mockResolvedValue([fixture] as Fixture[])
+    vi.spyOn(api, 'analyzeEphemeral').mockRejectedValue(new Error('analysis failed'))
+    vi.spyOn(api, 'listConsultations').mockResolvedValue([listItem] as ConsultationListItem[])
+    vi.spyOn(api, 'getConsultation').mockResolvedValue(detail)
+
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/patients']}>
+          <DemoTourProvider>
+            <DemoStepBar />
+            <Spotlight />
+            <HelpButton />
+          </DemoTourProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    const help = screen.getByRole('button', { name: /Take the guided tour/i })
+    help.click()
+
+    await waitFor(() => {
+      expect(screen.getByText('Start Tour')).toBeTruthy()
+    })
+
+    screen.getByText('Start Tour').click()
+
+    await waitFor(() => {
+      expect(within(screen.getByRole('alert')).getByText('Patients')).toBeTruthy()
+    })
+
+    // Step 0 -> Step 1
+    within(screen.getByRole('alert')).getByText(/Next/i).click()
+
+    await waitFor(() => {
+      expect(within(screen.getByRole('alert')).getByText('Consultations')).toBeTruthy()
+    })
+
+    // Step 1 -> Step 2 (the first analysis-dependent step)
+    within(screen.getByRole('alert')).getByText(/Next/i).click()
+
+    await waitFor(
+      () => {
+        expect(screen.getByText(/Showing prepared consultations/i)).toBeTruthy()
+      },
+      { timeout: 3000 },
+    )
+
+    await waitFor(
+      () => {
+        const next = screen.queryByText(/Next/i)
+        expect(next).toBeTruthy()
+        expect((next as HTMLButtonElement).disabled).toBe(false)
+      },
+      { timeout: 3000 },
+    )
   })
 })
