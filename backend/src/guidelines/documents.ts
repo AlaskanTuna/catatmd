@@ -11,7 +11,11 @@ export const GUIDELINE_CORPUS_VERSION: ClinicalArtefactVersion = {
 }
 
 /**
- * Document ids the model may cite with a `doc:` reference.
+ * Document ids the deterministic layers (red-flag triggers, the gap
+ * checklist) may cite with a `doc:` reference. The model never sees these:
+ * its citable set is the retrieved chunk ids on the analysis, and a `doc:`
+ * reference can never satisfy that enum, so it can cite a span but never a
+ * whole document.
  *
  * These are the ingested source documents, not the curated chunk ids that live
  * in `corpus.ts`. A test in `documents.test.ts` asserts that every id here is

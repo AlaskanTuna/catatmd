@@ -331,6 +331,20 @@ describe('makeSuggestionsAndRedFlagsSchema', () => {
     expect(result.success).toBe(true)
   })
 
+  it('never lets a document reference satisfy the model-facing enum', () => {
+    const retrieved = ['moh-nag-2024-p348-c1']
+    const schema = makeSuggestionsAndRedFlagsSchema(retrieved)
+    const cite = (guidelineId: string) =>
+      schema.safeParse({
+        outOfScope: false,
+        redFlags: [],
+        suggestions: [{ id: 's1', text: 'Consider a throat swab.', citations: [{ guidelineId }] }],
+      }).success
+    expect(cite('moh-nag-2024-p348-c1')).toBe(true)
+    expect(cite('doc:moh-nag-2024')).toBe(false)
+    expect(cite('doc:moh-nag-2024#p348')).toBe(false)
+  })
+
   it('rejects any suggestion when the corpus is empty', () => {
     const emptySchema = makeSuggestionsAndRedFlagsSchema([])
     const result = emptySchema.safeParse({
