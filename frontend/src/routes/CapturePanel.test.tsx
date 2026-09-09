@@ -1,4 +1,4 @@
-import type { DraftTurn } from '@shared/types'
+import type { DraftTurn, TextRange } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
@@ -45,7 +45,12 @@ function MockAmbientCapture({
 }: {
   onTranscript: (result: {
     text: string
-    segments: { text: string; start: number; end: number | null }[]
+    segments: {
+      text: string
+      start: number
+      end: number | null
+      uncertain?: readonly TextRange[]
+    }[]
     source: 'asr_live'
     draftTurns?: readonly DraftTurn[]
   }) => void
@@ -76,6 +81,30 @@ function MockAmbientCapture({
         }}
       >
         mock transcribe live
+      </button>
+      {/* An ambient capture where the recogniser doubted one word (#309). The
+          segment text is already whitespace-normalised, as everything
+          `tokensToSegments` emits is, because the ranges describe that
+          exact string. */}
+      <button
+        type="button"
+        onClick={() => {
+          onLiveChange(false)
+          onTranscript({
+            text: 'Saya teman dua hari Demam tu tinggi tak?',
+            segments: [
+              { text: 'Saya teman dua hari', start: 0, end: 2, uncertain: [{ start: 5, end: 10 }] },
+              { text: 'Demam tu tinggi tak?', start: 2, end: 5 },
+            ],
+            source: 'asr_live',
+            draftTurns: [
+              { speaker: 'patient', text: 'Saya teman dua hari' },
+              { speaker: 'doctor', text: 'Demam tu tinggi tak?' },
+            ],
+          })
+        }}
+      >
+        mock transcribe uncertain
       </button>
       <button type="button" onClick={onSwitchToManual}>
         mock switch to manual
@@ -757,5 +786,81 @@ describe('CapturePanel submit flow', () => {
     const transcript = firstCapture<{ source: string; labelsReviewed?: boolean }>()
     expect(transcript.source).toBe('paste')
     expect(transcript.labelsReviewed).toBe(true)
+  })
+})
+
+describe('uncertain spans across the textarea', () => {
+  const captured = vi.fn()
+
+  function openAmbient() {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <CapturePanel
+            captureMode="ambient"
+            onCaptureModeChange={vi.fn()}
+            onCaptureBusyChange={vi.fn()}
+            onCapture={captured}
+            saving={false}
+            error={null}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(screen.getByRole('tab', { name: /record/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe uncertain' }))
+  }
+
+  const lastCapture = () => {
+    const call = captured.mock.calls.at(-1)
+    if (!call) throw new Error('expected a transcript to have been captured')
+    return call[0] as { turns: { text: string; uncertain?: { start: number; end: number }[] }[] }
+  }
+
+  beforeEach(() => captured.mockClear())
+
+  it('carries the doubted word through the round trip, still pointing at it', () => {
+    openAmbient()
+    const turn = lastCapture().turns[0]
+    expect(turn?.text).toBe('Saya teman dua hari')
+    // Sliced rather than compared as numbers: the whole risk here is an offset
+    // that survives while meaning something else.
+    const range = turn?.uncertain?.[0]
+    expect(turn?.text.slice(range?.start ?? 0, range?.end ?? 0)).toBe('teman')
+  })
+
+  it('leaves an untouched neighbouring turn unmarked', () => {
+    openAmbient()
+    expect(lastCapture().turns[1]?.uncertain).toBeUndefined()
+  })
+
+  it('drops the ranges from a line the doctor edited', () => {
+    // Once the words are the doctor's, a machine's doubt about the words it
+    // replaced is no longer about anything on screen.
+    openAmbient()
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, {
+      target: { value: textarea.value.replace('Saya teman dua hari', 'Saya demam dua hari') },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /use this transcript/i }))
+
+    const turns = lastCapture().turns
+    expect(turns[0]?.text).toBe('Saya demam dua hari')
+    expect(turns[0]?.uncertain).toBeUndefined()
+  })
+
+  it('keeps the ranges when the doctor edits a different line', () => {
+    openAmbient()
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, {
+      target: { value: textarea.value.replace('Demam tu tinggi tak?', 'Demam tinggi tak?') },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /use this transcript/i }))
+
+    const turns = lastCapture().turns
+    expect(turns[0]?.uncertain).toEqual([{ start: 5, end: 10 }])
+    expect(turns[1]?.uncertain).toBeUndefined()
   })
 })

@@ -1,3 +1,4 @@
+import type { TextRange } from '@shared/types'
 import type { TranscriptSegment } from '../protocol.js'
 
 /*
@@ -18,6 +19,11 @@ import type { TranscriptSegment } from '../protocol.js'
  * emits it as a token with a control-word text, and it must never reach the
  * screen: a doctor reading the live pane would see a stray marker in the middle
  * of a consultation.
+ *
+ * `confidence` is `null` when the recogniser said nothing about it, which is
+ * different from saying it was unsure. Every reader below must test for `null`
+ * before comparing, so a stream that carries no confidence produces no cues at
+ * all rather than marking every word.
  */
 export type LiveToken = {
   text: string
@@ -26,6 +32,7 @@ export type LiveToken = {
   isFinal: boolean
   speaker: string | null
   language: string | null
+  confidence: number | null
   endpoint: boolean
 }
 
@@ -64,9 +71,18 @@ export const EMPTY_LIVE_TRANSCRIPT: LiveTranscript = { final: [], interim: [] }
  * suppress a real escalation trigger. Roles are assigned after Stop, by the
  * existing labelling pass, and reviewed there.
  *
+ * `uncertain` marks where the recogniser doubted its own words, as character
+ * ranges into this segment's `text` and never as a score for the whole segment:
+ * a minimum or a mean tells a doctor that something here is shaky without
+ * telling them which word to re-read, which is the only part they can act on.
+ * Absent when no token carried a confidence at all.
+ *
  * A superset of `TranscriptSegment`, so it is accepted anywhere one is.
  */
-export type LiveSegment = TranscriptSegment & { speaker: string | null }
+export type LiveSegment = TranscriptSegment & {
+  speaker: string | null
+  uncertain?: readonly TextRange[]
+}
 
 /**
  * A silence long enough to read as a new utterance when the recogniser has not
@@ -91,6 +107,24 @@ export const SEGMENT_GAP_MS = 1_500
  * the pair together only ever describes a diarisation glitch.
  */
 const MID_WORD_CONTIGUITY_MS = 200
+
+/**
+ * Below this, a token is offered to the doctor as a word worth re-reading.
+ *
+ * **No measurement in this repo backs this number.** Nothing here has scored
+ * Soniox's confidence against a ground-truth transcript in any language, so
+ * this is a starting value chosen to mark the visibly shaky words in the
+ * captures seen so far and nothing more. docs/trd.md §20.10 already records the
+ * provider as unmeasured; this is one more inference on the same pile, and it
+ * is stated rather than softened.
+ *
+ * What settles it is a labelled sample: the threshold that catches most real
+ * errors without underlining correct speech. Until then, the cost of it being
+ * wrong is bounded by what the cue does, which is nothing except ask a doctor
+ * to look. Nothing is gated on it, and the number lives here alone so moving it
+ * is a one-line diff rather than a hunt.
+ */
+export const UNCERTAIN_CONFIDENCE_THRESHOLD = 0.6
 
 /**
  * Whether a cut between these two tokens would land inside a word.
@@ -159,6 +193,92 @@ export function absorb(transcript: LiveTranscript, tokens: readonly LiveToken[])
 const tidy = (text: string): string => text.replace(/\s+/g, ' ').trim()
 
 /**
+ * The string `tidy` would produce, built alongside where each token landed in
+ * it.
+ *
+ * **Two passes cannot do this.** `tidy` collapses whitespace runs and trims the
+ * ends, so a position in the joined tokens is not a position in the tidied
+ * text, and the shift is unrecorded. It is also invisible when it goes wrong:
+ * Soniox tokens carry their own leading spaces, so a segment cut on a speaker
+ * change starts with one, and every offset computed on the raw join lands one
+ * character early. The highlight appears on the neighbouring word and nothing
+ * throws.
+ *
+ * So the text and the spans are built in a single walk. A token that
+ * contributed nothing but whitespace gets `null` rather than an empty range,
+ * because an empty range is a position and this token has none. Separators sit
+ * outside every span: a span starts at the first character the token actually
+ * emitted.
+ *
+ * This must stay byte-for-byte what `tidy` returns, because `tokensToText`
+ * feeds `segmentsToDraft`, which refuses to label anything that does not
+ * reconstruct exactly.
+ */
+function joinTokens(group: readonly LiveToken[]): {
+  text: string
+  spans: readonly (TextRange | null)[]
+} {
+  const spans: (TextRange | null)[] = []
+  let text = ''
+  let pendingSpace = false
+
+  for (const token of group) {
+    let start: number | null = null
+    for (const character of token.text) {
+      if (/\s/u.test(character)) {
+        // Whitespace before the first word is dropped, which is the `trim`.
+        // Anything later is held rather than written, so a run collapses to one
+        // space and a trailing run is never emitted at all.
+        if (text !== '') pendingSpace = true
+        continue
+      }
+      if (pendingSpace) {
+        text += ' '
+        pendingSpace = false
+      }
+      if (start === null) start = text.length
+      text += character
+    }
+    spans.push(start === null ? null : { start, end: text.length })
+  }
+
+  return { text, spans }
+}
+
+/**
+ * The spans of a group the recogniser was unsure of, merged into ranges.
+ *
+ * A token with no confidence is skipped rather than counted as low, so a stream
+ * that reports none produces no ranges and the field stays absent.
+ *
+ * Neighbours are merged across the single space between them, so "sakit tekak"
+ * with both words below the threshold reads as one thing to check rather than
+ * two. The result is therefore already ordered and non-overlapping, which is
+ * what `TranscriptTurnSchema` asserts and what lets a renderer walk it once.
+ */
+function uncertainRanges(
+  group: readonly LiveToken[],
+  spans: readonly (TextRange | null)[],
+): TextRange[] | undefined {
+  const ranges: TextRange[] = []
+
+  for (const [index, token] of group.entries()) {
+    const span = spans[index]
+    if (!span) continue
+    if (token.confidence === null || token.confidence >= UNCERTAIN_CONFIDENCE_THRESHOLD) continue
+
+    const previous = ranges[ranges.length - 1]
+    if (previous && span.start <= previous.end + 1) {
+      ranges[ranges.length - 1] = { start: previous.start, end: span.end }
+      continue
+    }
+    ranges.push(span)
+  }
+
+  return ranges.length > 0 ? ranges : undefined
+}
+
+/**
  * Groups settled tokens into the segments the rest of the app already speaks.
  *
  * A group closes on an endpoint marker, on a change of speaker, or on a pause
@@ -172,12 +292,13 @@ export function tokensToSegments(final: readonly LiveToken[]): LiveSegment[] {
 
   const close = () => {
     if (group.length === 0) return
-    const text = tidy(group.map((token) => token.text).join(''))
+    const { text, spans } = joinTokens(group)
     const first = group[0]
     const last = group[group.length - 1]
     // A group of pure whitespace is dropped rather than emitted: an empty
     // segment would fail the caller's own reconstruction check.
     if (text && first && last) {
+      const uncertain = uncertainRanges(group, spans)
       // A group is cut on speaker change *except* inside a word, so it can hold
       // a suppressed switch and the first token is not representative of it.
       segments.push({
@@ -185,6 +306,7 @@ export function tokensToSegments(final: readonly LiveToken[]): LiveSegment[] {
         start: first.startMs / 1_000,
         end: last.endMs / 1_000,
         speaker: dominantSpeaker(group),
+        ...(uncertain === undefined ? {} : { uncertain }),
       })
     }
     group = []

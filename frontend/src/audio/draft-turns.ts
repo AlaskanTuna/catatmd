@@ -1,4 +1,4 @@
-import type { TranscriptTurn } from '@shared/types'
+import { MAX_UNCERTAIN_RANGES_PER_TURN, type TextRange, type TranscriptTurn } from '@shared/types'
 import type { TranscriptSegment } from './protocol.js'
 
 /**
@@ -26,6 +26,16 @@ import type { TranscriptSegment } from './protocol.js'
  * only adds the split v1 could not make, inside a segment.
  */
 
+/**
+ * A segment that may say where its recogniser doubted its own words.
+ *
+ * Widens `TranscriptSegment` rather than editing it, because that type is the
+ * Whisper worker's protocol and the worker reports no confidence. Ambient
+ * capture's `LiveSegment` satisfies this, a worker segment satisfies it by
+ * carrying nothing, and both reach `applyRecording` through the same argument.
+ */
+export type MarkedSegment = TranscriptSegment & { uncertain?: readonly TextRange[] }
+
 export type DraftLine = {
   id: string
   speaker: TranscriptTurn['speaker']
@@ -33,6 +43,8 @@ export type DraftLine = {
   offsetSeconds?: number
   /** Where this line's audio ends, when the segment it came from was closed. */
   endSeconds?: number
+  /** Character ranges of `text` the recogniser was unsure of (issue #309). */
+  uncertain?: readonly TextRange[]
   /**
    * Set when the server labelled the rest of the transcript but not this span,
    * so `speaker` is a placeholder rather than a guess with anything behind it.
@@ -228,6 +240,7 @@ export function segmentsToDraft(
 export function draftToTurns(draft: readonly DraftLine[]): TranscriptTurn[] {
   return draft.map((line) => {
     const turn: TranscriptTurn = { speaker: line.speaker, text: line.text }
+    if (line.uncertain !== undefined) turn.uncertain = [...line.uncertain]
     if (line.offsetSeconds !== undefined) turn.offsetSeconds = line.offsetSeconds
     // Never without a start. An end alone cannot be seeked to, and the pair is
     // what `TranscriptTurnSchema` orders against.
@@ -296,5 +309,83 @@ export function timeDraftLines(
     const timed: DraftLine = { ...line, offsetSeconds: first.start }
     if (last.end !== null) timed.endSeconds = last.end
     return timed
+  })
+}
+
+/**
+ * Puts a segment's uncertain spans back onto the lines the labelling pass
+ * drafted (issue #309).
+ *
+ * The same problem `timeDraftLines` solves, and the same shape of answer, for
+ * the same reason: the recogniser measured this per token, the labelling pass
+ * then re-split the words into better turns and returned text alone, and a
+ * range that belonged to a segment does not belong to a turn. So the segments
+ * are concatenated once into a haystack, each character carrying whether it sat
+ * inside an uncertain span, and every line is located in it by a cursor that
+ * only moves forward. A repeated word therefore takes the occurrence that
+ * follows the previous line rather than the first one in the consultation.
+ *
+ * **Everything about this fails closed, and it must.** A line that cannot be
+ * located carries nothing. A segment or a line whose text is not already
+ * whitespace-normalised carries nothing, because the offsets describe the
+ * un-normalised string and applying them to a shifted one would underline the
+ * neighbouring word. Ranges past the schema's per-turn cap are dropped rather
+ * than allowed to fail the transcript. A missing cue costs a doctor nothing;
+ * a cue on the wrong word tells them a correct transcription is suspect.
+ */
+export function carryUncertain(
+  lines: readonly DraftLine[],
+  segments: readonly MarkedSegment[],
+): DraftLine[] {
+  if (segments.length === 0) return [...lines]
+
+  let haystack = ''
+  const uncertainAt: boolean[] = []
+  for (const segment of segments) {
+    const text = normalise(segment.text)
+    if (text === '') continue
+    if (haystack !== '') {
+      haystack += ' '
+      // The joiner belongs to no segment, so it is never part of a span.
+      uncertainAt.push(false)
+    }
+    haystack += text
+
+    const marks = new Array<boolean>(text.length).fill(false)
+    if (text === segment.text) {
+      for (const range of segment.uncertain ?? []) {
+        for (let i = Math.max(0, range.start); i < Math.min(text.length, range.end); i += 1) {
+          marks[i] = true
+        }
+      }
+    }
+    for (const mark of marks) uncertainAt.push(mark)
+  }
+  const hay = haystack.toLowerCase()
+
+  let cursor = 0
+  return lines.map((line) => {
+    const needle = normalise(line.text).toLowerCase()
+    if (needle === '') return line
+    const at = hay.indexOf(needle, cursor)
+    if (at === -1) return line
+    // Advanced before the normalisation check below, so a line that declines
+    // the ranges still does not leave a later line matching against its words.
+    cursor = at + needle.length
+    if (normalise(line.text) !== line.text) return line
+
+    const uncertain: TextRange[] = []
+    for (let i = 0; i < needle.length; i += 1) {
+      if (!uncertainAt[at + i]) continue
+      const previous = uncertain[uncertain.length - 1]
+      if (previous && previous.end === i) {
+        previous.end = i + 1
+        continue
+      }
+      if (uncertain.length >= MAX_UNCERTAIN_RANGES_PER_TURN) break
+      uncertain.push({ start: i, end: i + 1 })
+    }
+
+    return uncertain.length > 0 ? { ...line, uncertain } : line
   })
 }
