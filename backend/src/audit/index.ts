@@ -32,6 +32,17 @@ export type AnalysisFailureReason =
   | 'internal_error'
 
 /**
+ * Short failure categories for `consultation.corrections_failed`. Closed for the
+ * same reason as the set above: the matcher runs over transcript text, so a
+ * thrown value on this path can carry a fragment of the consultation.
+ *
+ * `no_transcript` is a real outcome rather than an error. A draft can exist with
+ * no transcript stored yet, and the row records that the surface was asked for
+ * and had nothing to work on.
+ */
+export type TranscriptCorrectionsFailureReason = 'no_transcript' | 'internal_error'
+
+/**
  * Which versions of the system produced one analysis (issue #12). Enough to
  * answer "what generated this note?" months later without guessing.
  *
@@ -107,6 +118,25 @@ export type ConsultationAuditEvent =
       }
     }
   | { action: 'consultation.live_analysis_failed'; metadata: { reason: AnalysisFailureReason } }
+  /*
+   * Mishear proposals served to the doctor (#308).
+   *
+   * A count, never the words. The proposals are drawn from the transcript, so
+   * `original` is patient speech and `suggested` is the table's reading of it;
+   * both are content and neither may reach a row. The count is what makes the
+   * trail answerable: it records that a correction surface was shown, and how
+   * much of it, without reproducing the consultation in the audit log.
+   *
+   * **Accepting a proposal writes no row of its own.** It becomes an ordinary
+   * `PATCH`, so it lands as `consultation.edited` and is indistinguishable from
+   * a manual edit. That is a known gap, identical to the copilot's, and closing
+   * it would take a second write path to the clinical record.
+   */
+  | { action: 'consultation.corrections_proposed'; metadata: { proposalCount: number } }
+  | {
+      action: 'consultation.corrections_failed'
+      metadata: { reason: TranscriptCorrectionsFailureReason }
+    }
   | { action: 'consultation.edited' }
   | {
       action: 'consultation.template_selected'

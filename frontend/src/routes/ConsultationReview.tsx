@@ -41,6 +41,7 @@ import {
 } from '../review/MedicalRecordNoteEditor.js'
 import { NoteEditor } from '../review/NoteEditor.js'
 import { GapCard, RedFlagCard, SuggestionCard } from '../review/SafetyCards.js'
+import { TranscriptCorrections } from '../review/TranscriptCorrections.js'
 import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { InfoTip } from '../ui/InfoTip.js'
@@ -1036,6 +1037,24 @@ export function ConsultationReview() {
               />
             </div>
           ) : (
+            <></>
+          )}
+          {/*
+            Corrections sit under the conversation and only while the note has
+            not been built yet (#308). Past `draft` the note was generated from
+            these words, so changing them would leave it grounded in text the
+            record no longer holds, and the API refuses for the same reason.
+          */}
+          {detail.transcript && detail.status === 'draft' && (
+            <div className="mt-3">
+              <TranscriptCorrections
+                consultationId={id}
+                transcript={detail.transcript}
+                onSaved={(next) => queryClient.setQueryData(['consultation', id], next)}
+              />
+            </div>
+          )}
+          {!detail.transcript && (
             <Card className="flex flex-col p-4">
               <CapturePanel
                 captureMode={detail.captureMode}

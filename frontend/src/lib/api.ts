@@ -32,6 +32,7 @@ import {
   type LiveSession,
   LiveSessionSchema,
   type MedicalRecordNote,
+  type MishearProposal,
   type NoteTemplate,
   type NotificationItem,
   NotificationItemSchema,
@@ -44,6 +45,7 @@ import {
   type RedFlag,
   type SoapNote,
   type Transcript,
+  TranscriptCorrectionsResponseSchema,
   type UpdatePatientInput,
 } from '@shared/types'
 import { z } from 'zod'
@@ -413,6 +415,18 @@ export const api = {
       body: JSON.stringify({ delta }),
       signal,
     }).then((r) => r.redFlags),
+
+  /**
+   * Suspected mishears in the stored transcript, for the doctor to judge (#308).
+   *
+   * Read-only despite the POST: it derives from a transcript the server already
+   * holds and writes nothing. Accepting one is a plain `setTranscript` above,
+   * which is why there is no accept call here to pair with it.
+   */
+  transcriptCorrections: (id: string): Promise<MishearProposal[]> =>
+    request(`/consultations/${id}/transcript-corrections`, TranscriptCorrectionsResponseSchema, {
+      method: 'POST',
+    }).then((r) => r.proposals),
 
   /**
    * The model-backed live panes: the patient card and the missing-information

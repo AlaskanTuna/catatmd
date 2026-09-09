@@ -241,6 +241,17 @@ export const LIVE_ASR_WEBSOCKET_URL =
   /^wss:\/\/stt-rt(?:\.(?:eu|jp|in))?\.soniox\.com\/transcribe-websocket$/
 
 /**
+ * How many vocabulary terms may ride in the session context.
+ *
+ * The vendor's ceiling is the whole context at 8,000 tokens, roughly 10,000
+ * characters, shared with `general`. This bound is far below it and is about a
+ * different risk: the list crosses the audio egress, so it is one of the few
+ * values in the system that cannot be de-identified on the way out. A small
+ * cap keeps it reviewable by eye, which is the only review it can get.
+ */
+export const MAX_ASR_CONTEXT_TERMS = 120
+
+/**
  * The recognition settings the browser sends as the socket's first frame.
  *
  * Served by the API rather than hardcoded in the bundle so hints and the model
@@ -278,6 +289,26 @@ export const LiveSessionConfigSchema = z.object({
       .array(z.object({ key: z.string().min(1).max(32), value: z.string().min(1).max(128) }))
       .min(1)
       .max(8),
+    /**
+     * Clinical vocabulary to prime recognition toward, in the language of the
+     * consultation (issue #307).
+     *
+     * **This is the accuracy layer, not a refinement.** docs/trd.md 20.7.1
+     * measured the same Malay clip going from "Dr. Sayyabah Taksudali Maharaj"
+     * with no context to one word wrong with a clinical Malay vocabulary that
+     * contained none of the sentence's content words. The effect is domain and
+     * language priming rather than keyword injection, which is why the list is
+     * a vocabulary rather than a list of expected answers.
+     *
+     * **One language, and the target one.** The same measurement scored English
+     * context *worse than no context at all* on Malay audio, so this is never a
+     * multilingual superset even though `languageHints` names four.
+     *
+     * **Optional, and that is a rollout property rather than a nicety.** Vercel
+     * and Render deploy independently from one merge, so a required field would
+     * black out ambient capture for the length of the slower build.
+     */
+    terms: z.array(z.string().min(1).max(64)).max(MAX_ASR_CONTEXT_TERMS).optional(),
   }),
 })
 
@@ -1575,9 +1606,43 @@ export const LiveFlagsResponseSchema = z.object({
   redFlags: z.array(RedFlagSchema),
 })
 
+// ─── Transcript corrections ──────────────────────────────────────────────────
+
+/**
+ * One suspected mishear the doctor may accept or reject (#308).
+ *
+ * Both words travel. The doctor is choosing between them, so a payload carrying
+ * only `suggested` would ask them to approve a replacement without showing what
+ * it displaces, and `docs/trd.md` §20.7 admits this feature only as "a proposal
+ * on screen, never an automatic edit".
+ *
+ * `start` is a character offset into the turn's stored text, so the client can
+ * splice the correction back without re-running the matcher. It is a position in
+ * the transcript the server read, which is why Accept sends the whole corrected
+ * transcript rather than the offset: a stale offset applied to an edited turn
+ * would corrupt a word nobody chose.
+ */
+export const MishearProposalSchema = z.object({
+  turnIndex: z.number().int().nonnegative(),
+  start: z.number().int().nonnegative(),
+  original: z.string().min(1).max(MAX_TURN_CHARACTERS),
+  suggested: z.string().min(1).max(MAX_TURN_CHARACTERS),
+})
+
+/**
+ * Bounded for the same reason `medicationsDispensed` is: an unbounded array is
+ * an unbounded response. The cap is generous against the 11-entry table, which
+ * can only fire on whole tokens, and it is a bound rather than a target.
+ */
+export const TranscriptCorrectionsResponseSchema = z.object({
+  proposals: z.array(MishearProposalSchema).max(MAX_TRANSCRIPT_TURNS),
+})
+
 // ─── Inferred types ──────────────────────────────────────────────────────────
 
 export type Speaker = z.infer<typeof SpeakerSchema>
+export type MishearProposal = z.infer<typeof MishearProposalSchema>
+export type TranscriptCorrectionsResponse = z.infer<typeof TranscriptCorrectionsResponseSchema>
 export type TranscriptTurn = z.infer<typeof TranscriptTurnSchema>
 export type TranscriptSource = z.infer<typeof TranscriptSourceSchema>
 export type Transcript = z.infer<typeof TranscriptSchema>
