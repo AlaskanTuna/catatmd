@@ -130,6 +130,13 @@ describe('the real panel', () => {
     expect(screen.getByRole('button', { name: /expand the panel/i })).toBeTruthy()
     expect(screen.queryByText(/inactive during the tour/i)).toBeNull()
   })
+
+  it('does not render the old subtitle', () => {
+    renderPanel(false)
+    openPanel()
+
+    expect(screen.queryByText('Reviews with you. Never signs off.')).toBeNull()
+  })
 })
 
 /*

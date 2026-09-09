@@ -25,6 +25,7 @@ import { InputMeter } from '../audio/InputMeter.js'
 import type { WorkerRequest, WorkerResponse } from '../audio/protocol.js'
 import { api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
+import { count } from '../lib/plural.js'
 import { Button } from '../ui/Button.js'
 import { Card } from '../ui/Card.js'
 import { Select, type SelectOption } from '../ui/Select.js'
@@ -506,11 +507,13 @@ export function PrescriptionBlock({
   if (!editable && stored.length === 0) return null
 
   return (
-    <Card className="p-5">
+    <Card className="mt-5 p-4">
       <div className="flex items-baseline justify-between gap-4">
         <h2 className="text-sm font-semibold text-ink">Prescriptions</h2>
         <span className="text-2xs text-ink-muted">
-          {stored.length} of {MAX_PRESCRIPTIONS}
+          {full
+            ? `${stored.length} of ${MAX_PRESCRIPTIONS}, limit reached`
+            : count(stored.length, 'prescription')}
         </span>
       </div>
 

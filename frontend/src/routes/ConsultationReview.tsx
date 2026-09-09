@@ -992,7 +992,7 @@ export function ConsultationReview() {
             // The mobile show/hide belongs to a transcript that already
             // exists. Capture is the one thing on this screen a doctor has
             // come here to do, so it is never behind a toggle.
-            detail.transcript && !showTranscript ? 'hidden lg:block' : 'block',
+            detail.transcript && !showTranscript ? 'hidden' : 'block',
           )}
           aria-labelledby="transcript-heading"
           data-tour="transcript"

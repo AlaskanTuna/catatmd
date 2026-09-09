@@ -128,8 +128,7 @@ export function CatatAI({
           className="size-8 shrink-0 rounded-full object-cover"
         />
         <div className="min-w-0 flex-1">
-          <p className="font-medium text-ink text-sm leading-tight">CatatAI</p>
-          <p className="truncate text-ink-muted text-xs">Reviews with you. Never signs off.</p>
+          <h2 className="font-display text-lg font-semibold">CatatAI</h2>
         </div>
         {/* No expand during the tour. The expanded state is a modal `<dialog>`,
             which takes the top layer and makes the tour's own step bar inert
