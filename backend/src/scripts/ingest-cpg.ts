@@ -41,6 +41,52 @@ export interface ManifestDocument {
   sourceUrl: string
   file: string | null
   profiles: string[]
+  /**
+   * Per-document attribution and licence, overriding the manifest's top-level
+   * values.
+   *
+   * The manifest began as one corpus from one publisher under one licence, so
+   * all three lived at the top level and every row inherited them. That stops
+   * working the moment a second source is added: an open-access paper and an
+   * all-rights-reserved guideline cannot share one `verbatimAllowed`, and
+   * `retrieve.ts` hands `chunk.text` to the doctor as the citation body, so
+   * the flag decides whether a span may be shown verbatim at all. `publisher`
+   * is the same problem in the citation line rather than the licence. Absent
+   * means "inherit", which keeps every existing entry reading as before.
+   */
+  publisher?: string
+  sourceLicence?: string
+  verbatimAllowed?: boolean
+}
+
+/** Per-document attribution and licence where set, the manifest's otherwise. */
+export function resolveDocumentFields(
+  doc: Pick<ManifestDocument, 'publisher' | 'sourceLicence' | 'verbatimAllowed'>,
+  manifest: Pick<Manifest, 'publisher' | 'sourceLicence' | 'verbatimAllowed'>,
+): { publisher: string; sourceLicence: string; verbatimAllowed: boolean } {
+  return {
+    publisher: doc.publisher ?? manifest.publisher,
+    sourceLicence: doc.sourceLicence ?? manifest.sourceLicence,
+    verbatimAllowed: doc.verbatimAllowed ?? manifest.verbatimAllowed,
+  }
+}
+
+/**
+ * What an unchanged PDF still syncs from the manifest on re-ingest. Scope and
+ * licence are metadata, so an operator edits one file and re-runs; the
+ * licence must come through the per-document resolution or a re-run would
+ * quietly reset a `verbatimAllowed: false` document to the manifest default.
+ */
+export function manifestSyncData(
+  doc: Pick<ManifestDocument, 'profiles' | 'publisher' | 'sourceLicence' | 'verbatimAllowed'>,
+  manifest: Pick<Manifest, 'publisher' | 'sourceLicence' | 'verbatimAllowed'>,
+): {
+  profiles: string[]
+  publisher: string
+  sourceLicence: string
+  verbatimAllowed: boolean
+} {
+  return { profiles: [...doc.profiles], ...resolveDocumentFields(doc, manifest) }
 }
 
 export interface ChunkSpec {
@@ -534,6 +580,8 @@ async function writeDocument(
     })
   }
 
+  const fields = resolveDocumentFields(doc, manifest)
+
   await prisma.$transaction(async (tx) => {
     await tx.guidelineChunk.deleteMany({ where: { documentId: doc.id } })
     await tx.guidelineDocument.upsert({
@@ -541,29 +589,29 @@ async function writeDocument(
       create: {
         id: doc.id,
         title: doc.title,
-        publisher: manifest.publisher,
+        publisher: fields.publisher,
         year: doc.year,
         sourceUrl: doc.sourceUrl,
         jurisdiction: manifest.jurisdiction,
-        sourceLicence: manifest.sourceLicence,
+        sourceLicence: fields.sourceLicence,
         sha256,
         pageCount,
         storagePath,
         profiles: [...doc.profiles],
-        verbatimAllowed: manifest.verbatimAllowed,
+        verbatimAllowed: fields.verbatimAllowed,
       },
       update: {
         title: doc.title,
-        publisher: manifest.publisher,
+        publisher: fields.publisher,
         year: doc.year,
         sourceUrl: doc.sourceUrl,
         jurisdiction: manifest.jurisdiction,
-        sourceLicence: manifest.sourceLicence,
+        sourceLicence: fields.sourceLicence,
         sha256,
         pageCount,
         storagePath,
         profiles: [...doc.profiles],
-        verbatimAllowed: manifest.verbatimAllowed,
+        verbatimAllowed: fields.verbatimAllowed,
         ingestedAt: new Date(),
       },
     })
@@ -616,12 +664,9 @@ async function processDocument(
   if (!flags.dryRun) {
     const existing = await prisma.guidelineDocument.findUnique({ where: { id: doc.id } })
     if (existing && existing.sha256 === sha256 && !flags.force) {
-      // Scope and licence are manifest metadata, kept in sync without a
-      // re-ingest so an operator can widen or narrow retrieval by editing one
-      // file and re-running.
       await prisma.guidelineDocument.update({
         where: { id: doc.id },
-        data: { profiles: [...doc.profiles], verbatimAllowed: manifest.verbatimAllowed },
+        data: manifestSyncData(doc, manifest),
       })
       logger.info(`unchanged, skipping ${doc.id} (scope synced)`)
       return null
