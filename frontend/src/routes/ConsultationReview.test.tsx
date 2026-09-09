@@ -1133,6 +1133,25 @@ describe('transcript column layout', () => {
     expect(transcript?.className).not.toContain('lg:max-h-')
     expect(transcript?.className).toContain('lg:[&>*:last-child]:grow')
   })
+
+  it('caps the transcript column when there is no analysis to level against', async () => {
+    const draft = {
+      ...WITH_TRANSCRIPT,
+      status: 'draft' as const,
+      analysis: null,
+      approvedAt: null,
+      approvedBy: null,
+    }
+    vi.mocked(api.getConsultation).mockResolvedValue(draft as never)
+    setup()
+
+    const transcript = (await screen.findByRole('heading', { name: 'Transcript' })).closest(
+      'section',
+    )
+
+    expect(transcript?.className).toContain('lg:max-h-[calc(100vh-13rem)]')
+    expect(transcript?.className).not.toContain('lg:h-')
+  })
 })
 
 /*
