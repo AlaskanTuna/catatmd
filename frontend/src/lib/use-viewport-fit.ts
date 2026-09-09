@@ -12,6 +12,19 @@ function verticalMargin(element: Element): number {
   return toPixels(style.marginTop) + toPixels(style.marginBottom)
 }
 
+// Everything that sits below the grid's bottom edge before the document ends:
+// the bottom padding and margin of every ancestor up to the body. Reading one
+// parent's padding missed the page shell's own bottom padding, which put the
+// document 40px past the viewport at every desktop width.
+function spaceBelow(grid: HTMLElement): number {
+  let total = 0
+  for (let node = grid.parentElement; node && node !== document.body; node = node.parentElement) {
+    const style = window.getComputedStyle(node)
+    total += toPixels(style.paddingBottom) + toPixels(style.marginBottom)
+  }
+  return total + toPixels(window.getComputedStyle(grid).marginBottom)
+}
+
 export function useViewportFit<G extends HTMLElement, B extends HTMLElement>(
   gridRef: React.RefObject<G | null>,
   bottomBarRef?: React.RefObject<B | null>,
@@ -23,7 +36,6 @@ export function useViewportFit<G extends HTMLElement, B extends HTMLElement>(
     if (!grid) return
 
     const header = grid.previousElementSibling
-    const parent = grid.parentElement
 
     const update = () => {
       if (!grid.isConnected) return
@@ -36,11 +48,11 @@ export function useViewportFit<G extends HTMLElement, B extends HTMLElement>(
         return
       }
 
-      const paddingBottom = parent ? toPixels(window.getComputedStyle(parent).paddingBottom) : 0
+      const below = spaceBelow(grid)
       const bottomBar = bottomBarRef?.current
       const bottom = bottomBar
-        ? paddingBottom + bottomBar.getBoundingClientRect().height + verticalMargin(bottomBar)
-        : paddingBottom
+        ? below + bottomBar.getBoundingClientRect().height + verticalMargin(bottomBar)
+        : below
 
       grid.style.setProperty('--review-columns-height', `calc(100vh - ${top}px - ${bottom}px)`)
     }
@@ -48,7 +60,7 @@ export function useViewportFit<G extends HTMLElement, B extends HTMLElement>(
     update()
 
     if (typeof window.ResizeObserver !== 'undefined') {
-      if (!resizeObserver.current) resizeObserver.current = new ResizeObserver(update)
+      resizeObserver.current = new ResizeObserver(update)
       if (header) resizeObserver.current.observe(header)
       const bottomBar = bottomBarRef?.current
       if (bottomBar) resizeObserver.current.observe(bottomBar)
@@ -59,6 +71,8 @@ export function useViewportFit<G extends HTMLElement, B extends HTMLElement>(
 
     return () => {
       window.removeEventListener('resize', handleResize)
+      resizeObserver.current?.disconnect()
+      resizeObserver.current = null
     }
-  })
+  }, [gridRef, bottomBarRef])
 }

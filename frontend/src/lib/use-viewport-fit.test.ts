@@ -47,6 +47,28 @@ describe('useViewportFit', () => {
     )
   })
 
+  it('subtracts the bottom padding of every ancestor, not only the parent', () => {
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(rect(292))
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(
+      (element: Element) =>
+        ({
+          paddingBottom: element.classList.contains('pb-20')
+            ? '80px'
+            : element.tagName === 'MAIN'
+              ? '40px'
+              : '0px',
+          marginBottom: '0px',
+          marginTop: '0px',
+        }) as CSSStyleDeclaration,
+    )
+
+    const { getByTestId } = render(createElement('main', null, createElement(TestHarness)))
+
+    expect(getByTestId('grid').style.getPropertyValue('--review-columns-height')).toBe(
+      'calc(100vh - 292px - 120px)',
+    )
+  })
+
   it('falls back to the 13rem calc when the grid rect is zero', () => {
     const { getByTestId } = render(createElement(TestHarness))
 
