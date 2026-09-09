@@ -331,7 +331,6 @@ export function ConsultationReview() {
   const settingsDialog = useRef<HTMLDialogElement>(null)
   const gridRef = useRef<HTMLDivElement | null>(null)
   const bottomBarRef = useRef<HTMLDivElement | null>(null)
-  useViewportFit(gridRef, bottomBarRef)
 
   /**
    * Revealing the transcript is not the same as showing it.
@@ -401,6 +400,12 @@ export function ConsultationReview() {
     queryFn: () => api.getConsultation(id),
     enabled: !isEphemeral,
   })
+  useViewportFit(gridRef, bottomBarRef, [
+    consultation.data?.id,
+    consultation.data?.analysis === null,
+    consultation.data?.status,
+    captureBusy,
+  ])
   const guidelines = useQuery({ queryKey: ['guidelines'], queryFn: api.guidelines })
 
   /*

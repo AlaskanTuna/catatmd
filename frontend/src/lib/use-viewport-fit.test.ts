@@ -5,7 +5,7 @@ import { useViewportFit } from './use-viewport-fit.js'
 
 function TestHarness() {
   const gridRef = useRef<HTMLDivElement | null>(null)
-  useViewportFit(gridRef)
+  useViewportFit(gridRef, undefined, [])
   return createElement(
     'div',
     { className: 'pb-20' },

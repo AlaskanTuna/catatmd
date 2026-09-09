@@ -25,9 +25,13 @@ function spaceBelow(grid: HTMLElement): number {
   return total + toPixels(window.getComputedStyle(grid).marginBottom)
 }
 
+// `deps` names the state whose change mounts, unmounts or resizes the grid,
+// the header band or the bottom bar (the consultation loading, an analysis
+// arriving, capture starting), so the measurement re-attaches to fresh nodes.
 export function useViewportFit<G extends HTMLElement, B extends HTMLElement>(
   gridRef: React.RefObject<G | null>,
-  bottomBarRef?: React.RefObject<B | null>,
+  bottomBarRef: React.RefObject<B | null> | undefined,
+  deps: readonly unknown[],
 ) {
   const resizeObserver = useRef<ResizeObserver | null>(null)
 
@@ -74,5 +78,6 @@ export function useViewportFit<G extends HTMLElement, B extends HTMLElement>(
       resizeObserver.current?.disconnect()
       resizeObserver.current = null
     }
-  }, [gridRef, bottomBarRef])
+    // biome-ignore lint/correctness/useExhaustiveDependencies: the refs are stable; `deps` is the caller's re-measure signal
+  }, deps)
 }
