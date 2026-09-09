@@ -206,6 +206,83 @@ describe('the completeness checklist dialog', () => {
     expect(within(dialog).getByText('0 of 33 established')).toBeTruthy()
   })
 
+  it('clips the fixed-height dialog shell so only the inner body scrolls', async () => {
+    const dialog = await openChecklistDialog()
+
+    expect(dialog.className).toContain('overflow-hidden')
+    expect(dialog.querySelectorAll('.overflow-y-auto')).toHaveLength(1)
+  })
+
+  it('wraps every label and value cell instead of truncating it', async () => {
+    const dialog = await openChecklistDialog()
+
+    const labelCells = [...dialog.querySelectorAll('dt')]
+    const valueCells = [...dialog.querySelectorAll('dd')].flatMap((dd) =>
+      dd.firstElementChild ? [dd.firstElementChild] : [],
+    )
+    expect(labelCells).toHaveLength(33)
+    expect(valueCells).toHaveLength(33)
+    for (const cell of [...labelCells, ...valueCells]) {
+      expect(cell.getAttribute('class') ?? '').not.toMatch(
+        /truncate|text-ellipsis|whitespace-nowrap/,
+      )
+    }
+  })
+
+  /*
+   * `dd` is `display: contents`, so the row's grid items are its `dt`, the
+   * `dd`'s two children (value and badge), and the evidence cell; flattening
+   * the `dd` counts the rendered cells, not the wrapper.
+   */
+  const gridCellsOf = (row: Element) =>
+    [...row.children].flatMap((cell) => (cell.tagName === 'DD' ? [...cell.children] : [cell]))
+
+  it('lays every row out on the same four-cell track, evidence cell included', async () => {
+    const dialog = await openChecklistDialog()
+
+    const rows = [...dialog.querySelectorAll('dd')].flatMap((dd) =>
+      dd.parentElement ? [dd.parentElement] : [],
+    )
+    expect(rows).toHaveLength(33)
+    for (const row of rows) {
+      const cells = gridCellsOf(row)
+      expect(cells).toHaveLength(4)
+      // No evidence was passed, so the evidence cell renders empty rather
+      // than absent; its presence is what keeps the badge column aligned.
+      expect(cells[3]?.childElementCount).toBe(0)
+    }
+  })
+
+  it('keeps the same four-cell track on evidence rows, with the icon populated', async () => {
+    render(
+      <ChecklistPanel
+        clinicalFacts={facts({
+          state: 'PRESENT',
+          value: 'Severe sore throat, inability to swallow',
+          evidence: 'tekak saya sakit sangat',
+        })}
+        operational={OPERATIONAL}
+        evidenceLinks={[
+          {
+            fieldId: 'clinicalFacts.symptoms.soreThroat',
+            state: 'PRESENT',
+            evidence: 'tekak saya sakit sangat',
+            speaker: 'patient',
+          },
+        ]}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Completeness Checklist' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Completeness Checklist' })
+
+    const row = within(dialog).getByRole('button', {
+      name: /show the transcript source for sore throat/i,
+    })
+    const cells = gridCellsOf(row)
+    expect(cells).toHaveLength(4)
+    expect(cells[3]?.querySelector('svg')).toBeTruthy()
+  })
+
   it('focuses the Close button on open and closes the dialog when it is activated', async () => {
     const dialog = await openChecklistDialog()
 
