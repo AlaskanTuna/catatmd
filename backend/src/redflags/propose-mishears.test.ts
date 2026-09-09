@@ -28,6 +28,9 @@ describe('proposeMishearCorrections', () => {
       start: 9,
       original: 'teman',
       suggested: 'demam',
+      // Measured, and named as such so the constrained model pass beside it
+      // cannot be mistaken for it (#309).
+      source: 'mishear',
     })
   })
 

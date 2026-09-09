@@ -64,6 +64,13 @@ services:
       # open MMC cl.19 question that the choice turns on.
       - key: AUDIO_RETENTION_HOURS
         sync: false
+      # Layer 3 of the transcript-correction chain (issue #309). Pinned off here
+      # rather than left to a dashboard default, because docs/trd.md 20.9 makes
+      # turning it on conditional on a measurement that has not been taken:
+      # the pass has to find corrections the measured table cannot. Flipping
+      # this is a clinical decision, so it belongs in a diff.
+      - key: TRANSCRIPT_CLEANUP
+        value: 'off'
       - key: DEID_FAIL_CLOSED
         value: 'true'
       # Verbosity only. No level widens what may be written: redaction in
