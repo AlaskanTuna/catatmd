@@ -223,7 +223,13 @@ export function isScannedPage(text: string): boolean {
 }
 
 const CHROME_DATE_TIME_PATTERN =
-  /^\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4}),\s+\d{1,2}:\d{2}(?:\s*[AP]M)?\s+/i
+  /^\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4}),\s+\d{1,2}:\d{2}(?:\s*[AP]M)?(?:\s+|$)/i
+
+// pdftotext often puts Chrome's timestamp on a line of its own above the
+// title; a line that is nothing but that timestamp is never content.
+function isChromeDateTimeLine(line: string): boolean {
+  return line.trim() !== '' && stripChromeDateTime(line) === ''
+}
 const FOOTER_URL_PATTERN = /^\s*(\S+?:\/\/\S+?)(?:\s+\d{1,4}\/\d{1,4})?\s*$/
 
 function collapseSpaces(text: string): string {
@@ -250,8 +256,8 @@ function isFooterLine(line: string): boolean {
 // A running header is a phrase, not a word. Table column labels ("Preferred",
 // "Alternative", "Comments") and connectives ("or") recur on most pages of a
 // dosing guideline and stripping them cuts an alternative out of its row.
-const RUNNING_HEADER_MIN_CHARS = 12
-const RUNNING_HEADER_MIN_WORDS = 3
+const RUNNING_HEADER_MIN_CHARS = 8
+const RUNNING_HEADER_MIN_WORDS = 2
 
 function isRunningHeaderCandidate(key: string): boolean {
   if (/^\S+:\/\/\S+$/.test(key)) return true
@@ -267,13 +273,13 @@ export function computeRunningHeaders(rawPages: string[]): Set<string> {
     let lastIndex = -1
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? ''
-      if (!line.trim() || /^\d+$/.test(line.trim())) continue
+      if (!line.trim() || /^\d+$/.test(line.trim()) || isChromeDateTimeLine(line)) continue
       if (firstIndex === -1) firstIndex = i
       lastIndex = i
     }
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? ''
-      if (!line.trim() || /^\d+$/.test(line.trim())) continue
+      if (!line.trim() || /^\d+$/.test(line.trim()) || isChromeDateTimeLine(line)) continue
       let key: string
       if (i === firstIndex) {
         const stripped = stripChromeDateTime(line)
@@ -323,7 +329,7 @@ export function cleanPage(rawText: string, headerSet: Set<string>): string {
   const keep: string[] = []
   let firstContent = true
   for (const line of rawLines) {
-    if (isPageNumberLine(line)) continue
+    if (isPageNumberLine(line) || isChromeDateTimeLine(line)) continue
     if (firstContent && line.trim()) {
       const stripped = collapseSpaces(stripChromeDateTime(line))
       if (stripped && headerSet.has(stripped)) {
