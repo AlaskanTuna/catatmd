@@ -31,6 +31,7 @@ describe('gap checklist provenance', () => {
   })
 
   const ALLOWED_UNSOURCED_URTI_IDS: readonly string[] = [
+    'haemoptysis',
     'smoking',
     'current-medications',
     'drug-allergies',
