@@ -1,6 +1,6 @@
 import type { ConsultationAnalysis } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { modernizeCitationId, withLegacyCitations } from './legacy.js'
+import { LEGACY_TO_DOCUMENT, modernizeCitationId, withLegacyCitations } from './legacy.js'
 
 const LEGACY_CASES = [
   ['moh-nag-2024-a10-modified-centor', 'doc:moh-nag-2024'],
@@ -126,5 +126,40 @@ describe('withLegacyCitations', () => {
     const modern = withLegacyCitations(analysis) as ConsultationAnalysis
 
     expect(modern.redFlags[0]?.guidelineIds).toEqual(['retrieved-cpg-p3'])
+  })
+})
+
+describe('the legacy map', () => {
+  it('names exactly the eleven ids of guideline-corpus-v4 and nothing else', () => {
+    expect(Object.keys(LEGACY_TO_DOCUMENT).sort()).toEqual(
+      [
+        'abdullah-2024-mcisaac-criteria',
+        'abdullah-2024-mcisaac-threshold',
+        'abdullah-2024-safety-netting',
+        'moh-nag-2024-a10-modified-centor',
+        'moh-nag-2024-acute-uti-scope',
+        'moh-nag-2024-c1-acute-pharyngitis',
+        'moh-nag-2024-c1-viral-vs-bacterial',
+        'moh-nag-2024-c3-acute-bronchitis',
+        'moh-nag-2024-c4-uncomplicated-urti',
+        'ooi-2022-antibiotic-prescribing-patterns',
+        'ooi-2022-urti-epidemiology',
+      ].sort(),
+    )
+  })
+
+  it('rewrites a bracketed legacy id inside suggestion prose', () => {
+    const out = withLegacyCitations({
+      redFlags: [],
+      gaps: [],
+      suggestions: [
+        {
+          id: 's1',
+          text: '[moh-nag-2024-c1-viral-vs-bacterial] The transcript notes a temperature.',
+          citations: [{ guidelineId: 'moh-nag-2024-c1-viral-vs-bacterial' }],
+        },
+      ],
+    } as never) as { suggestions: { text: string }[] }
+    expect(out.suggestions[0]?.text).toBe('[doc:moh-nag-2024] The transcript notes a temperature.')
   })
 })

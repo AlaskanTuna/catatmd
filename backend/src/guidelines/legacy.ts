@@ -7,7 +7,7 @@ import type {
 import type { CitableDocumentId } from './documents.js'
 import { documentRef } from './documents.js'
 
-const LEGACY_TO_DOCUMENT: Record<string, CitableDocumentId> = {
+export const LEGACY_TO_DOCUMENT: Record<string, CitableDocumentId> = {
   'moh-nag-2024-a10-modified-centor': 'moh-nag-2024',
   'moh-nag-2024-c1-acute-pharyngitis': 'moh-nag-2024',
   'moh-nag-2024-c1-viral-vs-bacterial': 'moh-nag-2024',
@@ -18,7 +18,7 @@ const LEGACY_TO_DOCUMENT: Record<string, CitableDocumentId> = {
   'abdullah-2024-mcisaac-threshold': 'abdullah-2024-idr-sore-throat',
   'abdullah-2024-safety-netting': 'abdullah-2024-idr-sore-throat',
   'ooi-2022-urti-epidemiology': 'ooi-2022-mfp-urti',
-  'ooi-2022-antibiotic-prescribing': 'ooi-2022-mfp-urti',
+  'ooi-2022-antibiotic-prescribing-patterns': 'ooi-2022-mfp-urti',
 }
 
 export function modernizeCitationId(id: string): string {
@@ -62,7 +62,14 @@ function withLegacySuggestion(suggestion: ClinicalSuggestion): ClinicalSuggestio
       return true
     })
 
-  return { ...suggestion, citations }
+  // The model's prose carried the chunk id in square brackets; a dead id in
+  // front of a doctor is worse than none, so it is rewritten to the same
+  // reference the chip resolves.
+  const text = suggestion.text.replace(/\[([a-z0-9-]+)\]/g, (match, id: string) =>
+    id in LEGACY_TO_DOCUMENT ? `[${modernizeCitationId(id)}]` : match,
+  )
+
+  return { ...suggestion, text, citations }
 }
 
 export function withLegacyCitations(
