@@ -8,7 +8,7 @@ This is not legal advice, a legal sign-off, or a substitute for review by Malays
 
 ## Purpose And Scope
 
-The proposed service turns an adult GP consultation transcript into a doctor-reviewed clinical note, missing-information prompts, red-flag candidates, and cited suggestions. It does not diagnose, prescribe, or approve a note automatically.
+The proposed service turns an adult GP consultation transcript into a doctor-reviewed clinical note, missing-information prompts, red-flag candidates, and cited suggestions. It does not diagnose, select treatment, or approve a note automatically. A medication the doctor dictates is recorded and confirmed by them, never generated, dose-checked, or substituted (`decisions.md` D-001).
 
 This assessment covers:
 

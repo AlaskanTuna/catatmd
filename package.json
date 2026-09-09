@@ -59,9 +59,10 @@
     "@prisma/client": "^6.19.0"
   },
   "overrides": {
-    "sharp": "^0.35.3",
+    "sharp": "^0.35.4",
     "adm-zip": "^0.6.0",
     "deepmerge-ts": "^8.0.2",
-    "fast-uri": "^3.1.7"
+    "fast-uri": "^3.1.7",
+    "js-yaml": "^4.3.2"
   }
 }
