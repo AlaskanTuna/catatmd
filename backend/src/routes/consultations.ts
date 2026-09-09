@@ -417,7 +417,10 @@ async function runAnalysis(
   )
 
   const [noteResult, { retrieved, result: suggestionResult }] = await Promise.all([
-    timeStage('note_generation', () => analyseNote(text, text, profile)),
+    // Not wrapped in a stage of its own: `analyseNote` times its two concurrent
+    // calls separately, as `extraction` and `note_generation` (#340). One timer
+    // around the pair could not say which of them ran long.
+    analyseNote(text, text, profile),
     timeStage('retrieval', async () => {
       let retrieved: GuidelineChunk[] = []
       try {
