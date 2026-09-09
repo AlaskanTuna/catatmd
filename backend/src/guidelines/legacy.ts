@@ -22,7 +22,7 @@ export const LEGACY_TO_DOCUMENT: Record<string, CitableDocumentId> = {
 }
 
 export function modernizeCitationId(id: string): string {
-  const documentId = LEGACY_TO_DOCUMENT[id]
+  const documentId = Object.hasOwn(LEGACY_TO_DOCUMENT, id) ? LEGACY_TO_DOCUMENT[id] : undefined
   return documentId ? documentRef(documentId) : id
 }
 
@@ -66,7 +66,7 @@ function withLegacySuggestion(suggestion: ClinicalSuggestion): ClinicalSuggestio
   // front of a doctor is worse than none, so it is rewritten to the same
   // reference the chip resolves.
   const text = suggestion.text.replace(/\[([a-z0-9-]+)\]/g, (match, id: string) =>
-    id in LEGACY_TO_DOCUMENT ? `[${modernizeCitationId(id)}]` : match,
+    Object.hasOwn(LEGACY_TO_DOCUMENT, id) ? `[${modernizeCitationId(id)}]` : match,
   )
 
   return { ...suggestion, text, citations }

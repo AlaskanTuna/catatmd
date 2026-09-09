@@ -25,6 +25,10 @@ describe('modernizeCitationId', () => {
     expect(modernizeCitationId('moh-nag-2024-p348-c1')).toBe('moh-nag-2024-p348-c1')
   })
 
+  it('never matches an inherited object key', () => {
+    expect(modernizeCitationId('constructor')).toBe('constructor')
+  })
+
   it('leaves an unrelated id untouched', () => {
     expect(modernizeCitationId('retrieved-cpg-p3')).toBe('retrieved-cpg-p3')
   })
