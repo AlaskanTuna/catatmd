@@ -10,7 +10,7 @@ import { corpusIds } from '../guidelines/corpus.js'
  * so a past set of gaps can be traced back to the checklist that produced it.
  */
 export const GAP_CHECKLIST_VERSION: ClinicalArtefactVersion = {
-  id: 'gap-checklist-v5',
+  id: 'gap-checklist-v6',
   effectiveDate: '2026-09-09',
 }
 
@@ -40,9 +40,42 @@ const NAG_ADULT_COUGH_AND_PHARYNGITIS = cited(
   'moh-nag-2024-c1-acute-pharyngitis',
 )
 
-const UNSOURCED_URTI: GapChecklistSource = {
+// NAG 2024 C1 uses these features to decide pneumonia work-up versus self-limiting bronchitis.
+const NAG_ACUTE_COUGH_PATHWAY = cited(
+  'moh-nag-2024-c1-viral-vs-bacterial',
+  'moh-nag-2024-c3-acute-bronchitis',
+)
+
+const UNSOURCED_SMOKING: GapChecklistSource = {
   kind: 'unsourced',
-  reason: 'No current corpus chunk establishes this as a standard field for adult URTI records.',
+  reason:
+    'Smoking status is standard history for an adult cough presentation. ' +
+    'No chunk in the curated corpus sets it as a triage criterion, ' +
+    'so this prompt rests on record completeness, not on a guideline recommendation.',
+}
+
+const UNSOURCED_CURRENT_MEDICATIONS: GapChecklistSource = {
+  kind: 'unsourced',
+  reason:
+    'Current medications are reviewed for prescribing safety whenever treatment may be dispensed. ' +
+    'No chunk in the curated corpus addresses them, ' +
+    'so this prompt rests on prescribing safety, not on a guideline recommendation.',
+}
+
+const UNSOURCED_DRUG_ALLERGIES: GapChecklistSource = {
+  kind: 'unsourced',
+  reason:
+    'Drug allergy status is checked for prescribing safety whenever treatment may be dispensed. ' +
+    'No chunk in the curated corpus addresses it, ' +
+    'so this prompt rests on prescribing safety, not on a guideline recommendation.',
+}
+
+const UNSOURCED_HAEMOPTYSIS: GapChecklistSource = {
+  kind: 'unsourced',
+  reason:
+    'Haemoptysis is a safety question for any adult cough presentation. No chunk in the curated ' +
+    'corpus names it, so this prompt rests on clinical safety practice, not on a guideline ' +
+    'recommendation in the corpus.',
 }
 
 const UNSOURCED_PAYER_FIELD: GapChecklistSource = {
@@ -109,7 +142,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
     rationale:
       'Cough duration is a standard field tracked for adult cough and URTI presentations and ' +
       'is not documented in this consultation.',
-    source: UNSOURCED_URTI,
+    source: cited('moh-nag-2024-c4-uncomplicated-urti'),
     select: (facts) => facts.symptoms.coughDuration,
     profiles: URTI_PROFILES,
   },
@@ -131,7 +164,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
     rationale:
       'Haemoptysis status is a standard field tracked for adult cough presentations and is ' +
       'not documented in this consultation.',
-    source: UNSOURCED_URTI,
+    source: UNSOURCED_HAEMOPTYSIS,
     select: (facts) => facts.symptoms.haemoptysis,
     profiles: URTI_PROFILES,
   },
@@ -153,7 +186,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
     rationale:
       'Breathlessness status is a standard field tracked for adult cough and URTI ' +
       'presentations and is not documented in this consultation.',
-    source: UNSOURCED_URTI,
+    source: NAG_ACUTE_COUGH_PATHWAY,
     select: (facts) => facts.symptoms.dyspnoea,
     profiles: URTI_PROFILES,
   },
@@ -164,7 +197,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
     rationale:
       'Chest pain status is a standard field tracked for adult cough and URTI presentations ' +
       'and is not documented in this consultation.',
-    source: UNSOURCED_URTI,
+    source: NAG_ACUTE_COUGH_PATHWAY,
     select: (facts) => facts.symptoms.chestPain,
     profiles: URTI_PROFILES,
   },
@@ -243,7 +276,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
     rationale:
       'Smoking status is a standard field tracked for adult cough and URTI presentations and ' +
       'is not documented in this consultation.',
-    source: UNSOURCED_URTI,
+    source: UNSOURCED_SMOKING,
     select: (facts) => facts.history.smoking,
     profiles: URTI_PROFILES,
   },
@@ -254,7 +287,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
     rationale:
       'Current medications are a standard field tracked for adult cough and URTI ' +
       'presentations and are not documented in this consultation.',
-    source: UNSOURCED_URTI,
+    source: UNSOURCED_CURRENT_MEDICATIONS,
     select: (facts) => facts.history.currentMedications,
     profiles: URTI_PROFILES,
   },
@@ -265,7 +298,7 @@ export const GAP_CHECKLIST: readonly GapChecklistEntry[] = [
     rationale:
       'Drug allergy status is a standard field tracked whenever medication may be dispensed, ' +
       'and is not documented in this consultation.',
-    source: UNSOURCED_URTI,
+    source: UNSOURCED_DRUG_ALLERGIES,
     select: (facts) => facts.history.drugAllergies,
     profiles: URTI_PROFILES,
   },
