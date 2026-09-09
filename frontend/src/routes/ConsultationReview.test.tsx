@@ -1128,8 +1128,8 @@ describe('transcript column layout', () => {
     )
     const rail = screen.getByRole('complementary', { name: 'Clinical safety' })
 
-    expect(rail?.className).toContain('lg:max-h-[calc(100vh-13rem)]')
-    expect(transcript?.className).toContain('lg:h-[calc(100vh-13rem)]')
+    expect(rail?.className).toContain('lg:max-h-[var(--review-columns-height)]')
+    expect(transcript?.className).toContain('lg:h-[var(--review-columns-height)]')
     expect(transcript?.className).not.toContain('lg:max-h-')
     expect(transcript?.className).toContain('lg:[&>*:last-child]:grow')
   })
@@ -1149,8 +1149,58 @@ describe('transcript column layout', () => {
       'section',
     )
 
-    expect(transcript?.className).toContain('lg:max-h-[calc(100vh-13rem)]')
+    expect(transcript?.className).toContain('lg:max-h-[var(--review-columns-height)]')
     expect(transcript?.className).not.toContain('lg:h-')
+  })
+
+  it('measures the grid top and writes the column height custom property', async () => {
+    const original = Element.prototype.getBoundingClientRect
+    const originalInnerHeight = window.innerHeight
+    Object.defineProperty(window, 'innerHeight', {
+      value: 900,
+      writable: true,
+      configurable: true,
+    })
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      top: 292,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: 0,
+      height: 0,
+      x: 0,
+      y: 292,
+      toJSON: () => undefined,
+    } as DOMRect)
+
+    setup()
+
+    const rail = await screen.findByRole('complementary', { name: 'Clinical safety' })
+    const grid = rail.parentElement
+
+    expect(grid?.style.getPropertyValue('--review-columns-height')).toContain('100vh - 292px')
+
+    Element.prototype.getBoundingClientRect = original
+    Object.defineProperty(window, 'innerHeight', {
+      value: originalInnerHeight,
+      writable: true,
+      configurable: true,
+    })
+  })
+
+  it('falls back to the 13rem calc when ResizeObserver is absent', async () => {
+    const original = window.ResizeObserver
+    // @ts-expect-error ResizeObserver is optional in the test environment.
+    delete window.ResizeObserver
+
+    setup()
+
+    const rail = await screen.findByRole('complementary', { name: 'Clinical safety' })
+    const grid = rail.parentElement
+
+    expect(grid?.style.getPropertyValue('--review-columns-height')).toBe('calc(100vh - 13rem)')
+
+    window.ResizeObserver = original
   })
 })
 
