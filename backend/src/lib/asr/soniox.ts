@@ -3,6 +3,7 @@ import type { LiveAsrRegion, LiveSessionConfig } from '@shared/types'
 import { z } from 'zod'
 import type { LiveSessionFailureReason } from '../../audit/index.js'
 import { env } from '../../config/env.js'
+import { asrContextTerms } from './vocabulary.js'
 
 /**
  * The only module that may talk to Soniox, and the second audio egress in the
@@ -127,8 +128,21 @@ const LANGUAGE_HINTS = ['ms', 'en', 'zh', 'ta'] as const
  * a function of a request; `soniox.test.ts` pins the returned object.
  *
  * It says how many voices to expect and in what setting, and nothing about who
- * they are. Deliberately no `terms` section: clinical vocabulary would target
- * word recognition rather than diarisation, and is unmeasured here.
+ * they are.
+ *
+ * **The `terms` section was deliberately absent and no longer is (issue #307).**
+ * The reason recorded here was that clinical vocabulary targets word
+ * recognition rather than diarisation, and was unmeasured. The first half was
+ * right and is now the point: §20.7.1 measured a clinical Malay vocabulary
+ * carrying a Malay clip from unusable to one word wrong, and measured "batuk"
+ * returning as "betul", a pair `mishears.ts` structurally cannot claim. Word
+ * recognition is where that has to be fixed.
+ *
+ * The second half still stands and is the honest limit: §20.7.1 ran on **Qwen**,
+ * with a system context rather than this vendor's `terms` array. Nothing here
+ * has been measured on Soniox, so the vocabulary is a reasoned decision on this
+ * provider rather than an evidenced one, and §20.10 says so rather than
+ * implying coverage. `vocabulary.ts` holds the list and the argument.
  */
 const CONTEXT = {
   general: [
@@ -189,7 +203,13 @@ export function liveSessionConfig(): LiveSessionConfig {
     languageIdentification: true,
     speakerDiarization: true,
     endpointDetection: false,
-    context: { general: CONTEXT.general.map((entry) => ({ ...entry })) },
+    context: {
+      general: CONTEXT.general.map((entry) => ({ ...entry })),
+      // `asrContextTerms()` builds a fresh array per call for the same reason
+      // `general` is copied: a caller that mutated what it was handed would
+      // change what the next consultation sends across the audio egress.
+      terms: asrContextTerms(),
+    },
   }
 }
 

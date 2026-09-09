@@ -2628,6 +2628,30 @@ Two properties of that flow are load-bearing rather than incidental. The microph
 | Safari and iOS                    | `MediaRecorder` emits `audio/mp4` there, untested over a chunked stream                                |
 | Behaviour on silence-heavy audio  | §20.8 records that ASR hallucination tracks silence. Any invention would be disqualifying              |
 
+#### Observed 09/09/26: The Devoicing Family Reaches This Provider Too
+
+**§20.3's consonant-devoicing family is now recorded on a third arm.** A captured ambient consultation returned _"saya **teman** since 3 days ago"_ where the audio was _"saya **demam**"_, in a turn whose next line transcribed _"demam tu tinggi tak?"_ correctly and whose patient answer gave _"38.5"_. The same capture returned _"**Are there checked** temperature dekat rumah"_ for _"**Ada check** temperature dekat rumah"_.
+
+|                              |                                                                                                                                                                                                                                  |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What it closes**           | `redflags/mishears.ts` states that its table applies to ambient capture without anything proving those pairs occur on that provider. `demam` to `teman` is now recorded on Soniox as well as on ILMU and `whisper-small` (§20.3) |
+| **What it does not close**   | One turn of one consultation, no ground-truth corpus, no word error rate. It is an existence proof for one pair, not a measurement of the family                                                                                 |
+| **Consequence for layer 2**  | The confusable table earns its ambient scope on evidence rather than on the additive argument the module header falls back to                                                                                                    |
+| **Consequence for the note** | `expandMishears` reaches `redflags/triggers.ts` only, so the rules engine saw `demam` and the note pipeline saw `teman`. The safety net held and the structured note did not. Issue #308                                         |
+
+**The second error is deliberately not being fixed.** "Are there checked" for "Ada check" is a code-switch boundary error, and the clinical meaning survives it. Repairing it means letting a model rewrite grammar, which is the paraphrase risk `draft-turns/reconstruction.ts` exists to prevent. Recorded here so a later reader does not mistake the omission for an oversight.
+
+#### Built 09/09/26: Layer 1 Vocabulary, And What It Is Not Evidence Of
+
+`liveSessionConfig()` now sends a `terms` array alongside `general` (issue #307). `backend/src/lib/asr/vocabulary.ts` holds it: Malay consultation register, drug names in English, and `CONFUSABLE_TARGETS` derived from the `mishears.ts` map so layer 1 and layer 2 cannot disagree about what they are aiming at.
+
+**The evidence behind it is §20.7.1, and §20.7.1 was measured on Qwen.** That section carried a Malay clip from unusable to one word wrong with a clinical Malay vocabulary containing none of the sentence's content words, and it measured "batuk" returning as "betul", a pair no confusable table can claim without raising a cough flag on every sentence agreeing with the doctor. Both findings argue for the layer. Neither was measured on Soniox, and Soniox's `terms` is a vendor-documented array rather than the system context §20.7.1 varied, so **the mechanism is an inference and the outcome is unmeasured here.**
+
+Two specific things a later measurement should settle:
+
+- **Whether the array does anything at all.** §20.3 finding 5 recorded ILMU's `prompt` biasing field as a no-op. A vendor field that is accepted and ignored is a live possibility, and nothing in the test suite can see it: `soniox.test.ts` proves the terms are _sent_, never that they are _used_.
+- **Whether English drug names cost anything.** §20.7.1's fifth condition scored an English clinical context worse than no context at all on Malay audio, and the language-detection follow-up found a four-language context failing to rescue an acoustically ambiguous clip where a single-language one succeeded. Drug names are in the list because Malaysian doctors speak them in English, so priming them in Malay could not match the audio; that is a domain fact, and its interaction with the language-priming effect is untested. Dropping `ENGLISH_DRUG_TERMS` is a one-line A/B if a measurement disagrees.
+
 #### Measured 06/09/26: The Policy Pins The Host, And The Host Answers
 
 The one thing about this design that could be verified without a provider key, verified before the build was trusted. Method: `frontend/dist` served locally under the exact `Content-Security-Policy` string from `vercel.json`, driven in a real browser, per §17's rule that a policy change is checked against the built application rather than against dev, where no policy applies at all.

@@ -241,6 +241,17 @@ export const LIVE_ASR_WEBSOCKET_URL =
   /^wss:\/\/stt-rt(?:\.(?:eu|jp|in))?\.soniox\.com\/transcribe-websocket$/
 
 /**
+ * How many vocabulary terms may ride in the session context.
+ *
+ * The vendor's ceiling is the whole context at 8,000 tokens, roughly 10,000
+ * characters, shared with `general`. This bound is far below it and is about a
+ * different risk: the list crosses the audio egress, so it is one of the few
+ * values in the system that cannot be de-identified on the way out. A small
+ * cap keeps it reviewable by eye, which is the only review it can get.
+ */
+export const MAX_ASR_CONTEXT_TERMS = 120
+
+/**
  * The recognition settings the browser sends as the socket's first frame.
  *
  * Served by the API rather than hardcoded in the bundle so hints and the model
@@ -278,6 +289,26 @@ export const LiveSessionConfigSchema = z.object({
       .array(z.object({ key: z.string().min(1).max(32), value: z.string().min(1).max(128) }))
       .min(1)
       .max(8),
+    /**
+     * Clinical vocabulary to prime recognition toward, in the language of the
+     * consultation (issue #307).
+     *
+     * **This is the accuracy layer, not a refinement.** docs/trd.md 20.7.1
+     * measured the same Malay clip going from "Dr. Sayyabah Taksudali Maharaj"
+     * with no context to one word wrong with a clinical Malay vocabulary that
+     * contained none of the sentence's content words. The effect is domain and
+     * language priming rather than keyword injection, which is why the list is
+     * a vocabulary rather than a list of expected answers.
+     *
+     * **One language, and the target one.** The same measurement scored English
+     * context *worse than no context at all* on Malay audio, so this is never a
+     * multilingual superset even though `languageHints` names four.
+     *
+     * **Optional, and that is a rollout property rather than a nicety.** Vercel
+     * and Render deploy independently from one merge, so a required field would
+     * black out ambient capture for the length of the slower build.
+     */
+    terms: z.array(z.string().min(1).max(64)).max(MAX_ASR_CONTEXT_TERMS).optional(),
   }),
 })
 
