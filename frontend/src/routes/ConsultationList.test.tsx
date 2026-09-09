@@ -56,7 +56,7 @@ describe('ConsultationList categories', () => {
     vi.mocked(api.listConsultations).mockResolvedValue([])
   })
 
-  it('offers Draft, Awaiting Review and Approved, in that order, defaulting to Awaiting Review', async () => {
+  it('offers All, Draft, Awaiting Review and Approved, in that order, defaulting to Awaiting Review', async () => {
     vi.mocked(api.listConsultations).mockResolvedValue([row('approved', 1)])
     setup()
 
@@ -66,6 +66,7 @@ describe('ConsultationList categories', () => {
     fireEvent.click(trigger)
     const options = screen.getAllByRole('option')
     expect(options.map((option) => option.textContent)).toEqual([
+      'All',
       'Draft',
       'Awaiting Review',
       'Approved',
@@ -87,6 +88,68 @@ describe('ConsultationList categories', () => {
     expect(screen.getByText('analyzing visit 1')).toBeTruthy()
     expect(screen.queryByText('awaiting_review visit 1')).toBeNull()
     expect(screen.queryByText('approved visit 1')).toBeNull()
+  })
+
+  it('lists every status under All and the count line shows the total', async () => {
+    vi.mocked(api.listConsultations).mockResolvedValue([
+      ...rows('draft', 4),
+      ...rows('analyzing', 4),
+      ...rows('awaiting_review', 4),
+      ...rows('approved', 4),
+    ])
+    setup()
+
+    pickCategory('All')
+
+    expect(await screen.findByText('draft visit 1')).toBeTruthy()
+    expect(screen.getByText('analyzing visit 1')).toBeTruthy()
+    expect(screen.getByText('awaiting_review visit 1')).toBeTruthy()
+    expect(screen.getByText('approved visit 1')).toBeTruthy()
+    expect(screen.getAllByText(/visit \d+/)).toHaveLength(15)
+    expect(screen.getByText('Page 1 of 2')).toBeTruthy()
+  })
+
+  it('paginates All at fifteen rows', async () => {
+    vi.mocked(api.listConsultations).mockResolvedValue([
+      ...rows('draft', 4),
+      ...rows('analyzing', 4),
+      ...rows('awaiting_review', 4),
+      ...rows('approved', 4),
+    ])
+    setup()
+
+    pickCategory('All')
+
+    expect(await screen.findAllByText(/visit \d+/)).toHaveLength(15)
+    expect(screen.getByText('Page 1 of 2')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+    expect(await screen.findByText('approved visit 4')).toBeTruthy()
+    expect(screen.queryByText('draft visit 1')).toBeNull()
+    expect(screen.getByText('Page 2 of 2')).toBeTruthy()
+  })
+
+  it('resets to page one when switching to All', async () => {
+    vi.mocked(api.listConsultations).mockResolvedValue([
+      ...rows('awaiting_review', 16),
+      ...rows('approved', 1),
+    ])
+    setup()
+
+    pickCategory('Awaiting Review')
+    expect(await screen.findByText('awaiting_review visit 1')).toBeTruthy()
+    expect(screen.getByText('Page 1 of 2')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+    expect(await screen.findByText('awaiting_review visit 16')).toBeTruthy()
+    expect(screen.queryByText('awaiting_review visit 1')).toBeNull()
+    expect(screen.getByText('Page 2 of 2')).toBeTruthy()
+
+    pickCategory('All')
+    expect(await screen.findByText('awaiting_review visit 1')).toBeTruthy()
+    expect(screen.queryByText('awaiting_review visit 16')).toBeNull()
+    expect(screen.getByText('Page 1 of 2')).toBeTruthy()
+    expect(screen.queryByText('Page 2 of 2')).toBeNull()
   })
 
   it('paginates a category at fifteen rows and resets to page one on category change', async () => {
