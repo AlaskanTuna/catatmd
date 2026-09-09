@@ -28,6 +28,7 @@ import { spokenTimestamp } from '../lib/clock.js'
 import { cn } from '../lib/cn.js'
 import { formatNoteForClipboard } from '../lib/note-templates.js'
 import { count } from '../lib/plural.js'
+import { useViewportFit } from '../lib/use-viewport-fit.js'
 import { ApproveBar } from '../review/ApproveBar.js'
 import { ChecklistPanel } from '../review/ChecklistPanel.js'
 import {
@@ -328,6 +329,8 @@ export function ConsultationReview() {
   }, [showConversation])
   const transcriptRef = useRef<HTMLElement>(null)
   const settingsDialog = useRef<HTMLDialogElement>(null)
+  const gridRef = useRef<HTMLDivElement | null>(null)
+  const bottomBarRef = useRef<HTMLDivElement | null>(null)
 
   /**
    * Revealing the transcript is not the same as showing it.
@@ -397,6 +400,12 @@ export function ConsultationReview() {
     queryFn: () => api.getConsultation(id),
     enabled: !isEphemeral,
   })
+  useViewportFit(gridRef, bottomBarRef, [
+    consultation.data?.id,
+    consultation.data?.analysis === null,
+    consultation.data?.status,
+    captureBusy,
+  ])
   const guidelines = useQuery({ queryKey: ['guidelines'], queryFn: api.guidelines })
 
   /*
@@ -949,6 +958,7 @@ export function ConsultationReview() {
         panel scrolled away.
       */}
       <div
+        ref={gridRef}
         className={cn(
           'mt-6 grid gap-5',
           // `captureBusy` rather than a second signal of my own: #272 already
@@ -984,21 +994,10 @@ export function ConsultationReview() {
             // `auto` basis that may never shrink fills the gap when content is
             // short without capping it when content is long.
             /*
-             * Two ceilings, because the two phases have different amounts of
-             * page above them and only one of them has to fit.
-             *
-             * `13rem` is the review figure and it is measured to be too
-             * generous: at 1440x900 the band above the grid is 292px, the
-             * column resolves to 692px, and the page overflows by 234px. That
-             * is survivable while reading a note, because the columns are
-             * sticky and settle after one scroll.
-             *
-             * It is not survivable while talking, which is the whole
-             * complaint: the doctor scrolls the page to see the bottom of a
-             * transcript that is scrolling itself. `26rem` is what makes
-             * 292px of header plus the column plus the page's own bottom
-             * padding land inside one viewport, so during capture the
-             * transcript is the only thing on screen that scrolls.
+             * The ceiling is measured from the DOM, not guessed, because the
+             * header band and bottom bar change height with the consultation
+             * state. A fixed `13rem` assumed the same band for every state and
+             * overflowed the page by 234px at 1440x900.
              */
             // A fixed height, where the other two columns cap theirs: a
             // transcript is usually shorter than the note beside it, and a
@@ -1009,12 +1008,8 @@ export function ConsultationReview() {
             // Without one, the note and rail are short empty cards, and a fixed
             // height would stand this column a full viewport tall beside them.
             analysis
-              ? captureBusy
-                ? 'lg:h-[calc(100vh-26rem)]'
-                : 'lg:h-[calc(100vh-13rem)]'
-              : captureBusy
-                ? 'lg:max-h-[calc(100vh-26rem)]'
-                : 'lg:max-h-[calc(100vh-13rem)]',
+              ? 'lg:h-[var(--review-columns-height)]'
+              : 'lg:max-h-[var(--review-columns-height)]',
             'lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
             // The mobile show/hide belongs to a transcript that already
             // exists. Capture is the one thing on this screen a doctor has
@@ -1138,7 +1133,7 @@ export function ConsultationReview() {
           followed and the reason it never became a tab.
         */}
         {liveCapture && !conversationExpanded && (
-          <section className="order-1 min-w-0 lg:sticky lg:top-6 lg:order-2 lg:max-h-[calc(100vh-26rem)] lg:overflow-y-auto lg:pr-1">
+          <section className="order-1 min-w-0 lg:sticky lg:top-6 lg:order-2 lg:max-h-[var(--review-columns-height)] lg:overflow-y-auto lg:pr-1">
             {livePrompter}
           </section>
         )}
@@ -1163,7 +1158,7 @@ export function ConsultationReview() {
             // never had this, because its `flex` carries no variant.
             captureBusy
               ? 'hidden'
-              : 'lg:sticky lg:top-6 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
+              : 'lg:sticky lg:top-6 lg:max-h-[var(--review-columns-height)] lg:overflow-y-auto lg:pr-1 lg:flex lg:flex-col lg:[&>*:last-child]:grow lg:[&>*:last-child]:shrink-0',
           )}
           aria-labelledby="note-heading"
           data-print="expand"
@@ -1252,7 +1247,7 @@ export function ConsultationReview() {
               in flow and would otherwise sit on top of the last card. */}
         <aside
           className={cn(
-            'order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:max-h-[calc(100vh-13rem)] lg:overflow-y-auto lg:pr-1 lg:[&>section]:grow lg:[&>section]:shrink-0',
+            'order-1 flex flex-col gap-5 lg:sticky lg:top-6 lg:order-3 lg:max-h-[var(--review-columns-height)] lg:overflow-y-auto lg:pr-1 lg:[&>section]:grow lg:[&>section]:shrink-0',
             captureBusy && 'hidden',
           )}
           aria-label="Clinical safety"
@@ -1438,26 +1433,28 @@ export function ConsultationReview() {
           moved under the consultation title, where it is seen without covering
           the columns it sits over. */}
       {analysis && approved && (
-        <ApproveBar
-          approve={async () =>
-            isEphemeral
-              ? ({
-                  ...(tour.ephemeral as ConsultationDetail),
-                  status: 'approved',
-                  approvedAt: new Date(),
-                  // The demo has no signed-in identity distinct from the viewer,
-                  // and inventing a clinician name on a screen that teaches what
-                  // approval means would be the wrong thing to fake.
-                  approvedBy: null,
-                } as ConsultationDetail)
-              : api.approve(id)
-          }
-          approved={approved}
-          approvedAt={detail.approvedAt}
-          approvedBy={detail.approvedBy}
-          unacknowledgedCount={unacknowledged.length}
-          onApproved={isEphemeral ? tour.updateEphemeral : onApproved}
-        />
+        <div ref={bottomBarRef} className="mt-6">
+          <ApproveBar
+            approve={async () =>
+              isEphemeral
+                ? ({
+                    ...(tour.ephemeral as ConsultationDetail),
+                    status: 'approved',
+                    approvedAt: new Date(),
+                    // The demo has no signed-in identity distinct from the viewer,
+                    // and inventing a clinician name on a screen that teaches what
+                    // approval means would be the wrong thing to fake.
+                    approvedBy: null,
+                  } as ConsultationDetail)
+                : api.approve(id)
+            }
+            approved={approved}
+            approvedAt={detail.approvedAt}
+            approvedBy={detail.approvedBy}
+            unacknowledgedCount={unacknowledged.length}
+            onApproved={isEphemeral ? tour.updateEphemeral : onApproved}
+          />
+        </div>
       )}
       {/*
        * Rendered inactive on the tour's consultation, which is not stored, so
