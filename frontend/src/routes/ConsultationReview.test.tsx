@@ -858,7 +858,7 @@ describe('the live panes during ambient capture', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Mock Capture Busy' }))
 
-    expect(screen.queryByText('Red Flags')).toBeNull()
+    expect(screen.queryByText('Waiting for the first safety check.')).toBeNull()
     expect(screen.queryByText('Ask Next')).toBeNull()
   })
 
@@ -926,6 +926,7 @@ describe('the note column while capture runs', () => {
     vi.mocked(api.getConsultation).mockResolvedValue({
       ...APPROVED,
       status: 'draft',
+      captureMode: 'ambient',
       analysis: null,
       approvedAt: null,
       approvedBy: null,
