@@ -1084,6 +1084,37 @@ describe('reopening the settled conversation', () => {
   })
 })
 
+describe('transcript column layout', () => {
+  const WITH_TRANSCRIPT = {
+    ...APPROVED,
+    transcript: {
+      source: 'paste',
+      labelsReviewed: true,
+      turns: [{ speaker: 'patient', text: 'Cough for three days.' }],
+    },
+  }
+
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.getConsultation).mockResolvedValue(WITH_TRANSCRIPT as never)
+    vi.mocked(api.guidelines).mockResolvedValue([])
+  })
+
+  it('holds the transcript column to the floor the other columns cap at', async () => {
+    setup()
+
+    const transcript = (await screen.findByRole('heading', { name: 'Transcript' })).closest(
+      'section',
+    )
+    const rail = screen.getByRole('complementary', { name: 'Clinical safety' })
+
+    expect(rail?.className).toContain('lg:max-h-[calc(100vh-13rem)]')
+    expect(transcript?.className).toContain('lg:h-[calc(100vh-13rem)]')
+    expect(transcript?.className).not.toContain('lg:max-h-')
+    expect(transcript?.className).toContain('lg:[&>*:last-child]:grow')
+  })
+})
+
 /*
  * A suggestion may cite a retrieved CPG chunk, which exists only on the
  * analysis that retrieved it rather than in the curated corpus. The cards are
