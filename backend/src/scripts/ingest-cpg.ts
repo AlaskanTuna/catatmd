@@ -239,10 +239,23 @@ function parseChromeFooterUrl(line: string): string | null {
   return match?.[1] ?? null
 }
 
-function isFooterLine(line: string, headerSet: Set<string>): boolean {
-  const url = parseChromeFooterUrl(line)
-  if (!url) return false
-  return headerSet.has(collapseSpaces(url))
+// A bare URL, alone on the last line, optionally followed by an `n/m` page
+// counter, is Chrome's print footer on its own evidence. It cannot be gated
+// on running-header membership: a site rendered section by section carries a
+// different URL per section, each far below the repeat threshold.
+function isFooterLine(line: string): boolean {
+  return parseChromeFooterUrl(line) !== null
+}
+
+// A running header is a phrase, not a word. Table column labels ("Preferred",
+// "Alternative", "Comments") and connectives ("or") recur on most pages of a
+// dosing guideline and stripping them cuts an alternative out of its row.
+const RUNNING_HEADER_MIN_CHARS = 12
+const RUNNING_HEADER_MIN_WORDS = 3
+
+function isRunningHeaderCandidate(key: string): boolean {
+  if (/^\S+:\/\/\S+$/.test(key)) return true
+  return key.length >= RUNNING_HEADER_MIN_CHARS && key.split(' ').length >= RUNNING_HEADER_MIN_WORDS
 }
 
 export function computeRunningHeaders(rawPages: string[]): Set<string> {
@@ -280,6 +293,7 @@ export function computeRunningHeaders(rawPages: string[]): Set<string> {
         key = collapseSpaces(line)
       }
       if (!key || /^\d+$/.test(key)) continue
+      if (!isRunningHeaderCandidate(key)) continue
       if (!seen.has(key)) {
         seen.add(key)
         counts.set(key, (counts.get(key) ?? 0) + 1)
@@ -332,8 +346,10 @@ export function cleanPage(rawText: string, headerSet: Set<string>): string {
     keep.push(line)
   }
 
-  if (keep.length > 0 && isFooterLine(keep[keep.length - 1] ?? '', headerSet)) {
+  while (keep.length > 0 && !(keep[keep.length - 1] ?? '').trim()) keep.pop()
+  if (keep.length > 0 && isFooterLine(keep[keep.length - 1] ?? '')) {
     keep.pop()
+    while (keep.length > 0 && !(keep[keep.length - 1] ?? '').trim()) keep.pop()
   }
 
   for (let i = 0; i < keep.length; ) {

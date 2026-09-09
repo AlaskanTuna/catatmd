@@ -178,6 +178,17 @@ describe('computeRunningHeaders', () => {
     ).toBe(false)
   })
 
+  it('never treats a recurring one-word table label as a running header', () => {
+    const pages = Array.from(
+      { length: 10 },
+      (_, i) => `Drug ${i}\nPreferred\nor\nAlternative\nComments`,
+    )
+    const headers = computeRunningHeaders(pages)
+    expect(headers.has('preferred')).toBe(false)
+    expect(headers.has('or')).toBe(false)
+    expect(headers.has('comments')).toBe(false)
+  })
+
   it('detects a footer URL across pages with varying page counts', () => {
     const pages = [
       'Body one.\nhttps://www.moh.gov.my/nag 1/17',
@@ -244,6 +255,14 @@ describe('cleanPage', () => {
   it('strips a URL footer with a page count', () => {
     const headers = new Set(['https://www.moh.gov.my/nag'])
     const out = cleanPage('Body text.\nhttps://www.moh.gov.my/nag 3/17', headers)
+    expect(out).toBe('Body text.')
+  })
+
+  it('strips a per-section URL footer that never repeats often enough to be a running header', () => {
+    const out = cleanPage(
+      'Body text.\n\nhttps://sites.google.com/moh.gov.my/nag/a10-otorhinolaryngology-infections 1/15\n',
+      new Set(),
+    )
     expect(out).toBe('Body text.')
   })
 
