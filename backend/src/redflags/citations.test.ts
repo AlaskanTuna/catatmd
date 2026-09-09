@@ -1,4 +1,4 @@
-import { makeSuggestionsAndRedFlagsSchema } from '@shared/types'
+import { RedFlagCandidatesSchema } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import { CITABLE_DOCUMENT_IDS, parseDocumentRef } from '../guidelines/documents.js'
 import { evaluateRedFlags } from './evaluate.js'
@@ -61,16 +61,18 @@ describe('trigger citations resolve against citable documents', () => {
 })
 
 /*
- * A red flag is not a place a model may attach a citation. The suggestions
- * half of the same response is ID-constrained precisely so a fabricated
- * reference fails validation; red flags answer against a schema that has no
- * citation field at all, which is the stronger guarantee.
+ * A red flag is not a place a model may attach a citation. The suggestions half
+ * is ID-constrained precisely so a fabricated reference fails validation; red
+ * flags answer against a schema that has no citation field at all, which is the
+ * stronger guarantee.
+ *
+ * Since #340 the two are separate calls, and the red-flag half never receives a
+ * corpus in the first place. There is no longer an id it could cite even if the
+ * schema let it.
  */
 describe('the model cannot cite on a red flag', () => {
-  const schema = makeSuggestionsAndRedFlagsSchema(['moh-nag-2024-c3-acute-bronchitis'])
-
   it('strips guidelineIds a model puts on a red flag', () => {
-    const parsed = schema.parse({
+    const parsed = RedFlagCandidatesSchema.parse({
       outOfScope: false,
       redFlags: [
         {
@@ -82,7 +84,6 @@ describe('the model cannot cite on a red flag', () => {
           guidelineIds: ['moh-nag-2024-c3-acute-bronchitis'],
         },
       ],
-      suggestions: [],
     })
 
     expect(parsed.redFlags[0]).not.toHaveProperty('guidelineIds')

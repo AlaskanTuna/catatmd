@@ -4,7 +4,9 @@ import type { Transcript } from '@shared/types'
 import { analyseNote } from '../analysis/index.js'
 import { type ClinicalProfile, getClinicalProfile } from '../clinical-profiles/index.js'
 import { deidentifyTranscript } from '../deid/index.js'
+import { logger } from '../lib/logger.js'
 import { evaluateRedFlags, mergeRedFlags } from '../redflags/evaluate.js'
+import { retrieveGuidelines } from '../retrieval/index.js'
 import { generateSuggestions } from '../suggestions/index.js'
 import { BENCH_TRANSCRIPT } from './fixture.js'
 
@@ -22,6 +24,8 @@ const STAGES = [
   'deidentification',
   'rules',
   'note_generation',
+  'guideline_retrieval',
+  'suggestions',
   'retrieval',
   'llm_concurrent',
   'rehydration',
@@ -100,9 +104,39 @@ async function runOnce(transcript: Transcript, profile: ClinicalProfile): Promis
   const noteStage = timeStage('note_generation', () =>
     analyseNote(deid.result.text, deid.result.text, profile),
   )
-  const retrievalStage = timeStage('retrieval', () =>
-    generateSuggestions(deid.result.text, profile),
-  )
+  /*
+   * Mirrors `runAnalysis` rather than approximating it (#340). This stage
+   * called `generateSuggestions` directly with no retrieved chunks, so it
+   * measured one model call and named it `retrieval`, and every number derived
+   * from it understated production by however long retrieval actually takes.
+   *
+   * The two halves are sequential here because they are sequential there: the
+   * corpus has to exist before the suggestions prompt can carry it. The catch
+   * mirrors the route's too, so a degraded run measures what production would
+   * do, but it says so, because a silent fallback to an empty corpus is what
+   * made the old number look reasonable.
+   */
+  let guidelineRetrievalMs = 0
+  let suggestionsMs = 0
+  const retrievalStage = timeStage('retrieval', async () => {
+    const retrieval = await timeStage('guideline_retrieval', async () => {
+      try {
+        return await retrieveGuidelines(deid.result.text, { profileId: profile.id })
+      } catch {
+        logger.warn('guideline retrieval failed; measuring the degraded path', {
+          errorClass: 'retrieval_error',
+          errorName: 'bench_retrieval_unavailable',
+        })
+        return []
+      }
+    })
+    guidelineRetrievalMs = retrieval.durationMs
+    const suggestions = await timeStage('suggestions', () =>
+      generateSuggestions(deid.result.text, profile, retrieval.result),
+    )
+    suggestionsMs = suggestions.durationMs
+    return suggestions.result
+  })
   const llmStartedAt = performance.now()
   const [note, retrieval] = await Promise.all([noteStage, retrievalStage])
   const llmConcurrentMs = elapsedMs(llmStartedAt)
@@ -150,6 +184,8 @@ async function runOnce(transcript: Transcript, profile: ClinicalProfile): Promis
       deidentification: deid.durationMs,
       rules: rules.durationMs,
       note_generation: note.durationMs,
+      guideline_retrieval: guidelineRetrievalMs,
+      suggestions: suggestionsMs,
       retrieval: retrieval.durationMs,
       llm_concurrent: llmConcurrentMs,
       rehydration: rehydration.durationMs,

@@ -78,7 +78,11 @@ export type ErrorClass = (typeof ERROR_CLASSES)[number]
 const LLM_OPERATIONS = [
   'clinical_facts',
   'note_and_gaps',
-  'suggestions_and_red_flags',
+  // Split from `suggestions_and_red_flags` by #340. The citing half is skipped
+  // entirely when retrieval returned nothing, so seeing `red_flags` without a
+  // matching `suggestions` is the ordinary shape, not a dropped call.
+  'red_flags',
+  'suggestions',
   'draft_turns',
   // Ambient capture's live fold. Distinct from `clinical_facts` despite sharing
   // its response schema, because it reads one window rather than a whole
