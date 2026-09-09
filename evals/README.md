@@ -16,7 +16,7 @@ The **graders** are the exception. They are pure functions, so `graders.test.ts`
 | --- | --- | --- |
 | `red-flag-recall` | Critical | Did every rule in `expectedRedFlagIds` fire? |
 | `rule-attribution` | Critical | Did any rule hit arrive re-badged as model output? |
-| `citation-validity` | Critical | Does every cited ID resolve to the corpus? |
+| `citation-validity` | Critical | Does every cited ID resolve to a chunk in `analysis.retrievedGuidelines`? |
 | `evidence-grounding` | Critical | Is every asserted span verbatim in the transcript? |
 | `fact-coverage` | Informational | How much of the fixed checklist was established? |
 | `model-contribution` | Informational | How many candidates did the model add? |
@@ -26,6 +26,8 @@ The **graders** are the exception. They are pure functions, so `graders.test.ts`
 **`fact-coverage` is informational and must stay that way.** A field the consultation never touched is *correctly* `NOT_ASSESSED`, so there is no target to hit. It earns its place as a drift signal: the same fixture scoring materially lower after a prompt or model change means extraction got worse.
 
 **`evidence-grounding` is a backstop, not a discovery.** `applyEvidenceCheck` already discards ungrounded assertions inside the pipeline, so a healthy run scores 100% by construction. It is graded anyway because that is a Tier-2 control, and an unmeasured control regresses quietly. A failure here means the check broke, not that the model misbehaved.
+
+**`citation-validity` is end-to-end, not circular.** The valid corpus is the set of chunk IDs in `analysis.retrievedGuidelines` for that request. That array is persisted from the same chunks the parser built its citation enum from, so the grader is testing the real model output against the real retrieval result, not replaying the parser's own assumption. It also enforces the corollary that zero retrieved guidelines means zero suggestions.
 
 ## Running It
 

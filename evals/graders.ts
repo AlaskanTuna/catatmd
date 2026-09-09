@@ -85,19 +85,27 @@ export function gradeRuleAttribution(
 }
 
 /**
- * Every citation resolves to an ID in the supplied corpus.
+ * Every citation resolves to an ID in `analysis.retrievedGuidelines`.
  *
  * **Critical.** ID-constrained citation is what makes a hallucinated medical
  * reference structurally impossible rather than merely unlikely, and it is a
  * property of the whole pipeline rather than of the parser alone. Parse-time
  * validation is the control; this is the end-to-end evidence that the control
- * holds against a real model.
+ * holds against a real model. The known set is per analysis, because the
+ * retrieved chunks are the only corpus the model was offered.
  */
-export function gradeCitationValidity(
-  analysis: ConsultationAnalysis,
-  corpusIds: readonly string[],
-): Finding {
-  const known = new Set(corpusIds)
+export function gradeCitationValidity(analysis: ConsultationAnalysis): Finding {
+  const known = new Set(analysis.retrievedGuidelines?.map((chunk) => chunk.id) ?? [])
+
+  if (known.size === 0 && analysis.suggestions.length > 0) {
+    return {
+      grader: 'citation-validity',
+      severity: 'critical',
+      passed: false,
+      detail: `suggestions returned with no retrieved guidelines (${analysis.suggestions.length} suggestions)`,
+    }
+  }
+
   const invalid = analysis.suggestions
     .flatMap((s) => s.citations.map((c) => c.guidelineId))
     .filter((id) => !known.has(id))
@@ -109,7 +117,7 @@ export function gradeCitationValidity(
     detail:
       invalid.length === 0
         ? `all citations resolve (${analysis.suggestions.length} suggestions)`
-        : `citations outside the corpus: ${[...new Set(invalid)].join(', ')}`,
+        : `citations outside the retrieved guidelines: ${[...new Set(invalid)].join(', ')}`,
   }
 }
 
@@ -204,12 +212,11 @@ export function gradeAll(
   analysis: ConsultationAnalysis,
   transcript: Transcript,
   expectedRedFlagIds: readonly string[],
-  corpusIds: readonly string[],
 ): Finding[] {
   return [
     gradeRedFlagRecall(analysis, expectedRedFlagIds),
     gradeRuleAttribution(analysis, expectedRedFlagIds),
-    gradeCitationValidity(analysis, corpusIds),
+    gradeCitationValidity(analysis),
     gradeEvidenceGrounding(analysis, transcript),
     gradeFactCoverage(analysis),
     gradeModelContribution(analysis),

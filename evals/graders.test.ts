@@ -1,4 +1,4 @@
-import type { ConsultationAnalysis, Transcript } from '@shared/types'
+import type { ConsultationAnalysis, GuidelineChunk, Transcript } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import {
   gradeCitationValidity,
@@ -42,6 +42,17 @@ const ruleFlag = (ruleId: string) => ({
   evidence: 'cannot swallow',
   source: 'rule' as const,
   ruleId,
+})
+
+const chunk = (id: string): GuidelineChunk => ({
+  id,
+  title: 'x',
+  publisher: 'x',
+  year: 2024,
+  url: 'https://example.com/x',
+  summary: 'x',
+  sourceLicence: 'x',
+  verbatimAllowed: false,
 })
 
 describe('red-flag recall', () => {
@@ -111,27 +122,43 @@ describe('rule attribution', () => {
 })
 
 describe('citation validity', () => {
-  it('fails on a citation outside the corpus', () => {
+  it('fails on a citation outside the retrieved guidelines', () => {
     const finding = gradeCitationValidity(
       analysis({
+        retrievedGuidelines: [chunk('moh-nag-2024-urti')],
         suggestions: [{ id: 's1', text: 'x', citations: [{ guidelineId: 'invented-2024' }] }],
       }),
-      ['moh-nag-2024-urti'],
     )
 
     expect(finding.passed).toBe(false)
     expect(finding.detail).toContain('invented-2024')
   })
 
-  it('passes when every citation resolves', () => {
+  it('passes when every citation resolves to a retrieved guideline', () => {
     const finding = gradeCitationValidity(
       analysis({
+        retrievedGuidelines: [chunk('moh-nag-2024-urti')],
         suggestions: [{ id: 's1', text: 'x', citations: [{ guidelineId: 'moh-nag-2024-urti' }] }],
       }),
-      ['moh-nag-2024-urti'],
     )
 
     expect(finding.passed).toBe(true)
+  })
+
+  it('passes when no guidelines were retrieved and there are no suggestions', () => {
+    const finding = gradeCitationValidity(analysis())
+
+    expect(finding.passed).toBe(true)
+  })
+
+  it('fails when suggestions exist but no guidelines were retrieved', () => {
+    const finding = gradeCitationValidity(
+      analysis({
+        suggestions: [{ id: 's1', text: 'x', citations: [] }],
+      }),
+    )
+
+    expect(finding.passed).toBe(false)
   })
 })
 
