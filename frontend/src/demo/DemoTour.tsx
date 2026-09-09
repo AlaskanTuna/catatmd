@@ -89,7 +89,7 @@ export const TOUR_STEPS: TourStep[] = [
     label: 'Consultations',
     route: '/consultations',
     target: '[data-tour="consultation-list"]',
-    hint: 'Five simulated consultations, each left at a different stage: draft, awaiting review, and approved.',
+    hint: 'Consultations are grouped into Draft, Awaiting Review, and Approved. The list opens on Awaiting Review and paginates 15 rows at a time.',
   },
   {
     label: 'Transcript',
@@ -117,7 +117,7 @@ export const TOUR_STEPS: TourStep[] = [
     route: '/consultations/:id',
     subject: 'flagged',
     target: '[data-tour="checklist"]',
-    hint: 'A fixed 29-field checklist. A field nobody asked about reads "Not Assessed" rather than vanishing, so a fabricated denial is visible.',
+    hint: 'A fixed checklist. A field nobody asked about reads "Not Assessed" rather than vanishing, so a fabricated denial is visible.',
   },
   {
     // Deliberately before Approval: the claim that lands hardest here is the
@@ -196,6 +196,11 @@ interface DemoTourValue {
   mode: TourMode
   /** Meaningful only while `mode` is `seeded`. */
   fallbackReason: FallbackReason
+  /**
+   * Jump to an arbitrary step. Used by the step list so the walkthrough is
+   * still navigable when a single Next control is disabled or waiting.
+   */
+  goTo: (index: number) => void
   /**
    * The tour's own consultation, held only in React state.
    *
@@ -440,6 +445,12 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
    */
   const data = useRef<Promise<TourData> | null>(null)
 
+  /**
+   * The resolved result of that opening analysis, kept once `data.current`
+   * lands so later steps can navigate without re-blocking on `preparing`.
+   */
+  const settled = useRef<TourData | null>(null)
+
   /*
    * The tour opens immediately and the analysis catches up, rather than the
    * tour waiting for the analysis.
@@ -454,6 +465,15 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
    * rather than a modal.
    */
   const start = useCallback(() => {
+    // Reset state from any previous run so a fresh tour does not inherit a
+    // stale fallback notice or a stuck `preparing` flag.
+    setPreparing(false)
+    setMode('live')
+    setFallbackReason('failed')
+    setEphemeral(null)
+    setSubjects({ flagged: null, cited: null })
+    settled.current = null
+
     data.current = (async () => {
       /*
        * Both paths resolve concurrently, even when the live one succeeds.
@@ -487,6 +507,7 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
       setEphemeral(own)
       setSubjects(resolved)
       setMode(own ? 'live' : 'seeded')
+      settled.current = { own, resolved }
       return { own, resolved }
     })()
 
@@ -503,18 +524,32 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
       const step = TOUR_STEPS[index]
       if (!step) return
 
+      // Clear any leftover preparing state from a previous step before this one
+      // begins. The step list can now jump to a non-consultation step to escape
+      // a stuck analysis wait.
+      setPreparing(false)
+
       let target = ephemeral
       let subject = subjects
 
       // Only the steps that need a consultation wait for one. Awaiting an
       // already-settled promise costs a microtask, so this is free once the
-      // analysis has landed.
-      if (step.route.includes(':id') && data.current) {
-        setPreparing(true)
-        const settled = await data.current
-        setPreparing(false)
-        target = settled.own
-        subject = settled.resolved
+      // analysis has landed. Once it has landed, the cached `settled` value
+      // keeps later steps from re-entering `preparing`.
+      if (step.route.includes(':id')) {
+        if (settled.current) {
+          target = settled.current.own
+          subject = settled.current.resolved
+        } else if (data.current) {
+          setPreparing(true)
+          try {
+            const value = await data.current
+            target = value.own
+            subject = value.resolved
+          } finally {
+            setPreparing(false)
+          }
+        }
       }
 
       setCurrentStep(index)
@@ -545,6 +580,7 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
     // run the first run's consultation, which is a persisted demo by another
     // name and undoes the guarantee this whole design exists for.
     data.current = null
+    settled.current = null
   }, [])
 
   const next = useCallback(() => {
@@ -604,10 +640,23 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
       next,
       back,
       stop,
+      goTo,
     }),
     // `setEphemeral` is a useState setter and stable by React contract, so it is
     // deliberately absent here.
-    [active, currentStep, preparing, mode, fallbackReason, ephemeral, start, next, back, stop],
+    [
+      active,
+      currentStep,
+      preparing,
+      mode,
+      fallbackReason,
+      ephemeral,
+      start,
+      next,
+      back,
+      stop,
+      goTo,
+    ],
   )
 
   return <DemoTourContext.Provider value={value}>{children}</DemoTourContext.Provider>

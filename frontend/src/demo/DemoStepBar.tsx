@@ -14,7 +14,7 @@ import { useDemoTour } from './DemoTour.js'
  * is a scrollbar, not a progress indicator.
  */
 export function DemoStepBar() {
-  const { active, currentStep, steps, stop, mode, fallbackReason } = useDemoTour()
+  const { active, currentStep, steps, stop, mode, fallbackReason, goTo } = useDemoTour()
   const [collapsed, setCollapsed] = useState(false)
 
   if (!active) return null
@@ -67,28 +67,32 @@ export function DemoStepBar() {
               const isCurrent = index === currentStep
               const isDone = index < currentStep
               return (
-                <li
-                  key={step.label}
-                  aria-current={isCurrent ? 'step' : undefined}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-control px-2 py-1 text-xs whitespace-nowrap transition-colors duration-150',
-                    isCurrent && 'bg-accent-soft font-medium text-accent',
-                    isDone && 'text-ink-muted',
-                    !isCurrent && !isDone && 'text-ink-muted/60',
-                  )}
-                >
-                  <span
-                    aria-hidden
+                <li key={step.label}>
+                  <button
+                    type="button"
+                    onClick={() => goTo(index)}
+                    aria-current={isCurrent ? 'step' : undefined}
                     className={cn(
-                      'flex size-4 shrink-0 items-center justify-center rounded-full text-[0.625rem]',
-                      isCurrent && 'bg-accent text-accent-ink',
-                      isDone && 'text-accent',
-                      !isCurrent && !isDone && 'border border-current',
+                      'flex items-center gap-1.5 rounded-control px-2 py-1 text-xs whitespace-nowrap transition-colors duration-150',
+                      'hover:bg-sunken-soft focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+                      isCurrent && 'bg-accent-soft font-medium text-accent',
+                      isDone && 'text-ink-muted',
+                      !isCurrent && !isDone && 'text-ink-muted/60',
                     )}
                   >
-                    {isDone ? <Check className="size-3" /> : index + 1}
-                  </span>
-                  {step.label}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'flex size-4 shrink-0 items-center justify-center rounded-full text-[0.625rem]',
+                        isCurrent && 'bg-accent text-accent-ink',
+                        isDone && 'text-accent',
+                        !isCurrent && !isDone && 'border border-current',
+                      )}
+                    >
+                      {isDone ? <Check className="size-3" /> : index + 1}
+                    </span>
+                    {step.label}
+                  </button>
                 </li>
               )
             })}
