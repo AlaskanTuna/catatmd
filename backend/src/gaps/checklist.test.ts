@@ -1,13 +1,24 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { GUIDELINE_CORPUS } from '../guidelines/corpus.js'
+import { CITABLE_DOCUMENT_IDS, parseDocumentRef } from '../guidelines/documents.js'
 import { ALL_GAP_CHECKLIST, GapChecklistSourceSchema } from './checklist.js'
 
 describe('gap checklist provenance', () => {
-  it('rejects a citation id outside the guideline corpus', () => {
+  const manifest = JSON.parse(
+    readFileSync(
+      fileURLToPath(new URL('../../../corpus/cpg/manifest.json', import.meta.url)),
+      'utf8',
+    ),
+  ) as { documents: { id: string; profiles: string[] }[] }
+
+  const manifestDocuments = new Map(manifest.documents.map((document) => [document.id, document]))
+
+  it('rejects a document reference to an uncitable id', () => {
     expect(
       GapChecklistSourceSchema.safeParse({
         kind: 'guideline',
-        guidelineIds: ['invented-guideline-id'],
+        guidelineIds: ['doc:invented-document-id'],
       }).success,
     ).toBe(false)
   })
@@ -20,11 +31,22 @@ describe('gap checklist provenance', () => {
       if (!parsed.success || parsed.data.kind === 'unsourced') continue
 
       for (const guidelineId of parsed.data.guidelineIds) {
-        const guideline = GUIDELINE_CORPUS.find((chunk) => chunk.id === guidelineId)
-        expect(guideline, `${entry.id} cites missing guideline ${guidelineId}`).toBeDefined()
+        const parsedRef = parseDocumentRef(guidelineId)
+        expect(parsedRef, `${entry.id} cites unparseable reference ${guidelineId}`).not.toBeNull()
+        if (parsedRef === null) continue
+
         expect(
-          entry.profiles.every((profileId) => guideline?.profiles.includes(profileId)),
-          `${entry.id} cites a guideline that does not cover every entry profile`,
+          CITABLE_DOCUMENT_IDS.includes(
+            parsedRef.documentId as (typeof CITABLE_DOCUMENT_IDS)[number],
+          ),
+          `${entry.id} cites uncitable document ${parsedRef.documentId}`,
+        ).toBe(true)
+
+        const document = manifestDocuments.get(parsedRef.documentId)
+        expect(document, `${entry.id} cites missing document ${parsedRef.documentId}`).toBeDefined()
+        expect(
+          entry.profiles.every((profileId) => document?.profiles.includes(profileId)),
+          `${entry.id} cites a document that does not cover every entry profile`,
         ).toBe(true)
       }
     }
