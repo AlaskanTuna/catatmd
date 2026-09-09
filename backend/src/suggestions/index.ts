@@ -21,8 +21,8 @@ export { filterUnsafeModelSuggestions } from './safety.js'
  *
  * The citable corpus is the retrieved set and nothing else. When no chunks
  * were retrieved, no guideline-cited suggestion is possible; the call still
- * runs so the model can add red-flag candidates, but the result is forced to
- * zero suggestions and `outOfScope: true`.
+ * runs so the model can add red-flag candidates, but suggestions are forced
+ * to empty and the model's `outOfScope` signal is preserved.
  *
  * The schema narrows `guidelineId` to a `z.enum` built from the supplied
  * corpus: a citation naming an id outside the corpus fails decoding inside
@@ -49,7 +49,7 @@ export async function generateSuggestions(
 
   if (corpus.length === 0) {
     return {
-      outOfScope: true,
+      outOfScope: response.outOfScope,
       redFlags: response.redFlags,
       suggestions: [],
       suppressedSuggestionIds: [],

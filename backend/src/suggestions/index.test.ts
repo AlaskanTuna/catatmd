@@ -139,7 +139,7 @@ describe('generateSuggestions - call shape', () => {
 })
 
 describe('generateSuggestions - empty corpus', () => {
-  it('returns outOfScope true, no suggestions, and preserved red-flag candidates', async () => {
+  it('preserves the model outOfScope signal and red-flag candidates, with no suggestions', async () => {
     const redFlags = [
       {
         id: 'm1',
@@ -152,7 +152,7 @@ describe('generateSuggestions - empty corpus', () => {
     generate.mockResolvedValue({ outOfScope: false, redFlags, suggestions: [] })
 
     await expect(generateSuggestions(content)).resolves.toEqual({
-      outOfScope: true,
+      outOfScope: false,
       redFlags,
       suggestions: [],
       suppressedSuggestionIds: [],

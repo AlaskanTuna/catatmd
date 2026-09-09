@@ -1360,11 +1360,18 @@ export function ConsultationReview() {
                      them and the reader deserves the same distinction. Absence
                      is its own case: consultations analysed before `outOfScope`
                      shipped have no value, and reading that as `false` would
-                     assert the corpus was consulted when nobody knows. */
+                     assert the corpus was consulted when nobody knows.
+                     A retrieval that returned no passages is also distinct from
+                     an out-of-scope consultation, so it is not read as the corpus
+                     having nothing to say. */
                   analysis.outOfScope === true
                     ? 'Outside the guideline corpus\u2019s scope, so no suggestions were offered.'
                     : analysis.outOfScope === false
-                      ? 'Within the guideline corpus\u2019s scope, with nothing to suggest for this consultation.'
+                      ? (analysis.retrievedGuidelines == null ||
+                          analysis.retrievedGuidelines.length === 0) &&
+                        analysis.suggestions.length === 0
+                        ? 'No guideline passages were retrieved for this consultation, so no suggestions were offered.'
+                        : 'Within the guideline corpus\u2019s scope, with nothing to suggest for this consultation.'
                       : 'No cited suggestions. This consultation was analysed before scope was recorded, so whether the corpus applied is not known.'
                 }
                 findings={analysis.suggestions.map((suggestion) => ({

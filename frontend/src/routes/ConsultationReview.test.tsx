@@ -1256,3 +1256,53 @@ describe('document references on the review page', () => {
     expect(link.getAttribute('href')).toBe('https://example.com/moh-nag-2024.pdf#page=12')
   })
 })
+
+describe('suggestions empty state', () => {
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
+  })
+
+  it('explains an empty retrieval when outOfScope is false', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+      analysis: {
+        ...APPROVED.analysis,
+        outOfScope: false,
+        suggestions: [],
+        retrievedGuidelines: [],
+      },
+    } as never)
+    setup()
+
+    expect(
+      await screen.findByText(
+        'No guideline passages were retrieved for this consultation, so no suggestions were offered.',
+      ),
+    ).toBeTruthy()
+  })
+
+  it('keeps the out-of-scope copy when outOfScope is true', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+      analysis: {
+        ...APPROVED.analysis,
+        outOfScope: true,
+        suggestions: [],
+      },
+    } as never)
+    setup()
+
+    expect(
+      await screen.findByText(
+        'Outside the guideline corpus\u2019s scope, so no suggestions were offered.',
+      ),
+    ).toBeTruthy()
+  })
+})

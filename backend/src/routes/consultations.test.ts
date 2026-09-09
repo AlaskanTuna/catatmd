@@ -1089,6 +1089,73 @@ describe('gap provenance on read', () => {
   })
 })
 
+describe('legacy citations on read', () => {
+  it('rewrites legacy curated chunk ids to document references without persisting the change', async () => {
+    const legacyAnalysis = {
+      ...ANALYSIS,
+      redFlags: [
+        {
+          id: 'rf-1',
+          label: 'Emergency red flag',
+          severity: 'emergency',
+          evidence: 'stridor',
+          source: 'rule',
+          ruleId: 'r1',
+          guidelineIds: ['moh-nag-2024-a10-modified-centor', 'moh-nag-2024-c1-viral-vs-bacterial'],
+        },
+      ],
+      gaps: [
+        {
+          id: 'g1',
+          question: 'Duration?',
+          rationale: 'Needed',
+          priority: 'high',
+          source: {
+            kind: 'guideline',
+            guidelineIds: ['abdullah-2024-mcisaac-criteria'],
+          },
+        },
+      ],
+      suggestions: [
+        {
+          id: 's1',
+          text: 'Rest and fluids.',
+          citations: [{ guidelineId: 'ooi-2022-urti-epidemiology' }],
+        },
+      ],
+    }
+    seed('approved', { analysis: legacyAnalysis, approvedAt: new Date() })
+
+    const res = await call('GET', '/api/consultations/c1')
+
+    expect(res.status).toBe(200)
+    const { consultation } = (await res.json()) as {
+      consultation: {
+        analysis: {
+          redFlags: { guidelineIds?: string[] }[]
+          gaps: { source?: { kind: string; guidelineIds?: string[] } }[]
+          suggestions: { citations: { guidelineId: string }[] }[]
+        }
+      }
+    }
+
+    expect(consultation.analysis.redFlags.at(0)?.guidelineIds).toEqual(['doc:moh-nag-2024'])
+    expect(consultation.analysis.gaps.at(0)?.source).toEqual({
+      kind: 'guideline',
+      guidelineIds: ['doc:abdullah-2024-idr-sore-throat'],
+    })
+    expect(consultation.analysis.suggestions.at(0)?.citations).toEqual([
+      { guidelineId: 'doc:ooi-2022-mfp-urti' },
+    ])
+
+    const stored = store.get('c1')?.analysis as typeof legacyAnalysis | undefined
+    expect(stored?.redFlags.at(0)?.guidelineIds).toEqual([
+      'moh-nag-2024-a10-modified-centor',
+      'moh-nag-2024-c1-viral-vs-bacterial',
+    ])
+  })
+})
+
 describe('state machine — approve', () => {
   it('approves from awaiting_review with an analysis attached', async () => {
     seed('awaiting_review', { analysis: ANALYSIS })

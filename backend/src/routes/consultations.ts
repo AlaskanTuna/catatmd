@@ -48,6 +48,7 @@ import {
 import { getActiveClinicalVersions } from '../clinical-versions/index.js'
 import { DeidentificationError, deidentifyTranscript } from '../deid/index.js'
 import { deriveGaps, withGapProvenance } from '../gaps/index.js'
+import { withLegacyCitations } from '../guidelines/index.js'
 import { assertOwnedConsultation, assertOwnedPatient } from '../lib/authz.js'
 import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
@@ -113,7 +114,9 @@ function toDetail(
   const analysis =
     row.analysis === null || row.analysis === undefined
       ? null
-      : withGapProvenance(row.analysis as unknown as ConsultationAnalysis)
+      : withGapProvenance(
+          withLegacyCitations(row.analysis as unknown as ConsultationAnalysis | null),
+        )
 
   const detail = ConsultationDetailSchema.parse({
     id: row.id,
