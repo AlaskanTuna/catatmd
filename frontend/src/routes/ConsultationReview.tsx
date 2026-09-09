@@ -526,7 +526,31 @@ export function ConsultationReview() {
           : `Analysis complete. ${count(flags, 'red flag')} raised, ${count(gaps, 'documentation gap')} to review.`,
       )
     },
-    onError: () => toast.error('Analysis failed. Nothing was saved, and you can run it again.'),
+    /*
+     * A rejection here does not establish that the analysis failed (#340).
+     * The `/api` rewrite gives an external origin at most 120s to first byte,
+     * nothing cancels the request behind it, and the route persists the
+     * analysis before it answers, so the API can finish and save after the
+     * browser has already given up. Claiming "nothing was saved" without
+     * looking is how a completed analysis gets thrown away, and the doctor's
+     * retry then meets a 409 because the record is still `analyzing`.
+     *
+     * So re-read the record before saying anything. Failing that read leaves
+     * the original message, which is the honest answer when we cannot tell.
+     */
+    onError: async () => {
+      const settled = await queryClient
+        .fetchQuery({ queryKey: ['consultation', id], queryFn: () => api.getConsultation(id) })
+        .catch(() => null)
+
+      if (settled?.analysis) {
+        invalidate(settled)
+        toast.success('Analysis finished after the request timed out. Your note is ready.')
+        return
+      }
+
+      toast.error('Analysis failed. Nothing was saved, and you can run it again.')
+    },
   })
 
   /**
