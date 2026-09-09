@@ -117,9 +117,65 @@ describe('tour steps', () => {
   })
 
   it('rejects copy that could become a stale count', () => {
+    const numberWords = [
+      'one',
+      'two',
+      'three',
+      'four',
+      'five',
+      'six',
+      'seven',
+      'eight',
+      'nine',
+      'ten',
+      'eleven',
+      'twelve',
+      'thirteen',
+      'fourteen',
+      'fifteen',
+      'sixteen',
+      'seventeen',
+      'eighteen',
+      'nineteen',
+      'twenty',
+      'twenty-one',
+      'twenty-two',
+      'twenty-three',
+      'twenty-four',
+      'twenty-five',
+      'twenty-six',
+      'twenty-seven',
+      'twenty-eight',
+      'twenty-nine',
+      'thirty',
+    ]
+    const nouns = [
+      'field',
+      'fields',
+      'consultation',
+      'consultations',
+      'row',
+      'rows',
+      'gap',
+      'gaps',
+      'entry',
+      'entries',
+      'step',
+      'steps',
+      'these',
+    ]
+    const staleCountPattern = new RegExp(
+      `\\b(\\d+|(?:${numberWords.join('|')}))\\b(?:\\s+\\S+){0,3}\\s+\\b(?:${nouns.join('|')})\\b`,
+      'i',
+    )
+
     for (const step of TOUR_STEPS) {
-      expect(step.hint).not.toMatch(/\d+\s+(?:field|consultation)/i)
+      expect(step.hint).not.toMatch(staleCountPattern)
     }
+
+    expect('paginates 15 rows').toMatch(staleCountPattern)
+    expect('twenty-five of these').toMatch(staleCountPattern)
+    expect('twenty-four gaps').toMatch(staleCountPattern)
   })
 })
 

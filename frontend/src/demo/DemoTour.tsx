@@ -83,7 +83,7 @@ export const TOUR_STEPS: TourStep[] = [
     label: 'Patients',
     route: '/patients',
     target: '[data-tour="patients"]',
-    hint: 'Reception registers the patient first, as they would on paper. Once a name and identity number are on file, de-identification matches them exactly rather than having to detect them.',
+    hint: "Reception registers the patient as on paper. The record is the doctor's, and identifiers are removed by detection before anything leaves the server.",
   },
   {
     label: 'Consultations',
@@ -96,7 +96,7 @@ export const TOUR_STEPS: TourStep[] = [
     route: '/consultations/:id',
     subject: 'flagged',
     target: '[data-tour="capture-settings"]',
-    hint: 'The Consultation Settings dialog chooses the transcription engine before a transcript exists. Ambient streams to Soniox and shows the live Red Flags / Ask Next panel, while press-to-record waits for the doctor to stop and transcribes on the device.',
+    hint: 'Consultation Settings chooses the capture mode and the note template. Ambient streams to Soniox; press to record uses the engine set in Audio Settings, on the device by default or uploaded to ILMU in Malaysia.',
   },
   {
     label: 'Transcript',
@@ -124,14 +124,14 @@ export const TOUR_STEPS: TourStep[] = [
     route: '/consultations/:id',
     subject: 'flagged',
     target: '[data-tour="checklist"]',
-    hint: 'The Completeness Checklist opens in one scroller with aligned rows. Every field is listed, so an unasked question reads as "Not Assessed" rather than vanishing.',
+    hint: 'The Completeness Checklist opens in a scroller with aligned rows. Every field is listed, so an unasked question reads as "Not Assessed" rather than vanishing.',
   },
   {
     label: 'Prescriptions',
     route: '/consultations/:id',
     subject: 'prescribed',
     target: '[data-tour="prescription"]',
-    hint: 'The doctor dictates a medication, checks the parsed fields, and confirms it. Confirmed prescriptions are listed under the plan for the final note.',
+    hint: 'The doctor dictates a medication, checks the parsed fields, and confirms it. Confirmed prescriptions, when there are any, are listed under the plan.',
   },
   {
     // Deliberately before Approval: the claim that lands hardest here is the
@@ -148,7 +148,7 @@ export const TOUR_STEPS: TourStep[] = [
     route: '/consultations/:id',
     subject: 'flagged',
     target: '[data-tour="approve"]',
-    hint: 'Nothing is final until the doctor approves it, in two deliberate steps. The tour will not press this for you.',
+    hint: 'Nothing is final until the doctor approves it through a two-step confirmation. The tour will not press this for you.',
   },
   {
     // A different consultation on purpose: the one with red flags has no cited
@@ -157,7 +157,7 @@ export const TOUR_STEPS: TourStep[] = [
     route: '/consultations/:id',
     subject: 'cited',
     target: '[data-tour="suggestion"]',
-    hint: 'Each suggestion carries a Sources panel. Open-licence sources show a quoted span and a page-anchored link; the National Antimicrobial Guideline is attributed and linked without quotation.',
+    hint: 'Each suggestion carries a guideline ID chip that expands to its source, and the model may only cite IDs it was given, so a citation cannot be invented. Open-licence sources show the quoted span with a page link; the National Antimicrobial Guideline is attributed and linked without a quote.',
   },
   {
     label: 'Corpus',
@@ -316,17 +316,11 @@ async function pickConsultations(
     details.find((entry) => !approvedIds.has(entry.id))?.id ??
     fallback
 
-  const cited =
-    details.find(
-      (entry) => entry.detail.analysis?.suggestions?.length && !approvedIds.has(entry.id),
-    )?.id ??
-    details.find((entry) => entry.detail.analysis?.suggestions?.length)?.id ??
-    flagged
+  const cited = details.find((entry) => entry.detail.analysis?.suggestions?.length)?.id ?? flagged
 
   const prescribed =
-    details.find((entry) => entry.detail.prescriptions?.length && awaitingIds.has(entry.id))?.id ??
-    details.find((entry) => awaitingIds.has(entry.id))?.id ??
     details.find((entry) => entry.detail.prescriptions?.length)?.id ??
+    details.find((entry) => awaitingIds.has(entry.id))?.id ??
     fallback
 
   return { flagged, cited, prescribed }
