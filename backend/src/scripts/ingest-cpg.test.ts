@@ -6,8 +6,10 @@ import {
   findHeadings,
   findManifestMatch,
   isScannedPage,
+  manifestSyncData,
   normalise,
   parseFlags,
+  resolveDocumentFields,
 } from './ingest-cpg.js'
 
 function manifest(): {
@@ -258,5 +260,72 @@ describe('chunkPage', () => {
     const { chunks } = chunkPage(text, 1, docId, 1)
     expect(chunks.every((c) => c.text.length >= 120 || chunks.length === 1)).toBe(true)
     expect(chunks.some((c) => c.heading === 'INTRODUCTION' && c.text.length >= 120)).toBe(true)
+  })
+})
+
+describe('resolveDocumentFields', () => {
+  const MANIFEST = {
+    publisher: 'Ministry of Health Malaysia / Academy of Medicine of Malaysia',
+    sourceLicence: 'MOH-CPG-unconfirmed',
+    verbatimAllowed: true,
+  }
+
+  it('inherits the manifest values when the document states none', () => {
+    expect(resolveDocumentFields({}, MANIFEST)).toEqual(MANIFEST)
+  })
+
+  it('prefers the document values over the manifest', () => {
+    expect(
+      resolveDocumentFields(
+        { publisher: 'Malaysian Family Physician', sourceLicence: 'CC-BY-4.0' },
+        MANIFEST,
+      ),
+    ).toEqual({
+      publisher: 'Malaysian Family Physician',
+      sourceLicence: 'CC-BY-4.0',
+      verbatimAllowed: true,
+    })
+  })
+
+  /*
+   * The case the fields exist for. `retrieve.ts` sets `summary: chunk.text`,
+   * so `verbatimAllowed: false` is what keeps an all-rights-reserved span from
+   * reaching the doctor as a quotable citation. A `false` must survive a
+   * permissive manifest rather than being read as absent.
+   */
+  it('lets a document forbid verbatim reuse under a permissive manifest', () => {
+    expect(
+      resolveDocumentFields({ sourceLicence: 'MOH-ARR', verbatimAllowed: false }, MANIFEST),
+    ).toEqual({
+      publisher: MANIFEST.publisher,
+      sourceLicence: 'MOH-ARR',
+      verbatimAllowed: false,
+    })
+  })
+})
+
+describe('manifestSyncData', () => {
+  const manifest = { publisher: 'MOH', sourceLicence: 'MOH-CPG', verbatimAllowed: true }
+
+  it('carries a per-document licence through the unchanged-file sync', () => {
+    const data = manifestSyncData(
+      { profiles: ['adult-acute-urti'], sourceLicence: 'MOH-ARR', verbatimAllowed: false },
+      manifest,
+    )
+    expect(data).toEqual({
+      profiles: ['adult-acute-urti'],
+      publisher: 'MOH',
+      sourceLicence: 'MOH-ARR',
+      verbatimAllowed: false,
+    })
+  })
+
+  it('inherits the manifest values when the document sets none', () => {
+    expect(manifestSyncData({ profiles: [] }, manifest)).toEqual({
+      profiles: [],
+      publisher: 'MOH',
+      sourceLicence: 'MOH-CPG',
+      verbatimAllowed: true,
+    })
   })
 })
