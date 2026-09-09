@@ -1,4 +1,9 @@
-import { type MedicationCandidateWire, type Prescription, PrescriptionSchema } from '@shared/types'
+import {
+  MAX_PRESCRIPTIONS,
+  type MedicationCandidateWire,
+  type Prescription,
+  PrescriptionSchema,
+} from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -407,5 +412,31 @@ describe('PrescriptionBlock', () => {
     )
 
     expect(container.textContent).toBe('')
+  })
+
+  it('shows the plain count for one prescription', () => {
+    renderBlock({ prescriptions: [STORED] })
+
+    expect(screen.getByText('1 prescription')).toBeTruthy()
+  })
+
+  it('shows the plain count for several prescriptions', () => {
+    const second: Prescription = { ...STORED, drug: 'ibuprofen', dictated: 'ibuprofen 200 mg tds' }
+    renderBlock({ prescriptions: [STORED, second] })
+
+    expect(screen.getByText('2 prescriptions')).toBeTruthy()
+  })
+
+  it('shows the cap only when the limit is reached', () => {
+    const atCap = Array.from({ length: MAX_PRESCRIPTIONS }, (_, index) => ({
+      ...STORED,
+      drug: `med-${index}`,
+      dictated: `med-${index} 1 g daily`,
+    }))
+    renderBlock({ prescriptions: atCap })
+
+    expect(
+      screen.getByText(`${MAX_PRESCRIPTIONS} of ${MAX_PRESCRIPTIONS}, limit reached`),
+    ).toBeTruthy()
   })
 })
