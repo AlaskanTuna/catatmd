@@ -41,6 +41,34 @@ export interface ManifestDocument {
   sourceUrl: string
   file: string | null
   profiles: string[]
+  /**
+   * Per-document attribution and licence, overriding the manifest's top-level
+   * values.
+   *
+   * The manifest began as one corpus from one publisher under one licence, so
+   * all three lived at the top level and every row inherited them. That stops
+   * working the moment a second source is added: an open-access paper and an
+   * all-rights-reserved guideline cannot share one `verbatimAllowed`, and
+   * `retrieve.ts` hands `chunk.text` to the doctor as the citation body, so
+   * the flag decides whether a span may be shown verbatim at all. `publisher`
+   * is the same problem in the citation line rather than the licence. Absent
+   * means "inherit", which keeps every existing entry reading as before.
+   */
+  publisher?: string
+  sourceLicence?: string
+  verbatimAllowed?: boolean
+}
+
+/** Per-document attribution and licence where set, the manifest's otherwise. */
+export function resolveDocumentFields(
+  doc: Pick<ManifestDocument, 'publisher' | 'sourceLicence' | 'verbatimAllowed'>,
+  manifest: Pick<Manifest, 'publisher' | 'sourceLicence' | 'verbatimAllowed'>,
+): { publisher: string; sourceLicence: string; verbatimAllowed: boolean } {
+  return {
+    publisher: doc.publisher ?? manifest.publisher,
+    sourceLicence: doc.sourceLicence ?? manifest.sourceLicence,
+    verbatimAllowed: doc.verbatimAllowed ?? manifest.verbatimAllowed,
+  }
 }
 
 export interface ChunkSpec {
@@ -534,6 +562,8 @@ async function writeDocument(
     })
   }
 
+  const fields = resolveDocumentFields(doc, manifest)
+
   await prisma.$transaction(async (tx) => {
     await tx.guidelineChunk.deleteMany({ where: { documentId: doc.id } })
     await tx.guidelineDocument.upsert({
@@ -541,29 +571,29 @@ async function writeDocument(
       create: {
         id: doc.id,
         title: doc.title,
-        publisher: manifest.publisher,
+        publisher: fields.publisher,
         year: doc.year,
         sourceUrl: doc.sourceUrl,
         jurisdiction: manifest.jurisdiction,
-        sourceLicence: manifest.sourceLicence,
+        sourceLicence: fields.sourceLicence,
         sha256,
         pageCount,
         storagePath,
         profiles: [...doc.profiles],
-        verbatimAllowed: manifest.verbatimAllowed,
+        verbatimAllowed: fields.verbatimAllowed,
       },
       update: {
         title: doc.title,
-        publisher: manifest.publisher,
+        publisher: fields.publisher,
         year: doc.year,
         sourceUrl: doc.sourceUrl,
         jurisdiction: manifest.jurisdiction,
-        sourceLicence: manifest.sourceLicence,
+        sourceLicence: fields.sourceLicence,
         sha256,
         pageCount,
         storagePath,
         profiles: [...doc.profiles],
-        verbatimAllowed: manifest.verbatimAllowed,
+        verbatimAllowed: fields.verbatimAllowed,
         ingestedAt: new Date(),
       },
     })
