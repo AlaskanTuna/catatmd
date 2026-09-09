@@ -247,6 +247,131 @@ jobs:
             [ -n "$m" ] && echo "::warning title=Migration needs a manual apply after merge::$m is not applied to production by the deploy. Run 'bun run db:migrate:deploy' against DIRECT_URL after merging."
           done
 
+  # ── Post-merge migration reminder ───────────────────────────────────────────
+  # The job above warns on the pull request, which is the wrong side of the
+  # merge. Its step summary and annotations hang off the PR, so they stop being
+  # read at exactly the moment the manual apply first becomes possible. Nothing
+  # carried the reminder across that boundary, and production shipped without a
+  # column twice: #124 without `notificationsClearedAt`, then #320 without
+  # `prescriptions`, which took every route through `assertOwnedConsultation`
+  # down until it was applied by hand (issue #341).
+  #
+  # An issue is the forcing function rather than a louder warning, because it
+  # persists and carries an assignee. It needs only `GITHUB_TOKEN`, which keeps
+  # the tradeoff #132 declined: verifying the real database would need
+  # `DIRECT_URL` in Actions, and a production credential there is a decision for
+  # a human rather than a convenience for a workflow.
+  #
+  # This applies nothing and gates nothing. `deploy` needs [verify, changes],
+  # and must not gain a dependency on this job: a missing reminder must never be
+  # able to hold up a ship.
+  migration-reminder:
+    name: Open an issue for a migration needing a manual apply
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Open an issue for each migration this push added
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEFORE: ${{ github.event.before }}
+          AUTHOR: ${{ github.event.head_commit.author.username }}
+        run: |
+          set -euo pipefail
+
+          # `before` is all-zeros on a first push and unresolvable after a force
+          # push or a history rewrite. Fall back to the parent commit rather
+          # than giving up: a duplicate issue is cheap, and a missed one is the
+          # whole defect this job exists to prevent.
+          base="$BEFORE"
+          if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            base="$(git rev-parse "${GITHUB_SHA}^" 2>/dev/null || true)"
+          fi
+
+          if [ -z "$base" ]; then
+            echo "::error title=Migration reminder could not run::No base commit to diff against. Check 'bun run db:status' by hand."
+            exit 1
+          fi
+
+          added="$(git diff --name-only --diff-filter=A "$base" "$GITHUB_SHA" \
+            -- 'prisma/migrations/**/migration.sql' || true)"
+
+          if [ -z "$added" ]; then
+            echo "No new migrations in this push."
+            exit 0
+          fi
+
+          # The person who merged the migration knows what it needs, so the
+          # reminder goes to them. Two ways that resolves to nobody: a commit
+          # whose author is not a GitHub user, and an author who is not an
+          # assignable collaborator. Both fall back to the platform owner,
+          # because a reminder assigned to no one is the state this job exists
+          # to prevent. Note the author may not hold `DIRECT_URL`; the body
+          # below tells them to hand it over rather than sit on it.
+          assignee="${AUTHOR:-}"
+          if [ -z "$assignee" ] \
+            || ! gh api "repos/${GITHUB_REPOSITORY}/assignees/${assignee}" --silent 2>/dev/null; then
+            echo "::warning title=Migration reminder reassigned::'${assignee:-<none>}' is not an assignable collaborator; assigning AlaskanTuna instead."
+            assignee="AlaskanTuna"
+          fi
+
+          # Match the exact title of an open issue rather than asking the search
+          # index, which lags a create by long enough to duplicate on a re-run.
+          open_titles="$(gh issue list --state open --limit 200 --json title --jq '.[].title')"
+
+          echo "$added" | sed 's|prisma/migrations/||; s|/migration.sql||' | while read -r name; do
+            [ -n "$name" ] || continue
+            title="db: apply ${name} to production"
+
+            if printf '%s\n' "$open_titles" | grep -Fxq "$title"; then
+              echo "Already tracked: ${title}"
+              continue
+            fi
+
+            {
+              echo "\`${name}\` merged in ${GITHUB_SHA} and is **not applied to production**."
+              echo
+              echo "Production does not apply migrations on deploy, by design (\`docs/trd.md\` §17):"
+              echo "Render's \`preDeployCommand\` is a paid-tier feature and Postgres is Supabase, so"
+              echo "there is no deploy hook to hang it on. This issue is the forcing function around"
+              echo "that manual step, not the apply itself."
+              echo
+              echo "Until it is done, every request touching the new column fails against a schema"
+              echo "that does not have it, and the deploy that shipped it was green."
+              echo
+              echo "Assigned to you because you authored the merge. If you do not have the production"
+              echo "\`DIRECT_URL\`, reassign to @AlaskanTuna rather than closing this."
+              echo
+              echo '## Acceptance Criteria'
+              echo
+              echo '- [ ] `bun run db:status` reviewed, and nothing unexpected is pending'
+              echo '- [ ] `bun run db:migrate:deploy` run against the production `DIRECT_URL`'
+              echo '- [ ] `bun run db:status` reports "Database schema is up to date!"'
+              echo '- [ ] The flow that reads the new column exercised in production'
+              echo
+              echo '## File Scope'
+              echo
+              echo "\`prisma/migrations/${name}/\`, already merged. No code change: this is an operational apply."
+            } > "${RUNNER_TEMP}/issue-body.md"
+
+            gh issue create \
+              --title "$title" \
+              --label 'type:task' \
+              --label 'area:db' \
+              --label 'priority:p0' \
+              --assignee "$assignee" \
+              --body-file "${RUNNER_TEMP}/issue-body.md"
+          done
+
   changes:
     name: Detect deployable changes
     needs: verify
