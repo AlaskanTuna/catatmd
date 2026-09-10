@@ -10,12 +10,12 @@ Scope decisions that change what this product does, recorded rather than silentl
 
 ## D-001: Dictated Medication Capture
 
-|                |                                            |
-| -------------- | ------------------------------------------ |
-| **Date**       | 2026-09-09                                 |
-| **Status**     | Adopted                                    |
-| **Issues**     | #310, #311, #312, #313                     |
-| **Supersedes** | Nothing. Clarifies `docs/prd.md` Section 6 |
+|                |                                             |
+| -------------- | ------------------------------------------- |
+| **Date**       | 2026-09-09                                  |
+| **Status**     | Adopted. Amended 2026-09-10, transport only |
+| **Issues**     | #310, #311, #312, #313, #355, #356, #357    |
+| **Supersedes** | Nothing. Clarifies `docs/prd.md` Section 6  |
 
 ### Decision
 
@@ -42,12 +42,28 @@ Section 11's intended-purpose statement already describes exactly this, and is *
 ### What Changes In Practice
 
 - A structured `prescriptions` record, authored by the doctor and confirmed by the doctor, separate from the model-extracted `medicationsDispensed`
-- A microphone on the review page, transcribing **on device only**, so no new audio egress is created
+- A microphone on the review page, transcribing **on device by default and by floor**. Streaming recognition is an opt-in second path, added 2026-09-10 and described below
 - A versioned drug-name lexicon used to offer spelling candidates for names the recogniser garbled
+
+### Amended 2026-09-10: The Transport, Not The Boundary
+
+**What changed is how the words are recognised. What did not change is anything this decision actually decided.** Recording a drug the doctor spoke is still extraction, generating or selecting one is still outside scope, and every row of the table below stands unmoved. The amendment reaches one bullet above, whose original wording, "on device only, so no new audio egress is created", is now false rather than merely narrow.
+
+|                            |                                                                                                                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What is added**          | Streaming recognition on the same Soniox socket ambient capture uses, browser-direct, US region (`trd.md` §20.10, issues #356 and #357)                                                           |
+| **What stays the default** | On-device Whisper. A doctor who changes nothing sends no audio anywhere, and no consent tick is offered on that path                                                                              |
+| **What stays the floor**   | On-device is also the fallback. Key unset, consent withheld, socket dropped, or hardware below the floor all land back on it or on typing, never silently on the cloud                            |
+| **What gates it**          | The two-control consent rule in `.claude/rules/security.md`, unchanged and now binding on the review page: a standing device preference plus a per-consultation tick that dies with the component |
+| **Who authorised it**      | @Andersonnn7788, 2026-09-10, scoped to prescription dictation on the review page and nothing else                                                                                                 |
+
+**Why the original wording was right when it was written.** #313 chose on-device deliberately, reasoning that the review page had no consent surface and that rebuilding one in a third place was worse than removing the question. That reasoning is not overturned so much as paid for: the gate is now built there rather than avoided. What forced the question is measurement in `trd.md` §20: on the 83.4 s reference recording the WebGPU path stamped a real-time factor of 0.89, against 2.14 for the WASM q8 baseline, and §20.1 puts browser WASM generally at 1.5 to 3.0. Anything at or above 1.0 cannot keep pace with speech. Words appearing as the doctor speaks was therefore never reachable on the fallback path most clinic hardware runs, and only marginally reachable on the best of them.
 
 ### What This Decision Does Not License
 
-Each of these is a safety boundary in its own right, and none is a deferred feature.
+Each of these is a safety boundary in its own right, and none is a deferred feature. **All of them were re-read on 2026-09-10 and all stand unchanged**, but one deserves an explicit answer rather than silence.
+
+**Streaming audio to a recogniser is not "transmission of a prescription anywhere".** That row bans sending a prescription to a pharmacy, printing it as a legal script, or sharing it. What crosses the socket is speech on its way to becoming text. The structured prescription it becomes still goes nowhere but this database, still behind the doctor's confirmation. The row is about the artefact's destination, not the recogniser's. Separately, "brand names in the lexicon" is unaffected: the recognition vocabulary primes some brands because a patient says "Panadol", and that list is not the lexicon, which still holds generics only and is still the only thing a candidate can be drawn from.
 
 | Not Built                                              | Why                                                                                                                    |
 | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
