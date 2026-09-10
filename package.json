@@ -29,11 +29,12 @@
     "format": "biome format --write . && prettier --write --no-error-on-unmatched-pattern '*.{md,yml,yaml}' 'docs/**/*.md'",
     "format:check": "biome format . && prettier --check --no-error-on-unmatched-pattern '*.{md,yml,yaml}' 'docs/**/*.md'",
     "typecheck": "bun run --cwd shared build && bun run --cwd shared typecheck && bun run --cwd backend typecheck && bun run --cwd frontend typecheck && bun run --cwd evals typecheck",
-    "test": "bun run --cwd shared build && bun run --cwd shared test && bun run --cwd backend test && bun run --cwd frontend test && bun run --cwd evals test",
+    "test": "bun run --cwd shared build && bun run --cwd shared test && bun run --cwd backend test && bun run --cwd frontend test && bun run --cwd evals test && bun run demo:offline",
     "build": "bun run --cwd shared build && bunx prisma generate --schema prisma/schema.prisma && bun run --cwd backend build && bun run --cwd frontend build",
     "start": "bun run --cwd backend start",
     "prepare": "husky",
-    "evals": "bun run --cwd shared build && bun run --cwd evals eval"
+    "evals": "bun run --cwd shared build && bun run --cwd evals eval",
+    "demo:offline": "bun test scripts/demo/preflight.test.ts scripts/demo/record.test.ts scripts/demo/check-shots.test.ts scripts/demo/workflow.test.ts scripts/demo/pipeline.test.ts"
   },
   "lint-staged": {
     "{docs,.github}/**/*.{md,yml,yaml}": "prettier --write",

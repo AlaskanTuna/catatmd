@@ -1,0 +1,14 @@
+Doctor: Good morning. What brings you in today?
+Patient: I've been coughing for three days, doctor, and my throat is sore since yesterday.
+Doctor: Any fever?
+Patient: I had a temperature of 38.2 last night. Today it is a bit lower.
+Doctor: Any phlegm when you cough?
+Patient: A little, white colour, not much.
+Doctor: Any chest pain or difficulty breathing?
+Patient: No, none of that.
+Doctor: Any difficulty swallowing, or are you able to take fluids and food as normal?
+Patient: Can swallow okay, just a bit painful when dry.
+Doctor: Let me check your throat. It looks a bit red. This is likely a viral upper respiratory infection. I'll give you something for the cough and throat discomfort.
+Patient: Can I get an MC, doctor?
+Doctor: Yes, two days. Come back if it gets worse or you develop shortness of breath.
+Patient: Okay, thank you doctor.

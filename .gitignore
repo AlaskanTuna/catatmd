@@ -91,3 +91,13 @@ docs/screenshots/
 
 # Downloaded guideline PDFs stay out of git; the manifest beside them is tracked.
 corpus/cpg/raw/
+
+# Demo recording outputs (per-run takes, video, audio, subtitles)
+catatmd-demo/
+.catatmd-demo/
+take-*/
+*.webm
+*.mp4
+*.wav
+*.srt
+narration-segments/
