@@ -961,6 +961,35 @@ export const ConsultationStatusSchema = z.enum([
 ])
 
 /**
+ * How long an `analyzing` claim is honoured before it is treated as dead (#373).
+ *
+ * `analyzing` is written before the pipeline runs and cleared by the route's own
+ * `catch`, so a process that dies mid-run leaves it written with nothing left to
+ * clear it. Without a lease that row 409s every retry forever, and the review
+ * page polls a status that will never change.
+ *
+ * Five minutes is chosen against the worst legitimate run: the retrieval branch
+ * is a 10s embedding call then a 90s chat call, sequential, and around that sit
+ * de-identification, the rules engine, rehydration, two writes and two audit
+ * rows. That is about three minutes, and this leaves headroom without stranding
+ * a doctor behind a run that is not coming back.
+ *
+ * Shared because the server enforces it and the client displays it. Two copies
+ * would drift into a window where the page still spins and the API already
+ * accepts a retry.
+ */
+export const STALE_ANALYSIS_MS = 5 * 60_000
+
+/**
+ * How often the review page re-reads a consultation while it is `analyzing`.
+ *
+ * The payload is a transcript and a null analysis, a few KB, so the cost of
+ * asking often is low and the win is that the note appears without the doctor
+ * touching anything.
+ */
+export const ANALYSIS_POLL_MS = 3_000
+
+/**
  * The record's filing name, or `null` when it has never been named.
  *
  * Bounded, unlike `TranscriptSchema`, whose missing `.max()` is named as a gap

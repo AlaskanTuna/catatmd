@@ -1,4 +1,5 @@
 import type { CopilotProposal, GuidelineDocument } from '@shared/types'
+import { STALE_ANALYSIS_MS } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -7,13 +8,16 @@ import { ApiError, api } from '../lib/api.js'
 import { formatNoteForClipboard } from '../lib/note-templates.js'
 import { ConsultationReview } from './ConsultationReview.js'
 
-const { toastError, toastSuccess } = vi.hoisted(() => ({
+const { toastError, toastSuccess, toastNotice } = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
+  toastNotice: vi.fn(),
 }))
 
+// Callable, because the neutral form is the one that says "still analysing"
+// (#373). A plain object here made that branch throw instead of speak.
 vi.mock('react-hot-toast', () => ({
-  default: { success: toastSuccess, error: toastError },
+  default: Object.assign(toastNotice, { success: toastSuccess, error: toastError }),
 }))
 
 vi.mock('../demo/DemoTour.js', () => ({
@@ -180,6 +184,26 @@ const APPROVED = {
   reviewedGapIds: [],
   redFlagDispositions: [],
   gapDispositions: [],
+}
+
+/**
+ * A consultation the API has claimed and is still working on (#373).
+ *
+ * `updatedAt` is the lease clock the server writes when it claims the run, so
+ * every test below sets it deliberately: it is what separates "still working"
+ * from "stopped without finishing".
+ */
+const ANALYSING = {
+  ...APPROVED,
+  status: 'analyzing' as const,
+  analysis: null,
+  approvedAt: null,
+  approvedBy: null,
+  transcript: {
+    source: 'paste' as const,
+    labelsReviewed: true,
+    turns: [{ speaker: 'patient' as const, text: 'Cough for three days.' }],
+  },
 }
 
 afterEach(cleanup)
@@ -557,6 +581,89 @@ describe('consultation hero actions', () => {
       )
     })
     expect(toastError).not.toHaveBeenCalled()
+  })
+
+  /*
+   * The other half of that recovery, reported as #373.
+   *
+   * The re-read above lands while the pipeline is still running, so it reads
+   * back `analyzing` and writes it into the cache. The button then spun on the
+   * record's status while showing "Analysis failed" from the mutation, and the
+   * spinner disabled the retry the tip was asking for. Nothing re-read after
+   * that, so the finished analysis only appeared on a manual refresh.
+   */
+  it('keeps waiting rather than claiming failure while the API is still working', async () => {
+    vi.mocked(api.analyze).mockRejectedValue(
+      new ApiError(500, 'analysis_failed', 'Analysis could not be completed.'),
+    )
+    vi.mocked(api.getConsultation)
+      .mockResolvedValueOnce({ ...ANALYSING, status: 'draft', updatedAt: new Date() } as never)
+      .mockResolvedValue({ ...ANALYSING, updatedAt: new Date() } as never)
+    toastError.mockReset()
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Analyse Consultation' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Analysing/ })).toBeTruthy()
+    })
+    expect(screen.queryByRole('button', { name: 'Analysis could not be completed' })).toBeNull()
+    expect(toastError).not.toHaveBeenCalled()
+  })
+
+  /*
+   * The record settles and the page follows it, with nobody pressing anything.
+   * This is the whole point of the poll: the doctor who waited is shown the
+   * same thing as the doctor who refreshed.
+   */
+  it('resolves to the note without a refresh when the analysis lands', async () => {
+    vi.mocked(api.getConsultation)
+      .mockResolvedValueOnce({ ...ANALYSING, updatedAt: new Date() } as never)
+      .mockResolvedValue({
+        ...APPROVED,
+        status: 'awaiting_review',
+        approvedAt: null,
+        approvedBy: null,
+        analysis: {
+          ...APPROVED.analysis,
+          // Null so the SOAP editor takes the branch, which is the one mocked
+          // in this file. The medical-record editor is covered by its own suite.
+          medicalRecordNote: null,
+          note: { ...NOTE, subjective: 'Arrived without a refresh.' },
+        },
+      } as never)
+    setup()
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^Analysing/ })).toBeTruthy()
+    })
+
+    expect(
+      await screen.findByText('Arrived without a refresh.', {}, { timeout: 10_000 }),
+    ).toBeTruthy()
+    // The hero action is gone because the analysis is on screen, not because
+    // anything is still spinning.
+    expect(screen.queryByRole('button', { name: /^Analysing/ })).toBeNull()
+  }, 15_000)
+
+  /*
+   * A run killed mid-flight leaves `analyzing` written with nothing left to
+   * clear it. The client stops waiting on the same lease the API enforces, so
+   * the press it re-enables is one the API will actually accept.
+   */
+  it('re-enables the retry once an analyzing claim has outlived its lease', async () => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...ANALYSING,
+      updatedAt: new Date(Date.now() - STALE_ANALYSIS_MS - 1_000),
+    } as never)
+    setup()
+
+    const analyse = await screen.findByRole('button', { name: 'Analyse Consultation' })
+    expect((analyse as HTMLButtonElement).disabled).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Analysis could not be completed' }))
+
+    expect(await screen.findByText('Analysis stopped without finishing. Try again.')).toBeTruthy()
   })
 
   it('uses the large action dimensions consistently after approval', async () => {

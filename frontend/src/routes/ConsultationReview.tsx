@@ -12,7 +12,12 @@ import type {
   TextRange,
   Transcript,
 } from '@shared/types'
-import { MedicalRecordNoteSchema, toSoapNote } from '@shared/types'
+import {
+  ANALYSIS_POLL_MS,
+  MedicalRecordNoteSchema,
+  STALE_ANALYSIS_MS,
+  toSoapNote,
+} from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Maximize2, Pause, Play, Printer, Settings2, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -24,7 +29,7 @@ import { useTranscriptAudio } from '../audio/use-transcript-audio.js'
 import { CatatAI } from '../copilot/CatatAI.js'
 import { DEMO_CONSULTATION_ID, useDemoTour } from '../demo/DemoTour.js'
 import { ApiError, api } from '../lib/api.js'
-import { spokenTimestamp } from '../lib/clock.js'
+import { spokenTimestamp, timestamp } from '../lib/clock.js'
 import { cn } from '../lib/cn.js'
 import { formatNoteForClipboard } from '../lib/note-templates.js'
 import { count } from '../lib/plural.js'
@@ -399,6 +404,28 @@ export function ConsultationReview() {
     queryKey: ['consultation', id],
     queryFn: () => api.getConsultation(id),
     enabled: !isEphemeral,
+    /*
+     * The server's status is what says whether analysis is still running, so
+     * keep asking it until it settles (#373).
+     *
+     * `/analyze` emits one JSON at the end and the `/api` rewrite gives an
+     * external origin 120s to first byte, so on a long transcript the browser
+     * gives up while the API is still working. Nothing cancels it, and it
+     * persists before it answers, so the record reaches `awaiting_review` with
+     * no one left listening. The mutation's response is now the fast path
+     * rather than the only path.
+     *
+     * What arms this is the re-read in the mutation's `onError` below, which is
+     * the first thing to put `analyzing` in the cache. An optimistic write on
+     * `onMutate` would look tidier and be wrong: it would carry the old
+     * `updatedAt` and read as instantly stale.
+     */
+    refetchInterval: (query) => {
+      const current = query.state.data
+      if (current?.status !== 'analyzing') return false
+      const elapsed = Date.now() - current.updatedAt.getTime()
+      return elapsed > STALE_ANALYSIS_MS ? false : ANALYSIS_POLL_MS
+    },
   })
   const documents = useQuery({
     queryKey: ['guideline-documents'],
@@ -535,8 +562,9 @@ export function ConsultationReview() {
      * looking is how a completed analysis gets thrown away, and the doctor's
      * retry then meets a 409 because the record is still `analyzing`.
      *
-     * So re-read the record before saying anything. Failing that read leaves
-     * the original message, which is the honest answer when we cannot tell.
+     * So re-read the record before saying anything. That read is also what puts
+     * `analyzing` in the cache and starts the poll above, which is what finishes
+     * the job when this lands mid-run (#373).
      */
     onError: async () => {
       const settled = await queryClient
@@ -546,6 +574,24 @@ export function ConsultationReview() {
       if (settled?.analysis) {
         invalidate(settled)
         toast.success('Analysis finished after the request timed out. Your note is ready.')
+        return
+      }
+
+      // Still running is the common case at this point, not failure: the API
+      // outlived the browser's patience and is still working on it.
+      if (settled?.status === 'analyzing') {
+        toast(
+          'Still analysing. This is taking longer than usual, and the note will appear here when it is ready.',
+        )
+        return
+      }
+
+      // A failed read establishes nothing. Saying "nothing was saved" here is a
+      // guess, and it is the guess that throws a finished analysis away.
+      if (!settled) {
+        toast.error(
+          'Could not confirm whether the analysis finished. Reopen this consultation to check.',
+        )
         return
       }
 
@@ -692,6 +738,22 @@ export function ConsultationReview() {
   const liveCapture = captureBusy && detail.captureMode === 'ambient'
   const analysis = detail.analysis
   const approved = detail.status === 'approved'
+  /*
+   * One derived state behind the Analyse button, rather than the mutation and
+   * the record answering separately and contradicting each other (#373).
+   *
+   * The old pair spun on `detail.status === 'analyzing'` while showing "failed"
+   * from `analyze.error`, and the spinner disabled the retry the tip was asking
+   * for. `analysingSince` comes off the server rather than a local timer, so it
+   * survives a reload, and it is the same lease the API enforces: the moment the
+   * client stops waiting is the moment the API starts accepting a retry.
+   */
+  const analysingSince = detail.status === 'analyzing' ? detail.updatedAt.getTime() : null
+  const analysisStalled = analysingSince !== null && Date.now() - analysingSince > STALE_ANALYSIS_MS
+  const analysing = (analyze.isPending || detail.status === 'analyzing') && !analysisStalled
+  // A rejected mutation only means failure once the record agrees. While the
+  // API is still working, that rejection is a browser that stopped waiting.
+  const analysisFailed = (analyze.error !== null && !analysing) || analysisStalled
   const note = detail.editedNote ?? analysis?.note ?? null
   const hasSoapOnlyEdit = detail.editedNote !== null && detail.editedMedicalRecordNote === null
   const medicalRecordNote = hasSoapOnlyEdit
@@ -858,28 +920,32 @@ export function ConsultationReview() {
                 <div
                   className={cn(
                     'flex items-center gap-2',
-                    (analyze.error || !detail.transcript) && 'relative inline-flex',
+                    (analysisFailed || !detail.transcript) && 'relative inline-flex',
                   )}
                 >
                   <Button
                     variant="primary"
                     size="lg"
-                    className={cn((analyze.error || !detail.transcript) && 'pr-12')}
+                    className={cn((analysisFailed || !detail.transcript) && 'pr-12')}
                     icon={<Sparkles className="size-4" />}
                     disabled={!detail.transcript}
-                    loading={analyze.isPending || detail.status === 'analyzing'}
+                    loading={analysing}
                     onClick={() => analyze.mutate()}
                     data-tour="analyse"
                   >
-                    {analyze.isPending ? 'Analysing' : 'Analyse Consultation'}
+                    {analysing
+                      ? `Analysing${analysingSince === null ? '' : ` ${timestamp((Date.now() - analysingSince) / 1000)}`}`
+                      : 'Analyse Consultation'}
                   </Button>
-                  {analyze.error ? (
+                  {analysisFailed ? (
                     <InfoTip
                       className="absolute top-1/2 right-2 -translate-y-1/2"
                       label="Analysis could not be completed"
                       tone="warning"
                     >
-                      Analysis failed. Try again.
+                      {analysisStalled
+                        ? 'Analysis stopped without finishing. Try again.'
+                        : 'Analysis failed. Try again.'}
                     </InfoTip>
                   ) : !detail.transcript ? (
                     <InfoTip
