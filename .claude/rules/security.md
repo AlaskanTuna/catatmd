@@ -55,13 +55,18 @@ Maps to OWASP LLM01 Prompt Injection, LLM02 Sensitive Information Disclosure, LL
 
 **The consent rule governs two of the three surfaces, and stopped governing the third on 10/09/26.** On the relay and on ambient capture it is two controls, needing both: a standing device preference in `localStorage` (the engine for the relay, the capture mode for ambient) and a per-consultation tick in plain `useState` that dies with the component (#155, restored by #254 after #228 briefly collapsed the two into one remembered setting). It is client-side only, because the API still enforces no consent signal. The tick is enforced in `AudioCapture`'s transcribe dispatcher and in `AmbientCapture`'s start dispatcher rather than only on the controls, because the engine can change mid-recording and a disabled button cannot catch that. Never fold the tick back into the preference, and never let either dispatcher fall through to another path instead of refusing.
 
+**Ambient keeps both controls and no longer explains either, since 10/09/26** (`docs/decisions.md` D-004). The residency paragraph above its tick was removed on the owner's instruction, so that surface asks to record and names no processor and no region, while the relay's own disclosure is untouched. Two consequences bind.
+
+- **`ConsentGate`'s `disclosure` prop is nullable, and ambient passes `null` rather than omitting it.** The default is the relay's sentence, which says ILMU in Malaysia, so an omission would tell the doctor the wrong country on the one path that streams to the United States.
+- **Nothing may point at a sentence that is no longer shown.** The Audio dialog has shipped a claim outliving its control twice already (#228, and its dictation footer after #365). A comment or copy line asserting that the ambient gate names the processor is now false, and a replacement disclosure moved somewhere quieter, a tooltip, a title bar, a settings card, is worse than the recorded absence because the doctor is not reading it at the moment of consent.
+
 **On prescription dictation the count of live consent controls is zero.** It went two, then one, then none inside a single day, every step authorised by @Andersonnn7788 (`docs/decisions.md` D-001).
 
-| Step | What moved | Left standing |
-| ---- | ---------- | ------------- |
-| #357 | The gate was built on the review page | A device preference plus a per-consultation tick |
-| #363 | `DEFAULT_AUDIO_SETTINGS.dictationEngine` became `'streaming'` | The tick, with the preference pre-set to send |
-| #365 | The disclosure and the tick were removed outright | Nothing. Pressing Dictate opens the socket |
+| Step | What moved                                                    | Left standing                                    |
+| ---- | ------------------------------------------------------------- | ------------------------------------------------ |
+| #357 | The gate was built on the review page                         | A device preference plus a per-consultation tick |
+| #363 | `DEFAULT_AUDIO_SETTINGS.dictationEngine` became `'streaming'` | The tick, with the preference pre-set to send    |
+| #365 | The disclosure and the tick were removed outright             | Nothing. Pressing Dictate opens the socket       |
 
 Three things follow, and none may be quietly undone.
 

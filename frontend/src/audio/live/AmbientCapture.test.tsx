@@ -312,21 +312,36 @@ describe('the idle explainer', () => {
     const summary = screen.getByText('Ambient Capture transcribes the consultation as it happens.')
     const gate = summary.parentElement?.nextElementSibling
     expect(gate).toBeTruthy()
-    expect(gate?.textContent).toMatch(/leaves this device/i)
-    expect(gate?.textContent).toMatch(/Soniox/)
     expect(within(gate as HTMLElement).getByRole('checkbox', { name: /agreed/i })).toBeTruthy()
+
+    // The tick is now the whole of the gate, so it must be the whole of what
+    // sits between the summary and the button it enables. A paragraph
+    // reappearing here is the removed disclosure coming back.
+    expect(gate?.textContent).toMatch(/^\s*This patient has agreed/)
   })
 })
 
 describe('consent', () => {
-  it('names the provider, the region, and that our server never holds the audio', async () => {
+  /*
+   * The inverse of the test that stood here until 10/09/26, which asserted the
+   * panel named Soniox, the United States, and that our server never holds the
+   * audio. The owner removed that paragraph (`docs/decisions.md` D-004), so
+   * this pins the new state as tightly as the old one was pinned: the tick is
+   * what this surface asks, and it asks it without naming a recipient.
+   *
+   * Kept as an assertion rather than deleted because the loss is the point. A
+   * reader restoring the sentence has to delete a test that says why it went.
+   */
+  it('asks for agreement without naming the processor or the region', async () => {
     renderAmbient()
     await settle()
 
-    const disclosure = screen.getByText(/leaves this device/i)
-    expect(disclosure.textContent).toMatch(/Soniox/)
-    expect(disclosure.textContent).toMatch(/United States/)
-    expect(disclosure.textContent).toMatch(/never receives the audio/i)
+    expect(screen.getByRole('checkbox', { name: /agreed/i })).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: /recorded and transcribed/i })).toBeTruthy()
+
+    expect(document.body.textContent).not.toMatch(/Soniox/)
+    expect(document.body.textContent).not.toMatch(/United States/)
+    expect(document.body.textContent).not.toMatch(/leaves this device/i)
   })
 
   it('does not list tuned or untested languages in the idle panel', async () => {
@@ -850,14 +865,16 @@ describe('the conversation theatre', () => {
     expect(onLiveChange).not.toHaveBeenCalledWith(false)
   })
 
-  it('keeps the processor and its region in the consent gate, not the title bar', async () => {
+  it('keeps the short form in the title bar and names no processor there', async () => {
     await startSession(null, props())
 
-    // The owner asked for the short form in the dialog header. The disclosure
-    // itself is a data-residency consent statement and stays whole: this test
-    // exists so trimming the header cannot quietly trim the consent too.
+    // The owner asked for the short form here. This test used to hold the
+    // other half too, that the disclosure survived elsewhere on the page; that
+    // paragraph was removed on 10/09/26 (`docs/decisions.md` D-004). What is
+    // still worth pinning is that a title bar the doctor reads mid-consultation
+    // did not become the residency disclosure by default once the gate stopped
+    // being one.
     expect(theatre()?.textContent).toContain('Ambient scribe')
     expect(theatre()?.textContent).not.toMatch(/Soniox/)
-    expect(document.body.textContent).toMatch(/Soniox/)
   })
 })
