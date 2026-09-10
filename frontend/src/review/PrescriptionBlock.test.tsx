@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   acceptCandidate,
   candidateKey,
+  capDictation,
   EMPTY_DRAFT,
   PrescriptionBlock,
   type PrescriptionDraft,
@@ -34,8 +35,18 @@ import {
  * witness it, and it is the property the whole feature rests on.
  */
 
-const mocks = vi.hoisted(() => ({ parsePrescription: vi.fn() }))
-vi.mock('../lib/api.js', () => ({ api: { parsePrescription: mocks.parsePrescription } }))
+const mocks = vi.hoisted(() => ({
+  parsePrescription: vi.fn(),
+  liveAsrConfig: vi.fn(),
+  createLiveSession: vi.fn(),
+}))
+vi.mock('../lib/api.js', () => ({
+  api: {
+    parsePrescription: mocks.parsePrescription,
+    liveAsrConfig: mocks.liveAsrConfig,
+    createLiveSession: mocks.createLiveSession,
+  },
+}))
 
 const useDemoTour = vi.hoisted(() => vi.fn())
 vi.mock('../demo/DemoTour.js', () => ({ useDemoTour }))
@@ -512,5 +523,188 @@ describe('PrescriptionBlock', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(body?.classList.contains('hidden')).toBe(false)
     expect(screen.getByText('paracetamol')).toBeTruthy()
+  })
+})
+
+/**
+ * The character cap, tested pure because it is the thing that stops a session.
+ *
+ * `PrescriptionSchema.dictated` is `max(400)`, and `dictated` is the evidence
+ * field the doctor reads back to check the parse. Both halves matter: the text
+ * has to stay whole words, and the caller has to be told, because the caller is
+ * what ends the stream rather than letting it bill for words it discards.
+ */
+describe('capDictation', () => {
+  it('joins what was typed to what was streamed, with one space', () => {
+    expect(capDictation('amoxicillin', '500 mg three times a day', 400)).toEqual({
+      text: 'amoxicillin 500 mg three times a day',
+      capped: false,
+    })
+  })
+
+  it('leaves a streamed phrase alone when the box was empty', () => {
+    expect(capDictation('', 'paracetamol 1 g', 400)).toEqual({
+      text: 'paracetamol 1 g',
+      capped: false,
+    })
+  })
+
+  it('does not double the separator when the typed half already ends in space', () => {
+    expect(capDictation('amoxicillin  ', '500 mg', 400).text).toBe('amoxicillin 500 mg')
+  })
+
+  it('cuts at a word boundary and says it capped', () => {
+    const { text, capped } = capDictation('', 'amoxicillin five hundred milligrams', 20)
+
+    expect(capped).toBe(true)
+    expect(text).toBe('amoxicillin five')
+    expect(text.length).toBeLessThanOrEqual(20)
+  })
+
+  it('never emits a partial word, because a half drug name is worse than a short quote', () => {
+    for (let limit = 4; limit <= 40; limit += 1) {
+      const { text } = capDictation('', 'amoxicillin clavulanate 625 mg twice daily', limit)
+      if (text === '') continue
+      // Every word kept is a word that appeared whole in the source.
+      for (const word of text.split(' ')) {
+        expect('amoxicillin clavulanate 625 mg twice daily'.split(' ')).toContain(word)
+      }
+    }
+  })
+
+  it('yields nothing rather than a fragment when the first token exceeds the budget', () => {
+    // Unreachable at the real 400 character limit, and the invariant is what
+    // matters: this field never shows part of a drug name.
+    expect(capDictation('', 'phenoxymethylpenicillin', 8)).toEqual({ text: '', capped: true })
+  })
+
+  it('keeps what was typed when the first streamed word will not fit', () => {
+    expect(capDictation('amoxicillin', 'phenoxymethylpenicillin', 14)).toEqual({
+      text: 'amoxicillin',
+      capped: true,
+    })
+  })
+})
+
+/**
+ * The two controls that gate streaming dictation, and the claim they answer to.
+ *
+ * `.claude/rules/security.md` requires both: a standing device preference and a
+ * per-consultation tick that dies with the component. This block is also where
+ * the Audio dialog's second scoping sentence is pinned to the control it
+ * describes. That pairing lives in `AudioSettingsDialog.test.tsx` for the
+ * Record tab, but the review page needs an API mock that file does not carry,
+ * so the review half is pinned here. Deleting the gate below must fail a test.
+ */
+describe('streaming prescription dictation', () => {
+  const liveConfig = {
+    provider: 'soniox',
+    region: 'us',
+    websocketUrl: 'wss://stt-rt.soniox.com/transcribe-websocket',
+    config: {},
+  }
+
+  const chooseStreaming = () =>
+    localStorage.setItem(
+      'catatmd.audio',
+      JSON.stringify({
+        deviceId: null,
+        suppressNoise: true,
+        boostQuietSpeech: false,
+        engine: 'local',
+        dictationEngine: 'streaming',
+      }),
+    )
+
+  beforeEach(() => {
+    mocks.parsePrescription.mockReset()
+    mocks.liveAsrConfig.mockReset().mockResolvedValue(liveConfig)
+    mocks.createLiveSession.mockReset()
+    useDemoTour.mockReturnValue({ active: false, currentStep: -1, steps: [] })
+    setCores(8)
+    localStorage.clear()
+  })
+
+  afterEach(() => localStorage.clear())
+
+  it('offers no consent tick and asks the API for nothing on the on-device default', async () => {
+    renderBlock()
+    fireEvent.click(getToggle())
+
+    /*
+     * The reversibility property. A doctor who has changed nothing issues no
+     * request this component did not issue before #357, and is shown no
+     * invitation to the cloud on a screen that otherwise mentions none, which
+     * is `ConsentGate`'s own stated rule.
+     */
+    expect(screen.queryByRole('checkbox', { name: /agreed/i })).toBeNull()
+    await waitFor(() => expect(mocks.liveAsrConfig).not.toHaveBeenCalled())
+  })
+
+  it('asks the patient, naming the processor and the region the API reported', async () => {
+    chooseStreaming()
+    renderBlock()
+    fireEvent.click(getToggle())
+
+    const tick = await screen.findByRole('checkbox', { name: /agreed/i })
+    expect(tick).toBeTruthy()
+    // The region is read from the API rather than the bundle, so the sentence
+    // the doctor reads and the socket the browser opens cannot disagree.
+    expect(mocks.liveAsrConfig).toHaveBeenCalledWith('dictation')
+    expect(screen.getByText(/streamed from this browser to Soniox/i).textContent).toMatch(
+      /the United States/,
+    )
+  })
+
+  it('keeps Dictate unavailable until the patient has agreed', async () => {
+    chooseStreaming()
+    renderBlock()
+    fireEvent.click(getToggle())
+
+    const tick = await screen.findByRole('checkbox', { name: /agreed/i })
+    const dictate = () => screen.getByRole('button', { name: /^dictate$/i })
+    expect((dictate() as HTMLButtonElement).disabled).toBe(true)
+
+    fireEvent.click(tick)
+    await waitFor(() => expect((dictate() as HTMLButtonElement).disabled).toBe(false))
+
+    // And it is genuinely a gate rather than a one-way latch.
+    fireEvent.click(tick)
+    await waitFor(() => expect((dictate() as HTMLButtonElement).disabled).toBe(true))
+  })
+
+  it('offers the on-device path after a failed mint, as a second deliberate press', async () => {
+    chooseStreaming()
+    mocks.createLiveSession.mockRejectedValue(new Error('rate_limited'))
+    Object.defineProperty(navigator, 'mediaDevices', {
+      value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }) },
+      configurable: true,
+    })
+
+    renderBlock()
+    fireEvent.click(getToggle())
+    fireEvent.click(await screen.findByRole('checkbox', { name: /agreed/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^dictate$/i }))
+
+    /*
+     * Nothing was sent, so the local worker is a real alternative. It is
+     * offered rather than run: switching engines without saying so hands the
+     * doctor a different result with no word that it happened.
+     */
+    await screen.findByText(/dictation could not start, and nothing was sent/i)
+    expect(screen.getByRole('button', { name: /use on-device instead/i })).toBeTruthy()
+  })
+
+  it('falls back to the on-device path when the deployment has no provider', async () => {
+    chooseStreaming()
+    mocks.liveAsrConfig.mockRejectedValue(new Error('asr_unavailable'))
+    renderBlock()
+    fireEvent.click(getToggle())
+
+    // Said plainly, with the path that still works, and no consent tick on a
+    // path that sends nothing.
+    await screen.findByText(/streaming recognition is not available on this deployment/i)
+    expect(screen.queryByRole('checkbox', { name: /agreed/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /^dictate$/i })).toBeTruthy()
   })
 })

@@ -1,3 +1,4 @@
+import type { LiveAsrRegion } from '@shared/types'
 import { useId } from 'react'
 import { cn } from '../lib/cn.js'
 import { Checkbox } from '../ui/Checkbox.js'
@@ -24,6 +25,23 @@ import { Checkbox } from '../ui/Checkbox.js'
  * routes, and a single sentence covering both would be true of neither. The
  * tick's own wording is shared, because the promise it makes is identical.
  */
+/**
+ * Where the provider processes the audio, in words a patient would recognise.
+ *
+ * Beside the gate rather than in a capture component because two surfaces build
+ * a disclosure from it now, ambient capture and prescription dictation, and a
+ * residency string that says one thing on one screen and another elsewhere is
+ * the drift this file exists to prevent. The region itself always comes from
+ * the API, so the sentence a doctor reads and the socket the browser opens
+ * cannot disagree.
+ */
+export const REGION_LABELS: Record<LiveAsrRegion, string> = {
+  us: 'the United States',
+  eu: 'the European Union',
+  jp: 'Japan',
+  in: 'India',
+}
+
 export function ConsentGate({
   agreed,
   onAgreedChange,

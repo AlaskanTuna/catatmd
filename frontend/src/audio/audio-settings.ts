@@ -22,6 +22,18 @@
  */
 export type TranscriptionEngine = 'local' | 'hosted'
 
+/**
+ * Where a **dictated prescription phrase** is recognised (#357).
+ *
+ * A separate field rather than a reuse of `engine` below, and the reason is the
+ * whole point of having two. `'hosted'` means the ILMU relay everywhere it is
+ * read, which is our API and Malaysia. Streaming dictation is Soniox, held by
+ * the browser, in the United States. One stored value meaning two processors in
+ * two countries is a residency answer nobody can give from the interface, and
+ * `docs/dpia.md` calls the Soniox transfer the only one here that leaves ASEAN.
+ */
+export type DictationEngine = 'local' | 'streaming'
+
 export type AudioSettings = {
   /** `deviceId` of the chosen input, or null for the system default. */
   deviceId: string | null
@@ -35,6 +47,13 @@ export type AudioSettings = {
    * needs the per-consultation gesture on the Record tab (#254).
    */
   engine: TranscriptionEngine
+  /**
+   * The same standing-preference half of the consent rule, for the review
+   * page's microphone (#357). Not sufficient on its own: streaming also needs
+   * the per-consultation tick, which lives in `PrescriptionBlock` and is
+   * remembered by nothing.
+   */
+  dictationEngine: DictationEngine
 }
 
 export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
@@ -50,6 +69,9 @@ export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   // On-device is the floor: audio never leaves the machine unless the doctor
   // has gone out of their way to move the engine to ILMU.
   engine: 'local',
+  // The same floor on the review page. A doctor who changes nothing dictates
+  // on device, and `PrescriptionBlock` offers no consent tick on that path.
+  dictationEngine: 'local',
 }
 
 const KEY = 'catatmd.audio'
@@ -66,6 +88,10 @@ export function loadAudioSettings(): AudioSettings {
       suppressNoise: value.suppressNoise !== false,
       boostQuietSpeech: value.boostQuietSpeech === true,
       engine: value.engine === 'hosted' ? 'hosted' : 'local',
+      // Both engine fields read positively for the value that sends audio, so
+      // anything unrecognised, absent, or corrupted falls to on-device. A
+      // preference that fails open is the one failure mode neither may have.
+      dictationEngine: value.dictationEngine === 'streaming' ? 'streaming' : 'local',
     }
   } catch {
     /*

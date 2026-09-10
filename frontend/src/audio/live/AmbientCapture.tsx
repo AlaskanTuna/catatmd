@@ -1,11 +1,11 @@
-import type { DraftTurn, LiveAsrConfig, LiveAsrRegion } from '@shared/types'
+import type { DraftTurn, LiveAsrConfig } from '@shared/types'
 import { MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
 import { Loader2, Maximize2, Mic, Minimize2, Square } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from '../../lib/api.js'
 import { Button } from '../../ui/Button.js'
 import { InfoTip } from '../../ui/InfoTip.js'
-import { ConsentGate } from '../ConsentGate.js'
+import { ConsentGate, REGION_LABELS } from '../ConsentGate.js'
 import type { MarkedSegment } from '../draft-turns.js'
 import { InputMeter } from '../InputMeter.js'
 import type { TranscriptSegment } from '../protocol.js'
@@ -19,7 +19,7 @@ import {
   tokensToSegments,
   tokensToText,
 } from './live-tokens.js'
-import { openSonioxStream, type SonioxStream } from './soniox-stream.js'
+import { openSonioxStream, type SonioxStream, TIMESLICE_MS } from './soniox-stream.js'
 
 /**
  * Ambient capture: the room is transcribed while the consultation happens.
@@ -39,20 +39,9 @@ import { openSonioxStream, type SonioxStream } from './soniox-stream.js'
  * says where audio would go; this says whether this patient's may.
  */
 
-/** How often the recorder hands over a chunk. */
-export const TIMESLICE_MS = 250
-
-/**
- * Where the provider processes the audio, in words a patient would recognise.
- * The region comes from the API rather than the bundle, so the sentence a
- * doctor reads and the socket the browser opens cannot disagree.
- */
-const REGION_LABELS: Record<LiveAsrRegion, string> = {
-  us: 'the United States',
-  eu: 'the European Union',
-  jp: 'Japan',
-  in: 'India',
-}
+// Re-exported so `AmbientCapture.test.tsx` keeps importing it from here; it
+// now lives beside the socket's other timing constants (#357).
+export { TIMESLICE_MS }
 
 /** Bound on the labelling pass, shared with the hosted path it reuses. */
 const LABEL_TIMEOUT_MS = 150_000
@@ -284,7 +273,7 @@ export function AmbientCapture({
     const id = attempt.current
     setAvailability({ status: 'loading' })
     api
-      .liveAsrConfig()
+      .liveAsrConfig('ambient')
       .then((config) => {
         if (attempt.current === id) setAvailability({ status: 'ready', config })
       })
@@ -471,7 +460,7 @@ export function AmbientCapture({
     const controller = new AbortController()
     inflight.current = controller
     try {
-      const session = await api.createLiveSession(controller.signal)
+      const session = await api.createLiveSession(controller.signal, 'ambient')
       if (attempt.current !== id) {
         releaseMicrophone()
         return

@@ -73,6 +73,15 @@ const CONTROL_TOKEN = /^<[a-z]+>$/
 export const CONNECT_TIMEOUT_MS = 10_000
 
 /**
+ * How often the recorder hands a chunk to the socket.
+ *
+ * Here rather than in a capture component because it is a property of what the
+ * socket wants, not of any one surface: ambient capture and prescription
+ * dictation both feed the same stream and must not drift apart on it.
+ */
+export const TIMESLICE_MS = 250
+
+/**
  * How long to wait, after the end frame, for the provider to acknowledge that
  * it has finished.
  *
