@@ -6,6 +6,7 @@ import { InfoTip } from '../ui/InfoTip.js'
 import { Select } from '../ui/Select.js'
 import {
   type AudioSettings,
+  type DictationEngine,
   saveAudioSettings,
   type TranscriptionEngine,
   toConstraints,
@@ -35,6 +36,40 @@ const ENGINES: {
     name: 'ILMU (Malaysia) · ilmu-asr-v4.2',
     Icon: Server,
     detail: 'Sends audio to ILMU in Malaysia. Review the transcript carefully.',
+  },
+]
+
+/**
+ * Where a dictated prescription phrase is recognised (#357).
+ *
+ * **The region is deliberately not named here.** It comes from the API, and a
+ * copy in this dialog would be a residency claim made by a component that
+ * cannot see the socket. This dialog has shipped exactly that kind of outlived
+ * claim once before, so the consent disclosure on the review page keeps the
+ * job of saying where the audio goes, and the sentence below points at it.
+ */
+const DICTATION_ENGINES: {
+  id: DictationEngine
+  name: string
+  Icon: typeof Cpu
+  summary: string
+  detail: React.ReactNode
+}[] = [
+  {
+    id: 'local',
+    name: 'On-device recognition (whisper-small)',
+    Icon: Cpu,
+    summary: 'The audio never leaves this device. Text appears when you stop speaking.',
+    detail:
+      'Runs the speech model in this browser. Nothing is uploaded, and a device without the memory for it falls back to typing.',
+  },
+  {
+    id: 'streaming',
+    name: 'Streaming recognition (Soniox)',
+    Icon: Radio,
+    summary: 'The audio leaves this device. Words appear as you speak them.',
+    detail:
+      'Streams from this browser straight to Soniox under a key our server issues; the server never receives the audio. Each patient is asked separately on the review page, and that agreement is never remembered.',
   },
 ]
 
@@ -239,6 +274,56 @@ export function AudioSettingsDialog({
             Applies to Press To Record. Ambient capture always uses Soniox. Choosing ILMU does not
             send anything on its own. Each patient is asked on the Record tab, and that agreement is
             never remembered.
+          </p>
+        </fieldset>
+
+        {/* A second section rather than a third option above, because that
+            picker answers "where does a whole recording go" and this answers a
+            different question about a different surface. Folding them together
+            would make one control mean ILMU in Malaysia on the Record tab and
+            Soniox in the United States on the review page. */}
+        <fieldset className="mt-5">
+          <legend className="mb-2 font-semibold text-xs">Prescription Dictation</legend>
+          <div className="grid gap-2">
+            {DICTATION_ENGINES.map((option) => {
+              const selected = draft.dictationEngine === option.id
+              return (
+                <div
+                  key={option.id}
+                  className={cn(
+                    'flex gap-2.5 rounded-card border p-3 text-left transition-colors',
+                    selected ? 'border-transparent bg-accent-soft' : 'border-line',
+                  )}
+                >
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setDraft({ ...draft, dictationEngine: option.id })}
+                    className="min-w-0 flex-1 text-left focus-visible:outline-none"
+                  >
+                    <span className="block font-semibold text-sm">{option.name}</span>
+                    <span className="mt-0.5 block text-ink-muted text-xs">{option.summary}</span>
+                  </button>
+                  <option.Icon aria-hidden className="mt-0.5 size-4 shrink-0" />
+                  <InfoTip label={`About ${option.name}`} align="right" layered>
+                    {option.detail}
+                  </InfoTip>
+                </div>
+              )
+            })}
+          </div>
+          {/* Same pairing rule as the sentence above, pinned in a different
+              file. `AudioSettingsDialog.test.tsx` binds the Record tab's claim
+              to the controls it can render; this claim's control lives on the
+              review page, which needs an API mock that file does not carry, so
+              `PrescriptionBlock.test.tsx` pins this half. The wording therefore
+              deliberately avoids "each patient is asked": that phrase is
+              asserted to appear exactly once here, and a second copy would make
+              the first test pass for the wrong reason. */}
+          <p className="mt-2.5 text-ink-muted text-xs">
+            Applies to the microphone on the review page. Choosing streaming does not send anything
+            on its own. The patient agrees there, for one consultation, and that agreement is never
+            remembered.
           </p>
         </fieldset>
 

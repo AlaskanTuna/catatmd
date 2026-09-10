@@ -26,6 +26,7 @@ import {
   type LiveAnalysisState,
   type LiveAsrConfig,
   LiveAsrConfigSchema,
+  type LiveAsrMode,
   LiveFlagsResponseSchema,
   type LiveSession,
   LiveSessionSchema,
@@ -386,8 +387,8 @@ export const api = {
    * deployment with no ambient provider configured, which the capture surface
    * shows as a plain unavailability with a way back to Press To Record.
    */
-  liveAsrConfig: (): Promise<LiveAsrConfig> =>
-    request('/asr/live-sessions/config', LiveAsrConfigSchema),
+  liveAsrConfig: (mode: LiveAsrMode): Promise<LiveAsrConfig> =>
+    request(`/asr/live-sessions/config?mode=${mode}`, LiveAsrConfigSchema),
 
   /**
    * Mints the short-lived key the browser uses to open its own recognition
@@ -397,14 +398,22 @@ export const api = {
    * open.** The asserted consent in the body is what the API records; the gate
    * itself is the tick in `AmbientCapture`, which is remembered by nothing.
    *
-   * The returned key authenticates one connection for about a minute and caps
-   * the session it opens. It lives in the component's closure for the length
-   * of one consultation and is never stored.
+   * The returned key authenticates connections for thirty seconds and caps
+   * each session it opens. It lives in the caller's closure for the length of
+   * one consultation and is never stored.
+   *
+   * **`mode` is required rather than defaulted, unlike on the wire.** The API
+   * defaults it to `ambient` because Vercel and Render deploy independently and
+   * a required field would black out ambient for the length of the slower
+   * build. The SPA ships as one bundle and has no such skew, so every call site
+   * says which egress shape it is opening: the mode decides the session cap and
+   * which vocabulary crosses the audio boundary, and a default here would let a
+   * new surface get the wrong one silently.
    */
-  createLiveSession: (signal: AbortSignal): Promise<LiveSession> =>
+  createLiveSession: (signal: AbortSignal, mode: LiveAsrMode): Promise<LiveSession> =>
     request('/asr/live-sessions', LiveSessionSchema, {
       method: 'POST',
-      body: JSON.stringify({ consent: true }),
+      body: JSON.stringify({ consent: true, mode }),
       signal,
     }),
 

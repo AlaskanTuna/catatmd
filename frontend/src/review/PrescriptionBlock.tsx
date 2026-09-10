@@ -1,5 +1,6 @@
 import {
   type ConsultationStatus,
+  type LiveAsrConfig,
   MAX_PRESCRIPTIONS,
   type MedicationCandidateWire,
   type Prescription,
@@ -15,6 +16,8 @@ import { useMutation } from '@tanstack/react-query'
 import { Check, ChevronDown, Mic, Square, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
+import { loadAudioSettings } from '../audio/audio-settings.js'
+import { ConsentGate, REGION_LABELS } from '../audio/ConsentGate.js'
 import {
   belowHardwareFloor,
   DICTATION_AUDIO_CONSTRAINTS,
@@ -30,6 +33,7 @@ import { count } from '../lib/plural.js'
 import { Button } from '../ui/Button.js'
 import { Card } from '../ui/Card.js'
 import { Select, type SelectOption } from '../ui/Select.js'
+import { NOT_AGREED_ERROR, START_FAILED_ERROR, useDictationStream } from './use-dictation-stream.js'
 
 /**
  * The draft the doctor is filling in, before it is a `Prescription`.
@@ -146,6 +150,38 @@ export function visibleCandidates(
 /** `PrescriptionSchema.dictated` is `max(400)`; the box stops rather than the API. */
 const MAX_DICTATED_CHARACTERS = 400
 
+/**
+ * Joins what was already in the box to what the stream has settled, bounded by
+ * the field's own limit.
+ *
+ * **It cuts at a word boundary, never mid-word.** `dictated` is the evidence
+ * field the sig was parsed from and the doctor reads it back to check the
+ * parse, so half a drug name there is worse than a short quote.
+ *
+ * **`capped` is what stops the session**, not just the text. A stream that
+ * keeps billing while its words are discarded is spend with no product, on a
+ * path `.claude/rules/security.md` records as having no global budget.
+ */
+export function capDictation(
+  prefix: string,
+  streamed: string,
+  limit: number,
+): { text: string; capped: boolean } {
+  const joined = prefix.length > 0 ? `${prefix.trimEnd()} ${streamed}` : streamed
+  if (joined.length <= limit) return { text: joined, capped: false }
+
+  const cut = joined.slice(0, limit)
+  const boundary = cut.lastIndexOf(' ')
+  /*
+   * No boundary means the very first token is longer than the whole budget, so
+   * there is no whole word to keep. It yields nothing rather than a fragment:
+   * the invariant that this field never shows a partial drug name is worth more
+   * than salvaging characters, and at a 400 character limit the branch needs a
+   * single unbroken 400 character word to reach it at all.
+   */
+  return { text: boundary > 0 ? cut.slice(0, boundary).trimEnd() : '', capped: true }
+}
+
 const STALL_ERROR = `Transcription was stopped after ${Math.round(
   STALL_TIMEOUT_MS / 60_000,
 )} minutes with no sign of progress. The speech model may be unreachable from this network. Type the medication instead.`
@@ -215,11 +251,24 @@ function summarise(prescription: Prescription) {
  * and the same box still works, which is this feature's shape of the rule that
  * an on-device failure degrades to typing and never to the cloud.
  *
- * **On device only, so there is no consent question to answer here.** Audio
- * reaches `../audio/transcribe.worker.js` and stops. Neither the hosted relay
- * nor the live socket is offered, no audio egress is created, and the
- * two-control consent gate that governs those (`.claude/rules/security.md`,
- * ASR Egress) has nothing to attach to.
+ * **On device by default and by floor. Streaming is opt-in (#357).** A doctor
+ * who changes nothing dictates into `../audio/transcribe.worker.js` and no
+ * audio leaves, which is why no consent tick is offered on that path. Moving
+ * `dictationEngine` to `streaming` in the Audio dialog opens the second surface
+ * on the ambient Soniox egress instead, and then the two-control rule in
+ * `.claude/rules/security.md` binds here exactly as it does on the Record tab:
+ * that standing device preference, plus the per-consultation tick below, both
+ * required, enforced in the start dispatcher rather than by a disabled button.
+ *
+ * **Every way streaming can fail lands back on the device or on typing.** Key
+ * unset, config unreachable, consent withheld, mint refused, socket dropped: no
+ * path falls through to the cloud, and none silently falls through to the
+ * worker either, because a switch the doctor did not ask for produces a
+ * different result with no word that it happened.
+ *
+ * **The tick is per consultation, not per prescription.** This component stays
+ * mounted across several drugs for one patient, so `reset()` deliberately does
+ * not clear it. Clearing it there would ask the same patient once per drug.
  *
  * **The drug name is never pre-filled, and the sig fields are.** Dose, route,
  * frequency, duration and food come from a deterministic regex parser and are
@@ -260,13 +309,51 @@ export function PrescriptionBlock({
   }, [isPrescriptionStep])
   const bodyId = useId()
 
-  const [thin] = useState(belowHardwareFloor)
+  /**
+   * The standing half of the consent rule, read once on mount.
+   *
+   * Read rather than written here. `AudioSettingsDialog` is the single writer
+   * of the `catatmd.audio` object, and a second screen writing its own snapshot
+   * of the whole object is a lost update waiting to happen.
+   */
+  const [dictationEngine] = useState(() => loadAudioSettings().dictationEngine)
+  /**
+   * The per-consultation half, in plain `useState` so it dies with the
+   * component. Never persisted, never folded into the preference above: that
+   * collapse is exactly what #228 did and #254 undid.
+   */
+  const [agreed, setAgreed] = useState(false)
+  const agreedRef = useRef(false)
+  agreedRef.current = agreed
+  /**
+   * The recognition config, fetched only when streaming is the chosen engine.
+   *
+   * It carries the region the disclosure names. Read from the API rather than
+   * the bundle for the reason `AmbientCapture` does the same: the sentence the
+   * doctor reads and the socket the browser opens must not be able to disagree
+   * about where the audio goes.
+   */
+  const [liveConfig, setLiveConfig] = useState<LiveAsrConfig | null>(null)
+  const [configFailed, setConfigFailed] = useState(false)
+  /** Both halves chosen, and the deployment actually has a provider configured. */
+  const streaming = dictationEngine === 'streaming' && liveConfig !== null
+
+  const [lowPower] = useState(belowHardwareFloor)
+  /**
+   * **A socket loads no weights**, so the hardware floor only hides the control
+   * when the local model is what would run. Mirrors the override at
+   * `AudioCapture.tsx`, and it is the one place this change leaves a
+   * currently worse-off machine strictly better off than before.
+   */
+  const thin = lowPower && !streaming
   const [dictation, setDictation] = useState('')
   const [parsedFrom, setParsedFrom] = useState<string | null>(null)
   const [draft, setDraft] = useState<PrescriptionDraft>(EMPTY_DRAFT)
   const [candidates, setCandidates] = useState<readonly MedicationCandidateWire[]>([])
   const [rejected, setRejected] = useState<ReadonlySet<string>>(new Set())
   const [phase, setPhase] = useState<'idle' | 'recording' | 'loading-model' | 'transcribing'>(
+    // One machine, not two. The streaming phases live in the hook and are
+    // folded in below, so `busy` and every disabled state keep one source.
     'idle',
   )
   const [progress, setProgress] = useState<number | null>(null)
@@ -319,6 +406,69 @@ export function PrescriptionBlock({
       parse.mutate(text)
     }
   })
+
+  /**
+   * Whatever was already in the box when Dictate was pressed, snapshotted once.
+   *
+   * The textarea value is recomputed from the whole settled token list on every
+   * batch rather than appended to, because `absorb` hands back the entire
+   * `final` array and joining incrementally drifts on whitespace. That
+   * recomputation would otherwise wipe text the doctor had typed first.
+   */
+  const prefix = useRef('')
+
+  const stream = useDictationStream({
+    agreed: agreedRef,
+    onComplete: (text, notice) => {
+      const { text: capped } = capDictation(prefix.current, text, MAX_DICTATED_CHARACTERS)
+      const trimmed = capped.trim()
+      if (notice !== null) toast(notice)
+      // The single parse per dictation, in the slot the worker's `result`
+      // message occupies on the on-device path. Never per token: candidate
+      // offsets index the text the server last read.
+      if (trimmed.length > 0) onDictated.current(trimmed)
+    },
+  })
+
+  /*
+   * Settled text lands in the field as it arrives. Interim never does: it is
+   * rendered beneath, because a provisional token truncated at `maxLength`
+   * becomes permanently truncated once it settles.
+   */
+  useEffect(() => {
+    if (stream.phase !== 'streaming') return
+    const { text, capped } = capDictation(prefix.current, stream.settled, MAX_DICTATED_CHARACTERS)
+    setDictation(text)
+    // The cap ends the session rather than only the text, so the socket stops
+    // billing for words the field cannot hold.
+    if (capped) stream.stop()
+  }, [stream.phase, stream.settled, stream.stop])
+
+  /*
+   * **Nothing is requested on the on-device path.** A doctor who has not opted
+   * in issues no call this component did not issue before #357, which is what
+   * makes the change reversible: unset `SONIOX_API_KEY` or leave the preference
+   * alone and the page behaves exactly as it did.
+   */
+  useEffect(() => {
+    if (dictationEngine !== 'streaming') return
+    let live = true
+    api
+      .liveAsrConfig('dictation')
+      .then((config) => {
+        if (live) setLiveConfig(config)
+      })
+      .catch(() => {
+        // 503 `asr_unavailable` is a deployment with no key set, and every
+        // other failure lands in the same place: streaming is not offered, the
+        // on-device path is, and no retry is worth a button when the working
+        // path is already on screen.
+        if (live) setConfigFailed(true)
+      })
+    return () => {
+      live = false
+    }
+  }, [dictationEngine])
 
   const clearStall = useCallback(() => {
     if (stall.current !== null) {
@@ -472,6 +622,36 @@ export function PrescriptionBlock({
     recorder.current = null
   }
 
+  /**
+   * The one dispatcher, and the only place either consent control is enforced.
+   *
+   * Both are read through refs rather than the render closure, because the
+   * preference and the tick can each change between render and click. A
+   * disabled button is a courtesy; this is the control.
+   *
+   * **A withheld tick refuses. It does not quietly run the local worker.**
+   * Switching paths without saying so hands the doctor a different result with
+   * no word that it happened, which is the rule `AudioCapture` states for the
+   * mirror case. Choosing the on-device engine is not that: there the local
+   * worker is the path the doctor asked for.
+   */
+  const startDictation = () => {
+    setError(null)
+    stream.clearError()
+    if (!streaming) return startRecording()
+    if (!agreedRef.current) {
+      setError(NOT_AGREED_ERROR)
+      return
+    }
+    prefix.current = dictation
+    void stream.start()
+  }
+
+  const stopDictation = () => {
+    if (stream.phase !== null) return stream.stop()
+    stopRecording()
+  }
+
   useEffect(
     () => () => {
       attempt.current += 1
@@ -488,7 +668,9 @@ export function PrescriptionBlock({
     [],
   )
 
-  const busy = phase !== 'idle' || parse.isPending
+  const busy = phase !== 'idle' || stream.phase !== null || parse.isPending
+  /** Either engine is holding the microphone open, so Stop is what is offered. */
+  const capturing = phase === 'recording' || stream.phase !== null
   // Offsets on a candidate belong to the text the server read. Editing the
   // dictation after a check moves them, so Accept waits for a fresh parse.
   const dirty = parsedFrom !== null && dictation.trim() !== parsedFrom.trim()
@@ -502,6 +684,9 @@ export function PrescriptionBlock({
   }
 
   const statusLine = () => {
+    if (stream.phase === 'connecting') return 'Connecting.'
+    if (stream.phase === 'streaming') return 'Listening. Press Stop when you have finished.'
+    if (stream.phase === 'finishing') return 'Finishing, waiting for the last words.'
     if (phase === 'recording') return 'Listening. Press Stop when you have finished.'
     if (phase === 'loading-model') {
       return progress === null || progress >= 100
@@ -591,23 +776,24 @@ export function PrescriptionBlock({
                 What You Prescribed
               </span>
               <div className="flex items-center gap-2">
-                {!thin && phase !== 'recording' && (
+                {!thin && !capturing && (
                   <Button
                     size="sm"
                     variant="neutral"
                     icon={<Mic aria-hidden className="size-3.5" />}
-                    disabled={busy}
-                    onClick={() => void startRecording()}
+                    disabled={busy || (streaming && !agreed)}
+                    onClick={() => void startDictation()}
                   >
                     Dictate
                   </Button>
                 )}
-                {phase === 'recording' && (
+                {capturing && (
                   <Button
                     size="sm"
                     variant="secondary"
                     icon={<Square aria-hidden className="size-3.5" />}
-                    onClick={stopRecording}
+                    disabled={stream.phase === 'finishing'}
+                    onClick={stopDictation}
                   >
                     Stop
                   </Button>
@@ -624,6 +810,20 @@ export function PrescriptionBlock({
               </div>
             </div>
 
+            {/* Only where audio actually leaves. Offering a tick on the
+              on-device path would be an invitation to the cloud on a screen
+              that currently mentions none. */}
+            {streaming && liveConfig !== null && (
+              <div className="mt-2">
+                <ConsentGate
+                  agreed={agreed}
+                  onAgreedChange={setAgreed}
+                  disabled={capturing}
+                  disclosure={`This dictation leaves this device: streamed from this browser to Soniox and transcribed in ${REGION_LABELS[liveConfig.region]}. Our server issues the session key and never receives the audio. The microphone is open only while you are dictating.`}
+                />
+              </div>
+            )}
+
             <textarea
               aria-labelledby="dictation-label"
               className="mt-1.5 h-20 w-full resize-y rounded-control border border-line bg-surface p-3 text-sm leading-relaxed transition-colors hover:border-accent focus:border-accent"
@@ -631,10 +831,24 @@ export function PrescriptionBlock({
               maxLength={MAX_DICTATED_CHARACTERS}
               value={dictation}
               onChange={(event) => setDictation(event.target.value)}
-              disabled={phase !== 'idle'}
+              disabled={busy}
             />
 
-            {liveStream && <InputMeter stream={liveStream} className="mt-2" />}
+            {/* Provisional tokens, outside the field on purpose: they are
+              rewritten as the doctor speaks, and one truncated at `maxLength`
+              would stay truncated once it settled. No `aria-live` either, since
+              a region firing per token floods a screen reader; the status line
+              below already narrates the phase. */}
+            {stream.interim !== '' && (
+              <p className="mt-1.5 text-xs text-ink-muted italic">{stream.interim}</p>
+            )}
+
+            {(liveStream ?? stream.micStream) && (
+              <InputMeter
+                stream={(liveStream ?? stream.micStream) as MediaStream}
+                className="mt-2"
+              />
+            )}
 
             {/* Always mounted, because a live region added to the DOM alongside
               its first content is the shape screen readers miss. Empty it
@@ -646,9 +860,41 @@ export function PrescriptionBlock({
               {statusLine()}
             </p>
 
-            {error !== null && (
+            {(error ?? stream.error) !== null && (
               <p role="alert" className="mt-2 text-xs text-emergency">
-                {error}
+                {error ?? stream.error}
+              </p>
+            )}
+
+            {/* The way back, and it is a second deliberate press rather than an
+              automatic switch. Nothing was sent on this path, so the local
+              worker is a real alternative; running it without being asked would
+              hand the doctor a different engine's result with no word that it
+              happened. Offered only for a failure the local path can actually
+              answer: a refused microphone is not one. */}
+            {stream.error === START_FAILED_ERROR && !capturing && (
+              <Button
+                size="sm"
+                variant="neutral"
+                className="mt-2"
+                icon={<Mic aria-hidden className="size-3.5" />}
+                disabled={busy}
+                onClick={() => {
+                  stream.clearError()
+                  void startRecording()
+                }}
+              >
+                Use On-Device Instead
+              </Button>
+            )}
+
+            {/* A deployment with no provider key. Said plainly, with the path
+              that still works, rather than a retry on a screen where the
+              working alternative is the same button. */}
+            {dictationEngine === 'streaming' && configFailed && (
+              <p className="mt-2 text-xs text-ink-muted">
+                Streaming recognition is not available on this deployment, so Dictate transcribes on
+                this device.
               </p>
             )}
 
