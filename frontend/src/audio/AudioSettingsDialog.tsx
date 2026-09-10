@@ -124,10 +124,17 @@ function Toggle({
  * **Consent is deliberately absent from this dialog.** Everything here is
  * remembered for this device, and a remembered agreement is one the patient
  * after the consenting one never gave. Whether a given patient's audio may be
- * sent is asked on the Record tab, by `audio/ConsentGate.tsx`, and dies with
- * that screen. A reader must not be able to leave here believing they have
- * agreed to anything on a patient's behalf, which is why the note saying so
- * sits in visible copy rather than behind a tip.
+ * sent is asked by `audio/ConsentGate.tsx` on whichever surface would send it,
+ * the Record tab or the review page's Prescriptions card, and dies with that
+ * screen. A reader must not be able to leave here believing they have agreed
+ * to anything on a patient's behalf, which is why the note saying so sits in
+ * visible copy rather than behind a tip.
+ *
+ * **Mounted on two surfaces that cannot both be on screen** (#363).
+ * `CapturePanel` renders only before a transcript exists and
+ * `PrescriptionBlock` only after one does, so the two copies never coexist and
+ * neither can overwrite the other's snapshot of the stored object. This
+ * remains its single writer.
  *
  * The engine choice is the half that belongs here: it names where the audio
  * goes rather than whether it may go, and the hosted option states that in its
@@ -321,9 +328,9 @@ export function AudioSettingsDialog({
               asserted to appear exactly once here, and a second copy would make
               the first test pass for the wrong reason. */}
           <p className="mt-2.5 text-ink-muted text-xs">
-            Applies to the microphone on the review page. Choosing streaming does not send anything
-            on its own. The patient agrees there, for one consultation, and that agreement is never
-            remembered.
+            Applies to the microphone on the review page. Streaming is what runs unless you choose
+            on-device here. Streaming does not send anything on its own: the patient agrees there,
+            for one consultation, and that agreement is never remembered.
           </p>
         </fieldset>
 

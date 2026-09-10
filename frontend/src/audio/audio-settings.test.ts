@@ -40,14 +40,20 @@ describe('loadAudioSettings', () => {
   })
 
   /**
-   * Both engine fields decide whether audio leaves the device, so both are read
-   * positively for the value that sends it. Anything else, including a value
-   * written by an older build that had no such field, has to read as on-device:
-   * a privacy preference that fails open is the one failure mode neither may
-   * have, and #228 is what happens when one does.
+   * **Absent and corrupt part company on this field, and nowhere else.** The
+   * dictation default moved to streaming on 10/09/26, so an absent field has
+   * to read as the current default or the decision reaches no device that
+   * already holds a `catatmd.audio` key. Every *present* value other than
+   * `'streaming'` is a value nobody meant and still falls to on-device: a
+   * privacy preference that fails open on corruption is the one failure mode
+   * this may not have, and #228 is what happens when one does.
+   *
+   * `JSON.stringify` drops an undefined key, so the `undefined` row is the
+   * absent case rather than a stored literal.
    */
   it.each([
     ['streaming', 'streaming'],
+    [undefined, 'streaming'],
     ['local', 'local'],
     ['hosted', 'local'],
     ['STREAMING', 'local'],
@@ -63,9 +69,11 @@ describe('loadAudioSettings', () => {
     expect(loadAudioSettings().dictationEngine).toBe(expected)
   })
 
-  it('defaults dictation to on-device, so a doctor who changes nothing sends nothing', () => {
-    expect(DEFAULT_AUDIO_SETTINGS.dictationEngine).toBe('local')
-    // A settings object written before this field existed.
+  it('defaults dictation to streaming, including on a device that stored settings before the field existed', () => {
+    expect(DEFAULT_AUDIO_SETTINGS.dictationEngine).toBe('streaming')
+    // A settings object written before this field existed. That device has
+    // never chosen a dictation engine, so it takes the current default rather
+    // than being pinned to the one that shipped when it last saved.
     localStorage.setItem(
       'catatmd.audio',
       JSON.stringify({
@@ -76,7 +84,9 @@ describe('loadAudioSettings', () => {
       }),
     )
 
-    expect(loadAudioSettings().dictationEngine).toBe('local')
+    expect(loadAudioSettings().dictationEngine).toBe('streaming')
+    // The relay's own default did not move with it.
+    expect(DEFAULT_AUDIO_SETTINGS.engine).toBe('local')
   })
 
   it('keeps both engines in the one permitted key, and adds no second one', () => {

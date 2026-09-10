@@ -274,7 +274,7 @@ What remains honest to say: a deliberate cast still compiles. The claim is that 
 Detection is pattern-based and best-effort — see [`prd.md` §12](./prd.md#12-known-limitations).
 
 <details>
-<summary><strong>Audio Stays On The Device By Default</strong></summary>
+<summary><strong>Audio Stays On The Device By Default, With One Stated Exception</strong></summary>
 
 Raw audio cannot be de-identified, only transcribed. A hosted service would therefore carry un-redacted patient audio, and voice itself as a biometric identifier, outside the trust boundary before the gate ever saw it.
 
@@ -283,6 +283,8 @@ Raw audio cannot be de-identified, only transcribed. A hosted service would ther
 The claim stops there, because on modest clinic hardware the on-device path has a real cost. The rule is a default with a gate, not an absolute:
 
 > **On-device is the default and the floor. Hosted is only ever entered by an explicit, recorded, per-consultation act. Failure degrades to paste, never to the cloud.**
+
+**One surface is a stated exception to the first sentence, and only the first sentence.** Prescription dictation streams by default from 10/09/26 ([`decisions.md`](./decisions.md) D-001). The rest of the rule holds there unchanged: on-device remains its fallback, nothing is sent without the per-consultation act, and failure still degrades to typing rather than to the cloud.
 
 **That last clause is the load-bearing one.** Silently switching to hosted transcription because a device is slow would be a privacy control that fails **open** under load, degrading exactly when the doctor is least able to notice. It is written down as rejected rather than left to an implementer's judgement.
 
@@ -301,16 +303,16 @@ The hosted adapter is **built and live**, and reaching it takes two separate act
 
 **Four capture paths exist, and they leave the device by different routes.**
 
-| Path                       | Where the audio goes                                                    | Region        |
-| -------------------------- | ----------------------------------------------------------------------- | ------------- |
-| Press to record, on-device | Nowhere. The model runs in the browser                                  | The device    |
-| Press to record, hosted    | One finished recording, through our API, to ILMU                        | Malaysia      |
-| Ambient capture            | Streamed from the browser straight to Soniox, under a key our API mints | United States |
-| Prescription dictation     | Nowhere by default. Opt in and one phrase streams to Soniox, same route | Device, or US |
+| Path                       | Where the audio goes                                                      | Region        |
+| -------------------------- | ------------------------------------------------------------------------- | ------------- |
+| Press to record, on-device | Nowhere. The model runs in the browser                                    | The device    |
+| Press to record, hosted    | One finished recording, through our API, to ILMU                          | Malaysia      |
+| Ambient capture            | Streamed from the browser straight to Soniox, under a key our API mints   | United States |
+| Prescription dictation     | One phrase to Soniox by default, same route. Choose on-device and nowhere | Device, or US |
 
 **Soniox is the one destination that leaves the region, and two paths reach it.** It offers the United States, the European Union, Japan and India, and no Malaysian or Singapore option. That is the honest cost of the only streaming recogniser tested here that handles Malay, English and Chinese switching mid-sentence, and the transfer basis is recorded as open in [`dpia.md`](./dpia.md) rather than treated as solved. Our servers never hold that audio.
 
-**Prescription dictation is opt-in, and stays on the device otherwise.** The microphone on the review page recognises locally unless the doctor changes a device preference and ticks the same per-consultation consent the other paths use. Both are required, the tick is remembered by nothing, and every failure lands back on the device or on typing rather than on the cloud. Authorised 10/09/26, scoped to that one surface ([`trd.md`](./trd.md) §20.10).
+**Prescription dictation streams by default, and no phrase leaves without a per-consultation tick.** The microphone on the review page streams unless the doctor picks on-device in Audio settings, the tick is remembered by nothing, and every failure lands back on the device or on typing rather than on the cloud. Authorised 10/09/26, scoped to that one surface ([`trd.md`](./trd.md) §20.10). The cost is recorded as a cost: this path is meant to hold two controls, and shipping the preference already set to stream leaves only the tick as a decision the doctor makes, so the live count here is one rather than two ([`decisions.md`](./decisions.md) D-001).
 
 **The split is deliberate, and it was got wrong once.** For three weeks the engine preference was the whole gate while the interface still said each patient was asked. A remembered agreement is one the next patient never gave, so the per-consultation half was restored and is now pinned by a test that fails if the claim and the control ever part company again (#254).
 
