@@ -46,6 +46,7 @@ vi.mock('../lib/api.js', () => ({
     patch: vi.fn(),
     analyze: vi.fn(),
     approve: vi.fn(),
+    liveAsrConfig: vi.fn(),
     getConsultationAudio: audioApi.get,
     putConsultationAudio: audioApi.put,
   },
@@ -182,6 +183,17 @@ const APPROVED = {
 }
 
 afterEach(cleanup)
+
+/*
+ * `PrescriptionBlock` is rendered for real by this page, and since the
+ * dictation default moved to streaming on 10/09/26 it asks for a recognition
+ * config on mount (#363). Refused here, so every test below keeps the surface
+ * it was written against: no consent tick, no socket, the on-device path on
+ * screen. The reachability test at the foot of this file is the one that cares.
+ */
+beforeEach(() => {
+  vi.mocked(api.liveAsrConfig).mockRejectedValue(new Error('asr_unavailable'))
+})
 
 function setup() {
   render(
@@ -1408,5 +1420,38 @@ describe('suggestions empty state', () => {
         'Outside the guideline corpus\u2019s scope, so no suggestions were offered.',
       ),
     ).toBeTruthy()
+  })
+})
+
+/*
+ * The defect #363 fixed, pinned at the level where it actually failed.
+ *
+ * The engine switch lived only in `CapturePanel`, which the page renders only
+ * while there is no transcript, while the Prescriptions card needs one. The
+ * control and the microphone it governs could never be on screen together, so
+ * the standing half of the two-control consent rule was unreachable from the
+ * surface it governed and streaming dictation shipped dead.
+ *
+ * Asserted from the page rather than from the card, because the mount site is
+ * the thing that was wrong. `CapturePanel` is mocked out in this file, which is
+ * exactly why the old mount site was invisible to every test here.
+ */
+describe('the audio engine switch on the review page', () => {
+  beforeEach(() => {
+    vi.mocked(api.getConsultation).mockResolvedValue({
+      ...APPROVED,
+      status: 'awaiting_review' as const,
+      approvedAt: null,
+      approvedBy: null,
+    } as never)
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
+  })
+
+  it('is reachable from the Prescriptions card, which is the surface it governs', async () => {
+    setup()
+
+    fireEvent.click(await screen.findByRole('button', { name: /prescriptions/i }))
+
+    expect(screen.getByRole('button', { name: /audio settings/i })).toBeTruthy()
   })
 })

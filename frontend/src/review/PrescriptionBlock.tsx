@@ -13,10 +13,11 @@ import {
   type SigRoute,
 } from '@shared/types'
 import { useMutation } from '@tanstack/react-query'
-import { Check, ChevronDown, Mic, Square, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, Mic, Settings2, Square, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { loadAudioSettings } from '../audio/audio-settings.js'
+import { AudioSettingsDialog } from '../audio/AudioSettingsDialog.js'
+import { type AudioSettings, loadAudioSettings } from '../audio/audio-settings.js'
 import { ConsentGate, REGION_LABELS } from '../audio/ConsentGate.js'
 import {
   belowHardwareFloor,
@@ -27,7 +28,7 @@ import {
 import { InputMeter } from '../audio/InputMeter.js'
 import type { WorkerRequest, WorkerResponse } from '../audio/protocol.js'
 import { useDemoTour } from '../demo/DemoTour.js'
-import { api } from '../lib/api.js'
+import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
 import { count } from '../lib/plural.js'
 import { Button } from '../ui/Button.js'
@@ -241,24 +242,34 @@ function summarise(prescription: Prescription) {
 }
 
 /**
- * Record the medication the doctor dictated, on device (#313,
- * `docs/decisions.md` D-001).
+ * Record the medication the doctor dictated (#313, `docs/decisions.md` D-001).
  *
  * **The dictation is a text field, and the microphone fills it.** The parse
  * route takes text and never audio, and `dictated` is required and non-empty,
- * so typing is the path and speaking is an accelerator on it. That is also what
- * makes the hardware floor cost nothing: below it the Dictate button is absent
- * and the same box still works, which is this feature's shape of the rule that
- * an on-device failure degrades to typing and never to the cloud.
+ * so typing is the path and speaking is an accelerator on it. That is what
+ * makes every way the microphone can be unavailable cost nothing: the same box
+ * still works, which is this feature's shape of the rule that a failure
+ * degrades to typing and never to the cloud.
  *
- * **On device by default and by floor. Streaming is opt-in (#357).** A doctor
- * who changes nothing dictates into `../audio/transcribe.worker.js` and no
- * audio leaves, which is why no consent tick is offered on that path. Moving
- * `dictationEngine` to `streaming` in the Audio dialog opens the second surface
- * on the ambient Soniox egress instead, and then the two-control rule in
- * `.claude/rules/security.md` binds here exactly as it does on the Record tab:
- * that standing device preference, plus the per-consultation tick below, both
- * required, enforced in the start dispatcher rather than by a disabled button.
+ * **Streaming by default since 10/09/26, on-device by fallback and by floor
+ * (#363).** `DEFAULT_AUDIO_SETTINGS.dictationEngine` is `'streaming'`, so a
+ * doctor who changes nothing is offered the second surface on the ambient
+ * Soniox egress and is asked for consent before anything opens. Choosing
+ * on-device in the Audio dialog dictates into
+ * `../audio/transcribe.worker.js` instead, where no audio leaves and no
+ * consent tick is offered because there is nothing to consent to.
+ *
+ * **What the default costs is written down rather than glossed.** The
+ * two-control rule in `.claude/rules/security.md` is a standing device
+ * preference plus a per-consultation tick, and a preference that ships already
+ * set to send is not a choice the doctor made. This surface therefore rests on
+ * one defaulted preference and one deliberate tick. The tick is unchanged,
+ * still required, and still enforced in the start dispatcher rather than by a
+ * disabled button, so nothing leaves without it.
+ *
+ * **The hardware floor no longer forces typing by default.** A socket loads no
+ * weights, so `thin` narrows to the on-device engine and a machine below the
+ * floor is offered streaming rather than the text box alone.
  *
  * **Every way streaming can fail lands back on the device or on typing.** Key
  * unset, config unreachable, consent withheld, mint refused, socket dropped: no
@@ -310,13 +321,43 @@ export function PrescriptionBlock({
   const bodyId = useId()
 
   /**
-   * The standing half of the consent rule, read once on mount.
+   * The standing half of the consent rule, and the dialog that writes it.
    *
-   * Read rather than written here. `AudioSettingsDialog` is the single writer
-   * of the `catatmd.audio` object, and a second screen writing its own snapshot
-   * of the whole object is a lost update waiting to happen.
+   * **Mounted here as well as in `CapturePanel` because it was reachable only
+   * from there** (#363). That panel renders under `{!detail.transcript}` while
+   * this card needs a transcript and an analysis, so the switch and the
+   * microphone it governs could never be on screen together: the standing half
+   * of the rule was a control nobody could reach from the surface it governed.
+   *
+   * **Those same conditions make the two mounts mutually exclusive**, so
+   * neither can overwrite the other's snapshot of the whole `catatmd.audio`
+   * object. The lost update this comment used to warn about is prevented by
+   * the render conditions rather than by convention, and `AudioSettingsDialog`
+   * remains the single writer.
+   *
+   * Held as state rather than read once on mount, so a change made in the
+   * dialog is seen here without a remount.
    */
-  const [dictationEngine] = useState(() => loadAudioSettings().dictationEngine)
+  const [audio, setAudio] = useState<AudioSettings>(loadAudioSettings)
+  const dictationEngine = audio.dictationEngine
+  const audioDialog = useRef<HTMLDialogElement>(null)
+  const [audioOpen, setAudioOpen] = useState(false)
+
+  /*
+   * Mounted only while open. `AudioSettingsDialog` carries an `InputMeter`
+   * that opens a stream of its own in a mount effect, and a closed `<dialog>`
+   * is `display: none` but still mounts its children, so keeping it in the
+   * tree would hold a live microphone track and light the browser's recording
+   * indicator on a page where the doctor is reading a note.
+   */
+  useEffect(() => {
+    const node = audioDialog.current
+    if (!audioOpen || !node) return
+    node.showModal()
+    const close = () => setAudioOpen(false)
+    node.addEventListener('close', close)
+    return () => node.removeEventListener('close', close)
+  }, [audioOpen])
   /**
    * The per-consultation half, in plain `useState` so it dies with the
    * component. Never persisted, never folded into the preference above: that
@@ -334,7 +375,7 @@ export function PrescriptionBlock({
    * about where the audio goes.
    */
   const [liveConfig, setLiveConfig] = useState<LiveAsrConfig | null>(null)
-  const [configFailed, setConfigFailed] = useState(false)
+  const [configFailure, setConfigFailure] = useState<'unavailable' | 'unreachable' | null>(null)
   /** Both halves chosen, and the deployment actually has a provider configured. */
   const streaming = dictationEngine === 'streaming' && liveConfig !== null
 
@@ -458,12 +499,24 @@ export function PrescriptionBlock({
       .then((config) => {
         if (live) setLiveConfig(config)
       })
-      .catch(() => {
-        // 503 `asr_unavailable` is a deployment with no key set, and every
-        // other failure lands in the same place: streaming is not offered, the
-        // on-device path is, and no retry is worth a button when the working
-        // path is already on screen.
-        if (live) setConfigFailed(true)
+      .catch((cause: unknown) => {
+        if (!live) return
+        /*
+         * Both land in the same place, streaming not offered and the on-device
+         * path on screen, but they are not the same claim. A 503 is a
+         * deployment with no key set, which is a fact about the deployment.
+         * Anything else is a network that did not answer, which is not, and
+         * naming it as one would be a claim this component cannot support.
+         *
+         * The split only started earning its keep when streaming became the
+         * default and every doctor could reach this line (#363).
+         * `live/AmbientCapture.tsx` has drawn it since #268. Still no retry
+         * button, for the original reason: the working alternative is already
+         * the same button.
+         */
+        setConfigFailure(
+          cause instanceof ApiError && cause.status === 503 ? 'unavailable' : 'unreachable',
+        )
       })
     return () => {
       live = false
@@ -776,6 +829,22 @@ export function PrescriptionBlock({
                 What You Prescribed
               </span>
               <div className="flex items-center gap-2">
+                {/* The engine switch, beside the microphone it governs, and
+                    first so that Dictate and Check keep the positions they
+                    have always had. The dialog is device scoped and shared
+                    with the capture screen, so it carries the same name there
+                    and here rather than inventing a second vocabulary for one
+                    control. Closed while capturing, for the reason
+                    `ConsentGate` is: the engine is not a mid-stream choice. */}
+                <Button
+                  size="sm"
+                  variant="neutral"
+                  aria-label="Audio settings"
+                  title="Audio settings"
+                  disabled={capturing}
+                  icon={<Settings2 aria-hidden className="size-3.5" />}
+                  onClick={() => setAudioOpen(true)}
+                />
                 {!thin && !capturing && (
                   <Button
                     size="sm"
@@ -888,13 +957,15 @@ export function PrescriptionBlock({
               </Button>
             )}
 
-            {/* A deployment with no provider key. Said plainly, with the path
-              that still works, rather than a retry on a screen where the
-              working alternative is the same button. */}
-            {dictationEngine === 'streaming' && configFailed && (
+            {/* A deployment with no provider key, or a network that did not
+              answer. Said plainly, with the path that still works, rather than
+              a retry on a screen where the working alternative is the same
+              button. */}
+            {dictationEngine === 'streaming' && configFailure !== null && (
               <p className="mt-2 text-xs text-ink-muted">
-                Streaming recognition is not available on this deployment, so Dictate transcribes on
-                this device.
+                {configFailure === 'unavailable'
+                  ? 'Streaming recognition is not available on this deployment, so Dictate transcribes on this device.'
+                  : 'Streaming recognition could not be reached, so Dictate transcribes on this device.'}
               </p>
             )}
 
@@ -1072,6 +1143,18 @@ export function PrescriptionBlock({
                 </span>
               )}
             </div>
+
+            {/* `ambient` is false rather than plumbed: this page has no live
+                ambient session, and the dialog reads that flag only to name an
+                engine that is actually running. */}
+            {audioOpen && (
+              <AudioSettingsDialog
+                ref={audioDialog}
+                settings={audio}
+                onApply={setAudio}
+                ambient={false}
+              />
+            )}
           </section>
         )}
       </div>

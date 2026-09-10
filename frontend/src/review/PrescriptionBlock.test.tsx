@@ -7,6 +7,7 @@ import {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../lib/api.js'
 import {
   acceptCandidate,
   candidateKey,
@@ -40,18 +41,59 @@ const mocks = vi.hoisted(() => ({
   liveAsrConfig: vi.fn(),
   createLiveSession: vi.fn(),
 }))
-vi.mock('../lib/api.js', () => ({
-  api: {
-    parsePrescription: mocks.parsePrescription,
-    liveAsrConfig: mocks.liveAsrConfig,
-    createLiveSession: mocks.createLiveSession,
-  },
-}))
+/*
+ * The real `ApiError`, because the config-failure copy now turns on its
+ * `status`: a 503 says this deployment has no key, anything else says the
+ * network did not answer. A stub class would make both branches read alike and
+ * the distinction would go untested.
+ */
+vi.mock('../lib/api.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/api.js')>()
+  return {
+    ApiError: actual.ApiError,
+    api: {
+      parsePrescription: mocks.parsePrescription,
+      liveAsrConfig: mocks.liveAsrConfig,
+      createLiveSession: mocks.createLiveSession,
+    },
+  }
+})
 
 const useDemoTour = vi.hoisted(() => vi.fn())
 vi.mock('../demo/DemoTour.js', () => ({ useDemoTour }))
 
 afterEach(cleanup)
+
+/**
+ * The standing preference, written the way the Audio dialog writes it.
+ *
+ * `PrescriptionBlock` reads `audio-settings.ts` rather than a mocked module,
+ * so these drive the real loader through jsdom's `localStorage`.
+ */
+const writeEngine = (dictationEngine: 'local' | 'streaming') =>
+  localStorage.setItem(
+    'catatmd.audio',
+    JSON.stringify({
+      deviceId: null,
+      suppressNoise: true,
+      boostQuietSpeech: false,
+      engine: 'local',
+      dictationEngine,
+    }),
+  )
+
+const chooseLocal = () => writeEngine('local')
+const chooseStreaming = () => writeEngine('streaming')
+
+/*
+ * Every test outside the streaming block was written while on-device was the
+ * default, and each still asserts a property of that path. The default moved
+ * to streaming on 10/09/26 (#363), so the premise is now stated rather than
+ * inherited: without this they would open the streaming surface and ask for a
+ * recognition config, which is neither what they mock nor what they mean.
+ */
+beforeEach(chooseLocal)
+afterEach(() => localStorage.clear())
 
 const candidate = (over: Partial<MedicationCandidateWire> = {}): MedicationCandidateWire => ({
   lexiconId: 'amoxicillin',
@@ -604,41 +646,89 @@ describe('streaming prescription dictation', () => {
     config: {},
   }
 
-  const chooseStreaming = () =>
-    localStorage.setItem(
-      'catatmd.audio',
-      JSON.stringify({
-        deviceId: null,
-        suppressNoise: true,
-        boostQuietSpeech: false,
-        engine: 'local',
-        dictationEngine: 'streaming',
-      }),
-    )
+  const originalShowModal = HTMLDialogElement.prototype.showModal
+  const originalClose = HTMLDialogElement.prototype.close
 
   beforeEach(() => {
+    // jsdom 27 ships `<dialog>` without these, and the Audio dialog is now
+    // opened from this card. Same stand-in `ConsultationReview.test.tsx` uses.
+    HTMLDialogElement.prototype.showModal = function showModal() {
+      this.open = true
+    }
+    HTMLDialogElement.prototype.close = function close() {
+      this.open = false
+      this.dispatchEvent(new Event('close'))
+    }
     mocks.parsePrescription.mockReset()
     mocks.liveAsrConfig.mockReset().mockResolvedValue(liveConfig)
     mocks.createLiveSession.mockReset()
     useDemoTour.mockReturnValue({ active: false, currentStep: -1, steps: [] })
     setCores(8)
+    // Cleared rather than left on-device, so each test below states the half
+    // of the consent rule it is about.
     localStorage.clear()
   })
 
-  afterEach(() => localStorage.clear())
+  afterEach(() => {
+    HTMLDialogElement.prototype.showModal = originalShowModal
+    HTMLDialogElement.prototype.close = originalClose
+    localStorage.clear()
+  })
 
-  it('offers no consent tick and asks the API for nothing on the on-device default', async () => {
+  it('offers no consent tick and asks the API for nothing once on-device is chosen', async () => {
+    chooseLocal()
     renderBlock()
     fireEvent.click(getToggle())
 
     /*
-     * The reversibility property. A doctor who has changed nothing issues no
-     * request this component did not issue before #357, and is shown no
+     * The reversibility property, and it now takes a choice rather than
+     * inaction. A doctor who has moved the preference back to on-device issues
+     * no request this component did not issue before #357, and is shown no
      * invitation to the cloud on a screen that otherwise mentions none, which
      * is `ConsentGate`'s own stated rule.
      */
     expect(screen.queryByRole('checkbox', { name: /agreed/i })).toBeNull()
     await waitFor(() => expect(mocks.liveAsrConfig).not.toHaveBeenCalled())
+  })
+
+  /*
+   * The other half of the same property, and the one the 10/09/26 decision
+   * turns on: inaction now reaches the streaming surface. Written against a
+   * device with nothing stored at all, because that is what "changes nothing"
+   * means once the default itself is the thing that changed (#363).
+   */
+  it('puts a device that has stored nothing on the streaming path, and asks the patient', async () => {
+    renderBlock()
+    fireEvent.click(getToggle())
+
+    expect(await screen.findByRole('checkbox', { name: /agreed/i })).toBeTruthy()
+    expect(mocks.liveAsrConfig).toHaveBeenCalledWith('dictation')
+  })
+
+  /*
+   * The reachability defect this card shipped with (#363). The switch lived
+   * only in `CapturePanel`, which renders only while there is no transcript,
+   * while this card needs one: the standing half of the consent rule was a
+   * control nobody could reach from the surface it governed.
+   *
+   * Both assertions belong in one test. Split apart, the dialog could be
+   * mounted while the card ignored it, or the card could observe a value no
+   * screen could change, and either half would keep passing alone.
+   */
+  it('opens the Audio dialog from this card, and sees the engine change without a remount', async () => {
+    chooseLocal()
+    renderBlock()
+    fireEvent.click(getToggle())
+    expect(screen.queryByRole('checkbox', { name: /agreed/i })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /audio settings/i }))
+    // Anchored: the card's own InfoTip is named "About Streaming recognition".
+    fireEvent.click(screen.getByRole('button', { name: /^streaming recognition/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    // Same mounted card, now offering the gate the new preference requires.
+    expect(await screen.findByRole('checkbox', { name: /agreed/i })).toBeTruthy()
+    expect(mocks.liveAsrConfig).toHaveBeenCalledWith('dictation')
   })
 
   it('asks the patient, naming the processor and the region the API reported', async () => {
@@ -697,7 +787,7 @@ describe('streaming prescription dictation', () => {
 
   it('falls back to the on-device path when the deployment has no provider', async () => {
     chooseStreaming()
-    mocks.liveAsrConfig.mockRejectedValue(new Error('asr_unavailable'))
+    mocks.liveAsrConfig.mockRejectedValue(new ApiError(503, 'asr_unavailable', 'nope'))
     renderBlock()
     fireEvent.click(getToggle())
 
@@ -705,6 +795,38 @@ describe('streaming prescription dictation', () => {
     // path that sends nothing.
     await screen.findByText(/streaming recognition is not available on this deployment/i)
     expect(screen.queryByRole('checkbox', { name: /agreed/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /^dictate$/i })).toBeTruthy()
+  })
+
+  /*
+   * The same landing place, a different claim. Only a 503 says the deployment
+   * has no key; a network that did not answer says nothing about the
+   * deployment, and asserting otherwise would be a claim this component cannot
+   * see far enough to make. Rare while streaming was opt-in, ordinary now that
+   * it is the default (#363).
+   */
+  it('does not blame the deployment for a failure that is not the deployment', async () => {
+    chooseStreaming()
+    mocks.liveAsrConfig.mockRejectedValue(new TypeError('Failed to fetch'))
+    renderBlock()
+    fireEvent.click(getToggle())
+
+    await screen.findByText(/streaming recognition could not be reached/i)
+    expect(screen.queryByText(/not available on this deployment/i)).toBeNull()
+    expect(screen.getByRole('button', { name: /^dictate$/i })).toBeTruthy()
+  })
+
+  /*
+   * A socket loads no weights, so the hardware floor narrowed when the default
+   * moved: it hides the microphone only where the local model is what would
+   * run. The mirror of the on-device case above, which keeps its own floor.
+   */
+  it('still offers Dictate below the hardware floor, because streaming needs no model', async () => {
+    setCores(2)
+    renderBlock()
+    fireEvent.click(getToggle())
+
+    expect(await screen.findByRole('checkbox', { name: /agreed/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /^dictate$/i })).toBeTruthy()
   })
 })

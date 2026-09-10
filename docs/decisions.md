@@ -10,12 +10,12 @@ Scope decisions that change what this product does, recorded rather than silentl
 
 ## D-001: Dictated Medication Capture
 
-|                |                                             |
-| -------------- | ------------------------------------------- |
-| **Date**       | 2026-09-09                                  |
-| **Status**     | Adopted. Amended 2026-09-10, transport only |
-| **Issues**     | #310, #311, #312, #313, #355, #356, #357    |
-| **Supersedes** | Nothing. Clarifies `docs/prd.md` Section 6  |
+|                |                                                            |
+| -------------- | ---------------------------------------------------------- |
+| **Date**       | 2026-09-09                                                 |
+| **Status**     | Adopted. Amended 2026-09-10 twice: transport, then default |
+| **Issues**     | #310, #311, #312, #313, #355, #356, #357, #363             |
+| **Supersedes** | Nothing. Clarifies `docs/prd.md` Section 6                 |
 
 ### Decision
 
@@ -42,22 +42,40 @@ Section 11's intended-purpose statement already describes exactly this, and is *
 ### What Changes In Practice
 
 - A structured `prescriptions` record, authored by the doctor and confirmed by the doctor, separate from the model-extracted `medicationsDispensed`
-- A microphone on the review page, transcribing **on device by default and by floor**. Streaming recognition is an opt-in second path, added 2026-09-10 and described below
+- A microphone on the review page, **streaming by default since 2026-09-10, with on-device recognition as the fallback and the floor**. Both amendments below record how that arrived and what it cost
 - A versioned drug-name lexicon used to offer spelling candidates for names the recogniser garbled
 
 ### Amended 2026-09-10: The Transport, Not The Boundary
 
 **What changed is how the words are recognised. What did not change is anything this decision actually decided.** Recording a drug the doctor spoke is still extraction, generating or selecting one is still outside scope, and every row of the table below stands unmoved. The amendment reaches one bullet above, whose original wording, "on device only, so no new audio egress is created", is now false rather than merely narrow.
 
-|                            |                                                                                                                                                                                                   |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **What is added**          | Streaming recognition on the same Soniox socket ambient capture uses, browser-direct, US region (`trd.md` §20.10, issues #356 and #357)                                                           |
-| **What stays the default** | On-device Whisper. A doctor who changes nothing sends no audio anywhere, and no consent tick is offered on that path                                                                              |
-| **What stays the floor**   | On-device is also the fallback. Key unset, consent withheld, socket dropped, or hardware below the floor all land back on it or on typing, never silently on the cloud                            |
-| **What gates it**          | The two-control consent rule in `.claude/rules/security.md`, unchanged and now binding on the review page: a standing device preference plus a per-consultation tick that dies with the component |
-| **Who authorised it**      | @Andersonnn7788, 2026-09-10, scoped to prescription dictation on the review page and nothing else                                                                                                 |
+|                            |                                                                                                                                                                                                                                               |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What is added**          | Streaming recognition on the same Soniox socket ambient capture uses, browser-direct, US region (`trd.md` §20.10, issues #356 and #357)                                                                                                       |
+| **What stays the default** | On-device Whisper. A doctor who changes nothing sends no audio anywhere, and no consent tick is offered on that path. **Superseded the same day, see the next amendment**                                                                     |
+| **What stays the floor**   | On-device is also the fallback. Key unset, consent withheld, socket dropped, or hardware below the floor all land back on it or on typing, never silently on the cloud. **The hardware clause narrowed the same day, see the next amendment** |
+| **What gates it**          | The two-control consent rule in `.claude/rules/security.md`, unchanged and now binding on the review page: a standing device preference plus a per-consultation tick that dies with the component                                             |
+| **Who authorised it**      | @Andersonnn7788, 2026-09-10, scoped to prescription dictation on the review page and nothing else                                                                                                                                             |
 
 **Why the original wording was right when it was written.** #313 chose on-device deliberately, reasoning that the review page had no consent surface and that rebuilding one in a third place was worse than removing the question. That reasoning is not overturned so much as paid for: the gate is now built there rather than avoided. What forced the question is measurement in `trd.md` §20: on the 83.4 s reference recording the WebGPU path stamped a real-time factor of 0.89, against 2.14 for the WASM q8 baseline, and §20.1 puts browser WASM generally at 1.5 to 3.0. Anything at or above 1.0 cannot keep pace with speech. Words appearing as the doctor speaks was therefore never reachable on the fallback path most clinic hardware runs, and only marginally reachable on the best of them.
+
+### Amended 2026-09-10: Streaming Becomes The Default, At The Cost Of One Control
+
+**The transport amendment above left on-device as the default. This one moves it, and what it costs is a control rather than a boundary.** Nothing about the egress changes: same vendor, socket, region and minting route, and the same sign-off covers it. What changes is what a doctor who touches nothing gets, and therefore how many deliberate acts stand between a patient's voice and the United States.
+
+|                                 |                                                                                                                                                                                                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What changed**                | `DEFAULT_AUDIO_SETTINGS.dictationEngine` is `'streaming'`. Only the default moved. The on-device path is untouched and still selectable in the Audio dialog                                                                                                                  |
+| **What it costs**               | The standing device preference now ships already set to send. A preference the doctor has not moved is not a choice they made, so this surface rests on **one defaulted preference plus one deliberate tick**, not on two chosen controls                                    |
+| **What still gates it**         | The per-consultation tick, unchanged: plain `useState`, remembered by nothing, enforced in the start dispatcher rather than by a disabled button. **Nothing sends without it**                                                                                               |
+| **What stays the floor**        | Every failure still lands on the device or on typing. Key unset, config unreachable, consent withheld, mint refused, socket dropped: no path falls through to the cloud, and none falls through silently                                                                     |
+| **What narrowed**               | The hardware floor no longer forces typing by default. A socket loads no weights, so a machine below the floor is now offered streaming, and typing is what it falls to only when consent is withheld or the socket is unavailable                                           |
+| **What made it a real control** | Until #363 the preference was written only in `CapturePanel`, which renders only before a transcript exists, while the card it governs needs one. The switch and the microphone could never be on screen together, so the standing half was unreachable from its own surface |
+| **Who authorised it**           | @Andersonnn7788, 2026-09-10, scoped to prescription dictation on the review page and nothing else                                                                                                                                                                            |
+
+**This is the same shape as #228, and the difference is the half worth reading.** #228 collapsed the two controls into one remembered setting and left the interface claiming each patient was asked while nothing asked; #254 undid it. Here the per-consultation half is untouched, still asked once per consultation, and still the only thing that opens the socket, so the failure #228 had, a remembered agreement applying to the patient after the consenting one, is not reintroduced. What is genuinely weaker is defence in depth: one of the two acts is now a default rather than a decision, and a doctor who never opens the Audio dialog is offered the cross-border path on every consultation. That is recorded here rather than argued away, because the honest count of live controls on this surface is one.
+
+**Why the default moved at all.** The measurement in the amendment above is the whole argument. A real-time factor of 0.89 on the best path and 2.14 on the fallback most clinic hardware runs, against a threshold of 1.0 for keeping pace with speech, means an on-device default is one most doctors would have to leave. A default nobody keeps and a preference nobody could reach, which is what #363 also found, together made the on-device default a claim the product was making rather than a protection it was giving.
 
 ### What This Decision Does Not License
 
