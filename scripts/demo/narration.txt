@@ -1,0 +1,11 @@
+shot-1 | 200 | CatatMD is a reviewable clinical assistant for an adult GP visit. The doctor opens the patient form and registers a clearly synthetic adult.
+shot-2 | 200 | Once the patient record is created, the doctor starts a new consultation from the profile.
+shot-3 | 200 | The Paste tab lets the doctor use a supplied, synthetic transcript instead of recording live speech.
+shot-4 | 200 | The transcript is a hand-written, invented consultation about a cough and sore throat. No real patient appears in this demo.
+shot-5 | 200 | With the transcript pasted, the doctor asks the application to analyse the consultation.
+shot-6 | 200 | Analysis takes a few moments. The system checks for missing information and red flags, then builds a structured clinical note and cited suggestions for review.
+shot-6 | 9000 | It does not diagnose, and it never replaces the doctor's judgement.
+shot-7 | 200 | The generated clinical note appears for review, turning the doctor-patient conversation into structured sections.
+shot-8 | 200 | Any red flags and missing information prompts appear on the clinical safety rail, supporting review without forcing a decision.
+shot-9 | 200 | Cited suggestions from the clinical corpus are surfaced where relevant, constrained to known guideline identifiers.
+shot-10 | 200 | The consultation ends at Awaiting Review. It is not approved, prescribed, deleted, or exported in this demo.
