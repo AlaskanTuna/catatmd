@@ -424,11 +424,18 @@ export const LiveAsrConfigSchema = z.object({
 /**
  * Body of `POST /api/asr/live-sessions`.
  *
- * `z.literal(true)` rather than a boolean: there is no meaningful request that
- * asserts no consent, so the absence of agreement is a malformed body rather
- * than a state the route has to reason about. It is a client assertion the API
- * cannot verify, exactly like `Transcript.labelsReviewed`, and it is recorded
- * in the audit row as what the client said rather than as proof.
+ * **`consent` is required on ambient and absent on dictation, and the split is
+ * the point.** It was `z.literal(true)` for both until 10/09/26 (#365), when
+ * the per-consultation tick was removed from prescription dictation. A client
+ * that no longer asks anybody cannot honestly assert anything, and leaving the
+ * literal in place would have made every dictation mint record a patient
+ * agreement nobody gave. Ambient still refuses a body without `consent: true`,
+ * byte for byte as before: defaults apply before `refine`, so a bare `{}` still
+ * resolves to ambient and still fails.
+ *
+ * On ambient it remains a client assertion the API cannot verify, exactly like
+ * `Transcript.labelsReviewed`, and it is recorded in the audit row as what the
+ * client said rather than as proof.
  *
  * **`mode` defaults rather than being required, and that is a rollout property
  * rather than a nicety.** Vercel and Render deploy independently from one
@@ -437,10 +444,15 @@ export const LiveAsrConfigSchema = z.object({
  * black for that window. The default is the mode that already shipped, so a
  * client that names nothing gets today's behaviour byte for byte.
  */
-export const LiveSessionRequestSchema = z.object({
-  consent: z.literal(true),
-  mode: LiveAsrModeSchema.default('ambient'),
-})
+export const LiveSessionRequestSchema = z
+  .object({
+    consent: z.boolean().optional(),
+    mode: LiveAsrModeSchema.default('ambient'),
+  })
+  .refine((body) => body.mode !== 'ambient' || body.consent === true, {
+    message: 'Consent for this consultation is required.',
+    path: ['consent'],
+  })
 
 /**
  * What `POST /api/asr/live-sessions` returns.
@@ -1025,7 +1037,13 @@ export type SigFoodTiming = (typeof SIG_FOOD_TIMINGS)[number]
  * doctor left rather than with a value nobody said.
  *
  * `dictated` is the verbatim phrase, kept as the evidence the structured fields
- * were derived from, the same role a transcript span plays elsewhere.
+ * were derived from, the same role a transcript span plays elsewhere. Since
+ * #365 it is the stretch of the dictation belonging to this drug rather than
+ * the whole utterance, because one dictation can name several drugs and a
+ * phrase quoting all of them says nothing about where this row's dose came
+ * from. The bound is 2000 rather than 400 for the same change: at 400 a
+ * four-drug prescription was cut off mid-sentence while the doctor was still
+ * speaking.
  */
 export const PrescriptionSchema = z.object({
   drug: z.string().min(1).max(80),
@@ -1035,7 +1053,7 @@ export const PrescriptionSchema = z.object({
   frequency: z.enum(SIG_FREQUENCIES).nullable(),
   duration: z.string().max(40).nullable(),
   food: z.enum(SIG_FOOD_TIMINGS).nullable(),
-  dictated: z.string().min(1).max(400),
+  dictated: z.string().min(1).max(2000),
 })
 
 /**

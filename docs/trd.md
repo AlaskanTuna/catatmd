@@ -2489,6 +2489,30 @@ This is the strongest external argument for the shape of the gap engine in secti
 
 **Status: `Superseded 06/09/26 by §20.10, and not built`.** The provider and transport chosen here were replaced the same day, when the sign-off this section records as absent was granted. **The measurements below stand as a true record** and are why this section is not deleted: the segmentation table is real, and it is the evidence that would matter again if the ambient path ever returned to a batch recogniser. Everything the original status line said follows. This section revises §20.7's provider choice, extends §20.8's post-correction row with the mechanism behind it, and answers §19 rows 21 and 22. **Nothing in it is measured on ILMU.** The probes that gate the build are named at the end, and one of them can reverse the decision.
 
+#### Amended 10/09/26: The Tick Is Removed, And The Surface Becomes A Theatre
+
+The sign-off above is unchanged and is not re-opened: same vendor, socket, region and minting route, so no new egress and no new grant. What moved is the interface in front of it, and one control is gone (@Andersonnn7788, #365, `docs/decisions.md` D-001).
+
+| Behaviour              | Before                                               | After                                                                         |
+| ---------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Pressing Dictate       | Disabled until the per-consultation box is ticked    | Opens a full-viewport theatre and the microphone with it                      |
+| The disclosure         | Names Soniox and the region above the tick           | Removed                                                                       |
+| What the client sends  | `{ consent: true, mode }` on every call              | `{ mode }` on dictation, `{ consent: true, mode }` on ambient                 |
+| What the trail records | `consentAsserted: true`, a literal in the audit type | `consentAsserted` derived from the mode: `false` on dictation, `true` ambient |
+| Compose surface        | A card in the review page's 620px middle column      | The theatre, one column while listening and two after Stop                    |
+| One dictation yields   | One prescription                                     | Several, each with its own sig, confirmed together                            |
+
+**Four implementation consequences, and the audit one is the load-bearing one.**
+
+- **`LiveSessionRequestSchema` stopped being `consent: z.literal(true)`.** It is an optional boolean with a `refine` that requires `true` on ambient, so ambient behaviour is unchanged byte for byte (defaults apply before `refine`, so a bare `{}` still resolves to ambient and still fails 400) while dictation may legitimately assert nothing. The alternative, leaving the literal and having the client keep sending `true`, would have filled the trail with patient agreements that were never collected. A client that stops asking must stop claiming.
+- **`consentAsserted` in `backend/src/audit/index.ts` widened from `true` to `boolean`.** It was typed as the literal, so the route could not have recorded anything else even if it had wanted to.
+- **The dictation session cap moved 120 to 300**, because the surface now takes a whole prescription sheet in one pass. See the cap history above.
+- **`PrescriptionSchema.dictated` moved `max(400)` to `max(2000)`**, and its meaning narrowed: it is now the stretch of the dictation belonging to that drug, not the whole utterance. At 400 the box stopped a four-drug prescription mid-sentence while the doctor was still speaking, and the stop was silent because the cap flag was destructured away at the call site.
+
+**The per-drug sig is the one new piece of logic, and it is client-side.** `parseSig` answers one sig per phrase, so a four-drug dictation cannot yield four from one response. The theatre re-sends each accepted drug's own stretch of text to the same parse route, bounded by the next drug name the matcher heard, and prints that stretch on the row it filled. The route is deterministic, stores nothing, writes no audit row and allows thirty a minute, so this needed no backend change. It fails toward an empty field rather than an inherited one: the slice starts at the drug's own name, so a dose spoken before the name is lost rather than drug two opening with drug one's trailing sig.
+
+**What this costs is stated in `docs/dpia.md` as a residual risk rather than closed here.** MMC 003/2023 cl.18 wants consent specific to the purpose before capture and the PDPA 2024 amendment makes voice biometric data requiring explicit consent. Neither is asked for on this path now. Ambient capture and the ILMU relay are untouched and keep both halves of the rule.
+
 #### Why The Provider Changed
 
 §20.7 routes ambient capture to `qwen3-asr-flash`. That path is blocked, and the block is procedural rather than technical.
@@ -2653,18 +2677,18 @@ The grant above is scoped to ambient capture, and its "What it does not" row nam
 
 **This basis is weaker than the one above, and is recorded as weaker.** The 06/09/26 grant rested on the owner's own usability test of code-switched speech. This one rests on an argument about scope: what changes is which surface may open the socket, not where the audio goes or who receives it. Nothing about dictation accuracy on this provider is measured, and the "What Is Not Measured" table below applies to it unchanged.
 
-**What it does not license is the interesting half.** The two-control consent rule is not waived by the surface being small: a dictated phrase leaves the device exactly as a consultation does, so it takes the same standing device preference plus a per-consultation tick that dies with the component. On-device Whisper stays the floor on that page and is where every failure lands (`docs/decisions.md` D-001). It stopped being the default later the same day, which the next subsection records.
+**What it does not license is the interesting half.** The two-control consent rule is not waived by the surface being small: a dictated phrase leaves the device exactly as a consultation does, so it takes the same standing device preference plus a per-consultation tick that dies with the component. On-device Whisper stays the floor on that page and is where every failure lands (`docs/decisions.md` D-001). **Both halves of that sentence were overtaken the same day.** The default moved in the next subsection, and the tick was removed outright in the one after it; the paragraph is kept as written because the grant rested on it and a reader needs to see what was undertaken before seeing what was withdrawn.
 
 #### Amended 10/09/26: Streaming Becomes The Default On That Page
 
 The sign-off above is unchanged and is not re-opened here: same vendor, socket, region and minting route, so no new egress and no new grant. What moved is `DEFAULT_AUDIO_SETTINGS.dictationEngine`, from `'local'` to `'streaming'` (@Andersonnn7788, 10/09/26, #363). The rationale is the measurement in §20.1 and the table above: an on-device default whose real-time factor sits above 1.0 on typical clinic hardware cannot deliver words as the doctor speaks, so it is a default most doctors would have to leave.
 
-| Behaviour                | Before                                                  | After                                                                           |
-| ------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Doctor changes nothing   | On-device Whisper, no consent tick offered, no requests | Streaming offered, consent tick shown, `GET /asr/live-sessions/config` on mount |
-| Consent withheld         | Not applicable, nothing to consent to                   | Dispatcher refuses. It does not silently run the local worker                   |
-| Below the hardware floor | Dictate hidden, typing only                             | Dictate offered, because a socket loads no weights                              |
-| Any streaming failure    | Not applicable                                          | On-device or typing, never the cloud, never silently                            |
+| Behaviour                | Before                                                  | After                                                                                                                                    |
+| ------------------------ | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Doctor changes nothing   | On-device Whisper, no consent tick offered, no requests | Streaming offered, consent tick shown, `GET /asr/live-sessions/config` on mount. **The tick went the same day, see the next subsection** |
+| Consent withheld         | Not applicable, nothing to consent to                   | Dispatcher refuses. It does not silently run the local worker. **Unreachable since #365**                                                |
+| Below the hardware floor | Dictate hidden, typing only                             | Dictate offered, because a socket loads no weights                                                                                       |
+| Any streaming failure    | Not applicable                                          | On-device or typing, never the cloud, never silently                                                                                     |
 
 **Three implementation consequences, none of which the sign-off anticipated.**
 
@@ -2700,12 +2724,14 @@ What that costs is the property §20.9 leans on, that the API is the only audio 
 | -------------------- | ----------------------------------------------------------------------------------------------------- |
 | Who may stream       | `POST /api/asr/live-sessions` behind the session guard, like every other protected route              |
 | How often            | `liveSessionRateLimit`, 5 per minute per client key, its own bucket                                   |
-| For how long         | A 30 second key TTL to open the connection, and a 1800 second cap on the session it opens             |
+| For how long         | A 30 second key TTL to open the connection, and a per-mode session cap: 1800 ambient, 300 dictation   |
 | What is recorded     | `asr.live_session_minted` before the response and unguarded, `asr.live_session_failed` on failure     |
 | Attributable to whom | A server-generated `client_reference_id` the provider binds to the key and the client cannot override |
 | Where it may connect | An env enum, a shared URL pattern the client checks, and the CSP `connect-src` host                   |
 
-**Two of those rows were stale until 10/09/26, and two are about to become per-mode.** The TTL and cap read 60 and 3600 against code that has said 30 and 1800 since the bounds were tightened (`backend/src/lib/asr/soniox.ts:81`, `:105`), and are corrected above. When prescription dictation lands (#356) the cap becomes 120 seconds on a dictated phrase, because 30 minutes on a 15 second utterance is a spend cap that does not bind, and the limiter gains a second bucket so that a ten-drug prescription sheet cannot exhaust the five-per-minute budget one consultation needs.
+**Two of those rows were stale until 10/09/26, and two became per-mode the same day.** The TTL and cap read 60 and 3600 against code that has said 30 and 1800 since the bounds were tightened (`backend/src/lib/asr/soniox.ts:81`, `:105`), and are corrected above. Prescription dictation (#356) gave the cap a second value, and the limiter a second bucket so that a ten-drug prescription sheet cannot exhaust the five-per-minute budget one consultation needs.
+
+**The dictation cap has now been wrong in both directions, which is the useful part of its history.** 1800 was 30 minutes on a 15 second utterance, a spend cap that never binds. 120 replaced it and bound too tightly once #365 widened the surface from one drug to a whole prescription sheet read in one pass. The failure mode is what makes the second error worse than a number: the provider enforces the cap by closing the socket, and the browser cannot tell that close from a network drop, so a deliberate bound reached the doctor as "The connection was lost". 300 is the current value and leaves the character limit as the bound that actually fires.
 
 #### The Mechanism
 
@@ -2713,6 +2739,7 @@ What that costs is the property §20.9 leans on, that the API is the only audio 
 Record tab, mode = ambient
   GET  /api/asr/live-sessions/config   -> region, socket URL, recognition config, or 503
   doctor ticks per-consultation consent (useState, remembered by nothing)
+  [ambient only since #365; dictation asks nothing and asserts nothing]
   getUserMedia                          (asked first: the key lives 30 seconds)
   POST /api/asr/live-sessions           -> mint, audit, respond with the key
   browser opens wss://stt-rt.soniox.com/transcribe-websocket

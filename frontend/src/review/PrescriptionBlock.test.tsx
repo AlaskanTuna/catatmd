@@ -1,39 +1,19 @@
-import {
-  MAX_PRESCRIPTIONS,
-  type MedicationCandidateWire,
-  type Prescription,
-  PrescriptionSchema,
-} from '@shared/types'
+import { MAX_PRESCRIPTIONS, type Prescription } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError } from '../lib/api.js'
-import {
-  acceptCandidate,
-  candidateKey,
-  capDictation,
-  EMPTY_DRAFT,
-  PrescriptionBlock,
-  type PrescriptionDraft,
-  setDrugByHand,
-  toPrescription,
-  visibleCandidates,
-} from './PrescriptionBlock.js'
+import { PrescriptionBlock } from './PrescriptionBlock.js'
 
 /**
- * The four properties that carry dictated prescription capture in the UI
- * (#313, `docs/decisions.md` D-001).
+ * The card that lists what was prescribed (#313, #365).
  *
- * A drug name is only ever written by the doctor; the wire shape is exact,
- * because `lexiconId` and the sig fields disagree about what "absent" means;
- * a draft is not a prescription until it has both a name and the words it came
- * from; and the matcher's candidate ordering survives the component untouched.
- *
- * The transformations are tested pure, the way `TranscriptCorrections.test.ts`
- * tests `applyProposal`. The render block below exists for the one claim a pure
- * test structurally cannot make: that the component does not pre-fill the drug
- * field. "Starts empty" is a property of the markup, so only a render can
- * witness it, and it is the property the whole feature rests on.
+ * **It stopped being a compose surface on 10/09/26.** Dictation, drug-name
+ * decisions and the sig fields moved into `PrescriptionTheatre`, and what is
+ * left here is a record plus the two doors into that theatre. These tests cover
+ * the record: the counts, the collapse, the empty state, removal, and the two
+ * doors opening the right thing. The compose behaviour is pinned in
+ * `PrescriptionTheatre.test.tsx`, and the pure transformations in
+ * `prescription-draft.test.ts`.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -41,12 +21,6 @@ const mocks = vi.hoisted(() => ({
   liveAsrConfig: vi.fn(),
   createLiveSession: vi.fn(),
 }))
-/*
- * The real `ApiError`, because the config-failure copy now turns on its
- * `status`: a 503 says this deployment has no key, anything else says the
- * network did not answer. A stub class would make both branches read alike and
- * the distinction would go untested.
- */
 vi.mock('../lib/api.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/api.js')>()
   return {
@@ -64,59 +38,6 @@ vi.mock('../demo/DemoTour.js', () => ({ useDemoTour }))
 
 afterEach(cleanup)
 
-/**
- * The standing preference, written the way the Audio dialog writes it.
- *
- * `PrescriptionBlock` reads `audio-settings.ts` rather than a mocked module,
- * so these drive the real loader through jsdom's `localStorage`.
- */
-const writeEngine = (dictationEngine: 'local' | 'streaming') =>
-  localStorage.setItem(
-    'catatmd.audio',
-    JSON.stringify({
-      deviceId: null,
-      suppressNoise: true,
-      boostQuietSpeech: false,
-      engine: 'local',
-      dictationEngine,
-    }),
-  )
-
-const chooseLocal = () => writeEngine('local')
-const chooseStreaming = () => writeEngine('streaming')
-
-/*
- * Every test outside the streaming block was written while on-device was the
- * default, and each still asserts a property of that path. The default moved
- * to streaming on 10/09/26 (#363), so the premise is now stated rather than
- * inherited: without this they would open the streaming surface and ask for a
- * recognition config, which is neither what they mock nor what they mean.
- */
-beforeEach(chooseLocal)
-afterEach(() => localStorage.clear())
-
-const candidate = (over: Partial<MedicationCandidateWire> = {}): MedicationCandidateWire => ({
-  lexiconId: 'amoxicillin',
-  generic: 'amoxicillin',
-  heard: 'amoxycillin',
-  start: 0,
-  end: 11,
-  score: 0.94,
-  ...over,
-})
-
-const filled: PrescriptionDraft = {
-  drug: 'amoxicillin',
-  lexiconId: 'amoxicillin',
-  dose: '500 mg',
-  route: 'oral',
-  frequency: 'three-times-daily',
-  duration: '5 days',
-  food: 'after',
-}
-
-const DICTATED = 'amoxycillin 500 mg, makan tiga kali sehari, lepas makan, selama lima hari'
-
 const STORED: Prescription = {
   drug: 'paracetamol',
   dose: '1 g',
@@ -126,150 +47,6 @@ const STORED: Prescription = {
   food: null,
   dictated: 'paracetamol 1 g qid for three days',
 }
-
-describe('acceptCandidate', () => {
-  it('takes the proposal, never what was heard', () => {
-    // The whole control. `generic` and `heard` both travel precisely so the
-    // doctor chooses; writing `heard` here would record the recogniser's error
-    // and writing either without this call would be automatic substitution.
-    const next = acceptCandidate(EMPTY_DRAFT, candidate())
-
-    expect(next.drug).toBe('amoxicillin')
-    expect(next.drug).not.toBe('amoxycillin')
-  })
-
-  it('records the lexicon id, so the provenance is visible', () => {
-    expect(acceptCandidate(EMPTY_DRAFT, candidate()).lexiconId).toBe('amoxicillin')
-  })
-
-  it('leaves every parsed field alone', () => {
-    const next = acceptCandidate({ ...filled, drug: '', lexiconId: undefined }, candidate())
-
-    expect(next.dose).toBe('500 mg')
-    expect(next.frequency).toBe('three-times-daily')
-    expect(next.food).toBe('after')
-  })
-
-  it('does not mutate the draft it was given', () => {
-    const before = { ...EMPTY_DRAFT }
-    acceptCandidate(before, candidate())
-
-    expect(before).toEqual(EMPTY_DRAFT)
-  })
-})
-
-describe('setDrugByHand', () => {
-  it('drops the lexicon id, because the name is no longer the lexicon match', () => {
-    const next = setDrugByHand(filled, 'amoxicillin-clavulanate')
-
-    expect(next.drug).toBe('amoxicillin-clavulanate')
-    expect('lexiconId' in next).toBe(false)
-  })
-
-  it('does not mutate the draft it was given', () => {
-    const before = { ...filled }
-    setDrugByHand(before, 'cefuroxime')
-
-    expect(before.lexiconId).toBe('amoxicillin')
-  })
-})
-
-describe('toPrescription', () => {
-  it('produces a body the shared schema accepts', () => {
-    // The schema is the contract the API validates against, so parsing here is
-    // what makes the two shape rules below more than an assertion about types.
-    expect(PrescriptionSchema.safeParse(toPrescription(filled, DICTATED)).success).toBe(true)
-  })
-
-  it('omits lexiconId rather than sending null', () => {
-    // `lexiconId` is `.optional()` and not nullable, so an explicit null is a
-    // 400 rather than an absent value.
-    const next = toPrescription({ ...filled, lexiconId: undefined }, DICTATED)
-
-    expect(next).not.toBeNull()
-    expect(next !== null && 'lexiconId' in next).toBe(false)
-    expect(PrescriptionSchema.safeParse(next).success).toBe(true)
-  })
-
-  it('sends an explicit null for every field the parser could not read', () => {
-    // The opposite rule to `lexiconId`: these keys are required and nullable,
-    // so a gap the doctor left travels as a gap rather than disappearing.
-    const next = toPrescription({ ...EMPTY_DRAFT, drug: 'amoxicillin' }, DICTATED)
-
-    expect(next).toMatchObject({
-      dose: null,
-      route: null,
-      frequency: null,
-      duration: null,
-      food: null,
-    })
-    expect(PrescriptionSchema.safeParse(next).success).toBe(true)
-  })
-
-  it('refuses a draft with no drug name', () => {
-    expect(toPrescription({ ...filled, drug: '   ' }, DICTATED)).toBeNull()
-  })
-
-  it('refuses a draft with nothing dictated', () => {
-    // `dictated` is the evidence the structured fields came from. Without it
-    // the record would claim a derivation from words nobody has.
-    expect(toPrescription(filled, '  ')).toBeNull()
-  })
-
-  it('trims what it stores', () => {
-    const next = toPrescription({ ...filled, drug: ' amoxicillin ' }, ` ${DICTATED} `)
-
-    expect(next?.drug).toBe('amoxicillin')
-    expect(next?.dictated).toBe(DICTATED)
-  })
-})
-
-describe('visibleCandidates', () => {
-  it('preserves the order the matcher returned, and never re-sorts by score', () => {
-    /*
-     * The clinical-safety finding on #311 in one case: a contained single agent
-     * scores higher on a shorter span than the combination actually dictated.
-     * The matcher's own order is the fix, so a component that sorted by score
-     * would reintroduce the wrong-drug proposal at position one.
-     */
-    const combination = candidate({
-      lexiconId: 'amoxicillin-clavulanate',
-      generic: 'amoxicillin-clavulanate',
-      heard: 'amoxicillin clavulanate',
-      end: 23,
-      score: 0.88,
-    })
-    const single = candidate({ score: 0.96 })
-
-    const order = visibleCandidates([combination, single], new Set())
-
-    expect(order.map(({ lexiconId }) => lexiconId)).toEqual([
-      'amoxicillin-clavulanate',
-      'amoxicillin',
-    ])
-  })
-
-  it('drops only what was rejected', () => {
-    const first = candidate()
-    const second = candidate({ lexiconId: 'amoxapine', generic: 'amoxapine', score: 0.71 })
-
-    const open = visibleCandidates([first, second], new Set([candidateKey(second)]))
-
-    expect(open).toEqual([first])
-  })
-
-  it('keeps two proposals on one span apart', () => {
-    // Up to three candidates share a span, so identity cannot be the offsets
-    // alone or rejecting one would dismiss its neighbours.
-    const first = candidate()
-    const second = candidate({ lexiconId: 'amoxapine', generic: 'amoxapine' })
-
-    expect(candidateKey(first)).not.toBe(candidateKey(second))
-  })
-})
-
-const setCores = (cores: number) =>
-  Object.defineProperty(navigator, 'hardwareConcurrency', { value: cores, configurable: true })
 
 const renderBlock = ({
   prescriptions = null,
@@ -285,6 +62,7 @@ const renderBlock = ({
         consultationId="consultation-1"
         prescriptions={prescriptions}
         status={status}
+        patientName="Rahman bin Abdullah"
         onSave={onSave}
       />
     </QueryClientProvider>,
@@ -296,137 +74,60 @@ const getToggle = () => screen.getByRole('button', { name: /prescriptions/i })
 
 const expand = () => {
   const toggle = getToggle()
-  if (toggle.getAttribute('aria-expanded') === 'false') {
-    fireEvent.click(toggle)
-  }
-}
-
-/** Type a phrase and press Check, then wait for the parse to land. */
-const check = async (phrase: string) => {
-  expand()
-  fireEvent.change(screen.getByLabelText('What You Prescribed'), { target: { value: phrase } })
-  fireEvent.click(screen.getByRole('button', { name: 'Check' }))
-  await waitFor(() => expect(mocks.parsePrescription).toHaveBeenCalled())
+  if (toggle.getAttribute('aria-expanded') === 'false') fireEvent.click(toggle)
 }
 
 describe('PrescriptionBlock', () => {
   beforeEach(() => {
     mocks.parsePrescription.mockReset()
+    mocks.liveAsrConfig.mockReset().mockRejectedValue(new Error('no provider here'))
     useDemoTour.mockReturnValue({ active: false, currentStep: -1, steps: [] })
-    // Above the floor by default, so the microphone is on offer. The floor's
-    // own behaviour gets its own test below.
-    setCores(8)
   })
 
-  it('leaves the drug name empty after a parse that named a candidate', async () => {
+  it('carries no compose surface of its own', () => {
     /*
-     * The property the whole feature rests on, and the one a pure test cannot
-     * witness. `docs/decisions.md` D-001 puts automatic substitution of a drug
-     * name outside the boundary: the candidate is offered, and the doctor
-     * accepts it. A field arriving pre-filled would be that substitution behind
-     * one confirmation.
+     * The whole point of #365. A dictation box, a candidate list and six sig
+     * fields did not fit the 620px middle column, and a doctor pressing Accept
+     * saw nothing because the field it filled was below the fold. Anything that
+     * reappears here has undone that.
      */
-    mocks.parsePrescription.mockResolvedValue({
-      sig: {
-        dose: '500 mg',
-        route: null,
-        frequency: 'three-times-daily',
-        duration: '5 days',
-        food: 'after',
-      },
-      candidates: [candidate()],
-    })
-    renderBlock()
+    renderBlock({ prescriptions: [STORED] })
 
-    await check(DICTATED)
-
-    // The parser's own fields did seed, so this is not just an inert screen.
-    await waitFor(() =>
-      expect(screen.getByLabelText<HTMLInputElement>('Dose').value).toBe('500 mg'),
-    )
-    expect(screen.getByLabelText<HTMLInputElement>('Drug').value).toBe('')
-    // And the proposal is on offer rather than applied.
-    expect(screen.getByRole('button', { name: 'Accept' })).toBeTruthy()
-  })
-
-  it('fills the drug name only when the doctor accepts, and with the generic', async () => {
-    mocks.parsePrescription.mockResolvedValue({
-      sig: { dose: null, route: null, frequency: null, duration: null, food: null },
-      candidates: [candidate()],
-    })
-    renderBlock()
-    await check(DICTATED)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
-
-    expect(screen.getByLabelText<HTMLInputElement>('Drug').value).toBe('amoxicillin')
-  })
-
-  it('renders candidates in the order the API returned them', async () => {
-    // The #311 wrong-drug case end to end: the combination is returned first
-    // despite the lower score, and must still be read first.
-    mocks.parsePrescription.mockResolvedValue({
-      sig: { dose: null, route: null, frequency: null, duration: null, food: null },
-      candidates: [
-        candidate({
-          lexiconId: 'amoxicillin-clavulanate',
-          generic: 'amoxicillin-clavulanate',
-          score: 0.88,
-        }),
-        candidate({ score: 0.96 }),
-      ],
-    })
-    renderBlock()
-    await check(DICTATED)
-
-    const rows = await screen.findAllByRole('listitem')
-    expect(within(rows[0] as HTMLElement).getByText('amoxicillin-clavulanate')).toBeTruthy()
-    expect(within(rows[1] as HTMLElement).getByText('amoxicillin')).toBeTruthy()
-  })
-
-  it('rejecting a candidate writes nothing and just stops offering it', async () => {
-    mocks.parsePrescription.mockResolvedValue({
-      sig: { dose: null, route: null, frequency: null, duration: null, food: null },
-      candidates: [candidate()],
-    })
-    const onSave = renderBlock()
-    await check(DICTATED)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }))
-
+    expand()
+    expect(screen.queryByLabelText('What You Prescribed')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Check' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Accept' })).toBeNull()
-    expect(screen.getByLabelText<HTMLInputElement>('Drug').value).toBe('')
-    expect(onSave).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('Drug')).toBeNull()
   })
 
-  it('confirms the whole list rather than a delta', async () => {
-    mocks.parsePrescription.mockResolvedValue({
-      sig: {
-        dose: '500 mg',
-        route: null,
-        frequency: 'three-times-daily',
-        duration: '5 days',
-        food: 'after',
-      },
-      candidates: [candidate()],
-    })
-    const onSave = renderBlock({ prescriptions: [STORED] })
-    await check(DICTATED)
-    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
+  it('offers two doors and opens the theatre through either', () => {
+    renderBlock()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm Prescription' }))
+    expand()
+    expect(screen.queryByRole('dialog')).toBeNull()
 
-    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
-    const sent = onSave.mock.calls[0]?.[0] as Prescription[]
-    expect(sent).toHaveLength(2)
-    expect(sent[0]).toEqual(STORED)
-    expect(sent[1]).toMatchObject({
-      drug: 'amoxicillin',
-      lexiconId: 'amoxicillin',
-      dose: '500 mg',
-      route: null,
-      dictated: DICTATED,
-    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    expect(screen.getByLabelText('What You Prescribed')).toBeTruthy()
+  })
+
+  it('names the patient in the theatre it opens', () => {
+    renderBlock()
+
+    expand()
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+
+    expect(screen.getByText('Rahman bin Abdullah')).toBeTruthy()
+  })
+
+  it('says what to do rather than reporting a count of nothing', () => {
+    // An empty state is a feature: it names both ways in, and says the drug
+    // name stays the doctor's to accept.
+    renderBlock()
+
+    expand()
+    expect(screen.getByText(/Nothing prescribed yet/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Dictate' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeTruthy()
   })
 
   it('removes by sending the list that remains', async () => {
@@ -438,25 +139,13 @@ describe('PrescriptionBlock', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith([]))
   })
 
-  it('announces the run in a live region that is present before it has anything to say', () => {
-    // A live region added to the DOM alongside its first content is the shape
-    // screen readers miss, so it is mounted empty rather than conditionally.
-    renderBlock()
+  it('summarises a stored prescription with the words it came from', () => {
+    renderBlock({ prescriptions: [STORED] })
 
     expand()
-    expect(screen.getByRole('status')).toBeTruthy()
-  })
-
-  it('offers no microphone below the hardware floor, and still takes typing', () => {
-    // The degrade this feature promises: down to typing, never out to a hosted
-    // engine. Nothing here may offer the relay or the socket.
-    setCores(2)
-    renderBlock()
-
-    expand()
-    expect(screen.queryByRole('button', { name: 'Dictate' })).toBeNull()
-    expect(screen.getByLabelText('What You Prescribed')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Check' })).toBeTruthy()
+    expect(screen.getByText('paracetamol')).toBeTruthy()
+    expect(screen.getByText('1 g · Oral · Four Times Daily · for 3 days')).toBeTruthy()
+    expect(screen.getByText(/Dictated: paracetamol 1 g qid for three days/)).toBeTruthy()
   })
 
   it('offers nothing to edit once the note is approved', () => {
@@ -467,6 +156,7 @@ describe('PrescriptionBlock', () => {
     expand()
     expect(screen.getByText('paracetamol')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Dictate' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Add' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Remove paracetamol' })).toBeNull()
   })
 
@@ -498,7 +188,7 @@ describe('PrescriptionBlock', () => {
     expect(screen.getByText('2 prescriptions')).toBeTruthy()
   })
 
-  it('shows the cap only when the limit is reached', () => {
+  it('shows the cap and closes both doors when the limit is reached', () => {
     const atCap = Array.from({ length: MAX_PRESCRIPTIONS }, (_, index) => ({
       ...STORED,
       drug: `med-${index}`,
@@ -506,9 +196,12 @@ describe('PrescriptionBlock', () => {
     }))
     renderBlock({ prescriptions: atCap })
 
+    expand()
     expect(
       screen.getByText(`${MAX_PRESCRIPTIONS} of ${MAX_PRESCRIPTIONS}, limit reached`),
     ).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Dictate' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: 'Add' }).hasAttribute('disabled')).toBe(true)
   })
 
   it('is collapsed by default and the count stays visible', () => {
@@ -565,268 +258,5 @@ describe('PrescriptionBlock', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(body?.classList.contains('hidden')).toBe(false)
     expect(screen.getByText('paracetamol')).toBeTruthy()
-  })
-})
-
-/**
- * The character cap, tested pure because it is the thing that stops a session.
- *
- * `PrescriptionSchema.dictated` is `max(400)`, and `dictated` is the evidence
- * field the doctor reads back to check the parse. Both halves matter: the text
- * has to stay whole words, and the caller has to be told, because the caller is
- * what ends the stream rather than letting it bill for words it discards.
- */
-describe('capDictation', () => {
-  it('joins what was typed to what was streamed, with one space', () => {
-    expect(capDictation('amoxicillin', '500 mg three times a day', 400)).toEqual({
-      text: 'amoxicillin 500 mg three times a day',
-      capped: false,
-    })
-  })
-
-  it('leaves a streamed phrase alone when the box was empty', () => {
-    expect(capDictation('', 'paracetamol 1 g', 400)).toEqual({
-      text: 'paracetamol 1 g',
-      capped: false,
-    })
-  })
-
-  it('does not double the separator when the typed half already ends in space', () => {
-    expect(capDictation('amoxicillin  ', '500 mg', 400).text).toBe('amoxicillin 500 mg')
-  })
-
-  it('cuts at a word boundary and says it capped', () => {
-    const { text, capped } = capDictation('', 'amoxicillin five hundred milligrams', 20)
-
-    expect(capped).toBe(true)
-    expect(text).toBe('amoxicillin five')
-    expect(text.length).toBeLessThanOrEqual(20)
-  })
-
-  it('never emits a partial word, because a half drug name is worse than a short quote', () => {
-    for (let limit = 4; limit <= 40; limit += 1) {
-      const { text } = capDictation('', 'amoxicillin clavulanate 625 mg twice daily', limit)
-      if (text === '') continue
-      // Every word kept is a word that appeared whole in the source.
-      for (const word of text.split(' ')) {
-        expect('amoxicillin clavulanate 625 mg twice daily'.split(' ')).toContain(word)
-      }
-    }
-  })
-
-  it('yields nothing rather than a fragment when the first token exceeds the budget', () => {
-    // Unreachable at the real 400 character limit, and the invariant is what
-    // matters: this field never shows part of a drug name.
-    expect(capDictation('', 'phenoxymethylpenicillin', 8)).toEqual({ text: '', capped: true })
-  })
-
-  it('keeps what was typed when the first streamed word will not fit', () => {
-    expect(capDictation('amoxicillin', 'phenoxymethylpenicillin', 14)).toEqual({
-      text: 'amoxicillin',
-      capped: true,
-    })
-  })
-})
-
-/**
- * The two controls that gate streaming dictation, and the claim they answer to.
- *
- * `.claude/rules/security.md` requires both: a standing device preference and a
- * per-consultation tick that dies with the component. This block is also where
- * the Audio dialog's second scoping sentence is pinned to the control it
- * describes. That pairing lives in `AudioSettingsDialog.test.tsx` for the
- * Record tab, but the review page needs an API mock that file does not carry,
- * so the review half is pinned here. Deleting the gate below must fail a test.
- */
-describe('streaming prescription dictation', () => {
-  const liveConfig = {
-    provider: 'soniox',
-    region: 'us',
-    websocketUrl: 'wss://stt-rt.soniox.com/transcribe-websocket',
-    config: {},
-  }
-
-  const originalShowModal = HTMLDialogElement.prototype.showModal
-  const originalClose = HTMLDialogElement.prototype.close
-
-  beforeEach(() => {
-    // jsdom 27 ships `<dialog>` without these, and the Audio dialog is now
-    // opened from this card. Same stand-in `ConsultationReview.test.tsx` uses.
-    HTMLDialogElement.prototype.showModal = function showModal() {
-      this.open = true
-    }
-    HTMLDialogElement.prototype.close = function close() {
-      this.open = false
-      this.dispatchEvent(new Event('close'))
-    }
-    mocks.parsePrescription.mockReset()
-    mocks.liveAsrConfig.mockReset().mockResolvedValue(liveConfig)
-    mocks.createLiveSession.mockReset()
-    useDemoTour.mockReturnValue({ active: false, currentStep: -1, steps: [] })
-    setCores(8)
-    // Cleared rather than left on-device, so each test below states the half
-    // of the consent rule it is about.
-    localStorage.clear()
-  })
-
-  afterEach(() => {
-    HTMLDialogElement.prototype.showModal = originalShowModal
-    HTMLDialogElement.prototype.close = originalClose
-    localStorage.clear()
-  })
-
-  it('offers no consent tick and asks the API for nothing once on-device is chosen', async () => {
-    chooseLocal()
-    renderBlock()
-    fireEvent.click(getToggle())
-
-    /*
-     * The reversibility property, and it now takes a choice rather than
-     * inaction. A doctor who has moved the preference back to on-device issues
-     * no request this component did not issue before #357, and is shown no
-     * invitation to the cloud on a screen that otherwise mentions none, which
-     * is `ConsentGate`'s own stated rule.
-     */
-    expect(screen.queryByRole('checkbox', { name: /agreed/i })).toBeNull()
-    await waitFor(() => expect(mocks.liveAsrConfig).not.toHaveBeenCalled())
-  })
-
-  /*
-   * The other half of the same property, and the one the 10/09/26 decision
-   * turns on: inaction now reaches the streaming surface. Written against a
-   * device with nothing stored at all, because that is what "changes nothing"
-   * means once the default itself is the thing that changed (#363).
-   */
-  it('puts a device that has stored nothing on the streaming path, and asks the patient', async () => {
-    renderBlock()
-    fireEvent.click(getToggle())
-
-    expect(await screen.findByRole('checkbox', { name: /agreed/i })).toBeTruthy()
-    expect(mocks.liveAsrConfig).toHaveBeenCalledWith('dictation')
-  })
-
-  /*
-   * The reachability defect this card shipped with (#363). The switch lived
-   * only in `CapturePanel`, which renders only while there is no transcript,
-   * while this card needs one: the standing half of the consent rule was a
-   * control nobody could reach from the surface it governed.
-   *
-   * Both assertions belong in one test. Split apart, the dialog could be
-   * mounted while the card ignored it, or the card could observe a value no
-   * screen could change, and either half would keep passing alone.
-   */
-  it('opens the Audio dialog from this card, and sees the engine change without a remount', async () => {
-    chooseLocal()
-    renderBlock()
-    fireEvent.click(getToggle())
-    expect(screen.queryByRole('checkbox', { name: /agreed/i })).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: /audio settings/i }))
-    // Anchored: the card's own InfoTip is named "About Streaming recognition".
-    fireEvent.click(screen.getByRole('button', { name: /^streaming recognition/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-
-    // Same mounted card, now offering the gate the new preference requires.
-    expect(await screen.findByRole('checkbox', { name: /agreed/i })).toBeTruthy()
-    expect(mocks.liveAsrConfig).toHaveBeenCalledWith('dictation')
-  })
-
-  it('asks the patient, naming the processor and the region the API reported', async () => {
-    chooseStreaming()
-    renderBlock()
-    fireEvent.click(getToggle())
-
-    const tick = await screen.findByRole('checkbox', { name: /agreed/i })
-    expect(tick).toBeTruthy()
-    // The region is read from the API rather than the bundle, so the sentence
-    // the doctor reads and the socket the browser opens cannot disagree.
-    expect(mocks.liveAsrConfig).toHaveBeenCalledWith('dictation')
-    expect(screen.getByText(/streamed from this browser to Soniox/i).textContent).toMatch(
-      /the United States/,
-    )
-  })
-
-  it('keeps Dictate unavailable until the patient has agreed', async () => {
-    chooseStreaming()
-    renderBlock()
-    fireEvent.click(getToggle())
-
-    const tick = await screen.findByRole('checkbox', { name: /agreed/i })
-    const dictate = () => screen.getByRole('button', { name: /^dictate$/i })
-    expect((dictate() as HTMLButtonElement).disabled).toBe(true)
-
-    fireEvent.click(tick)
-    await waitFor(() => expect((dictate() as HTMLButtonElement).disabled).toBe(false))
-
-    // And it is genuinely a gate rather than a one-way latch.
-    fireEvent.click(tick)
-    await waitFor(() => expect((dictate() as HTMLButtonElement).disabled).toBe(true))
-  })
-
-  it('offers the on-device path after a failed mint, as a second deliberate press', async () => {
-    chooseStreaming()
-    mocks.createLiveSession.mockRejectedValue(new Error('rate_limited'))
-    Object.defineProperty(navigator, 'mediaDevices', {
-      value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }) },
-      configurable: true,
-    })
-
-    renderBlock()
-    fireEvent.click(getToggle())
-    fireEvent.click(await screen.findByRole('checkbox', { name: /agreed/i }))
-    fireEvent.click(screen.getByRole('button', { name: /^dictate$/i }))
-
-    /*
-     * Nothing was sent, so the local worker is a real alternative. It is
-     * offered rather than run: switching engines without saying so hands the
-     * doctor a different result with no word that it happened.
-     */
-    await screen.findByText(/dictation could not start, and nothing was sent/i)
-    expect(screen.getByRole('button', { name: /use on-device instead/i })).toBeTruthy()
-  })
-
-  it('falls back to the on-device path when the deployment has no provider', async () => {
-    chooseStreaming()
-    mocks.liveAsrConfig.mockRejectedValue(new ApiError(503, 'asr_unavailable', 'nope'))
-    renderBlock()
-    fireEvent.click(getToggle())
-
-    // Said plainly, with the path that still works, and no consent tick on a
-    // path that sends nothing.
-    await screen.findByText(/streaming recognition is not available on this deployment/i)
-    expect(screen.queryByRole('checkbox', { name: /agreed/i })).toBeNull()
-    expect(screen.getByRole('button', { name: /^dictate$/i })).toBeTruthy()
-  })
-
-  /*
-   * The same landing place, a different claim. Only a 503 says the deployment
-   * has no key; a network that did not answer says nothing about the
-   * deployment, and asserting otherwise would be a claim this component cannot
-   * see far enough to make. Rare while streaming was opt-in, ordinary now that
-   * it is the default (#363).
-   */
-  it('does not blame the deployment for a failure that is not the deployment', async () => {
-    chooseStreaming()
-    mocks.liveAsrConfig.mockRejectedValue(new TypeError('Failed to fetch'))
-    renderBlock()
-    fireEvent.click(getToggle())
-
-    await screen.findByText(/streaming recognition could not be reached/i)
-    expect(screen.queryByText(/not available on this deployment/i)).toBeNull()
-    expect(screen.getByRole('button', { name: /^dictate$/i })).toBeTruthy()
-  })
-
-  /*
-   * A socket loads no weights, so the hardware floor narrowed when the default
-   * moved: it hides the microphone only where the local model is what would
-   * run. The mirror of the on-device case above, which keeps its own floor.
-   */
-  it('still offers Dictate below the hardware floor, because streaming needs no model', async () => {
-    setCores(2)
-    renderBlock()
-    fireEvent.click(getToggle())
-
-    expect(await screen.findByRole('checkbox', { name: /agreed/i })).toBeTruthy()
-    expect(screen.getByRole('button', { name: /^dictate$/i })).toBeTruthy()
   })
 })

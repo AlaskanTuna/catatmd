@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FINISH_TIMEOUT_MS } from '../audio/live/soniox-stream.js'
 import {
   DROPPED_ERROR,
-  NOT_AGREED_ERROR,
   SHORT_TAIL_NOTICE,
   START_FAILED_ERROR,
   useDictationStream,
@@ -112,8 +111,6 @@ const session = {
 let getUserMedia: ReturnType<typeof vi.fn>
 let tracks: { stop: ReturnType<typeof vi.fn> }[]
 
-const agreedRef = (value: boolean) => ({ current: value })
-
 /** The single microphone track a run opens, or a readable failure. */
 const track = () => {
   const first = tracks[0]
@@ -150,7 +147,7 @@ afterEach(() => vi.unstubAllGlobals())
  * on a property of `undefined`.
  */
 const startStreaming = async (onComplete = vi.fn()) => {
-  const view = renderHook(() => useDictationStream({ agreed: agreedRef(true), onComplete }))
+  const view = renderHook(() => useDictationStream({ onComplete }))
   await act(async () => {
     await view.result.current.start()
   })
@@ -166,30 +163,16 @@ const startStreaming = async (onComplete = vi.fn()) => {
   return { view, onComplete, socket, recorder }
 }
 
-describe('the consent dispatcher', () => {
-  it('refuses without agreement, and opens no microphone at all', async () => {
-    const onComplete = vi.fn()
-    const { result } = renderHook(() =>
-      useDictationStream({ agreed: agreedRef(false), onComplete }),
-    )
-
-    await act(async () => {
-      await result.current.start()
-    })
-
-    /*
-     * The refusal is the point, and so is what did not happen. A disabled
-     * button cannot catch a tick cleared between render and click, and falling
-     * through to the on-device worker would hand the doctor a different result
-     * with no word that it happened.
-     */
-    expect(result.current.error).toBe(NOT_AGREED_ERROR)
-    expect(getUserMedia).not.toHaveBeenCalled()
-    expect(mocks.createLiveSession).not.toHaveBeenCalled()
-    expect(onComplete).not.toHaveBeenCalled()
-  })
-})
-
+/**
+ * **The consent dispatcher that used to live here was removed on 10/09/26
+ * (#365).** `.claude/rules/security.md` required a per-consultation tick on
+ * this surface, and the hook enforced it at dispatch rather than trusting a
+ * disabled button. The owner removed the tick, so there is nothing left for the
+ * hook to check and no refusal to test. What replaced the test is in
+ * `PrescriptionTheatre.test.tsx`: the client asks for no tick and, more to the
+ * point, no longer *claims* one on the wire, because the audit row records
+ * exactly what it claims. Ambient capture is unchanged and keeps both halves.
+ */
 describe('starting a run', () => {
   it('opens the microphone before it spends a key', async () => {
     await startStreaming()
@@ -203,9 +186,7 @@ describe('starting a run', () => {
 
   it('reports a refused mint without claiming anything was sent', async () => {
     mocks.createLiveSession.mockRejectedValue(new Error('rate_limited'))
-    const { result } = renderHook(() =>
-      useDictationStream({ agreed: agreedRef(true), onComplete: vi.fn() }),
-    )
+    const { result } = renderHook(() => useDictationStream({ onComplete: vi.fn() }))
 
     await act(async () => {
       await result.current.start()

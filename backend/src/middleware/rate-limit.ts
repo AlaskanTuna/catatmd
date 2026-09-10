@@ -202,17 +202,18 @@ export const liveSessionRateLimit = rateLimit({
 /**
  * Per-IP limiter for the same route in dictation mode (#356).
  *
- * **A separate bucket because the two are counted per prescription, not per
- * consultation.** One consultation needs one ambient key, which is what sizes
- * the five above. A prescription sheet needs one dictation key per drug, and
- * `MAX_PRESCRIPTIONS` puts ten drugs on a sheet, so a doctor writing a full
- * sheet would spend twice the ambient allowance and be locked out of ambient
- * capture for the next consultation. Ten matches that bound rather than
- * guessing at it.
+ * **A separate bucket because a doctor dictates more often than they consult.**
+ * One consultation needs one ambient key, which is what sizes the five above.
+ * Ten was chosen when a sheet took one key per drug and `MAX_PRESCRIPTIONS`
+ * put ten drugs on a sheet. **#365 made one dictation cover the whole sheet**,
+ * so ten is now generous rather than exact: it absorbs re-dictations, a dropped
+ * socket, and several sheets in a row without locking the doctor out of ambient
+ * capture. The number did not move; the reason a future reader would resize it
+ * from did.
  *
  * **Looser in requests, tighter in what each request buys.** A dictation key
- * caps its session at two minutes against ambient's thirty, so ten of these is
- * a sixth of the stream time five ambient keys buy. That is also the honest
+ * caps its session at five minutes against ambient's thirty, so ten of these
+ * buy 3000 seconds of stream against the 9000 five ambient keys buy, a third. That is also the honest
  * answer to a caller choosing their own bucket by what they put in the body:
  * claiming dictation gets the larger allowance and the smaller cap together,
  * and the mint enforces the cap at the provider. The gap that remains is the

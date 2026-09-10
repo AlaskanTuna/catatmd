@@ -95,12 +95,15 @@ export const TEMPORARY_KEY_TTL_SECONDS = 30
  * no global budget exists, and `.claude/rules/security.md` states it rather
  * than implying coverage.
  *
- * **Two minutes for dictation, because thirty was a cap that did not bind.** A
- * dictated prescription is a phrase of ten to twenty seconds; a bound six
- * orders of magnitude above the thing it bounds is a number, not a control. Two
- * minutes leaves room for a doctor who pauses mid-sheet and still ends a
- * forgotten socket in the time one ambient session takes to notice nothing is
- * being said.
+ * **Five minutes for dictation, because thirty was a cap that did not bind and
+ * two was a cap that bound the wrong thing.** A bound six orders of magnitude
+ * above the thing it bounds is a number, not a control, which is why 1800 was
+ * never right here. 120 was measured wrong in the other direction on 10/09/26
+ * (#365): the surface now takes a whole prescription sheet in one pass rather
+ * than one drug at a time, and a doctor reading four drugs aloud runs past two
+ * minutes. Worse, the cap surfaces to the browser as a closed socket, so a
+ * deliberate bound arrived as "the connection was lost". Five minutes still
+ * ends a forgotten socket well inside one ambient session.
  *
  * **These bound a session, not a caller, and measurement made that worse rather
  * than better.** A temporary key was assumed to authenticate one connection; on
@@ -111,7 +114,7 @@ export const TEMPORARY_KEY_TTL_SECONDS = 30
  */
 export const MAX_SESSION_DURATION_SECONDS: Record<LiveAsrMode, number> = {
   ambient: 1_800,
-  dictation: 120,
+  dictation: 300,
 }
 
 /**

@@ -11,15 +11,20 @@ import { openSonioxStream, type SonioxStream, TIMESLICE_MS } from '../audio/live
 import { api } from '../lib/api.js'
 
 /**
- * The streaming half of prescription dictation (#357), kept out of
- * `PrescriptionBlock` because that component is already 800 lines and owns a
- * complete on-device state machine that this one does not replace.
+ * The streaming half of prescription dictation (#357), kept out of the
+ * components that drive it because they own a complete on-device state machine
+ * that this one does not replace.
  *
  * **It opens the second surface on the ambient audio egress, not a third
  * egress** (`docs/trd.md` §20.10, sign-off extended 10/09/26). Same vendor,
  * transport, region and minting route as ambient capture; what differs is the
  * recognition config the API hands back for `mode: 'dictation'` and the
- * two-minute session cap it mints with.
+ * five-minute session cap it mints with.
+ *
+ * **It asserts no consent, since #365.** The per-consultation tick was removed
+ * from this surface, so `createLiveSession` is called without one and the audit
+ * row records `consentAsserted: false`. Ambient capture is unchanged and still
+ * carries both halves of the rule in `.claude/rules/security.md`.
  *
  * **It constructs no socket of its own.** `openSonioxStream` is the only module
  * in the SPA permitted to hold one, pinned by `no-stray-websocket.test.ts`, and
@@ -28,9 +33,6 @@ import { api } from '../lib/api.js'
  * stray value import of the inference library here fails that guard.
  */
 
-/** Refused before the microphone opens, so nothing was captured. */
-export const NOT_AGREED_ERROR =
-  'This patient has not agreed to streaming recognition for this consultation.'
 export const MIC_FAILED_ERROR = 'Microphone access was refused, or no microphone is available.'
 /** The socket never opened or the key was never minted. Nothing was sent. */
 export const START_FAILED_ERROR = 'Dictation could not start, and nothing was sent.'
@@ -68,11 +70,8 @@ export type DictationStream = {
  * feet, because they index the text the server last read.
  */
 export function useDictationStream({
-  agreed,
   onComplete,
 }: {
-  /** Read at dispatch, never from a render closure. See `start`. */
-  agreed: { readonly current: boolean }
   onComplete: (text: string, notice: string | null) => void
 }): DictationStream {
   const [phase, setPhase] = useState<DictationPhase | null>(null)
@@ -173,18 +172,6 @@ export function useDictationStream({
   }, [settle])
 
   const start = useCallback(async () => {
-    /*
-     * The dispatcher backstop, not merely a disabled button. The tick can be
-     * cleared between render and click, so this refusal is the one that counts,
-     * and it refuses rather than quietly running the on-device worker instead:
-     * a silent path switch gives a different result with no word that it
-     * happened.
-     */
-    if (!agreed.current) {
-      setError(NOT_AGREED_ERROR)
-      return
-    }
-
     setError(null)
     setPhase('connecting')
     stopping.current = false
@@ -279,7 +266,7 @@ export function useDictationStream({
       setPhase(null)
       setError(START_FAILED_ERROR)
     }
-  }, [agreed, releaseMicrophone, settle])
+  }, [releaseMicrophone, settle])
 
   return {
     phase,

@@ -1435,6 +1435,12 @@ describe('suggestions empty state', () => {
  * Asserted from the page rather than from the card, because the mount site is
  * the thing that was wrong. `CapturePanel` is mocked out in this file, which is
  * exactly why the old mount site was invisible to every test here.
+ *
+ * **The switch moved again with #365** and now sits in the theatre, beside the
+ * microphone rather than beside the record of what was prescribed. The property
+ * this test defends is unchanged and is the reason it walks the whole path: a
+ * doctor on the review page can reach the engine switch from the surface it
+ * governs, without leaving the page.
  */
 describe('the audio engine switch on the review page', () => {
   beforeEach(() => {
@@ -1451,6 +1457,7 @@ describe('the audio engine switch on the review page', () => {
     setup()
 
     fireEvent.click(await screen.findByRole('button', { name: /prescriptions/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
     expect(screen.getByRole('button', { name: /audio settings/i })).toBeTruthy()
   })

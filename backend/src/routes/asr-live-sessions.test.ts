@@ -284,9 +284,19 @@ describe('pre-flight rejections, which mint nothing and audit nothing', () => {
     expect(auditState.writes).toEqual([])
   })
 
-  it('refuses a body that does not assert consent', async () => {
-    // Not a state the route reasons about: without the assertion there is
-    // nothing to mint a key for, so it is a malformed body.
+  it('refuses an ambient body that does not assert consent', async () => {
+    /*
+     * Not a state the route reasons about: on ambient, without the assertion
+     * there is nothing to mint a key for, so it is a malformed body.
+     *
+     * **Ambient only, since #365.** Prescription dictation dropped its
+     * per-consultation tick, so its client asserts nothing and the schema lets
+     * it; every case below is either ambient by default or ambient by name, and
+     * the dictation mint two tests down is what pins the other half. The
+     * asymmetry is the point: a client that no longer asks anybody must not
+     * claim an agreement, and a client that still asks must still be refused
+     * when it does not.
+     */
     //
     // Syntactically broken JSON is deliberately not in this list. The global
     // `express.json` parser rejects it before any route sees it, and
@@ -415,7 +425,7 @@ describe('the mint, and the row that must precede it reaching the client', () =>
   it('mints a dictation session with its own config, cap and row', async () => {
     upstream.mockResolvedValueOnce(mintedKey())
 
-    const res = await mint({ consent: true, mode: 'dictation' })
+    const res = await mint({ mode: 'dictation' })
 
     expect(res.status).toBe(200)
     const body = LiveSessionSchema.safeParse(await res.json())
@@ -425,14 +435,33 @@ describe('the mint, and the row that must precede it reaching the client', () =>
       expect(body.data.config.endpointDetection).toBe(true)
       expect(body.data.config.languageHints).toEqual(['ms', 'en'])
     }
-    // Two minutes, bound to the key by the provider at mint time: a cap chosen
-    // later would be no cap at all.
+    // Five minutes, bound to the key by the provider at mint time: a cap chosen
+    // later would be no cap at all. It was two until #365 widened the surface
+    // from one drug to a whole prescription sheet in one pass.
     expect(
       (JSON.parse(String(upstream.mock.calls[0]?.[1]?.body)) as Record<string, unknown>)
         .max_session_duration_seconds,
-    ).toBe(120)
+    ).toBe(300)
+    /*
+     * **`consentAsserted` is false, and that is the row's point.** The
+     * per-consultation tick was removed from prescription dictation (#365), so
+     * its client asks nobody; writing `true` here would put a patient agreement
+     * in the trail that never happened. The body carried no `consent` key at
+     * all, which is what the schema permits on this mode alone.
+     */
     expect(auditState.writes[0]?.data).toMatchObject({
-      metadata: { mode: 'dictation', maxSessionSeconds: 120 },
+      metadata: { mode: 'dictation', maxSessionSeconds: 300, consentAsserted: false },
+    })
+  })
+
+  it('still records an asserted consent on ambient, where the tick remains', async () => {
+    upstream.mockResolvedValueOnce(mintedKey())
+
+    const res = await mint({ consent: true, mode: 'ambient' })
+
+    expect(res.status).toBe(200)
+    expect(auditState.writes[0]?.data).toMatchObject({
+      metadata: { mode: 'ambient', consentAsserted: true },
     })
   })
 

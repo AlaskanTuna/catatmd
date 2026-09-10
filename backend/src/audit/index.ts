@@ -380,6 +380,13 @@ export type AsrAuditEvent =
    * identifier, never content. `consentAsserted` records what the client said,
    * which is all the API can know: the gate is a property of the frontend.
    *
+   * **It is a boolean rather than `true` since #365.** The per-consultation tick
+   * was removed from prescription dictation, so that client asks nobody and
+   * asserts nothing; a literal `true` here would have forced the route to write
+   * a patient agreement into the trail that never happened. Ambient still
+   * carries the tick and still records `true`, and the request schema still
+   * refuses an ambient body without it.
+   *
    * `mode` is a closed enum naming which recognition config and session cap the
    * key was minted under (#356). It is here and deliberately not on the logger,
    * which is a positive allowlist whose fields need explicit human sign-off; a
@@ -395,7 +402,7 @@ export type AsrAuditEvent =
         region: string
         mode: LiveAsrMode
         maxSessionSeconds: number
-        consentAsserted: true
+        consentAsserted: boolean
       }
     }
   | {

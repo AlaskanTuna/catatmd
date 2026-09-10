@@ -1245,6 +1245,7 @@ export function ConsultationReview() {
                   consultationId={id}
                   prescriptions={detail.prescriptions}
                   status={detail.status}
+                  patientName={detail.patient?.name ?? undefined}
                   onSave={(prescriptions) => patch.mutateAsync({ prescriptions })}
                 />
               )}

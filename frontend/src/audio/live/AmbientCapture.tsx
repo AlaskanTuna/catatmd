@@ -460,7 +460,7 @@ export function AmbientCapture({
     const controller = new AbortController()
     inflight.current = controller
     try {
-      const session = await api.createLiveSession(controller.signal, 'ambient')
+      const session = await api.createLiveSession(controller.signal, 'ambient', true)
       if (attempt.current !== id) {
         releaseMicrophone()
         return
