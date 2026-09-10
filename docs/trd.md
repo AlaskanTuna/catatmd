@@ -2771,6 +2771,17 @@ Record tab, mode = ambient
 
 Two properties of that flow are load-bearing rather than incidental. The microphone is opened before the key is minted, because a permission prompt can sit for a long time and the key expires in a minute. The end frame is sent only after the recorder's final chunk has been handed over, because the reverse order asks the provider to finish audio it has not received.
 
+#### The Ambient Disclosure, Removed 10/09/26
+
+**The tick in that flow is unchanged. The paragraph above it is gone** (`docs/decisions.md` D-004, authorised by the owner). It named Soniox, the region read from `config.region`, and that our server issues the key and never receives the audio.
+
+| Property                       | State                                                                                                                                                                                         |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The two-control rule           | Both halves stand. Capture Mode preference plus a per-consultation tick, enforced in the start dispatcher, asserted to the mint as `consent: true`                                            |
+| What no longer exists anywhere | Any on-screen statement of the processor or the region for this path. The Audio dialog's ambient card names the provider only, and no longer points at a Record tab sentence that is gone     |
+| Why the prop is nullable       | `ConsentGate`'s `disclosure` defaults to the relay's sentence, which says ILMU in Malaysia. Ambient passes `null` rather than omitting it, so a fall-through cannot misstate the destination  |
+| How it is pinned               | `AmbientCapture.test.tsx` asserts the panel matches no `/Soniox\|United States\|leaves this device/i`. The removal is a test that must be deleted to undo, not an assertion quietly withdrawn |
+
 #### What Is Not Measured
 
 **Nothing about this provider is measured in this repo.** The owner's own test is the only evidence, and it was a judgement about usability rather than a benchmark. Per the §20.1 convention this is stated rather than softened, and per §20.9's own closing rule nothing here supports a claim to a client about ambient accuracy in any language.

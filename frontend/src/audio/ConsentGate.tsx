@@ -1,4 +1,3 @@
-import type { LiveAsrRegion } from '@shared/types'
 import { useId } from 'react'
 import { cn } from '../lib/cn.js'
 import { Checkbox } from '../ui/Checkbox.js'
@@ -19,29 +18,21 @@ import { Checkbox } from '../ui/Checkbox.js'
  * invitation to the cloud on a screen that currently mentions none. The
  * governing rule is that hosted stays findable but never funnelled.
  *
- * The disclosure above the tick is the load-bearing text: it states the whole
- * tradeoff in the same breath as the choice, never behind a tooltip. It is a
- * prop because the two paths send audio to different places by different
- * routes, and a single sentence covering both would be true of neither. The
- * tick's own wording is shared, because the promise it makes is identical.
- */
-/**
- * Where the provider processes the audio, in words a patient would recognise.
+ * On the relay the disclosure above the tick is the load-bearing text: it
+ * states the whole tradeoff in the same breath as the choice, never behind a
+ * tooltip. It is a prop rather than shared copy because the paths send audio to
+ * different places by different routes, and a single sentence covering both
+ * would be true of neither.
  *
- * Beside the gate rather than in a capture component because two surfaces build
- * a disclosure from it now, ambient capture and prescription dictation, and a
- * residency string that says one thing on one screen and another elsewhere is
- * the drift this file exists to prevent. The region itself always comes from
- * the API, so the sentence a doctor reads and the socket the browser opens
- * cannot disagree.
+ * **Ambient passes `null` and carries no disclosure at all, from 10/09/26 on
+ * the owner's instruction** (`docs/decisions.md` D-004), which is why the prop
+ * is nullable rather than merely optional: omitting it would silently fall
+ * through to the relay's sentence and tell the doctor the audio goes to
+ * Malaysia. That surface names neither the processor nor the region anywhere
+ * now, so nothing else in the app may point at a sentence it no longer shows.
+ *
+ * The tick's own wording is shared, because the promise it makes is identical.
  */
-export const REGION_LABELS: Record<LiveAsrRegion, string> = {
-  us: 'the United States',
-  eu: 'the European Union',
-  jp: 'Japan',
-  in: 'India',
-}
-
 export function ConsentGate({
   agreed,
   onAgreedChange,
@@ -53,13 +44,13 @@ export function ConsentGate({
   /** True once a run is under way, so the agreement cannot fork mid-recording. */
   disabled?: boolean
   /** Where this path's audio goes, stated before the tick rather than after. */
-  disclosure?: string
+  disclosure?: string | null
 }) {
   const id = useId()
 
   return (
     <div className="grid gap-2">
-      <p className="text-xs leading-relaxed text-ink-muted">{disclosure}</p>
+      {disclosure && <p className="text-xs leading-relaxed text-ink-muted">{disclosure}</p>}
       <label
         htmlFor={id}
         className={cn(
@@ -73,7 +64,10 @@ export function ConsentGate({
           disabled={disabled}
           onChange={(event) => onAgreedChange(event.target.checked)}
         />
-        <span>This patient has agreed, for this consultation only. This is not remembered.</span>
+        <span>
+          This patient has agreed to be recorded and transcribed, for this consultation only. This
+          is not remembered.
+        </span>
       </label>
     </div>
   )

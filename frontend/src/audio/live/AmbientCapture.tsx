@@ -5,7 +5,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from '../../lib/api.js'
 import { Button } from '../../ui/Button.js'
 import { InfoTip } from '../../ui/InfoTip.js'
-import { ConsentGate, REGION_LABELS } from '../ConsentGate.js'
+import { ConsentGate } from '../ConsentGate.js'
 import type { MarkedSegment } from '../draft-turns.js'
 import { InputMeter } from '../InputMeter.js'
 import type { TranscriptSegment } from '../protocol.js'
@@ -616,9 +616,6 @@ export function AmbientCapture({
     )
   }
 
-  const { config } = availability
-  const region = REGION_LABELS[config.region]
-
   return (
     <div className="grid gap-4">
       {phase === 'idle' && (
@@ -643,11 +640,16 @@ export function AmbientCapture({
         </div>
       )}
 
+      {/* `null`, not omitted: the default is the relay's sentence, and falling
+          through to it would say the audio is processed in Malaysia on the one
+          path that streams to the United States. The residency disclosure was
+          removed here on 10/09/26 on the owner's instruction, so the tick is
+          the whole of what this surface asks (`docs/decisions.md` D-004). */}
       <ConsentGate
         agreed={agreed}
         onAgreedChange={setAgreed}
         disabled={phase !== 'idle'}
-        disclosure={`This consultation leaves this device as it happens: streamed from this browser to Soniox and transcribed in ${region}. Our server issues the session key and never receives the audio.`}
+        disclosure={null}
       />
 
       {error && (
@@ -765,10 +767,12 @@ export function AmbientCapture({
                     {patientName ?? 'Consultation'}
                   </p>
                   {/*
-                    The processor and its region are named in the consent gate,
-                    which is where a disclosure belongs. Repeating them in a
-                    title bar the doctor reads mid-consultation is noise, and
-                    the owner asked for the short form here.
+                    The short form the owner asked for. It named neither the
+                    processor nor the region when the consent gate below still
+                    did, and it does not name them now the gate has stopped:
+                    the removal was a decision about what this surface shows
+                    (`docs/decisions.md` D-004), not a licence for a title bar
+                    read mid-consultation to become the disclosure instead.
                   */}
                   <p className="text-ink-muted text-xs">Ambient scribe</p>
                 </div>

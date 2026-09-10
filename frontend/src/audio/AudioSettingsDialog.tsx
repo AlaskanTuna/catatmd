@@ -69,7 +69,7 @@ const DICTATION_ENGINES: {
     Icon: Radio,
     summary: 'The audio leaves this device. Words appear as you speak them.',
     detail:
-      'Streams from this browser straight to Soniox under a key our server issues; the server never receives the audio. Each patient is asked separately on the review page, and that agreement is never remembered.',
+      'Streams from this browser straight to Soniox under a key our server issues; the server never receives the audio. Nothing on the review page asks the patient, so this preference is the only thing standing between a dictated phrase and that socket.',
   },
 ]
 
@@ -216,8 +216,9 @@ export function AudioSettingsDialog({
               `AmbientCapture` holds; a second copy here would be a residency
               claim made by a component that cannot see the socket, and this
               dialog has already shipped a claim that outlived what it
-              described. The Record tab's consent disclosure keeps that job, and
-              the sentence below points at it.
+              described. **No surface names the region for ambient any more**
+              (`docs/decisions.md` D-004), so this card must not point at one:
+              it says the audio leaves and stops there, which is true.
             */}
             {ambient && (
               <div className="flex gap-2.5 rounded-card border border-accent/30 bg-accent-soft p-3 text-left">
@@ -230,7 +231,7 @@ export function AudioSettingsDialog({
                   </span>
                   <span className="mt-0.5 block text-ink-muted text-xs">
                     The audio leaves this device as it happens. Set by this consultation's Capture
-                    Mode, and the Record tab names where it is processed.
+                    Mode.
                   </span>
                 </div>
                 <Radio aria-hidden className="mt-0.5 size-4 shrink-0" />
@@ -319,18 +320,19 @@ export function AudioSettingsDialog({
               )
             })}
           </div>
-          {/* Same pairing rule as the sentence above, pinned in a different
-              file. `AudioSettingsDialog.test.tsx` binds the Record tab's claim
-              to the controls it can render; this claim's control lives on the
-              review page, which needs an API mock that file does not carry, so
-              `PrescriptionBlock.test.tsx` pins this half. The wording therefore
-              deliberately avoids "each patient is asked": that phrase is
-              asserted to appear exactly once here, and a second copy would make
-              the first test pass for the wrong reason. */}
+          {/* Same pairing rule as the sentence above, and it broke here first.
+              This sentence claimed the patient agrees on the review page for
+              three days after #365 removed the tick that asked, which is the
+              failure the comment above describes rather than a new one. It now
+              claims no control, so there is nothing left to outlive: what it
+              states is an absence, and an absence cannot be deleted somewhere
+              else. It still avoids "each patient is asked", because that phrase
+              is asserted to appear exactly once in this dialog and a second
+              copy would make the Record tab's test pass for the wrong reason. */}
           <p className="mt-2.5 text-ink-muted text-xs">
             Applies to the microphone on the review page. Streaming is what runs unless you choose
-            on-device here. Streaming does not send anything on its own: the patient agrees there,
-            for one consultation, and that agreement is never remembered.
+            on-device here, and it sends audio as you dictate. Nothing on that page asks the
+            patient.
           </p>
         </fieldset>
 
