@@ -299,15 +299,18 @@ The hosted adapter is **built and live**, and reaching it takes two separate act
 | **Failure copy** | The on-device failure message never mentions it                                     |
 | **Effect**       | The provider key is set in production, so both together send that recording to ILMU |
 
-**Three capture paths exist, and they leave the device by different routes.**
+**Four capture paths exist, and they leave the device by different routes.**
 
 | Path                       | Where the audio goes                                                    | Region        |
 | -------------------------- | ----------------------------------------------------------------------- | ------------- |
 | Press to record, on-device | Nowhere. The model runs in the browser                                  | The device    |
 | Press to record, hosted    | One finished recording, through our API, to ILMU                        | Malaysia      |
 | Ambient capture            | Streamed from the browser straight to Soniox, under a key our API mints | United States |
+| Prescription dictation     | Nowhere by default. Opt in and one phrase streams to Soniox, same route | Device, or US |
 
-**Ambient capture is the one that leaves the region.** Soniox offers the United States, the European Union, Japan and India, and no Malaysian or Singapore option. That is the honest cost of the only streaming recogniser tested here that handles Malay, English and Chinese switching mid-sentence, and the transfer basis is recorded as open in [`dpia.md`](./dpia.md) rather than treated as solved. Our servers never hold that audio.
+**Soniox is the one destination that leaves the region, and two paths reach it.** It offers the United States, the European Union, Japan and India, and no Malaysian or Singapore option. That is the honest cost of the only streaming recogniser tested here that handles Malay, English and Chinese switching mid-sentence, and the transfer basis is recorded as open in [`dpia.md`](./dpia.md) rather than treated as solved. Our servers never hold that audio.
+
+**Prescription dictation is opt-in, and stays on the device otherwise.** The microphone on the review page recognises locally unless the doctor changes a device preference and ticks the same per-consultation consent the other paths use. Both are required, the tick is remembered by nothing, and every failure lands back on the device or on typing rather than on the cloud. Authorised 10/09/26, scoped to that one surface ([`trd.md`](./trd.md) §20.10).
 
 **The split is deliberate, and it was got wrong once.** For three weeks the engine preference was the whole gate while the interface still said each patient was asked. A remembered agreement is one the next patient never gave, so the per-consultation half was restored and is now pinned by a test that fails if the claim and the control ever part company again (#254).
 
