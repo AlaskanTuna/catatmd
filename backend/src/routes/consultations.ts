@@ -27,6 +27,7 @@ import {
   PrescriptionSchema,
   type SoapNote,
   SoapNoteSchema,
+  STALE_ANALYSIS_MS,
   type Transcript,
   type TranscriptCleanupStatus,
   TranscriptCorrectionsResponseSchema,
@@ -563,11 +564,11 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
   const actor = doctorId(req)
   const consultation = await assertOwnedConsultation(req.params.id, actor)
 
-  if (consultation.status === 'analyzing' || consultation.status === 'approved') {
+  if (consultation.status === 'approved') {
     throw new HttpError(
       409,
       'invalid_state',
-      `Analysis cannot start while the consultation is ${consultation.status}.`,
+      'Analysis cannot start while the consultation is approved.',
     )
   }
 
@@ -585,11 +586,48 @@ consultationsRouter.post('/:id/analyze', async (req, res) => {
   }
   const profile = getClinicalProfile(profileBody.data.profileId ?? DEFAULT_PROFILE_ID)
 
-  const previousStatus = consultation.status
-  await prisma.consultation.update({
-    where: { id: consultation.id },
+  /*
+   * Where the record goes if this run fails, and never back to `analyzing`.
+   *
+   * A stale claim retaken below arrives here as `analyzing`, and restoring that
+   * on failure would wedge the row for another whole lease.
+   */
+  const previousStatus =
+    consultation.status === 'analyzing'
+      ? consultation.analysis
+        ? 'awaiting_review'
+        : 'draft'
+      : consultation.status
+
+  /*
+   * One conditional update is both the guard and the claim (#373).
+   *
+   * Reading the status and then writing it in a second statement let two
+   * concurrent presses past the same check and spend two pipelines. The `OR`
+   * also releases a claim older than the lease, which matters because the
+   * rollback below only runs in this process: a restart mid-run leaves
+   * `analyzing` written with nothing left to clear it, and the old guard then
+   * answered 409 to every retry forever.
+   *
+   * `updatedAt` is the lease clock. Nothing writes this row between here and
+   * the persistence write, so while the status is `analyzing` it is when
+   * analysis started. Adding a mid-run write means adding a real
+   * `analysisStartedAt` column instead of reading this one.
+   */
+  const claimed = await prisma.consultation.updateMany({
+    where: {
+      id: consultation.id,
+      OR: [
+        { status: { in: ['draft', 'awaiting_review'] } },
+        { status: 'analyzing', updatedAt: { lt: new Date(Date.now() - STALE_ANALYSIS_MS) } },
+      ],
+    },
     data: { status: 'analyzing' },
   })
+  if (claimed.count === 0) {
+    throw new HttpError(409, 'invalid_state', 'Analysis is already running for this consultation.')
+  }
+
   await recordAuditEvent({
     action: 'consultation.analysis_started',
     actorId: actor,

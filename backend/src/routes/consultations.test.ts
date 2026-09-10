@@ -1,4 +1,5 @@
 import type { Server } from 'node:http'
+import { STALE_ANALYSIS_MS } from '@shared/types'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ACTIVE_CLINICAL_VERSIONS } from '../clinical-versions/index.js'
 
@@ -128,6 +129,32 @@ const TRANSCRIPT = {
 const store = new Map<string, Record<string, unknown>>()
 const audits: { action: string; consultationId: string; metadata?: unknown }[] = []
 
+/** The subset of Prisma's filter grammar the routes under test actually use. */
+type RowPredicate = {
+  status?: string | { in: string[] }
+  title?: string | null
+  updatedAt?: { lt: Date }
+}
+
+/**
+ * Only the predicates actually present filter, exactly as Prisma behaves.
+ *
+ * Comparing an absent `title` against the row's would make dropping the
+ * predicate match nothing, so removing a guard would fail the plain "names an
+ * unnamed consultation" test rather than the race test written to catch it.
+ */
+function matchesPredicate(row: Record<string, unknown>, where: RowPredicate): boolean {
+  if ('title' in where && row.title !== where.title) return false
+  if (where.status !== undefined) {
+    const status = row.status as string
+    const ok =
+      typeof where.status === 'string' ? status === where.status : where.status.in.includes(status)
+    if (!ok) return false
+  }
+  if (where.updatedAt !== undefined && !((row.updatedAt as Date) < where.updatedAt.lt)) return false
+  return true
+}
+
 const auditEvent = {
   create: vi.fn(
     async ({
@@ -150,6 +177,16 @@ const auditEvent = {
 
 let chainHead: string | null = null
 
+/**
+ * Lets a test hold the ownership read open, so two requests can be forced into
+ * an interleaving the event loop will not produce on its own (#373).
+ *
+ * The mocked pipeline returns in microseconds, so two presses fired together
+ * simply run one after the other and both legitimately succeed. The race worth
+ * pinning is narrower: both reading the row before either has claimed it.
+ */
+let readGate: (() => Promise<void>) | null = null
+
 vi.mock('../lib/prisma.js', () => ({
   prisma: {
     // Erasure destroys the recording too (#293). Stubbed empty because these
@@ -160,9 +197,12 @@ vi.mock('../lib/prisma.js', () => ({
       findFirst: vi.fn(
         async ({ where }: { where: { id: string; doctorId: string; erasedAt: null } }) => {
           const row = store.get(where.id)
-          return row && row.doctorId === where.doctorId && row.erasedAt === where.erasedAt
-            ? { ...row }
-            : null
+          const owned =
+            row && row.doctorId === where.doctorId && row.erasedAt === where.erasedAt
+              ? { ...row }
+              : null
+          if (readGate) await readGate()
+          return owned
         },
       ),
       findMany: vi.fn(async ({ where }: { where: { doctorId: string; erasedAt: null } }) =>
@@ -195,26 +235,25 @@ vi.mock('../lib/prisma.js', () => ({
       ),
       /*
        * Honours the whole `where`, not just the id. The analyse path names an
-       * unnamed consultation with `where: { id, title: null }`, and a stub that
-       * ignored the predicate would write the title unconditionally and report
-       * the check-and-set as working when it was not.
+       * unnamed consultation with `where: { id, title: null }`, and claims the
+       * run itself with a `status`/`updatedAt` predicate (#373). A stub that
+       * ignored either would write unconditionally and report a check-and-set
+       * as working when it was not.
        */
       updateMany: vi.fn(
         async ({
           where,
           data,
         }: {
-          where: { id: string; title?: string | null }
+          where: { id: string; OR?: RowPredicate[] } & RowPredicate
           data: Record<string, unknown>
         }) => {
           const row = store.get(where.id)
           if (!row) return { count: 0 }
-          // Only the predicates actually present filter, exactly as Prisma
-          // behaves. Comparing an absent `title` against the row's would make
-          // dropping the predicate match nothing, so removing the guard would
-          // fail the plain "names an unnamed consultation" test rather than
-          // the race test written to catch it.
-          if ('title' in where && row.title !== where.title) return { count: 0 }
+          // `OR` is a disjunction over the same predicate shape, so the plain
+          // form is just the one-clause case.
+          const clauses = where.OR ?? [where]
+          if (!clauses.some((clause) => matchesPredicate(row, clause))) return { count: 0 }
           store.set(where.id, { ...row, ...data, updatedAt: new Date() })
           return { count: 1 }
         },
@@ -257,6 +296,7 @@ beforeEach(() => {
   store.clear()
   audits.length = 0
   chainHead = null
+  readGate = null
 })
 
 function seed(status: string, extra: Record<string, unknown> = {}) {
@@ -399,6 +439,92 @@ describe('state machine — analyze', () => {
 
     expect(res.status).toBe(409)
     expect(store.get('c1')?.status).toBe(status)
+  })
+
+  /*
+   * The claim carries a lease, because the rollback below only runs in-process
+   * (#373). A Render restart mid-run leaves `analyzing` written with nothing
+   * left to clear it, and the old read-then-write guard answered 409 to every
+   * retry from then on. The doctor's record was unrecoverable through the UI.
+   */
+  it('re-claims an analyzing row whose lease has expired', async () => {
+    seed('analyzing', { updatedAt: new Date(Date.now() - STALE_ANALYSIS_MS - 1_000) })
+
+    const res = await call('POST', '/api/consultations/c1/analyze')
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')?.status).toBe('awaiting_review')
+  })
+
+  it('still refuses an analyzing row inside its lease', async () => {
+    seed('analyzing', { updatedAt: new Date(Date.now() - 1_000) })
+
+    const res = await call('POST', '/api/consultations/c1/analyze')
+
+    expect(res.status).toBe(409)
+    expect(store.get('c1')?.status).toBe('analyzing')
+  })
+
+  /*
+   * The guard and the claim are one conditional update, so a second press
+   * cannot pass a check the first has not yet acted on. Reading the status and
+   * then writing it let both through and spent two pipelines on one
+   * consultation.
+   */
+  it('lets exactly one of two presses that both read draft run the pipeline', async () => {
+    seed('draft')
+
+    // Hold both ownership reads open until both have happened. Under the old
+    // guard both then saw `draft`, both passed the check, and both spent a
+    // pipeline on one consultation.
+    let arrived = 0
+    let openGate: () => void = () => {}
+    const bothRead = new Promise<void>((resolve) => {
+      openGate = resolve
+    })
+    readGate = async () => {
+      arrived += 1
+      if (arrived === 2) openGate()
+      if (arrived <= 2) await bothRead
+    }
+
+    const results = await Promise.all([
+      call('POST', '/api/consultations/c1/analyze'),
+      call('POST', '/api/consultations/c1/analyze'),
+    ])
+
+    expect(results.map((res) => res.status).sort()).toEqual([200, 409])
+    expect(store.get('c1')?.status).toBe('awaiting_review')
+  })
+
+  /*
+   * Rolling back to the status this handler read would restore `analyzing` on a
+   * re-claimed row and wedge it for another whole lease, which is the state the
+   * lease exists to escape.
+   */
+  it('never rolls a re-claimed row back into analyzing', async () => {
+    seed('analyzing', { updatedAt: new Date(Date.now() - STALE_ANALYSIS_MS - 1_000) })
+    const { generateSuggestions } = await import('../suggestions/index.js')
+    vi.mocked(generateSuggestions).mockRejectedValueOnce(new Error('boom'))
+
+    const res = await call('POST', '/api/consultations/c1/analyze')
+
+    expect(res.status).toBe(500)
+    expect(store.get('c1')?.status).toBe('draft')
+  })
+
+  it('rolls a re-claimed row with an existing analysis back to awaiting_review', async () => {
+    seed('analyzing', {
+      analysis: ANALYSIS,
+      updatedAt: new Date(Date.now() - STALE_ANALYSIS_MS - 1_000),
+    })
+    const { generateSuggestions } = await import('../suggestions/index.js')
+    vi.mocked(generateSuggestions).mockRejectedValueOnce(new Error('boom'))
+
+    const res = await call('POST', '/api/consultations/c1/analyze')
+
+    expect(res.status).toBe(500)
+    expect(store.get('c1')?.status).toBe('awaiting_review')
   })
 
   it('reverts status and records a failure category when the pipeline throws', async () => {
