@@ -2511,6 +2511,23 @@ The sign-off above is unchanged and is not re-opened: same vendor, socket, regio
 
 **The per-drug sig is the one new piece of logic, and it is client-side.** `parseSig` answers one sig per phrase, so a four-drug dictation cannot yield four from one response. The theatre re-sends each accepted drug's own stretch of text to the same parse route, bounded by the next drug name the matcher heard, and prints that stretch on the row it filled. The route is deterministic, stores nothing, writes no audit row and allows thirty a minute, so this needed no backend change. It fails toward an empty field rather than an inherited one: the slice starts at the drug's own name, so a dose spoken before the name is lost rather than drug two opening with drug one's trailing sig.
 
+##### Amended 10/09/26: `sigReadTo`, The Second Boundary
+
+**Bounding a slice at the next drug name is only half a boundary** (#369). A drug the lexicon does not hold raises no candidate, so nothing bounds the previous slice, which then runs to the end of the utterance and quotes a second drug's whole sig as evidence for fields that text never supplied. Brands are outside the lexicon by D-001, which makes that the ordinary case rather than the rare one.
+
+| Piece                               | Where                                       | What it is                                                                                                                                                                                   |
+| ----------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parseSigWithSpan(text)`            | `backend/src/medications/sig.ts`            | `{ sig, readTo }`, where `readTo` is the maximum `Claim.end` already tracked internally, or `null` when no field parsed. `parseSig` is now a wrapper over it, so its own tests are untouched |
+| `sigReadTo`                         | `PrescriptionParseResponseSchema`           | The offset on the wire. `nullish` for deploy skew, and a sibling of `sig` because `sig` is a `PrescriptionSchema` pick and may hold only stored-prescription fields                          |
+| `narrowToSig`, `unclaimedStretches` | `frontend/src/review/prescription-draft.ts` | Pure. The first shrinks a row's claim to what its sig read, the second returns the gaps left over                                                                                            |
+
+Four properties hold it in place.
+
+- **`readTo` is an offset and nothing else.** No claim about what the remaining text means, and no drug proposed for it.
+- **The quote is cut from the posted string, never re-sliced from `parsedFrom`.** Pressing Check replaces `parsedFrom` while staged rows keep the spans they were cut with, so re-slicing there would quote new text at old offsets.
+- **`sourceSpan` is kept apart from `span`.** `span` is the drug's name and decides which candidates stay on offer; `sourceSpan` is the stretch its fields came from and decides which characters no row accounts for. One field doing both would suppress a candidate merely for sitting downstream of an accepted drug.
+- **`null` leaves the claim alone.** No field read is no evidence about where the drug's text stops, and a quote cut on nothing is worse than one that is too wide.
+
 **What this costs is stated in `docs/dpia.md` as a residual risk rather than closed here.** MMC 003/2023 cl.18 wants consent specific to the purpose before capture and the PDPA 2024 amendment makes voice biometric data requiring explicit consent. Neither is asked for on this path now. Ambient capture and the ILMU relay are untouched and keep both halves of the rule.
 
 #### Why The Provider Changed

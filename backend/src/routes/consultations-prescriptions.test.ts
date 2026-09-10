@@ -215,6 +215,30 @@ describe('POST /api/consultations/:id/prescriptions/parse', () => {
     })
   })
 
+  it('reports how far the sig parse read, so a caller can bound one drug stretch', async () => {
+    // The response carries one sig for the whole phrase, so a several-drug
+    // dictation needs a second boundary beside the next drug name: a brand is
+    // outside the lexicon by D-001 and raises no candidate to bound anything
+    // (#369). Everything past this offset is text no prescription accounts for.
+    const dictated =
+      'dextromethorphan 15 mg oral three times a day after food for 5 days. ' +
+      'strepsils lozenge 1 lozenge for 3 days.'
+    const response = await parse({ dictated })
+    const parsed = PrescriptionParseResponseSchema.safeParse(await response.json())
+
+    const readTo = parsed.success ? parsed.data.sigReadTo : undefined
+    expect(typeof readTo).toBe('number')
+    expect(dictated.slice(0, readTo ?? 0)).toContain('for 5 days')
+    expect(dictated.slice(0, readTo ?? 0)).not.toContain('strepsils')
+  })
+
+  it('reports a null offset when no field parsed, rather than zero', async () => {
+    const response = await parse({ dictated: 'patient advised to rest' })
+    const parsed = PrescriptionParseResponseSchema.safeParse(await response.json())
+
+    expect(parsed.success && parsed.data.sigReadTo).toBeNull()
+  })
+
   it('offers the drug as a candidate rather than substituting it', async () => {
     const response = await parse({ dictated: 'amoxycillin 500 mg' })
     const parsed = PrescriptionParseResponseSchema.safeParse(await response.json())

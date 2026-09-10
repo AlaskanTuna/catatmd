@@ -6,11 +6,14 @@ import {
   candidateKey,
   capDictation,
   EMPTY_DRAFT,
+  narrowToSig,
   type PrescriptionDraft,
   setDrugByHand,
   sliceForCandidate,
+  spanForCandidate,
   summarise,
   toPrescription,
+  unclaimedStretches,
   visibleCandidates,
 } from './prescription-draft.js'
 
@@ -363,6 +366,116 @@ describe('sliceForCandidate', () => {
   it('returns the whole phrase when only one drug was heard', () => {
     const only = candidate()
     expect(sliceForCandidate(DICTATED, [only], only)).toBe(DICTATED)
+  })
+
+  it('reports the span it cut from, so a caller can tell what is left over', () => {
+    // The two must not drift: `unclaimedStretches` subtracts these bounds from
+    // the dictation, and a span disagreeing with its own quote would hand the
+    // doctor a stretch a row is already showing (#369).
+    for (const one of all) {
+      const span = spanForCandidate(FOUR, all, one)
+
+      expect(FOUR.slice(span.start, span.end).trim()).toBe(sliceForCandidate(FOUR, all, one))
+    }
+  })
+
+  it('runs a last drug span to the end of the text, which is what leaves no gap', () => {
+    // Today's reported bug in one line: with no later candidate to bound it,
+    // the claim covers every remaining character, so a second drug the lexicon
+    // never offered has no remainder to be found in.
+    expect(spanForCandidate(FOUR, [paracetamol], paracetamol)).toEqual({
+      start: 0,
+      end: FOUR.length,
+    })
+  })
+})
+
+/**
+ * The three functions that make a dropped drug visible instead of silent
+ * (#369).
+ *
+ * A drug the lexicon does not hold raises no candidate, so nothing bounds the
+ * previous drug's slice and nothing announces the second drug either: the
+ * reported dictation named two and recorded one, with the first row's quote
+ * swallowing the second. Narrowing the claim to what the sig actually read is
+ * what leaves a gap; showing the gap is the fix.
+ */
+describe('narrowToSig', () => {
+  const span = { start: 10, end: 60 }
+
+  it('cuts the claim back to where the sig stopped reading', () => {
+    expect(narrowToSig(span, 20)).toEqual({ start: 10, end: 30 })
+  })
+
+  it('leaves a span alone when nothing was read, rather than guessing a boundary', () => {
+    // No field parsed is no evidence about where this drug's text stops, and a
+    // quote cut on nothing is worse than a quote that is too wide.
+    expect(narrowToSig(span, null)).toBe(span)
+    expect(narrowToSig(span, undefined)).toBe(span)
+  })
+
+  it('only ever shrinks, so a sig read past the span cannot widen the claim', () => {
+    expect(narrowToSig(span, 999)).toBe(span)
+    expect(narrowToSig(span, 50)).toBe(span)
+  })
+})
+
+describe('unclaimedStretches', () => {
+  const TWO =
+    'dextromethorphan 15 mg three times a day for 5 days. strepsils lozenge 1 lozenge for 3 days.'
+
+  it('offers the stretch a narrowed claim left behind', () => {
+    // The reported bug, reduced: one candidate, one row, and the second drug
+    // sitting in the tail with nothing to announce it.
+    const stretches = unclaimedStretches(TWO, [{ start: 0, end: 51 }])
+
+    expect(stretches).toHaveLength(1)
+    expect(stretches[0]?.text).toBe('strepsils lozenge 1 lozenge for 3 days.')
+  })
+
+  it('returns nothing while a row still claims every character', () => {
+    // Why the claim has to narrow first. This is today's behaviour: the slice
+    // runs to the end of the text, so there is no remainder to show.
+    expect(unclaimedStretches(TWO, [{ start: 0, end: TWO.length }])).toEqual([])
+  })
+
+  it('drops a gap holding no letter, so punctuation is never offered as a drug', () => {
+    expect(
+      unclaimedStretches(TWO, [
+        { start: 0, end: 51 },
+        { start: 53, end: TWO.length },
+      ]),
+    ).toEqual([])
+  })
+
+  it('opens the offer on a word, not on the previous drug full stop', () => {
+    const [stretch] = unclaimedStretches(TWO, [{ start: 0, end: 51 }])
+
+    expect(stretch?.text.startsWith('strepsils')).toBe(true)
+    // The span moves with the text, so the bounds still name what is quoted.
+    expect(TWO.slice(stretch?.start ?? 0, stretch?.end ?? 0)).toBe(stretch?.text)
+  })
+
+  it('reads gaps in text order however the claims arrive', () => {
+    const stretches = unclaimedStretches('aaa. bbb. ccc.', [
+      { start: 10, end: 14 },
+      { start: 0, end: 4 },
+    ])
+
+    expect(stretches.map(({ text }) => text)).toEqual(['bbb.'])
+  })
+
+  it('offers the whole dictation when no row claims any of it', () => {
+    expect(unclaimedStretches(TWO, [])).toEqual([{ start: 0, end: TWO.length, text: TWO }])
+  })
+
+  it('does not double count characters two overlapping claims share', () => {
+    expect(
+      unclaimedStretches(TWO, [
+        { start: 0, end: 60 },
+        { start: 40, end: 70 },
+      ]),
+    ).toEqual([{ start: 71, end: TWO.length, text: '1 lozenge for 3 days.' }])
   })
 })
 

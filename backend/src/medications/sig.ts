@@ -177,8 +177,23 @@ const firstUnclaimed = <T>(text: string, rules: readonly Rule<T>[], claims: Clai
   return null
 }
 
-export const parseSig = (text: string): Sig => {
-  if (text.trim() === '') return EMPTY
+/**
+ * The sig, plus the offset past which no field was read.
+ *
+ * **`readTo` is what lets a caller tell where one drug's sig stops.** One
+ * dictation names several drugs and this function reads a phrase, not a list,
+ * so a slice taken for drug one runs on into drug two whenever the matcher
+ * offered no candidate to bound it: a brand name is outside the lexicon by
+ * `docs/decisions.md` D-001, which makes that the ordinary case rather than the
+ * rare one. The furthest claim is the last character this sig can honestly
+ * account for, and the text beyond it belongs to nobody yet (#369).
+ *
+ * `null` when nothing was read, which is not the same as `0`. No field parsed
+ * means the whole phrase is unaccounted for; an offset of `0` cannot arise,
+ * since a claim that starts at `0` still ends past it.
+ */
+export const parseSigWithSpan = (text: string): { sig: Sig; readTo: number | null } => {
+  if (text.trim() === '') return { sig: EMPTY, readTo: null }
 
   const claims: Claim[] = []
 
@@ -190,5 +205,10 @@ export const parseSig = (text: string): Sig => {
   const dose = firstUnclaimed(text, DOSE_RULES, claims)
   const route = firstUnclaimed(text, ROUTE_RULES, claims)
 
-  return { dose, route, frequency, duration, food }
+  return {
+    sig: { dose, route, frequency, duration, food },
+    readTo: claims.length === 0 ? null : Math.max(...claims.map(({ end }) => end)),
+  }
 }
+
+export const parseSig = (text: string): Sig => parseSigWithSpan(text).sig

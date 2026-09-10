@@ -1090,6 +1090,22 @@ export const PrescriptionParseResponseSchema = z.object({
     duration: true,
     food: true,
   }),
+  /**
+   * The offset in `dictated` past which no sig field was read, or `null` when
+   * none was.
+   *
+   * **It is what lets a caller tell where one drug's sig stops.** The parse
+   * reads a phrase and not a list, so a slice taken for one drug runs on into
+   * the next whenever the matcher offered no candidate to bound it, and a brand
+   * name is outside the lexicon by D-001, which makes that the ordinary case.
+   * Everything past this offset is text no row can account for (#369).
+   *
+   * `nullish` rather than required, so a response from an API deployed before
+   * this field still parses. `noteTemplate` on `ConsultationSchema` is the
+   * precedent. It cannot live inside `sig`, which is a `PrescriptionSchema`
+   * pick and may hold only fields a stored prescription has.
+   */
+  sigReadTo: z.number().int().nonnegative().nullish(),
   candidates: z.array(MedicationCandidateSchema).max(20),
 })
 
