@@ -1507,6 +1507,8 @@ The resolution is not "audio never leaves the device" as an absolute, because §
 
 > **On-device is the default and the floor. Hosted is only ever entered by an explicit, recorded, per-consultation act. Failure degrades to paste, never to the cloud.**
 
+**One surface is a stated exception to the first sentence, and only the first sentence.** Prescription dictation defaults to streaming from 10/09/26 (§20.10, `docs/decisions.md` D-001). On-device remains its floor, every failure still lands there or on typing, and nothing is sent without the per-consultation act. This rule governs the press-to-record relay below unchanged.
+
 This is the direct analogue of `DEID_FAIL_CLOSED` (§7), and it is stated here in the same terms because a reviewer will — correctly — ask what happens when the on-device path cannot cope:
 
 | Behaviour on a device that cannot transcribe locally     | Verdict                                                                                                                     |
@@ -2651,7 +2653,26 @@ The grant above is scoped to ambient capture, and its "What it does not" row nam
 
 **This basis is weaker than the one above, and is recorded as weaker.** The 06/09/26 grant rested on the owner's own usability test of code-switched speech. This one rests on an argument about scope: what changes is which surface may open the socket, not where the audio goes or who receives it. Nothing about dictation accuracy on this provider is measured, and the "What Is Not Measured" table below applies to it unchanged.
 
-**What it does not license is the interesting half.** The two-control consent rule is not waived by the surface being small: a dictated phrase leaves the device exactly as a consultation does, so it takes the same standing device preference plus a per-consultation tick that dies with the component. On-device Whisper stays the default and the floor on that page (`docs/decisions.md` D-001), so a doctor who changes nothing sends no audio anywhere.
+**What it does not license is the interesting half.** The two-control consent rule is not waived by the surface being small: a dictated phrase leaves the device exactly as a consultation does, so it takes the same standing device preference plus a per-consultation tick that dies with the component. On-device Whisper stays the floor on that page and is where every failure lands (`docs/decisions.md` D-001). It stopped being the default later the same day, which the next subsection records.
+
+#### Amended 10/09/26: Streaming Becomes The Default On That Page
+
+The sign-off above is unchanged and is not re-opened here: same vendor, socket, region and minting route, so no new egress and no new grant. What moved is `DEFAULT_AUDIO_SETTINGS.dictationEngine`, from `'local'` to `'streaming'` (@Andersonnn7788, 10/09/26, #363). The rationale is the measurement in §20.1 and the table above: an on-device default whose real-time factor sits above 1.0 on typical clinic hardware cannot deliver words as the doctor speaks, so it is a default most doctors would have to leave.
+
+| Behaviour                | Before                                                  | After                                                                           |
+| ------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Doctor changes nothing   | On-device Whisper, no consent tick offered, no requests | Streaming offered, consent tick shown, `GET /asr/live-sessions/config` on mount |
+| Consent withheld         | Not applicable, nothing to consent to                   | Dispatcher refuses. It does not silently run the local worker                   |
+| Below the hardware floor | Dictate hidden, typing only                             | Dictate offered, because a socket loads no weights                              |
+| Any streaming failure    | Not applicable                                          | On-device or typing, never the cloud, never silently                            |
+
+**Three implementation consequences, none of which the sign-off anticipated.**
+
+- **`loadAudioSettings` now treats absent and corrupt differently, for this field only.** An absent `dictationEngine` reads as the current default, so the decision reaches a device that already holds a `catatmd.audio` key; any present value other than `'streaming'` reads as `'local'`, so corruption still fails closed. Reading positively for both, as `engine` does, would have left every existing device on-device and made the new default reach nobody.
+- **Every review page carrying an analysed note now issues `GET /asr/live-sessions/config?mode=dictation` on mount.** That is the shape `AmbientCapture` has used since #268, but it is new traffic on a page that previously issued none. It also makes the config-failure copy commonly visible, so that copy now distinguishes a 503 (this deployment has no key) from any other failure (the network did not answer), rather than asserting the first for both.
+- **Expected mint volume on the dictation bucket rises**, because the path is now taken by default rather than by opt-in. The per-mode limiter and the 120 second per-session cap added in #356 are what absorb it. The absence of a global spend cap recorded in `.claude/rules/security.md` is unchanged and now carries more load; it remains a gap rather than a control.
+
+**What it costs is a control, and `docs/decisions.md` D-001 carries the full accounting.** In short: the standing device preference ships already set to send, so this surface holds one defaulted preference and one deliberate tick rather than two chosen controls. The tick is untouched and still gates every send. Separately, #363 found the preference had been unreachable from the review page for the whole of #357's life, because its only writer was mounted in `CapturePanel`; it is now mounted on both surfaces, which stay mutually exclusive by their render conditions.
 
 #### Why The Provider Changed
 
