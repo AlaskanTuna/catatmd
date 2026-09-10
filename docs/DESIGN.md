@@ -312,6 +312,49 @@ transcript that is scrolling itself. 484px is what makes 292 plus the column
 plus 121 land inside 900, and it is why capture has exactly one scrolling
 surface.
 
+### The Prescription Theatre
+
+Dictating a prescription opens a second full-viewport `<dialog>`, on the same
+reasoning as the capture theatre and with two deliberate differences (#365).
+
+**Why it is a theatre at all.** The compose surface lived in the review page's
+middle column: about 620px wide, itself an internal scroller, holding a
+three-line dictation box, a candidate list, six sig fields and a Confirm button.
+Most of it sat below the fold. A doctor pressing Accept saw nothing change,
+because the field it filled was off screen, so a wired button read as broken.
+
+| Behaviour  | Rule                                                                      |
+| ---------- | ------------------------------------------------------------------------- |
+| Opens      | By itself, on Dictate. Add opens the same room idle, with the box focused |
+| Escape     | **Stops, then closes.** The first press ends the dictation and stays open |
+| Discarding | Escape with rows staged asks first, because they were never saved         |
+| Confirm    | Commits the whole staged list at once, then closes                        |
+
+**It is one column while listening and two after Stop, and that is the
+difference from the capture theatre.** The ambient one is two throughout because
+red flags stream in beside the transcript, so both halves are alive at once.
+Here the parse runs once, on Stop, so drug names and sig fields do not exist
+while the doctor is speaking: a second column then would be furniture. After
+Stop the dictated text moves left as the evidence, and the decisions take the
+right at 440px.
+
+**Escape stops rather than docks, and that is the second difference.** Ambient
+docks because a consultation must keep recording while the doctor uses the page
+behind it. A dictated phrase has nothing to keep running for, and stopping loses
+nothing: the settled words are kept and the parse runs on them. A docked live
+strip on the card would be a second live surface for a twenty second utterance.
+
+**Accept has to produce something visible.** A row appears in the right column
+carrying the drug name, its sig, and the stretch of text those fields were read
+from. Reject visibly removes its row, so an Accept that changed nothing on
+screen read as the dead half of a pair.
+
+**What it costs is the safety rail, and that is recorded rather than solved.**
+While the theatre is open the rail sits behind the scrim, which is in tension
+with "the flags go where the words go" above. The capture theatre answers that
+by carrying `LivePrompter` inside it; this one does not carry anything
+equivalent yet.
+
 ### The Transcript Has Two Sides
 
 Speakers alternate left and right rather than sharing one left edge, in both the

@@ -409,11 +409,22 @@ export const api = {
    * says which egress shape it is opening: the mode decides the session cap and
    * which vocabulary crosses the audio boundary, and a default here would let a
    * new surface get the wrong one silently.
+   *
+   * **`consent` is passed by the caller rather than hard-coded (#365.)** It was
+   * `consent: true` on every call, which stopped being true when prescription
+   * dictation dropped its per-consultation tick: a caller that asks nobody must
+   * not claim an agreement, because the audit row records exactly this value.
+   * Ambient holds a tick and passes it; dictation omits it and the API refuses
+   * the omission only on ambient.
    */
-  createLiveSession: (signal: AbortSignal, mode: LiveAsrMode): Promise<LiveSession> =>
+  createLiveSession: (
+    signal: AbortSignal,
+    mode: LiveAsrMode,
+    consent?: true,
+  ): Promise<LiveSession> =>
     request('/asr/live-sessions', LiveSessionSchema, {
       method: 'POST',
-      body: JSON.stringify({ consent: true, mode }),
+      body: JSON.stringify(consent === undefined ? { mode } : { consent, mode }),
       signal,
     }),
 

@@ -77,6 +77,40 @@ Section 11's intended-purpose statement already describes exactly this, and is *
 
 **Why the default moved at all.** The measurement in the amendment above is the whole argument. A real-time factor of 0.89 on the best path and 2.14 on the fallback most clinic hardware runs, against a threshold of 1.0 for keeping pace with speech, means an on-device default is one most doctors would have to leave. A default nobody keeps and a preference nobody could reach, which is what #363 also found, together made the on-device default a claim the product was making rather than a protection it was giving.
 
+### Amended 2026-09-10: The Tick Goes, And The Surface Becomes A Theatre
+
+**The two amendments above cost a control each by degrees. This one removes the last of them outright, on the owner's instruction, and the honest count of live consent controls on this surface is now zero.** Nothing about the egress changes: same vendor, socket, region and minting route, and the same sign-off covers it.
+
+|                             |                                                                                                                                                                                                      |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What changed**            | The residency disclosure and the per-consultation tick were removed from prescription dictation. Pressing Dictate opens the socket                                                                   |
+| **What it costs**           | Every deliberate consent act on this surface. A doctor who touches nothing sends a patient's voice to a United States endpoint on one press, with nothing on screen saying so                        |
+| **What still gates it**     | Nothing on this surface. `SONIOX_API_KEY` unset still fails closed to on-device, and the device preference is still selectable, but neither is a consent control                                     |
+| **What did not weaken**     | The audit trail. `createLiveSession` now takes `consent` as an argument, dictation passes none, and the row records `consentAsserted: false`. A client that collects no agreement must not claim one |
+| **What ambient keeps**      | Both halves, untouched. `LiveSessionRequestSchema` still refuses an ambient body without `consent: true`, and that mint still records `true`                                                         |
+| **What else moved with it** | The compose surface became a full-viewport theatre (#365). One dictation now yields several prescriptions, each with its own sig re-parsed from its own stretch of text, confirmed together          |
+| **Who authorised it**       | @Andersonnn7788, 2026-09-10, scoped to prescription dictation on the review page and nothing else                                                                                                    |
+
+**The reason given was usability, and it is recorded as that rather than dressed up.** The disclosure and the tick sat between Dictate and the box on a card already too small for its contents, and the owner asked for them gone. No measurement supports the removal and none was claimed.
+
+**What is genuinely lost is worth naming precisely.** MMC 003/2023 cl.18 wants consent specific to the purpose before capture, and the PDPA 2024 amendment makes voice biometric data requiring explicit consent. The interface no longer asks for either on this path. `docs/dpia.md` carries that as a residual risk rather than a closed one, and the release gate for real data is unchanged: synthetic data only until the controller decides otherwise.
+
+**What was deliberately not done, because it would have been the #228 failure again.** The tick was not folded into the device preference, and no remembered agreement was introduced. There is simply no agreement now, which is a smaller claim than a false one.
+
+**One thing got stronger.** `consentAsserted` was the literal `true` in the audit type, so the route could not have recorded anything else even had it wanted to. It is a boolean now, derived as `mode === 'ambient' && consent === true`, which is what lets the trail tell an asked patient from an unasked one. Derived rather than read from the body on purpose: the schema constrains `consent` on ambient only, so an older SPA reaching a newer API during a deploy skew could otherwise assert an agreement on a surface that no longer asks for one.
+
+### The Per-Drug Sig, And Why It Is Not The Whole Phrase
+
+One dictation naming four drugs gets one sig back from the parse endpoint, because `parseSig` reads a phrase and not a list. Attaching that sig to every accepted drug would put paracetamol's 500 mg on cetirizine, which is the wrong-dose failure the Not Built table below exists to prevent.
+
+The theatre instead re-sends each accepted drug's own stretch of text to the same endpoint, bounded by the next drug name the matcher heard. Three properties make it safe to rely on:
+
+- **It shows its working.** The slice is printed on the row it filled, so a bad boundary is visible rather than hidden inside a number.
+- **It fails toward the empty field.** The slice starts at the drug's own name, so a dose spoken before the name ("500 mg of amoxicillin") is lost and the field stays empty. Starting earlier would catch it and would also open drug two's slice with drug one's trailing sig. An empty field asks the doctor a question; an inherited dose answers one they never asked.
+- **It is still a draft.** Every field remains editable and nothing is stored until the doctor confirms.
+
+It stays a client-side heuristic against an unchanged endpoint. The endpoint is deterministic, stores nothing, writes no audit row and allows thirty calls a minute, so the extra calls buy correctness at no boundary cost.
+
 ### What This Decision Does Not License
 
 Each of these is a safety boundary in its own right, and none is a deferred feature. **All of them were re-read on 2026-09-10 and all stand unchanged**, but one deserves an explicit answer rather than silence.

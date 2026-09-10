@@ -172,7 +172,7 @@ describe('mintSonioxSession, the outbound request', () => {
       // mode that reached the wire with the other's cap would be a spend control
       // that never applied. Written out rather than read from the table, so the
       // numbers themselves are pinned.
-      const expected: Record<LiveAsrMode, number> = { ambient: 1_800, dictation: 120 }
+      const expected: Record<LiveAsrMode, number> = { ambient: 1_800, dictation: 300 }
       upstream.mockResolvedValue(jsonResponse({ api_key: 'temp-abc', expires_at: 'later' }))
 
       await mintSonioxSession(mode)

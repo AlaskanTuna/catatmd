@@ -809,7 +809,7 @@ const LiveDeltaSchema = TranscriptSchema.superRefine((delta, ctx) => {
 })
 
 const PrescriptionParseBodySchema = z.object({
-  dictated: z.string().min(1).max(400),
+  dictated: z.string().min(1).max(2000),
   profileId: ProfileIdSchema.optional(),
 })
 

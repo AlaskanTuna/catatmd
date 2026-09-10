@@ -737,11 +737,34 @@ describe('LiveSessionRequestSchema', () => {
     expect(LiveSessionRequestSchema.safeParse({ consent: true }).success).toBe(true)
   })
 
-  it('refuses a body that asserts no agreement, rather than treating it as a state', () => {
-    // There is no meaningful request that says "no consent", so its absence is
-    // a malformed body and never something the route has to reason about.
+  it('refuses an ambient body that asserts no agreement, rather than treating it as a state', () => {
+    // On ambient there is no meaningful request that says "no consent", so its
+    // absence is a malformed body and never something the route reasons about.
+    // `mode` defaults to ambient before the refinement runs, so a bare `{}` is
+    // an ambient body rather than an unmoded one.
     expect(LiveSessionRequestSchema.safeParse({ consent: false }).success).toBe(false)
     expect(LiveSessionRequestSchema.safeParse({}).success).toBe(false)
+    expect(LiveSessionRequestSchema.safeParse({ consent: false, mode: 'ambient' }).success).toBe(
+      false,
+    )
+  })
+
+  /*
+   * The asymmetry #365 introduced. Prescription dictation asks nobody, so it
+   * asserts nothing and the schema must let it; the schema deliberately does
+   * not forbid a dictation body that *does* assert, because an older SPA sending
+   * one must not be refused during the deploy skew this schema tolerates. What
+   * stops that stale claim reaching the trail is the route deriving the audit
+   * value from the mode, pinned in `asr-live-sessions.test.ts`.
+   */
+  it('lets a dictation body assert nothing, because that surface asks nobody', () => {
+    expect(LiveSessionRequestSchema.safeParse({ mode: 'dictation' }).success).toBe(true)
+  })
+
+  it('does not refuse a stale dictation body that still asserts consent', () => {
+    expect(LiveSessionRequestSchema.safeParse({ consent: true, mode: 'dictation' }).success).toBe(
+      true,
+    )
   })
 })
 

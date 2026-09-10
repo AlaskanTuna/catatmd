@@ -313,9 +313,25 @@ asrRouter.post('/live-sessions', requireSonioxConfigured, async (req, res) => {
         region,
         mode,
         maxSessionSeconds: MAX_SESSION_DURATION_SECONDS[mode],
-        // What the client said, which is all the API can know: the gate is a
-        // property of the frontend and this row records the assertion.
-        consentAsserted: true,
+        /*
+         * What the client said, which is all the API can know: the gate is a
+         * property of the frontend and this row records the assertion.
+         *
+         * **False on dictation since #365**, and read from the body rather than
+         * hard-coded. Prescription dictation no longer shows a consent tick, so
+         * its client asks nobody and asserts nothing; writing `true` anyway
+         * would put a patient agreement in the trail that never happened.
+         * Ambient still carries the tick and still records it.
+         *
+         * **Derived from the mode, not just read from the body.** The schema
+         * refinement constrains ambient only, so a body may legitimately arrive
+         * as `{ consent: true, mode: 'dictation' }`: an older SPA build reaching
+         * a newer API during the deploy skew this schema is written to tolerate
+         * would send exactly that. Reading the body alone would let it record an
+         * agreement the interface never asked for, which is the one thing this
+         * field must not be able to say.
+         */
+        consentAsserted: mode === 'ambient' && parsed.data.consent === true,
       },
     })
 
