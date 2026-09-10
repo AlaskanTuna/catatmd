@@ -3,7 +3,7 @@ export { lexiconFor, MEDICATION_LEXICON, MEDICATION_LEXICON_VERSION } from './le
 export type { MedicationCandidate, Normalised } from './match.js'
 export { matchMedication, normalise } from './match.js'
 export type { Sig } from './sig.js'
-export { parseSig } from './sig.js'
+export { parseSig, parseSigWithSpan } from './sig.js'
 export type { Similarity } from './similarity.js'
 export {
   admits,

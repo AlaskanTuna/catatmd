@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseSig, type Sig } from './sig.js'
+import { parseSig, parseSigWithSpan, type Sig } from './sig.js'
 
 /**
  * Rojak is the register, not an edge case (issue #311).
@@ -150,5 +150,41 @@ describe('parseSig vocabulary', () => {
       duration: '5 days',
       food: null,
     })
+  })
+})
+
+/**
+ * How far the parse got, which is what tells a caller where one drug's sig
+ * stops (#369).
+ *
+ * A dictation naming two drugs recorded one, because a brand name is outside
+ * the lexicon by D-001, so the matcher offered no second candidate and nothing
+ * bounded the first drug's slice. This offset is the second boundary.
+ */
+describe('parseSigWithSpan reports where it stopped reading', () => {
+  const TWO =
+    'dextromethorphan 15 mg oral three times a day after food for 5 days. ' +
+    'strepsils lozenge 1 lozenge for 3 days.'
+
+  it('stops at the furthest field it read, not at the end of the text', () => {
+    const { sig, readTo } = parseSigWithSpan(TWO)
+
+    expect(sig.dose).toBe('15 mg')
+    expect(readTo).not.toBeNull()
+    expect(TWO.slice(0, readTo ?? 0)).toContain('for 5 days')
+    expect(TWO.slice(0, readTo ?? 0)).not.toContain('strepsils')
+  })
+
+  it('reads null when no field parsed, which is not the same as zero', () => {
+    // Nothing read is no evidence about where the drug's text stops. A caller
+    // that treated it as offset zero would cut every quote to nothing.
+    expect(parseSigWithSpan('patient advised to rest').readTo).toBeNull()
+    expect(parseSigWithSpan('').readTo).toBeNull()
+  })
+
+  it('agrees with parseSig, which is the same parse without the offset', () => {
+    for (const text of [TWO, 'amoxicillin 500mg TDS after food for five days', '']) {
+      expect(parseSigWithSpan(text).sig).toEqual(parseSig(text))
+    }
   })
 })

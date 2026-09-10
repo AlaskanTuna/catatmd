@@ -34,13 +34,17 @@ import {
   FREQUENCY_OPTIONS,
   fromSig,
   MAX_DICTATED_CHARACTERS,
+  narrowToSig,
   type PrescriptionDraft,
   ROUTE_OPTIONS,
+  type Span,
   type StagedPrescription,
   setDrugByHand,
-  sliceForCandidate,
+  spanForCandidate,
+  stretchKey,
   summarise,
   toPrescription,
+  unclaimedStretches,
   visibleCandidates,
 } from './prescription-draft.js'
 import { START_FAILED_ERROR, useDictationStream } from './use-dictation-stream.js'
@@ -148,6 +152,16 @@ export function PrescriptionTheatre({
   const [parsedFrom, setParsedFrom] = useState<string | null>(null)
   const [candidates, setCandidates] = useState<readonly MedicationCandidateWire[]>([])
   const [rejected, setRejected] = useState<ReadonlySet<string>>(new Set())
+  /**
+   * Unclaimed stretches the doctor has looked at and set aside.
+   *
+   * **Without it the block is wallpaper.** A dictation almost always ends on
+   * something that is not a drug ("no antibiotics for now", "come back if it
+   * worsens"), so the remainder is rarely empty, and a panel that is always
+   * there stops being read. Dismissing is the same act as rejecting a
+   * candidate and is deliberately as cheap.
+   */
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set())
   const [staged, setStaged] = useState<readonly StagedPrescription[]>([])
   const [editing, setEditing] = useState<string | null>(null)
   const [phase, setPhase] = useState<'idle' | 'recording' | 'loading-model' | 'transcribing'>(
@@ -183,6 +197,9 @@ export function PrescriptionTheatre({
       setError(null)
       setCandidates(response.candidates)
       setRejected(new Set())
+      // New text means new offsets, so a stretch set aside against the old one
+      // is a decision about characters that no longer exist.
+      setDismissed(new Set())
       setParsedFrom(dictated)
     },
     onError: () =>
@@ -223,7 +240,29 @@ export function PrescriptionTheatre({
             duration: row.draft.duration === '' ? parsed.duration : row.draft.duration,
             food: row.draft.food === '' ? parsed.food : row.draft.food,
           }
-          return { ...row, draft }
+          /*
+           * The quote narrows even though the fields only fill, and the
+           * asymmetry is deliberate. A field the doctor typed is theirs and a
+           * late response must not overwrite it; the quote is evidence of where
+           * these fields were read from and is not editable, so leaving it wide
+           * would keep claiming text this sig never accounted for. That claim is
+           * the whole defect (#369): with nothing narrowing it, one row holds
+           * every character and a second drug in the same breath has no
+           * remainder to be offered from.
+           */
+          if (row.sourceSpan === undefined || response.sigReadTo == null) return { ...row, draft }
+          /*
+           * Cut from `row.source`, never from `parsedFrom`. `sigReadTo` indexes
+           * the string that was posted, and that string is this row's quote, so
+           * this holds whatever the doctor has since done to the box. Pressing
+           * Check replaces `parsedFrom` while staged rows keep the spans they
+           * were cut with, and re-slicing there would quote the new text at the
+           * old offsets.
+           */
+          const source = row.source.slice(0, response.sigReadTo).trim()
+          return source.length === 0
+            ? { ...row, draft }
+            : { ...row, draft, source, sourceSpan: narrowToSig(row.sourceSpan, response.sigReadTo) }
         }),
       ),
     onError: () =>
@@ -565,6 +604,7 @@ export function PrescriptionTheatre({
     setParsedFrom(null)
     setCandidates([])
     setRejected(new Set())
+    setDismissed(new Set())
     setStaged([])
     setEditing(null)
     setError(null)
@@ -584,6 +624,24 @@ export function PrescriptionTheatre({
     (candidate) =>
       !claimed.some((span) => candidate.start < span.end && span.start < candidate.end),
   )
+  /*
+   * The dictation minus every stretch a row quotes. It exists because a drug
+   * the lexicon does not hold raises no candidate, so nothing bounds the
+   * previous drug's slice and nothing announces the second drug either: a
+   * dictation naming two drugs recorded one, and its quote swallowed the other
+   * (#369). Showing the gap is the whole fix. It names no drug, because the
+   * reason the gap is a gap is that no name was recognised in it.
+   *
+   * Derived from `staged` rather than stored, so removing a row hands its
+   * stretch straight back, exactly as removing a row releases its candidates.
+   */
+  const remainder =
+    parsedFrom === null || staged.length === 0
+      ? []
+      : unclaimedStretches(
+          parsedFrom,
+          staged.flatMap((row) => (row.sourceSpan === undefined ? [] : [row.sourceSpan])),
+        ).filter((stretch) => !dismissed.has(stretchKey(stretch)))
   /*
    * The right column appears once there is anything to work with, not only
    * after a successful parse. Gating it on `parsedFrom` meant a failed parse
@@ -605,7 +663,8 @@ export function PrescriptionTheatre({
   const accept = (candidate: MedicationCandidateWire) => {
     if (parsedFrom === null || room <= 0) return
     const key = mintKey()
-    const source = sliceForCandidate(parsedFrom, candidates, candidate)
+    const sourceSpan = spanForCandidate(parsedFrom, candidates, candidate)
+    const source = parsedFrom.slice(sourceSpan.start, sourceSpan.end).trim()
     setStaged((rows) => [
       ...rows,
       {
@@ -613,9 +672,33 @@ export function PrescriptionTheatre({
         draft: acceptCandidate(EMPTY_DRAFT, candidate),
         source: source.length > 0 ? source : parsedFrom,
         span: { start: candidate.start, end: candidate.end },
+        ...(source.length > 0 ? { sourceSpan } : {}),
       },
     ])
     if (source.length > 0) segment.mutate({ key, source })
+  }
+
+  /**
+   * Stage a stretch the dictation holds and no row claims (#369).
+   *
+   * **It proposes no drug name, and that is the point.** The row opens with an
+   * empty `drug` for the doctor to type, because the reason this stretch is
+   * unclaimed is that the matcher recognised no name in it, and inventing one
+   * from unmatched text is the substitution `docs/decisions.md` D-001 bans.
+   *
+   * It does parse the sig, which `addByHand` does not. The stretch is a span of
+   * the dictation with known bounds, so there is a right answer to what dose was
+   * said inside it; the hand path has only the whole box, where there is not.
+   */
+  const addFromRemainder = (stretch: Span & { text: string }) => {
+    if (room <= 0) return
+    const key = mintKey()
+    setStaged((rows) => [
+      ...rows,
+      { key, draft: EMPTY_DRAFT, source: stretch.text, sourceSpan: stretch },
+    ])
+    setEditing(key)
+    segment.mutate({ key, source: stretch.text })
   }
 
   const addByHand = () => {
@@ -929,6 +1012,58 @@ export function PrescriptionTheatre({
                         </li>
                       )
                     })}
+                  </ul>
+                </section>
+              )}
+
+              {/* The same silence as the block below, in the case that block
+                cannot see: one drug matched and a second did not, so the count
+                is 1 rather than 0 and nothing said the second was dropped
+                (#369). Quoted and never named, because the matcher recognised
+                no drug here and reading one out of the text is the
+                substitution D-001 bans. */}
+              {reviewing && remainder.length > 0 && (
+                <section className={PANEL}>
+                  <h3 className="text-xs font-semibold text-ink">
+                    Not Claimed By Any Row ({remainder.length})
+                  </h3>
+                  <p className="mt-1 text-2xs text-ink-muted">
+                    You said this and no prescription covers it. If it is a drug, add it and name it
+                    yourself.
+                  </p>
+
+                  <ul aria-label="Not claimed by any row" className="mt-3 space-y-2">
+                    {remainder.map((stretch) => (
+                      <li
+                        key={`${stretch.start}:${stretch.end}`}
+                        className="rounded-control bg-sunken-soft p-3 text-xs text-ink-muted"
+                      >
+                        <p className="line-clamp-3 font-mono leading-relaxed">“{stretch.text}”</p>
+
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            icon={<Plus aria-hidden className="size-3.5" />}
+                            disabled={dirty || room <= 0}
+                            onClick={() => addFromRemainder(stretch)}
+                          >
+                            Add As A Prescription
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="neutral"
+                            icon={<X aria-hidden className="size-3.5" />}
+                            onClick={() =>
+                              setDismissed((current) => new Set(current).add(stretchKey(stretch)))
+                            }
+                          >
+                            Dismiss
+                          </Button>
+                          {dirty && <span>Check the dictation again first.</span>}
+                        </div>
+                      </li>
+                    ))}
                   </ul>
                 </section>
               )}
