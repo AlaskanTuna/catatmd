@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
   type DispositionState,
+  type LiveAsrMode,
   type NoteTemplate,
   NotificationActionSchema,
   type TranscriptCleanupStatus,
@@ -378,6 +379,13 @@ export type AsrAuditEvent =
    * provider, so it reconciles this row against their usage log; it is an
    * identifier, never content. `consentAsserted` records what the client said,
    * which is all the API can know: the gate is a property of the frontend.
+   *
+   * `mode` is a closed enum naming which recognition config and session cap the
+   * key was minted under (#356). It is here and deliberately not on the logger,
+   * which is a positive allowlist whose fields need explicit human sign-off; a
+   * row is the right home because the two modes cost different amounts and the
+   * trail is what a spend reconciliation reads. It appears on the failure row
+   * too, so a mode that fails to mint is not invisible in the trail.
    */
   | {
       action: 'asr.live_session_minted'
@@ -385,11 +393,15 @@ export type AsrAuditEvent =
         clientReferenceId: string
         model: string
         region: string
+        mode: LiveAsrMode
         maxSessionSeconds: number
         consentAsserted: true
       }
     }
-  | { action: 'asr.live_session_failed'; metadata: { reason: LiveSessionFailureReason } }
+  | {
+      action: 'asr.live_session_failed'
+      metadata: { reason: LiveSessionFailureReason; mode: LiveAsrMode }
+    }
   | {
       action: 'asr.hosted_draft_labelled'
       metadata: { turnCount: number; detected: readonly string[]; model: string }

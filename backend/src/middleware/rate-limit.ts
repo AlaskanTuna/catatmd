@@ -158,8 +158,24 @@ export const hostedAsrRateLimit = rateLimit({
 })
 
 /**
- * Per-IP limiter for `POST /api/asr/live-sessions`, which mints one ambient
- * session key (#268).
+ * Which mode `POST /api/asr/live-sessions` was asked for, read off the parsed
+ * body so the two limiters below can bucket apart.
+ *
+ * `express.json` runs before every limiter in `app.ts`, so the body is already
+ * an object here. It is read as `unknown` and compared to a literal rather than
+ * parsed: a limiter runs before the route's own `safeParse` and must not depend
+ * on a shape that has not been validated yet. Anything that is not exactly
+ * `'dictation'` falls to the ambient bucket, which is the tighter of the two.
+ */
+function asksForDictation(req: Request): boolean {
+  const body: unknown = req.body
+  if (typeof body !== 'object' || body === null || !('mode' in body)) return false
+  return (body as { mode: unknown }).mode === 'dictation'
+}
+
+/**
+ * Per-IP limiter for `POST /api/asr/live-sessions` in ambient mode, which mints
+ * one consultation's session key (#268).
  *
  * Five a minute because one consultation needs one key: the number is a bound
  * on restarts and retries by a human hand, not a throughput allowance. It is
@@ -174,10 +190,46 @@ export const liveSessionRateLimit = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator: clientKey,
+  skip: asksForDictation,
   message: {
     error: {
       code: 'rate_limited',
       message: 'Too many ambient session requests. Please retry shortly.',
+    },
+  },
+})
+
+/**
+ * Per-IP limiter for the same route in dictation mode (#356).
+ *
+ * **A separate bucket because the two are counted per prescription, not per
+ * consultation.** One consultation needs one ambient key, which is what sizes
+ * the five above. A prescription sheet needs one dictation key per drug, and
+ * `MAX_PRESCRIPTIONS` puts ten drugs on a sheet, so a doctor writing a full
+ * sheet would spend twice the ambient allowance and be locked out of ambient
+ * capture for the next consultation. Ten matches that bound rather than
+ * guessing at it.
+ *
+ * **Looser in requests, tighter in what each request buys.** A dictation key
+ * caps its session at two minutes against ambient's thirty, so ten of these is
+ * a sixth of the stream time five ambient keys buy. That is also the honest
+ * answer to a caller choosing their own bucket by what they put in the body:
+ * claiming dictation gets the larger allowance and the smaller cap together,
+ * and the mint enforces the cap at the provider. The gap that remains is the
+ * one `.claude/rules/security.md` already records, that no global or per-actor
+ * spend cap exists on this path at all.
+ */
+export const dictationSessionRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  skip: (req) => !asksForDictation(req),
+  message: {
+    error: {
+      code: 'rate_limited',
+      message: 'Too many dictation session requests. Please retry shortly.',
     },
   },
 })

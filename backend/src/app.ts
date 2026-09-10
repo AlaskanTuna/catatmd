@@ -9,6 +9,7 @@ import {
   analyzeRateLimit,
   audioReadRateLimit,
   audioWriteRateLimit,
+  dictationSessionRateLimit,
   draftTurnsRateLimit,
   ephemeralAnalyzeRateLimit,
   eraseRateLimit,
@@ -110,7 +111,12 @@ export function createApp() {
   app.post('/api/asr/draft-turns', draftTurnsRateLimit)
   // Ambient capture mints one provider key per session and streams the audio
   // from the browser, so this bounds key issuance rather than audio (#268).
+  // Two buckets on one path rather than two paths, because a second route would
+  // duplicate the 503 gate and the audit contract for nothing: each limiter
+  // skips the other's mode, and both run after `express.json` above, so the
+  // body they read is already parsed (#356).
   app.post('/api/asr/live-sessions', liveSessionRateLimit)
+  app.post('/api/asr/live-sessions', dictationSessionRateLimit)
   // The two live panes, bucketed apart because they cost different things
   // (#219). Flags run the rules engine in-process and spend no model budget, so
   // they get a cadence-sized allowance; the fold is an LLM call and gets a
