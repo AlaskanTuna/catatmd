@@ -302,6 +302,25 @@ export const DraftTurnsResponseSchema = z.object({
 export const LiveAsrRegionSchema = z.enum(['us', 'eu', 'jp', 'in'])
 
 /**
+ * What the doctor is about to say, which decides the recognition settings, the
+ * vocabulary and the session cap the API will mint.
+ *
+ * **A closed enum, and that is the whole control.** The settings it selects
+ * cross the audio egress in the socket's first frame, where nothing can be
+ * de-identified. A caller picks *which* of two module constants is sent and can
+ * never influence *what* is in either, which is why this is an enum rather than
+ * a shape the request supplies. `liveSessionConfig()` in
+ * `backend/src/lib/asr/soniox.ts` reads it as a table lookup and throws on
+ * anything else, rather than falling back to a default: a silent fallback would
+ * egress one mode's config while the caller believed it had asked for the
+ * other's.
+ *
+ * `ambient` is a consultation, two voices, up to thirty minutes.
+ * `dictation` is one doctor reading out a prescription, in seconds.
+ */
+export const LiveAsrModeSchema = z.enum(['ambient', 'dictation'])
+
+/**
  * The only socket addresses the browser may open.
  *
  * The client validates the URL our own API handed it, which is deliberate
@@ -410,8 +429,18 @@ export const LiveAsrConfigSchema = z.object({
  * than a state the route has to reason about. It is a client assertion the API
  * cannot verify, exactly like `Transcript.labelsReviewed`, and it is recorded
  * in the audit row as what the client said rather than as proof.
+ *
+ * **`mode` defaults rather than being required, and that is a rollout property
+ * rather than a nicety.** Vercel and Render deploy independently from one
+ * merge, so a required field would refuse every request an unchanged SPA sends
+ * for the length of the slower build, which on this route means ambient capture
+ * black for that window. The default is the mode that already shipped, so a
+ * client that names nothing gets today's behaviour byte for byte.
  */
-export const LiveSessionRequestSchema = z.object({ consent: z.literal(true) })
+export const LiveSessionRequestSchema = z.object({
+  consent: z.literal(true),
+  mode: LiveAsrModeSchema.default('ambient'),
+})
 
 /**
  * What `POST /api/asr/live-sessions` returns.
@@ -1968,6 +1997,7 @@ export type Transcript = z.infer<typeof TranscriptSchema>
 export type HostedAsrSegment = z.infer<typeof HostedAsrSegmentSchema>
 export type HostedAsrResult = z.infer<typeof HostedAsrResultSchema>
 export type LiveAsrRegion = z.infer<typeof LiveAsrRegionSchema>
+export type LiveAsrMode = z.infer<typeof LiveAsrModeSchema>
 export type LiveSessionConfig = z.infer<typeof LiveSessionConfigSchema>
 export type LiveAsrConfig = z.infer<typeof LiveAsrConfigSchema>
 export type LiveSessionRequest = z.infer<typeof LiveSessionRequestSchema>

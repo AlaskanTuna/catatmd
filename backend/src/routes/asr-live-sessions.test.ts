@@ -165,8 +165,8 @@ const mint = (body: unknown = { consent: true }, ip?: string) =>
     body: typeof body === 'string' ? body : JSON.stringify(body),
   })
 
-const readConfig = () =>
-  realFetch(`${origin}/api/asr/live-sessions/config`, {
+const readConfig = (query = '') =>
+  realFetch(`${origin}/api/asr/live-sessions/config${query}`, {
     headers: { 'x-forwarded-for': nextIp() },
   })
 
@@ -213,6 +213,53 @@ describe('GET /live-sessions/config, which egresses nothing', () => {
 
     expect((await readConfig()).status).toBe(401)
   })
+
+  it('describes ambient when no mode is named, which is what an old client sends', async () => {
+    // Vercel and Render deploy independently, so the default is what keeps
+    // ambient capture working for the length of the slower build (#356).
+    const body = (await (await readConfig()).json()) as {
+      config: { languageHints: string[]; speakerDiarization: boolean }
+    }
+
+    expect(body.config.languageHints).toEqual(['ms', 'en', 'zh', 'ta'])
+    expect(body.config.speakerDiarization).toBe(true)
+  })
+
+  it('describes dictation when it is asked for', async () => {
+    const body = (await (await readConfig('?mode=dictation')).json()) as {
+      config: {
+        languageHints: string[]
+        speakerDiarization: boolean
+        endpointDetection: boolean
+        context: { general: { key: string; value: string }[]; terms?: string[] }
+      }
+    }
+
+    expect(body.config.languageHints).toEqual(['ms', 'en'])
+    expect(body.config.speakerDiarization).toBe(false)
+    expect(body.config.endpointDetection).toBe(true)
+    expect(body.config.context.general).toContainEqual({
+      key: 'speakers',
+      value: 'One speaker: a doctor dictating a prescription',
+    })
+    expect(body.config.context.terms).toContain('amoxicillin')
+    // A prescription phrase carries no symptoms, so the ambient register is
+    // absent rather than merely deprioritised.
+    expect(body.config.context.terms).not.toContain('selesema')
+  })
+
+  it.each(['?mode=ambient;patient=X', '?mode=AMBIENT', '?mode=', '?mode=ambient&mode=dictation'])(
+    'answers 400 to %s rather than falling back to ambient',
+    async (query) => {
+      // Never a silent default: a client asking for a mode this deployment does
+      // not have must be told, not handed a config for the other one and left
+      // to open a socket with it.
+      const res = await readConfig(query)
+
+      expect(res.status).toBe(400)
+      await expect(res.json()).resolves.toMatchObject({ error: { code: 'invalid_query' } })
+    },
+  )
 })
 
 describe('pre-flight rejections, which mint nothing and audit nothing', () => {
@@ -247,7 +294,15 @@ describe('pre-flight rejections, which mint nothing and audit nothing', () => {
     // 500 on every JSON route in the app. That is pre-existing and not this
     // route's to fix; asserting 400 here would be asserting a behaviour the
     // API does not have.
-    for (const body of [{}, { consent: false }, { consent: 'yes' }]) {
+    for (const body of [
+      {},
+      { consent: false },
+      { consent: 'yes' },
+      // The mode is a closed enum on the wire too, so an unrecognised one is a
+      // malformed body rather than something the route falls back from.
+      { consent: true, mode: 'transcribe' },
+      { consent: true, mode: 'ambient; patient=X' },
+    ]) {
       const res = await mint(body)
 
       expect(res.status).toBe(400)
@@ -257,7 +312,7 @@ describe('pre-flight rejections, which mint nothing and audit nothing', () => {
     expect(auditState.writes).toEqual([])
   })
 
-  it('bounds one caller to five sessions a minute', async () => {
+  it('bounds one caller to five ambient sessions a minute', async () => {
     upstream.mockImplementation(async () => mintedKey())
     const ip = '203.0.113.251'
 
@@ -269,6 +324,37 @@ describe('pre-flight rejections, which mint nothing and audit nothing', () => {
     // The sixth was refused before the route ran, so it minted nothing.
     expect(upstream).toHaveBeenCalledTimes(5)
     expect(auditActions()).toEqual(Array(5).fill('asr.live_session_minted'))
+  })
+
+  it('bounds one caller to ten dictation sessions a minute, on its own bucket', async () => {
+    // Ten because a sheet holds ten drugs and each is dictated separately, so
+    // the ambient allowance of five would lock a doctor out of the capture they
+    // need for the next consultation. Its own bucket, asserted here by spending
+    // the dictation allowance to exhaustion and then still getting an ambient
+    // key on the same address.
+    upstream.mockImplementation(async () => mintedKey())
+    const ip = '203.0.113.252'
+
+    const statuses: number[] = []
+    for (let i = 0; i < 11; i++) {
+      statuses.push((await mint({ consent: true, mode: 'dictation' }, ip)).status)
+    }
+
+    expect(statuses.slice(0, 10)).toEqual(Array(10).fill(200))
+    expect(statuses[10]).toBe(429)
+    expect((await mint({ consent: true }, ip)).status).toBe(200)
+  })
+
+  it('does not let ambient spend the dictation allowance', async () => {
+    // The other direction of the same property: exhausting the tighter bucket
+    // must not refuse the mode it does not bound.
+    upstream.mockImplementation(async () => mintedKey())
+    const ip = '203.0.113.253'
+
+    for (let i = 0; i < 6; i++) await mint({ consent: true }, ip)
+
+    expect((await mint({ consent: true }, ip)).status).toBe(429)
+    expect((await mint({ consent: true, mode: 'dictation' }, ip)).status).toBe(200)
   })
 })
 
@@ -305,9 +391,48 @@ describe('the mint, and the row that must precede it reaching the client', () =>
         clientReferenceId: sentReference,
         model: 'stt-rt-v5',
         region: 'us',
+        mode: 'ambient',
         maxSessionSeconds: 1800,
         consentAsserted: true,
       },
+    })
+  })
+
+  it('defaults an unnamed mode to ambient, on the wire and in the row', async () => {
+    upstream.mockResolvedValueOnce(mintedKey())
+
+    const res = await mint({ consent: true })
+
+    const body = (await res.json()) as { config: { speakerDiarization: boolean } }
+    expect(body.config.speakerDiarization).toBe(true)
+    expect(
+      (JSON.parse(String(upstream.mock.calls[0]?.[1]?.body)) as Record<string, unknown>)
+        .max_session_duration_seconds,
+    ).toBe(1800)
+    expect(auditState.writes[0]?.data).toMatchObject({ metadata: { mode: 'ambient' } })
+  })
+
+  it('mints a dictation session with its own config, cap and row', async () => {
+    upstream.mockResolvedValueOnce(mintedKey())
+
+    const res = await mint({ consent: true, mode: 'dictation' })
+
+    expect(res.status).toBe(200)
+    const body = LiveSessionSchema.safeParse(await res.json())
+    expect(body.success).toBe(true)
+    if (body.success) {
+      expect(body.data.config.speakerDiarization).toBe(false)
+      expect(body.data.config.endpointDetection).toBe(true)
+      expect(body.data.config.languageHints).toEqual(['ms', 'en'])
+    }
+    // Two minutes, bound to the key by the provider at mint time: a cap chosen
+    // later would be no cap at all.
+    expect(
+      (JSON.parse(String(upstream.mock.calls[0]?.[1]?.body)) as Record<string, unknown>)
+        .max_session_duration_seconds,
+    ).toBe(120)
+    expect(auditState.writes[0]?.data).toMatchObject({
+      metadata: { mode: 'dictation', maxSessionSeconds: 120 },
     })
   })
 
@@ -356,6 +481,16 @@ describe('upstream failures, each audited exactly once', () => {
 
     expect(res.status).toBe(502)
     expect(auditActions()).toEqual(['asr.live_session_failed'])
+  })
+
+  it('records which mode failed, so a failing mode is not invisible', async () => {
+    upstream.mockRejectedValueOnce(new TypeError('fetch failed'))
+
+    await mint({ consent: true, mode: 'dictation' })
+
+    expect(auditState.writes[0]?.data).toMatchObject({
+      metadata: { reason: 'unavailable', mode: 'dictation' },
+    })
   })
 })
 

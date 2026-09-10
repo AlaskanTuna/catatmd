@@ -15,6 +15,7 @@ function classify(err: unknown): ErrorClass {
   if (err instanceof HttpError) {
     if (err.code === 'unauthenticated') return 'auth_error'
     if (err.code === 'invalid_body') return 'validation_error'
+    if (err.code === 'invalid_query') return 'validation_error'
     if (err.code === 'analysis_failed') return 'model_error'
     if (err.code === 'draft_failed') return 'model_error'
     if (err.code === 'deid_failed') return 'deidentification_error'
