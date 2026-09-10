@@ -111,6 +111,24 @@ The theatre instead re-sends each accepted drug's own stretch of text to the sam
 
 It stays a client-side heuristic against an unchanged endpoint. The endpoint is deterministic, stores nothing, writes no audit row and allows thirty calls a minute, so the extra calls buy correctness at no boundary cost.
 
+### The Stretch No Row Claims
+
+**Bounding a slice at the next drug name is only half a boundary, and the missing half lost a drug.** Reported 2026-09-10 (#369): a dictation naming Dextromethorphan and then Strepsils recorded one prescription. Strepsils is a brand, brands are outside the lexicon by the Not Built table below, so the matcher offered a single candidate. With no second name to bound it, the first slice ran to the end of the utterance, and the row's quote presented the second drug's entire sig as evidence for fields none of that text supplied.
+
+Three things were wrong at once, and only the third is new.
+
+| Symptom                                               | Standing                                            |
+| ----------------------------------------------------- | --------------------------------------------------- |
+| The brand raised no candidate                         | Correct, and unchanged. Generic names only          |
+| The doctor had to type the second drug by hand        | Correct, and unchanged. The system proposes no drug |
+| Nothing said a second drug had been heard and dropped | The defect. Fixed                                   |
+
+**The second boundary is the sig's own reach.** `parseSigWithSpan` reports the offset past which no field was read, the row's quote is cut there, and every stretch left over is shown under "Not Claimed By Any Row" for the doctor to add or ignore.
+
+- **A gap is evidence, never a proposal.** It is quoted verbatim and no drug name is read out of it. The reason a gap is a gap is that the matcher recognised no name in it, so naming one would be the substitution the Not Built table bans.
+- **A row staged from a gap does get its sig parsed**, because a gap has known bounds and there is a right answer to what dose was said inside it. Add By Hand, which has only the whole box, still does not.
+- **It fails toward showing too much.** Where the first drug's half omits a field the second supplies, the parse reads across the boundary and the gap starts late. That is a visible wrong split, which is the direction the slice already chooses.
+
 ### What This Decision Does Not License
 
 Each of these is a safety boundary in its own right, and none is a deferred feature. **All of them were re-read on 2026-09-10 and all stand unchanged**, but one deserves an explicit answer rather than silence.

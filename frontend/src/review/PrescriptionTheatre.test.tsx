@@ -700,6 +700,136 @@ describe('PrescriptionTheatre', () => {
     expect(sent[0]?.lexiconId).toBeUndefined()
   })
 
+  /**
+   * The reported bug, verbatim (#369).
+   *
+   * Two drugs were dictated in one breath and one was recorded. Strepsils is a
+   * brand and brands are outside the lexicon by D-001, so the matcher offered a
+   * single candidate; with no second candidate to bound it, the dextromethorphan
+   * slice ran to the end of the text and its quote swallowed the second drug's
+   * whole sig. Nothing said so, because the "nothing matched" block renders only
+   * at a count of zero and the count here was one.
+   */
+  describe('a second drug the lexicon does not hold', () => {
+    const REPORTED =
+      'Dextromethorphan: dose 15 mg oral, wrote. 3 times daily when required for cough, ' +
+      'preferably after food for 5 days. Strepsils lozenge: dose 1 lozenge, oral, every 3 to 4 ' +
+      'days when required for sore throat, with or without food for 3 days. No antibiotics for now.'
+    /** Where the sig parse stops: the end of `for 5 days`, before `Strepsils`. */
+    const READ_TO = REPORTED.indexOf('for 5 days') + 'for 5 days'.length
+    const DEXTRO = candidate({
+      lexiconId: 'dextromethorphan',
+      generic: 'dextromethorphan',
+      heard: 'Dextromethorphan',
+      start: 0,
+      end: 16,
+    })
+    const DEXTRO_SIG = {
+      dose: '15 mg',
+      route: 'oral',
+      frequency: 'when-required',
+      duration: '5 days',
+      food: 'after',
+    }
+
+    /** Accept the one candidate offered and wait for its own sig to land. */
+    const acceptDextromethorphan = async () => {
+      mocks.parsePrescription.mockResolvedValue({
+        sig: DEXTRO_SIG,
+        sigReadTo: READ_TO,
+        candidates: [DEXTRO],
+      })
+      const handles = renderTheatre()
+      await check(REPORTED)
+      fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
+      await waitFor(() => expect(mocks.parsePrescription).toHaveBeenCalledTimes(2))
+      return handles
+    }
+
+    it('stops the first row quote where its own sig stopped being read', async () => {
+      await acceptDextromethorphan()
+
+      const row = within(confirming()).getByText(/Dextromethorphan: dose 15 mg/)
+      expect(row.textContent).toContain('for 5 days')
+      // The defect itself: this row used to quote the second drug and the two
+      // sentences after it, as evidence for fields none of that text supplied.
+      expect(row.textContent).not.toContain('Strepsils')
+      expect(row.textContent).not.toContain('No antibiotics')
+    })
+
+    it('offers the stretch no row claims, quoted and unnamed', async () => {
+      await acceptDextromethorphan()
+
+      const left = await screen.findByRole('list', { name: 'Not claimed by any row' })
+      expect(within(left).getByText(/Strepsils lozenge/)).toBeTruthy()
+      // Quoted, never read as a drug. Naming it would be the substitution D-001
+      // bans, and the reason it is unclaimed is that no name was recognised.
+      expect(within(left).queryByText('Strepsils', { exact: true })).toBeNull()
+    })
+
+    it('stages that stretch as its own row, with the sig read from it alone', async () => {
+      await acceptDextromethorphan()
+      fireEvent.click(await screen.findByRole('button', { name: 'Add As A Prescription' }))
+
+      await waitFor(() => expect(mocks.parsePrescription).toHaveBeenCalledTimes(3))
+      const sent = mocks.parsePrescription.mock.calls[2]?.[1] as string
+      expect(sent.startsWith('Strepsils lozenge')).toBe(true)
+      expect(sent).not.toContain('Dextromethorphan')
+      expect(within(confirming()).getAllByRole('listitem')).toHaveLength(2)
+    })
+
+    it('names no drug on the row it stages, so the doctor types it', async () => {
+      // The row opens on an empty Drug field. Reading a name out of unmatched
+      // text is exactly the look-alike substitution the lexicon refuses to do.
+      await acceptDextromethorphan()
+      fireEvent.click(await screen.findByRole('button', { name: 'Add As A Prescription' }))
+
+      expect((await screen.findByLabelText('Drug')).getAttribute('value')).toBe('')
+      expect(within(confirming()).getByText('Name this drug')).toBeTruthy()
+    })
+
+    it('sets a stretch aside on Dismiss, so the block does not become wallpaper', async () => {
+      // A dictation almost always ends on something that is not a drug, so a
+      // remainder that cannot be cleared would be on screen every time and
+      // would stop being read. Dismissing is the same act as rejecting.
+      await acceptDextromethorphan()
+      fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }))
+
+      await waitFor(() =>
+        expect(screen.queryByRole('list', { name: 'Not claimed by any row' })).toBeNull(),
+      )
+    })
+
+    it('hands the stretch back when the row claiming it is removed', async () => {
+      await acceptDextromethorphan()
+      expect(await screen.findByRole('list', { name: 'Not claimed by any row' })).toBeTruthy()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove prescription 1' }))
+
+      // Releasing a source span mirrors how removing a row hands its candidates
+      // back, so nothing is stranded by a decision the doctor undid.
+      await waitFor(() =>
+        expect(screen.queryByRole('list', { name: 'Not claimed by any row' })).toBeNull(),
+      )
+    })
+
+    it('offers nothing while one row still accounts for every character', async () => {
+      // Why the quote has to narrow first. A parse reporting no offset leaves
+      // the claim as wide as it was, which is the state that had no remainder.
+      mocks.parsePrescription.mockResolvedValue({
+        sig: DEXTRO_SIG,
+        sigReadTo: null,
+        candidates: [DEXTRO],
+      })
+      renderTheatre()
+      await check(REPORTED)
+      fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
+      await waitFor(() => expect(mocks.parsePrescription).toHaveBeenCalledTimes(2))
+
+      expect(screen.queryByRole('list', { name: 'Not claimed by any row' })).toBeNull()
+    })
+  })
+
   it('announces the run in a live region present before it has anything to say', () => {
     // A live region added to the DOM alongside its first content is the shape
     // screen readers miss, so it is mounted empty rather than conditionally.

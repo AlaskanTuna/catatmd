@@ -62,7 +62,7 @@ import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
 import { logger, timeStage } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
-import { matchMedication, parseSig } from '../medications/index.js'
+import { matchMedication, parseSigWithSpan } from '../medications/index.js'
 import { inFlightGate, parseAudioBody } from '../middleware/audio-body.js'
 import { evaluateRedFlags, mergeRedFlags, proposeMishearCorrections } from '../redflags/index.js'
 import { retrieveGuidelines } from '../retrieval/index.js'
@@ -823,10 +823,15 @@ const PrescriptionParseBodySchema = z.object({
  * corrections and the copilot took before it, and it is why no prescription
  * write path exists here.
  *
- * **No model, anywhere on this path.** `parseSig` is regex over a closed
- * vocabulary and `matchMedication` is phonetic plus orthographic distance
- * against a static versioned lexicon. Nothing is de-identified because nothing
- * egresses, and nothing is proposed that the doctor did not say.
+ * **No model, anywhere on this path.** `parseSigWithSpan` is regex over a
+ * closed vocabulary and `matchMedication` is phonetic plus orthographic
+ * distance against a static versioned lexicon. Nothing is de-identified because
+ * nothing egresses, and nothing is proposed that the doctor did not say.
+ *
+ * **`sigReadTo` reports how far the sig parse got**, so a caller slicing one
+ * drug's stretch out of a several-drug dictation can tell where its fields stop
+ * being accounted for. It is an offset and nothing else: no claim about what
+ * the remaining text means, and no drug name proposed for it (#369).
  *
  * **Candidates are returned in the matcher's order and must not be re-sorted.**
  * A clinical-safety review on #311 found a contained single agent outranking
@@ -848,10 +853,12 @@ consultationsRouter.post('/:id/prescriptions/parse', async (req, res) => {
   }
 
   const profile = getClinicalProfile(body.data.profileId ?? DEFAULT_PROFILE_ID)
+  const { sig, readTo } = parseSigWithSpan(body.data.dictated)
 
   res.json(
     PrescriptionParseResponseSchema.parse({
-      sig: parseSig(body.data.dictated),
+      sig,
+      sigReadTo: readTo,
       candidates: matchMedication(body.data.dictated, profile.id),
     }),
   )

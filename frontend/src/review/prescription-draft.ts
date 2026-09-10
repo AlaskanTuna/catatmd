@@ -50,6 +50,9 @@ export const EMPTY_DRAFT: PrescriptionDraft = {
   food: '',
 }
 
+/** A half-open range of `parsedFrom`, in characters. */
+export type Span = { readonly start: number; readonly end: number }
+
 /**
  * One prescription assembled in the theatre and not yet saved.
  *
@@ -78,7 +81,20 @@ export type StagedPrescription = {
    * span is a decision already made. Removing the row releases the span, which
    * is what puts every one of them back on offer.
    */
-  readonly span?: { readonly start: number; readonly end: number }
+  readonly span?: Span
+  /**
+   * Where `source` was cut from, which is a wider range than `span`.
+   *
+   * **`span` is the drug's name; this is the stretch its fields were read
+   * from.** They are kept apart because they answer different questions: `span`
+   * decides which candidates are still on offer, and a candidate contained in
+   * an accepted one must be suppressed, while this decides which characters no
+   * row can account for. Widening `span` to do both would suppress a candidate
+   * merely because it sits downstream of an accepted drug.
+   *
+   * Absent on a row typed with no dictation behind it, which claims nothing.
+   */
+  readonly sourceSpan?: Span
 }
 
 /**
@@ -148,6 +164,15 @@ export const candidateKey = (candidate: MedicationCandidateWire) =>
   `${candidate.start}:${candidate.end}:${candidate.lexiconId}`
 
 /**
+ * The same, for an unclaimed stretch.
+ *
+ * Keyed on its bounds, so a stretch whose bounds move is a new stretch and is
+ * offered again. That is the honest reading: the bounds moved because a row was
+ * added or removed, which is a different question from the one dismissed.
+ */
+export const stretchKey = (stretch: Span) => `${stretch.start}:${stretch.end}`
+
+/**
  * The candidates still on offer, in the order the matcher returned them.
  *
  * **Filtered only, never sorted, grouped or deduped.** The order is score, then
@@ -193,11 +218,11 @@ export function visibleCandidates(
  * It reads from the text the offsets belong to, never from the live box, so a
  * doctor mid-edit cannot move the slice under the row.
  */
-export function sliceForCandidate(
+export function spanForCandidate(
   parsedFrom: string,
   candidates: readonly MedicationCandidateWire[],
   candidate: MedicationCandidateWire,
-): string {
+): Span {
   let to: number | null = null
   for (const other of candidates) {
     /*
@@ -209,7 +234,79 @@ export function sliceForCandidate(
     if (other.lexiconId === candidate.lexiconId) continue
     if (other.start > candidate.end && (to === null || other.start < to)) to = other.start
   }
-  return parsedFrom.slice(candidate.start, to ?? parsedFrom.length).trim()
+  return { start: candidate.start, end: to ?? parsedFrom.length }
+}
+
+/** The text of {@link spanForCandidate}, which is what the row quotes. */
+export function sliceForCandidate(
+  parsedFrom: string,
+  candidates: readonly MedicationCandidateWire[],
+  candidate: MedicationCandidateWire,
+): string {
+  const { start, end } = spanForCandidate(parsedFrom, candidates, candidate)
+  return parsedFrom.slice(start, end).trim()
+}
+
+/**
+ * Narrow a claimed span to the last character its sig parse could account for.
+ *
+ * **This is what leaves a remainder to show.** A slice bounded only by the next
+ * drug name runs to the end of the dictation whenever the matcher offered no
+ * next name, and a brand name is outside the lexicon by D-001, so that is the
+ * ordinary case rather than the rare one. Without narrowing, one row claims
+ * every character and `unclaimedStretches` can never return anything (#369).
+ *
+ * **It only ever shrinks.** `readTo` is an offset into the slice, not into the
+ * dictation, so it is measured from `span.start`; a `readTo` reaching past the
+ * span means the parse read nothing this span does not already hold, and the
+ * span stands. `null` likewise leaves it alone: no field was read, so there is
+ * no evidence about where the drug's own text stops, and guessing a boundary
+ * would cut a quote on nothing.
+ */
+export function narrowToSig(span: Span, readTo: number | null | undefined): Span {
+  if (readTo === null || readTo === undefined) return span
+  const end = span.start + readTo
+  return end < span.end ? { start: span.start, end } : span
+}
+
+/**
+ * The stretches of the dictation that no row claims.
+ *
+ * **A gap is evidence, never a proposal.** It says these characters belong to
+ * no prescription, and nothing more: no drug name is read out of it, and none
+ * is guessed. That distinction is what keeps this the visible-drop fix rather
+ * than a second route to a drug name the doctor did not choose (D-001).
+ *
+ * A gap holding no letter is dropped, because the tail between one drug's sig
+ * and the next drug's name is usually `. ` and offering it would be noise.
+ */
+export function unclaimedStretches(
+  parsedFrom: string,
+  claims: readonly Span[],
+): { start: number; end: number; text: string }[] {
+  const ordered = [...claims].sort((a, b) => a.start - b.start)
+  const stretches: { start: number; end: number; text: string }[] = []
+  let cursor = 0
+
+  for (const claim of [...ordered, { start: parsedFrom.length, end: parsedFrom.length }]) {
+    if (claim.start > cursor) {
+      const gap = parsedFrom.slice(cursor, claim.start)
+      /*
+       * Leading punctuation is the previous drug's full stop rather than this
+       * stretch's own text, so the offer opens on a word. The span moves with
+       * it, which keeps `text` exactly what `parsedFrom` holds between the
+       * bounds reported.
+       */
+      const lead = gap.length - gap.replace(/^[\s.,;:]+/, '').length
+      const text = gap.slice(lead).trimEnd()
+      if (/\p{L}/u.test(text)) {
+        stretches.push({ start: cursor + lead, end: cursor + lead + text.length, text })
+      }
+    }
+    cursor = Math.max(cursor, claim.end)
+  }
+
+  return stretches
 }
 
 /**
