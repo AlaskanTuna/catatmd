@@ -1,6 +1,6 @@
 # CatatMD Demo Recorder
 
-Operator handoff for recording a normal consultation with synthetic data. This suite was adapted from Perch's `scripts/demo` suite; its source describes inherited MakanLah/Cekgu lineage.
+Operator handoff for recording a normal consultation with synthetic data.
 
 ## Preparation Status
 
