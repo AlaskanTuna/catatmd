@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs'
-import { MAX_ASR_CONTEXT_TERMS } from '@shared/types'
+import {
+  type LiveAsrMode,
+  LiveAsrModeSchema,
+  type LiveSessionConfig,
+  MAX_ASR_CONTEXT_TERMS,
+} from '@shared/types'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CONFUSABLE_TARGETS } from '../../redflags/mishears.js'
 import {
@@ -11,7 +16,7 @@ import {
   sonioxHosts,
   TEMPORARY_KEY_TTL_SECONDS,
 } from './soniox.js'
-import { asrContextTerms } from './vocabulary.js'
+import { asrContextTerms, dictationContextTerms } from './vocabulary.js'
 
 /**
  * The adapter reads only the three Soniox fields, and the mock is what keeps
@@ -43,8 +48,8 @@ const jsonResponse = (body: unknown, status = 200) =>
     headers: { 'content-type': 'application/json' },
   })
 
-const mintError = async (): Promise<SonioxMintError> => {
-  const caught = await mintSonioxSession().then(
+const mintError = async (mode: LiveAsrMode = 'ambient'): Promise<SonioxMintError> => {
+  const caught = await mintSonioxSession(mode).then(
     () => null,
     (error: unknown) => error,
   )
@@ -127,7 +132,7 @@ describe('mintSonioxSession, the outbound request', () => {
   it('posts to the regional mint endpoint with the account key and no redirects', async () => {
     upstream.mockResolvedValue(jsonResponse({ api_key: 'temp-abc', expires_at: 'later' }))
 
-    await mintSonioxSession()
+    await mintSonioxSession('ambient')
 
     const [url, init] = upstream.mock.calls[0] ?? []
     expect(url).toBe('https://api.soniox.com/v1/auth/temporary-api-key')
@@ -145,7 +150,7 @@ describe('mintSonioxSession, the outbound request', () => {
   it('asks for a short-lived key with a session cap and a server-generated reference', async () => {
     upstream.mockResolvedValue(jsonResponse({ api_key: 'temp-abc', expires_at: 'later' }))
 
-    const session = await mintSonioxSession()
+    const session = await mintSonioxSession('ambient')
 
     const body = sentBody()
     expect(body.usage_type).toBe('transcribe_websocket')
@@ -153,11 +158,37 @@ describe('mintSonioxSession, the outbound request', () => {
     // Short because a key was measured opening more than one connection: the
     // TTL is the width of the window, not a per-session bound.
     expect(TEMPORARY_KEY_TTL_SECONDS).toBeLessThanOrEqual(30)
-    expect(body.max_session_duration_seconds).toBe(MAX_SESSION_DURATION_SECONDS)
+    expect(body.max_session_duration_seconds).toBe(MAX_SESSION_DURATION_SECONDS.ambient)
     // The reference id is ours, not the client's: it is what reconciles our
     // audit row against the provider's usage log.
     expect(body.client_reference_id).toMatch(/^[0-9a-f-]{36}$/)
     expect(session.clientReferenceId).toBe(body.client_reference_id)
+  })
+
+  it.each(LiveAsrModeSchema.options)(
+    'binds the %s session cap to the key it mints',
+    async (mode) => {
+      // The provider binds this at mint time, so it cannot be chosen later: a
+      // mode that reached the wire with the other's cap would be a spend control
+      // that never applied. Written out rather than read from the table, so the
+      // numbers themselves are pinned.
+      const expected: Record<LiveAsrMode, number> = { ambient: 1_800, dictation: 120 }
+      upstream.mockResolvedValue(jsonResponse({ api_key: 'temp-abc', expires_at: 'later' }))
+
+      await mintSonioxSession(mode)
+
+      expect(sentBody().max_session_duration_seconds).toBe(expected[mode])
+      expect(MAX_SESSION_DURATION_SECONDS[mode]).toBe(expected[mode])
+    },
+  )
+
+  it('refuses an unknown mode before the account key reaches the wire', async () => {
+    // The lookup guard, checked on the mint path as well as the config one: a
+    // fallback here would send `undefined` as a duration, which is a session
+    // with no cap at all.
+    await expect(mintSonioxSession('ambient; patient=Encik Ahmad' as LiveAsrMode)).rejects.toThrow()
+
+    expect(upstream).not.toHaveBeenCalled()
   })
 
   it('mints a distinct reference for every session', async () => {
@@ -167,8 +198,8 @@ describe('mintSonioxSession, the outbound request', () => {
       jsonResponse({ api_key: 'temp-abc', expires_at: 'later' }),
     )
 
-    const first = await mintSonioxSession()
-    const second = await mintSonioxSession()
+    const first = await mintSonioxSession('ambient')
+    const second = await mintSonioxSession('ambient')
 
     expect(first.clientReferenceId).not.toBe(second.clientReferenceId)
   })
@@ -177,7 +208,7 @@ describe('mintSonioxSession, the outbound request', () => {
     testEnv.SONIOX_REGION = 'jp'
     upstream.mockResolvedValue(jsonResponse({ api_key: 'temp-abc', expires_at: 'later' }))
 
-    await mintSonioxSession()
+    await mintSonioxSession('ambient')
 
     expect(upstream.mock.calls[0]?.[0]).toBe('https://api.jp.soniox.com/v1/auth/temporary-api-key')
   })
@@ -208,7 +239,7 @@ describe('mintSonioxSession, the response', () => {
       ),
     )
 
-    const session = await mintSonioxSession()
+    const session = await mintSonioxSession('ambient')
 
     expect(session.apiKey).toBe('temp-abc')
     expect(session.expiresAt).toBe('2026-09-06T12:01:00Z')
@@ -266,93 +297,192 @@ describe('mintSonioxSession, the response', () => {
   })
 })
 
+/**
+ * The config each mode sends, written out rather than read from the table it
+ * is compared against.
+ *
+ * **A `Record` keyed on the enum, so a third mode is a compile error here until
+ * someone writes its config down.** That is the property this file buys in
+ * place of the arity pin it replaced: the risk was never that a caller passes
+ * an argument, it was that something a caller supplies reaches a value crossing
+ * the audio egress, and a mode whose config nobody spelled out is exactly that
+ * hole one step earlier.
+ *
+ * `terms` is the one field referenced rather than transcribed. It is a hundred
+ * and twenty derived strings whose contents `vocabulary.test.ts` owns; copying
+ * them here would pin the wrong file and rot on the next lexicon entry. What is
+ * pinned here is which builder each mode reads, which is the coupling that can
+ * silently go wrong.
+ */
+const EXPECTED_CONFIG: Record<LiveAsrMode, LiveSessionConfig> = {
+  ambient: {
+    model: 'stt-rt-v5',
+    languageHints: ['ms', 'en', 'zh', 'ta'],
+    languageIdentification: true,
+    speakerDiarization: true,
+    endpointDetection: false,
+    context: {
+      general: [
+        { key: 'domain', value: 'Healthcare' },
+        { key: 'speakers', value: 'Two speakers: a doctor and a patient' },
+      ],
+      terms: asrContextTerms(),
+    },
+  },
+  dictation: {
+    model: 'stt-rt-v5',
+    languageHints: ['ms', 'en'],
+    languageIdentification: true,
+    speakerDiarization: false,
+    endpointDetection: true,
+    context: {
+      general: [
+        { key: 'domain', value: 'Healthcare' },
+        { key: 'speakers', value: 'One speaker: a doctor dictating a prescription' },
+      ],
+      terms: dictationContextTerms(),
+    },
+  },
+}
+
+/**
+ * Values a caller must never be able to push across the audio egress.
+ *
+ * Two are identifiers of the kind `deid/` exists to catch and which audio
+ * structurally cannot be cleaned of; the third is the shape someone reaches for
+ * when they have noticed that the argument selects a config and want to append
+ * to it. All three are typed through `as LiveAsrMode`, because the compiler
+ * already refuses them and the point is what happens when something upstream
+ * has been widened and no longer does.
+ */
+const ADVERSARIAL_MODES = [
+  '900101-14-5678',
+  'Encik Ahmad bin Ismail',
+  'ambient; patient=Encik Ahmad bin Ismail',
+  // Not free text, and the reason `settingsFor` uses `Object.hasOwn`: a plain
+  // object inherits these, so a truthiness check would resolve them to a
+  // function instead of refusing.
+  'constructor',
+  'toString',
+  '__proto__',
+] as const
+
 describe('liveSessionConfig', () => {
-  it('names the model from the environment and the constrained language set', () => {
-    expect(liveSessionConfig()).toEqual({
-      model: 'stt-rt-v5',
-      languageHints: ['ms', 'en', 'zh', 'ta'],
-      languageIdentification: true,
-      speakerDiarization: true,
-      endpointDetection: false,
-      context: {
-        general: [
-          { key: 'domain', value: 'Healthcare' },
-          { key: 'speakers', value: 'Two speakers: a doctor and a patient' },
-        ],
-        terms: asrContextTerms(),
-      },
-    })
+  it.each(LiveAsrModeSchema.options)('sends the written-down %s config', (mode) => {
+    expect(liveSessionConfig(mode)).toEqual(EXPECTED_CONFIG[mode])
   })
 
-  it('takes no arguments, which is what keeps a consultation out of the egress', () => {
-    // The comment above `CONTEXT` says this structurally prevents request data
-    // reaching a value that crosses the audio egress. Pinned as a test at the
-    // moment the feature adds pressure to make the vocabulary per-session:
-    // a reviewer reading a diff that adds a parameter sees this fail.
-    expect(liveSessionConfig.length).toBe(0)
+  it('takes exactly one argument, and it is the closed enum', () => {
+    // Arity zero was the old statement of "nothing a caller supplies reaches
+    // the egress". One argument states the same property differently: a caller
+    // picks which of two static constants is sent and never what is in either.
+    // A second parameter is what would break that, so the number is pinned.
+    expect(liveSessionConfig.length).toBe(1)
+  })
+
+  it.each(ADVERSARIAL_MODES)('throws on %s rather than falling back to a default', (mode) => {
+    // A `?? AMBIENT` fallback is the specific defect the lookup exists to
+    // prevent: it would egress one mode's config while the caller believed it
+    // had asked for another's, and on this path there is no second chance to
+    // notice.
+    expect(() => liveSessionConfig(mode as LiveAsrMode)).toThrow()
+  })
+
+  it('cannot carry an adversarial mode into any config it does return', () => {
+    // The other half of the throw: a thrown message that quoted the argument,
+    // or a config that echoed it, would put an unvalidated string one drain
+    // away from an identifier.
+    for (const mode of LiveAsrModeSchema.options) {
+      const sent = JSON.stringify(liveSessionConfig(mode))
+      for (const adversarial of ADVERSARIAL_MODES) {
+        expect(sent).not.toContain(adversarial)
+      }
+    }
+
+    for (const adversarial of ADVERSARIAL_MODES) {
+      const thrown = (() => {
+        try {
+          liveSessionConfig(adversarial as LiveAsrMode)
+          return ''
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error)
+        }
+      })()
+
+      expect(thrown).not.toContain(adversarial)
+    }
   })
 
   it('primes every word the confusable table exists to recover', () => {
     // Layer 1 aims at the target and layer 2 catches the miss, so a target the
     // recogniser was never primed for is a gap in the chain rather than two
     // independent defences. Derived on both sides, so this cannot drift.
-    const terms = liveSessionConfig().context.terms ?? []
+    // Ambient only: the confusable table is symptom vocabulary, and a dictated
+    // prescription is a different domain (see `dictationContextTerms`).
+    const terms = liveSessionConfig('ambient').context.terms ?? []
 
     for (const target of CONFUSABLE_TARGETS) {
       expect(terms).toContain(target)
     }
   })
 
-  it('stays inside the vendor context budget', () => {
+  it.each(LiveAsrModeSchema.options)('keeps %s inside the vendor context budget', (mode) => {
     // The whole context is capped at roughly 10,000 characters, shared with
     // `general`. Measured as sent rather than as a term count, because a term
     // is a phrase here and a count would not catch a long one.
-    const { terms, general } = liveSessionConfig().context
+    const { terms, general } = liveSessionConfig(mode).context
     const sent = [...(terms ?? []), ...general.map((entry) => `${entry.key}${entry.value}`)].join()
 
     expect(terms?.length ?? 0).toBeLessThanOrEqual(MAX_ASR_CONTEXT_TERMS)
     expect(sent.length).toBeLessThan(10_000)
   })
 
-  it('carries no duplicates, so the budget is not spent twice on one word', () => {
-    const terms = liveSessionConfig().context.terms ?? []
+  it.each(LiveAsrModeSchema.options)('spends no %s budget twice on one word', (mode) => {
+    const terms = liveSessionConfig(mode).context.terms ?? []
 
     expect(new Set(terms).size).toBe(terms.length)
   })
 
-  it('excludes Indonesian, which Malay is measurably confused with', () => {
-    // Issue #218 measured Malay tagged Indonesian on 3 of 4 clips; the
-    // documented mitigation is to constrain the candidate set.
-    expect(liveSessionConfig().languageHints).not.toContain('id')
+  it.each(LiveAsrModeSchema.options)(
+    'excludes Indonesian from %s, which Malay is measurably confused with',
+    (mode) => {
+      // Issue #218 measured Malay tagged Indonesian on 3 of 4 clips; the
+      // documented mitigation is to constrain the candidate set.
+      expect(liveSessionConfig(mode).languageHints).not.toContain('id')
+    },
+  )
+
+  it('inverts both diarisation settings for dictation, and only together', () => {
+    // With endpoint detection on the vendor finalises tokens early, and a final
+    // token is never revised, so a temporary speaker switch becomes permanent
+    // for the rest of the consultation. That cost is what keeps it off for
+    // ambient, and it is conditional on there being a speaker id to freeze:
+    // with diarisation off there is none, and what is left is `<end>` markers
+    // settling a dictated phrase promptly. Pinned as a pair because turning one
+    // on without the other is the regression, and neither symptom is
+    // observable outside a live capture.
+    expect(liveSessionConfig('ambient').speakerDiarization).toBe(true)
+    expect(liveSessionConfig('ambient').endpointDetection).toBe(false)
+    expect(liveSessionConfig('dictation').speakerDiarization).toBe(false)
+    expect(liveSessionConfig('dictation').endpointDetection).toBe(true)
   })
 
-  it('leaves endpoint detection off, because it freezes speaker ids', () => {
-    // With it on the vendor finalises tokens early, and a final token is never
-    // revised, so a temporary speaker switch becomes permanent for the rest of
-    // the consultation. Pinned here because the symptom is only observable in
-    // a live capture: nothing else in this suite can catch a regression.
-    expect(liveSessionConfig().endpointDetection).toBe(false)
-  })
+  it.each(LiveAsrModeSchema.options)(
+    'hands out a fresh %s context each call, so no caller can poison the next',
+    (mode) => {
+      // The hint crosses the audio egress, where nothing can be de-identified.
+      // The closed enum is what keeps request data out of it; this is the other
+      // half, so a caller that mutates what it was handed cannot change what
+      // the next session sends.
+      const first = liveSessionConfig(mode)
+      first.context.general[0] = { key: 'patient', value: 'leaked' }
+      first.context.general.push({ key: 'extra', value: 'leaked' })
+      first.context.terms?.push('Encik Ahmad bin Ismail')
 
-  it('hands out a fresh context each call, so no caller can poison the next', () => {
-    // The hint crosses the audio egress, where nothing can be de-identified.
-    // Taking no arguments is what keeps request data out of it; this is the
-    // other half, so a caller that mutates what it was handed cannot change
-    // what the next session sends.
-    const first = liveSessionConfig()
-    first.context.general[0] = { key: 'patient', value: 'leaked' }
-    first.context.general.push({ key: 'extra', value: 'leaked' })
-    first.context.terms?.push('Encik Ahmad bin Ismail')
-
-    expect(liveSessionConfig().context).toEqual({
-      general: [
-        { key: 'domain', value: 'Healthcare' },
-        { key: 'speakers', value: 'Two speakers: a doctor and a patient' },
-      ],
-      terms: asrContextTerms(),
-    })
-    expect(liveSessionConfig().context.terms).not.toContain('Encik Ahmad bin Ismail')
-  })
+      expect(liveSessionConfig(mode).context).toEqual(EXPECTED_CONFIG[mode].context)
+      expect(liveSessionConfig(mode).context.terms).not.toContain('Encik Ahmad bin Ismail')
+    },
+  )
 })
 
 describe('getLiveAsrDescriptor', () => {

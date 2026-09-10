@@ -2,6 +2,7 @@ import {
   DraftTurnsRequestSchema,
   DraftTurnsResponseSchema,
   LiveAsrConfigSchema,
+  LiveAsrModeSchema,
   LiveSessionRequestSchema,
   LiveSessionSchema,
 } from '@shared/types'
@@ -225,11 +226,20 @@ const LIVE_FAILURE_RESPONSES: Record<
 asrRouter.get('/live-sessions/config', requireSonioxConfigured, (req, res) => {
   doctorId(req)
 
+  // Absent means ambient, which is the mode that already shipped; present and
+  // unrecognised is a 400 rather than a silent fall back to it, so a client
+  // asking for a mode this deployment does not have is told so instead of
+  // reading one config and opening a socket configured for the other.
+  const mode = LiveAsrModeSchema.default('ambient').safeParse(req.query.mode)
+  if (!mode.success) {
+    throw new HttpError(400, 'invalid_query', 'Unknown ambient session mode.')
+  }
+
   const body = LiveAsrConfigSchema.safeParse({
     provider: 'soniox',
     region: env.SONIOX_REGION,
     websocketUrl: sonioxHosts(env.SONIOX_REGION).websocket,
-    config: liveSessionConfig(),
+    config: liveSessionConfig(mode.data),
   })
   // A failure here is a configuration defect, not a caller error: the shared
   // schema refuses a socket address the browser would also refuse.
@@ -241,7 +251,13 @@ asrRouter.get('/live-sessions/config', requireSonioxConfigured, (req, res) => {
 })
 
 /*
- * Mints one browser-usable credential for one ambient session (#268).
+ * Mints one browser-usable credential for one live session (#268), in the mode
+ * the body names (#356).
+ *
+ * `mode` decides three things and nothing else: the recognition config, the
+ * vocabulary, and the session cap bound to the key at mint time. It defaults to
+ * `ambient`, so an unchanged client gets the behaviour it already had, and it
+ * is recorded on both audit rows because the two modes cost different amounts.
  *
  * **This route never receives audio.** The stream runs from the browser to the
  * provider, because a WebSocket cannot pass through the Vercel rewrite that
@@ -265,11 +281,12 @@ asrRouter.post('/live-sessions', requireSonioxConfigured, async (req, res) => {
     throw new HttpError(400, 'invalid_body', 'Consent for this consultation is required.')
   }
 
+  const { mode } = parsed.data
   const { model, region } = getLiveAsrDescriptor()
   const startedAt = performance.now()
 
   try {
-    const session = await mintSonioxSession()
+    const session = await mintSonioxSession(mode)
 
     // Parsed before the audit row, like the draft-turns pass: a recorded
     // success must never be followed by a body the client cannot use.
@@ -277,7 +294,7 @@ asrRouter.post('/live-sessions', requireSonioxConfigured, async (req, res) => {
       provider: 'soniox',
       region,
       websocketUrl: sonioxHosts(region).websocket,
-      config: liveSessionConfig(),
+      config: liveSessionConfig(mode),
       apiKey: session.apiKey,
       expiresAt: session.expiresAt,
     })
@@ -294,7 +311,8 @@ asrRouter.post('/live-sessions', requireSonioxConfigured, async (req, res) => {
         clientReferenceId: session.clientReferenceId,
         model,
         region,
-        maxSessionSeconds: MAX_SESSION_DURATION_SECONDS,
+        mode,
+        maxSessionSeconds: MAX_SESSION_DURATION_SECONDS[mode],
         // What the client said, which is all the API can know: the gate is a
         // property of the frontend and this row records the assertion.
         consentAsserted: true,
@@ -322,7 +340,7 @@ asrRouter.post('/live-sessions', requireSonioxConfigured, async (req, res) => {
     await recordAuditEvent({
       action: 'asr.live_session_failed',
       actorId: actor,
-      metadata: { reason: error.reason },
+      metadata: { reason: error.reason, mode },
     })
 
     logger.warn('live asr session failed', {
