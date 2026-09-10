@@ -171,6 +171,10 @@ describe('no worker-driving surface reaches the inference library (issues #219, 
     // so a refactor cannot quietly drop a directory and still pass.
     expect(entries).toContain('frontend/src/audio/live/live-fold.ts')
     expect(entries).toContain('frontend/src/review/PrescriptionBlock.tsx')
+    // The streaming dictation hook (#357). Named as well as walked, because it
+    // holds the socket path and a rename that dropped it from the scan would
+    // otherwise leave this guard passing over one module fewer.
+    expect(entries).toContain('frontend/src/review/use-dictation-stream.ts')
   })
 
   it('follows imports past the first hop', () => {

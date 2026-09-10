@@ -32,10 +32,59 @@ describe('loadAudioSettings', () => {
       suppressNoise: false,
       boostQuietSpeech: true,
       engine: 'local',
+      dictationEngine: 'streaming',
     }
     saveAudioSettings(settings)
 
     expect(loadAudioSettings()).toEqual(settings)
+  })
+
+  /**
+   * Both engine fields decide whether audio leaves the device, so both are read
+   * positively for the value that sends it. Anything else, including a value
+   * written by an older build that had no such field, has to read as on-device:
+   * a privacy preference that fails open is the one failure mode neither may
+   * have, and #228 is what happens when one does.
+   */
+  it.each([
+    ['streaming', 'streaming'],
+    ['local', 'local'],
+    ['hosted', 'local'],
+    ['STREAMING', 'local'],
+    ['', 'local'],
+    [null, 'local'],
+    [true, 'local'],
+  ])('reads a stored dictationEngine of %o as %s', (stored, expected) => {
+    localStorage.setItem(
+      'catatmd.audio',
+      JSON.stringify({ ...DEFAULT_AUDIO_SETTINGS, dictationEngine: stored }),
+    )
+
+    expect(loadAudioSettings().dictationEngine).toBe(expected)
+  })
+
+  it('defaults dictation to on-device, so a doctor who changes nothing sends nothing', () => {
+    expect(DEFAULT_AUDIO_SETTINGS.dictationEngine).toBe('local')
+    // A settings object written before this field existed.
+    localStorage.setItem(
+      'catatmd.audio',
+      JSON.stringify({
+        deviceId: null,
+        suppressNoise: true,
+        boostQuietSpeech: false,
+        engine: 'hosted',
+      }),
+    )
+
+    expect(loadAudioSettings().dictationEngine).toBe('local')
+  })
+
+  it('keeps both engines in the one permitted key, and adds no second one', () => {
+    saveAudioSettings({ ...DEFAULT_AUDIO_SETTINGS, dictationEngine: 'streaming' })
+
+    // `no-stray-audio-persistence.test.ts` allows this module exactly one key.
+    // A second one for the second engine would be a new persistence surface.
+    expect(Object.keys(localStorage)).toEqual(['catatmd.audio'])
   })
 
   it('falls back to the defaults on malformed stored JSON', () => {
@@ -78,6 +127,7 @@ describe('toConstraints', () => {
         suppressNoise: true,
         boostQuietSpeech: false,
         engine: 'local',
+        dictationEngine: 'local',
       }),
     ).toEqual({ noiseSuppression: true, autoGainControl: false, echoCancellation: true })
   })
