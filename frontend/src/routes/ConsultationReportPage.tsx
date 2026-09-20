@@ -57,6 +57,9 @@ export function ConsultationReportPage() {
     // Reached by reload or a pasted link, which loses the handover. The record
     // only ever existed in the tab that left, so there is nothing to render.
     if (!handed.success) return <Navigate to={`/consultations/${id}`} replace />
+    if (handed.data.status !== 'approved') {
+      return <Navigate to={`/consultations/${id}`} replace />
+    }
     return <Report detail={handed.data} id={id} />
   }
 

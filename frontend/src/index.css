@@ -861,6 +861,15 @@
     font-size: 20pt;
   }
 
+  .report-letterhead svg rect {
+    /* Wordmark's utility-layer fill otherwise follows the app's dark theme. */
+    fill: #296b55 !important;
+  }
+
+  .report-letterhead svg path {
+    fill: #fff !important;
+  }
+
   .report-kind {
     font-size: 8pt;
     font-weight: 600;

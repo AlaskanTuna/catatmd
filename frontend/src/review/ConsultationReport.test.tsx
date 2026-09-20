@@ -197,14 +197,12 @@ describe('approval and provenance', () => {
     expect(screen.getAllByText('—')).not.toHaveLength(0)
   })
 
-  it('states the AI-assisted provenance verbatim', () => {
+  it('states AI assistance without claiming an unrecorded consultation was recorded or edited', () => {
     render(<ConsultationReport detail={detail()} />)
 
-    expect(
-      screen.getByText(
-        'This note was drafted with AI assistance from a recorded consultation, then reviewed, edited and approved by the named clinician, who remains responsible for all clinical decisions.',
-      ),
-    ).toBeTruthy()
+    const provenance = screen.getByText(/This note was drafted with AI assistance/).textContent
+    expect(provenance).toContain('approved by the named clinician')
+    expect(provenance).not.toMatch(/recorded consultation|reviewed, edited/)
   })
 })
 

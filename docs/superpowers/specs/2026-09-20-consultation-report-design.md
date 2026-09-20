@@ -190,7 +190,7 @@ The legally load-bearing block, and the visual anchor of the page: a `0.75pt` bo
 
 Separated by a `0.4pt` rule. Two lines:
 
-1. "This note was drafted with AI assistance from a recorded consultation, then reviewed, edited and approved by the named clinician, who remains responsible for all clinical decisions."
+1. "This note was drafted with AI assistance using consultation information and approved by the named clinician, who remains responsible for all clinical decisions."
 2. `CatatMD · Generated <timestamp> · Record <id>`
 
 The disclaimer is not boilerplate. An AI-assisted clinical document that does not say so on its face misrepresents its own provenance.

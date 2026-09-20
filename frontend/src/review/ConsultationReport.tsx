@@ -9,7 +9,7 @@ const timestampFormat = new Intl.DateTimeFormat('en-MY', {
 })
 
 const PROVENANCE =
-  'This note was drafted with AI assistance from a recorded consultation, then reviewed, edited and approved by the named clinician, who remains responsible for all clinical decisions.'
+  'This note was drafted with AI assistance using consultation information and approved by the named clinician, who remains responsible for all clinical decisions.'
 
 /**
  * The printed artefact for an approved consultation: a document, not a
