@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { api } from './lib/api.js'
 import { ConsultationList } from './routes/ConsultationList.js'
+import { ConsultationReportPage } from './routes/ConsultationReportPage.js'
 import { ConsultationReview } from './routes/ConsultationReview.js'
 import { Guidelines } from './routes/Guidelines.js'
 import { Landing } from './routes/Landing.js'
@@ -46,6 +47,20 @@ export function App() {
           <Route path="/privacy" element={<Privacy />} />
         </Route>
         <Route path="/login" element={<Login />} />
+        {/* Outside `AppShell`, and that is the whole point of it (#376). The
+            report is a clinical document, so the page's entire DOM has to be
+            the document: no sidebar, no dock, no chrome cluster. Printing it
+            correctly then stops depending on chrome opting out of print one
+            `data-print` attribute at a time. Still inside `RequireSession`,
+            because it renders a patient's record. */}
+        <Route
+          path="/consultations/:id/report"
+          element={
+            <RequireSession>
+              <ConsultationReportPage />
+            </RequireSession>
+          }
+        />
         <Route
           element={
             <RequireSession>

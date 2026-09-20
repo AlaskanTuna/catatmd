@@ -22,7 +22,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Copy, Maximize2, Pause, Play, Printer, Settings2, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Link, Navigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import type { LivePanes } from '../audio/live/use-live-panes.js'
 import { useLivePanes } from '../audio/live/use-live-panes.js'
 import { useTranscriptAudio } from '../audio/use-transcript-audio.js'
@@ -281,6 +281,7 @@ function SettledConversation({
 export function ConsultationReview() {
   const { id = '' } = useParams()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [showTranscript, setShowTranscript] = useState(false)
   const [captureBusy, setCaptureBusy] = useState(false)
   /*
@@ -1010,7 +1011,22 @@ export function ConsultationReview() {
               <Button
                 size="lg"
                 icon={<Printer aria-hidden className="size-4" />}
-                onClick={() => window.print()}
+                /*
+                 * Opens the report rather than printing this page (#376).
+                 * `window.print()` here printed the review layout with chrome
+                 * subtracted, which is why the export read as a screenshot of
+                 * an app instead of a clinical document.
+                 *
+                 * The ephemeral demo record is handed over in history state
+                 * because it has no row to fetch (issue #80), and the report
+                 * route sits outside the provider holding it.
+                 */
+                onClick={() =>
+                  navigate(
+                    `/consultations/${id}/report`,
+                    isEphemeral ? { state: { detail } } : undefined,
+                  )
+                }
               >
                 Export
               </Button>
