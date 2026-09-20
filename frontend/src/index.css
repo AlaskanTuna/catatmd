@@ -798,6 +798,272 @@
   }
 }
 
+@layer components {
+  /*
+   * The printable consultation report (issue #376, /consultations/:id/report).
+   *
+   * Every colour is an explicit hex declared on .report-sheet, never an app
+   * token: --color-ink and friends invert under [data-theme='dark'], and a
+   * doctor printing from a dark-mode session would otherwise export a dark
+   * page. color-scheme: light keeps the scrollbars and controls inside the
+   * sheet from following the theme for the same reason. Measurements are pt
+   * and mm because this is a paged medium, and no colour carries meaning —
+   * severity is an uppercase tracked word and a weight, so it survives a
+   * monochrome printer.
+   *
+   * On screen the sheet reproduces the paper so the design can be judged
+   * without printing: 210mm wide on the app ground, carrying the @page
+   * margins as padding. In the print block below, @page supplies those
+   * margins and the frame comes off, so screen and paper agree.
+   */
+  .report-viewport {
+    min-height: 100vh;
+    padding: 4rem 1rem;
+    /* Screen-only chrome, so the theme tokens here are deliberate: the app
+     * ground is what the sheet is previewed against, and print removes the
+     * background entirely. */
+    background-color: var(--color-ground);
+    background-image: radial-gradient(circle at 1px 1px, var(--grid-dot) 1px, transparent 0);
+    background-size: 18px 18px;
+  }
+
+  .report-sheet {
+    --report-ink: #14171a;
+    --report-muted: #5a5a5a;
+    --report-faint: #6b6b6b;
+    --report-rule-strong: #14171a;
+    --report-rule: #c9c9c9;
+    --report-rule-soft: #dcdcdc;
+    color-scheme: light;
+    width: 210mm;
+    margin-inline: auto;
+    padding: 15mm 16mm 14mm;
+    background: #fff;
+    color: var(--report-ink);
+    font-variant-numeric: tabular-nums;
+    box-shadow:
+      0 2px 4px rgb(0 0 0 / 0.06),
+      0 16px 40px -8px rgb(0 0 0 / 0.14);
+  }
+
+  .report-letterhead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-bottom: 2mm;
+    border-bottom: 1pt solid var(--report-rule-strong);
+    break-inside: avoid;
+    /* Sizes the wordmark, which carries no size of its own so that one
+     * declaration governs the lockup. `.report-kind` beside it sets 8pt
+     * explicitly and is unaffected. Left to inherit the body size the mark came
+     * out level with the small-caps label next to it, and a letterhead that
+     * does not lead is not a letterhead. */
+    font-size: 20pt;
+  }
+
+  .report-kind {
+    font-size: 8pt;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--report-ink);
+  }
+
+  .report-meta {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    column-gap: 6mm;
+    break-inside: avoid;
+    /* Clears the letterhead rule. Without it the first label sits on the rule
+     * and the band reads as part of the letterhead rather than as the record
+     * it identifies. */
+    padding-top: 2.5mm;
+  }
+
+  .report-meta-label {
+    font-size: 6.5pt;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--report-faint);
+  }
+
+  .report-meta-value {
+    font-size: 10pt;
+    font-weight: 500;
+    color: var(--report-ink);
+  }
+
+  .report-block-heading {
+    padding-top: 2mm;
+    border-top: 0.75pt solid var(--report-rule-strong);
+    font-family: var(--font-display);
+    font-size: 9pt;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--report-ink);
+    break-after: avoid;
+    /* Separates the heading from what it heads. The prescriptions table's own
+     * column headings are small caps too, so without this the two rows of
+     * tracked uppercase read as one confused header. */
+    margin-bottom: 3mm;
+  }
+
+  .report-field {
+    display: grid;
+    grid-template-columns: 40mm 132mm;
+    column-gap: 6mm;
+    padding-block: 2mm;
+    break-inside: avoid;
+  }
+
+  .report-field + .report-field {
+    border-top: 0.4pt solid var(--report-rule);
+  }
+
+  .report-field-label {
+    font-size: 7.5pt;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--report-muted);
+  }
+
+  .report-prose {
+    font-size: 10pt;
+    font-weight: 400;
+    line-height: 1.45;
+    color: var(--report-ink);
+  }
+
+  .report-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.5pt;
+    font-weight: 400;
+    color: var(--report-ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* table-header-group repeats the column headings when the table crosses a
+   * page break; the margin-box alternative (@top-center and friends) is the
+   * part of Paged Media Chrome never implemented. */
+  .report-table thead {
+    display: table-header-group;
+  }
+
+  .report-table th {
+    padding-bottom: 1.5mm;
+    border-bottom: 0.75pt solid var(--report-rule-strong);
+    font-size: 7pt;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-align: left;
+    text-transform: uppercase;
+    color: var(--report-muted);
+  }
+
+  .report-table td {
+    padding-block: 1.5mm;
+    font-weight: 400;
+    vertical-align: top;
+  }
+
+  .report-table tr {
+    break-inside: avoid;
+  }
+
+  .report-table tbody tr + tr td {
+    border-top: 0.4pt solid var(--report-rule-soft);
+  }
+
+  .report-table th:first-child,
+  .report-table td:first-child {
+    width: 8mm;
+    /* The right-aligned number needs the gutter: without it the digit abuts the
+     * drug name and the two columns read as one string, "1Amoxicillin". */
+    padding-right: 2.5mm;
+    text-align: right;
+  }
+
+  .report-table td:nth-child(2) {
+    font-weight: 500;
+  }
+
+  .report-table th:nth-child(3),
+  .report-table td:nth-child(3) {
+    width: 26mm;
+  }
+
+  .report-table th:nth-child(5),
+  .report-table td:nth-child(5) {
+    width: 24mm;
+  }
+
+  .report-flag {
+    break-inside: avoid;
+  }
+
+  .report-flag-severity {
+    font-size: 7pt;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--report-ink);
+  }
+
+  .report-flag-label {
+    font-size: 10.5pt;
+    font-weight: 500;
+    color: var(--report-ink);
+  }
+
+  .report-evidence {
+    padding-left: 3mm;
+    border-left: 1.5pt solid var(--report-rule);
+    font-size: 9pt;
+    color: var(--report-muted);
+  }
+
+  .report-disposition {
+    font-size: 8.5pt;
+    font-weight: 400;
+    color: var(--report-muted);
+  }
+
+  .report-approval {
+    padding: 6mm;
+    border: 0.75pt solid var(--report-rule-strong);
+    /* Unclassed text in this box is the approver's name, the one element the
+     * spec sets at signature size; labels inside carry their own classes. */
+    font-size: 12pt;
+    font-weight: 500;
+    color: var(--report-ink);
+    break-inside: avoid;
+  }
+
+  .report-signature-rule {
+    width: 70mm;
+    padding-top: 1.5mm;
+    border-top: 0.4pt solid var(--report-rule);
+    font-size: 7.5pt;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--report-muted);
+  }
+
+  .report-footer {
+    padding-top: 3mm;
+    border-top: 0.4pt solid var(--report-rule);
+    font-size: 7.5pt;
+    font-weight: 400;
+    line-height: 1.4;
+    color: var(--report-faint);
+  }
+}
+
 /*
  * Print is a clinical document, not a screenshot of an app (issue #26).
  * Chrome, navigation and controls go; the note, the date, the approving
@@ -806,6 +1072,11 @@
  * Provenance survives without colour, because clinic printers are monochrome
  * and "which parts did the AI write" must not depend on a colour cartridge.
  */
+@page {
+  size: A4;
+  margin: 15mm 16mm 14mm;
+}
+
 @media print {
   :root {
     color-scheme: light;
@@ -859,6 +1130,22 @@
 
   .page-break-avoid {
     break-inside: avoid;
+  }
+
+  /* On paper @page supplies the margins the sheet was wearing as padding on
+   * screen, so the frame — fixed width, centring, shadow, ground — comes off
+   * and the report lays out to the page area instead. */
+  .report-viewport {
+    min-height: unset;
+    padding: 0;
+    background: none;
+  }
+
+  .report-sheet {
+    width: auto;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
   }
 }
 
