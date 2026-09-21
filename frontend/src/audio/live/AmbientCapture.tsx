@@ -83,6 +83,7 @@ const clock = (seconds: number): string =>
 export function AmbientCapture({
   onTranscript,
   onSwitchToManual,
+  onUnavailable,
   onLiveChange,
   onLiveSegments,
   deviceId,
@@ -107,6 +108,21 @@ export function AmbientCapture({
   }) => void
   /** Returns the Record tab to press-to-record, and remembers that choice. */
   onSwitchToManual: () => void
+  /**
+   * Fired once the config probe says this deployment has no ambient provider,
+   * so the Record tab can show the recorder that does work (#378).
+   *
+   * **The caller is expected to move the consultation to press-to-record, not
+   * merely to show it.** Leaving the record on `ambient` while the doctor
+   * records some other way is what stamps a consultation with a stream that
+   * never happened, and the mode locks the instant a transcript lands, so the
+   * window to be honest about it is exactly here.
+   *
+   * Unavailability only, never a transient error, which is why the probe reads
+   * the error code and not just the status. An error keeps this panel and its
+   * Check Again button, because there is something to retry.
+   */
+  onUnavailable?: () => void
   /** Latches the panel open while a session runs, so a settings save cannot unmount it. */
   onLiveChange: (live: boolean) => void
   /**
@@ -248,6 +264,7 @@ export function AmbientCapture({
   const onTranscriptRef = useRef(onTranscript)
   const onLiveChangeRef = useRef(onLiveChange)
   const onLiveSegmentsRef = useRef(onLiveSegments)
+  const onUnavailableRef = useRef(onUnavailable)
 
   useEffect(() => {
     agreedRef.current = agreed
@@ -257,6 +274,7 @@ export function AmbientCapture({
     onTranscriptRef.current = onTranscript
     onLiveChangeRef.current = onLiveChange
     onLiveSegmentsRef.current = onLiveSegments
+    onUnavailableRef.current = onUnavailable
   })
 
   /*
@@ -281,11 +299,21 @@ export function AmbientCapture({
         if (attempt.current !== id) return
         // A deployment with no ambient provider is a plain unavailability with
         // a way out, not an error the doctor has to interpret.
-        setAvailability(
-          cause instanceof ApiError && cause.status === 503
-            ? { status: 'unavailable' }
-            : { status: 'error' },
-        )
+        /*
+         * The code as well as the status, because the status alone does not
+         * mean what it looks like: a Render cold start and any platform hiccup
+         * through the `/api` rewrite also answer 503, and `ApiError` is built
+         * from the raw HTTP status. Reading only the number would report a
+         * transient outage as "this deployment has no ambient provider", and
+         * `onUnavailable` acts on that by writing the consultation's mode.
+         */
+        const unavailable =
+          cause instanceof ApiError && cause.status === 503 && cause.code === 'asr_unavailable'
+        setAvailability(unavailable ? { status: 'unavailable' } : { status: 'error' })
+        // Through the ref so the callback's identity cannot re-enter this
+        // effect: `loadConfig` is its own `useEffect` dependency, and an inline
+        // arrow from the caller would re-probe on every render.
+        if (unavailable) onUnavailableRef.current?.()
       })
   }, [])
 

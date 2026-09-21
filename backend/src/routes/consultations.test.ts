@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import type { Server } from 'node:http'
 import { STALE_ANALYSIS_MS } from '@shared/types'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -215,13 +216,25 @@ vi.mock('../lib/prisma.js', () => ({
           id: 'c1',
           createdAt: new Date(),
           updatedAt: new Date(),
+          /*
+           * Null rather than absent, for the reason `seed` gives below: that
+           * is what the column returns for a consultation created without
+           * one. The route passes `transcript: undefined` on the empty create
+           * and Prisma drops an undefined field rather than writing it, so
+           * spreading `data` straight in stored `undefined` and made the
+           * capture-mode lock (`transcript !== null`) fire on a brand-new
+           * consultation here while production let the doctor change the mode.
+           */
+          title: null,
+          transcript: null,
+          patientId: null,
           analysis: null,
           editedNote: null,
           approvedAt: null,
           acknowledgedRedFlagIds: null,
           reviewedGapIds: null,
           erasedAt: null,
-          ...data,
+          ...Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)),
         }
         store.set(row.id as string, row)
         return { ...row }
@@ -419,6 +432,108 @@ describe('the title analysis derives', () => {
     await call('POST', '/api/consultations/c1/analyze')
 
     expect(store.get('c1')?.title).toBe('Filed under this')
+  })
+})
+
+describe('creating a consultation', () => {
+  /*
+   * Asserted on the written row as well as the response, because the column
+   * default cannot be seen from here: the store has none, and the API is
+   * deployed separately from the migration that carries it (#378).
+   */
+  it('opens a new consultation in ambient capture', async () => {
+    const res = await call('POST', '/api/consultations', {})
+    const { consultation } = (await res.json()) as { consultation: { captureMode: string } }
+
+    expect(res.status).toBe(201)
+    expect(consultation.captureMode).toBe('ambient')
+    expect(store.get('c1')?.captureMode).toBe('ambient')
+  })
+
+  /*
+   * The mode locks the instant a transcript exists, so a wrong value written
+   * here can never be corrected. `TRANSCRIPT` is `source: 'paste'`: nothing
+   * streamed, and a row claiming otherwise is the falsehood D-007 refuses.
+   */
+  it('does not claim ambient for a transcript that arrived another way', async () => {
+    const res = await call('POST', '/api/consultations', { transcript: TRANSCRIPT })
+    const { consultation } = (await res.json()) as { consultation: { captureMode: string } }
+
+    expect(res.status).toBe(201)
+    expect(consultation.captureMode).toBe('manual')
+    expect((await call('PATCH', '/api/consultations/c1', { captureMode: 'ambient' })).status).toBe(
+      409,
+    )
+  })
+
+  /*
+   * The other direction of the same rule. This transcript did stream, and the
+   * same request writes `consultation.asr_live_used`, so a `manual` mode would
+   * have the row and its own audit trail disagreeing out of one body.
+   */
+  it('keeps ambient for a transcript that did stream', async () => {
+    const res = await call('POST', '/api/consultations', {
+      transcript: { ...TRANSCRIPT, source: 'asr_live' },
+    })
+
+    expect(res.status).toBe(201)
+    expect(store.get('c1')?.captureMode).toBe('ambient')
+    expect(audits.some((event) => event.action === 'consultation.asr_live_used')).toBe(true)
+  })
+
+  /*
+   * The backstop, and the one that has to hold on its own. The browser moves
+   * the mode too, but that write can fail while the doctor carries on
+   * recording, so the row is made true in the statement that closes the lock.
+   */
+  it('reconciles an ambient mode against a transcript that did not stream', async () => {
+    seed('draft', { transcript: null, captureMode: 'ambient' })
+
+    const res = await call('PATCH', '/api/consultations/c1', { transcript: TRANSCRIPT })
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')?.captureMode).toBe('manual')
+    // And it is locked that way, so the reconciliation had one chance.
+    expect((await call('PATCH', '/api/consultations/c1', { captureMode: 'ambient' })).status).toBe(
+      409,
+    )
+  })
+
+  it('leaves an ambient mode alone when the transcript did stream', async () => {
+    seed('draft', { transcript: null, captureMode: 'ambient' })
+
+    const res = await call('PATCH', '/api/consultations/c1', {
+      transcript: { ...TRANSCRIPT, source: 'asr_live' },
+    })
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')?.captureMode).toBe('ambient')
+  })
+
+  // The ordinary flow the default exists for: open a consultation, then change
+  // your mind before anything has been captured into it.
+  it('lets the doctor leave ambient before a transcript exists', async () => {
+    await call('POST', '/api/consultations', {})
+
+    const res = await call('PATCH', '/api/consultations/c1', { captureMode: 'manual' })
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')?.captureMode).toBe('manual')
+  })
+
+  /*
+   * The route's literal shadows the column default for every consultation, so
+   * a one-sided edit to `schema.prisma` would be a silent no-op that no other
+   * test could catch. Read from the schema text rather than restated here.
+   */
+  it('writes the same default the Prisma column declares', async () => {
+    const schema = await readFile(new URL('../../../prisma/schema.prisma', import.meta.url), 'utf8')
+    const declared = /captureMode\s+CaptureMode\s+@default\((\w+)\)/.exec(schema)?.[1]
+
+    await call('POST', '/api/consultations', {})
+
+    expect(declared).toBe('ambient')
+    expect(store.get('c1')?.captureMode).toBe(declared)
   })
 })
 

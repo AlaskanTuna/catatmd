@@ -242,8 +242,9 @@ model Consultation {
   /// Presentation order selected for this consultation. It contains no
   /// clinical content and remains switchable after approval.
   noteTemplate            NoteTemplate @default(soap)
-  /// Capture path selected for this consultation. Locked once a transcript exists.
-  captureMode             CaptureMode  @default(manual)
+  /// Capture path selected for this consultation. A new consultation opens in
+  /// `ambient`; the choice is locked once a transcript exists.
+  captureMode             CaptureMode  @default(ambient)
   /// PHI-bearing clinician edits to the canonical eight-field note.
   /// Erasure must null this beside `analysis` and `editedNote`.
   editedMedicalRecordNote Json?

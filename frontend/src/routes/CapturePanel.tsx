@@ -136,7 +136,24 @@ export function CapturePanel({
    * only path that delivers text, so nothing may take it away.
    */
   const [ambientLive, setAmbientLive] = useState(false)
-  const showAmbient = captureMode === 'ambient' || ambientLive
+  /*
+   * Set when the config probe reports this deployment has no ambient provider
+   * (#378). Since a new consultation opens in ambient, without this every
+   * consultation on a deployment with no `SONIOX_API_KEY` would open on an
+   * alert instead of on a recorder that works.
+   *
+   * It exists only to swap the panel on this render and to say so on screen.
+   * The record itself is moved to press-to-record by `switchToManual` on the
+   * same event, because a consultation left on `ambient` while the doctor
+   * records some other way locks that way the moment the transcript lands, and
+   * then claims a stream that never happened. `AmbientCapture`'s own Use Press
+   * To Record button always wrote the record; this is that button pressed for
+   * a doctor who has no other option, not a quieter version of it.
+   *
+   * A live session still wins, so this can never unmount one.
+   */
+  const [ambientUnavailable, setAmbientUnavailable] = useState(false)
+  const showAmbient = (captureMode === 'ambient' && !ambientUnavailable) || ambientLive
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>(TABS[0].id)
   const audioDialog = useRef<HTMLDialogElement>(null)
   const [text, setText] = useState('')
@@ -449,10 +466,23 @@ export function CapturePanel({
 
         {tab === 'record' && (
           <Card className="p-6">
+            {/* Mounted before it has anything to say, for the reason
+              `AudioCapture` gives at its own live region: one inserted into
+              the DOM already populated is not announced, and the whole
+              substitution below appears in a single commit. This card is on
+              screen from the first render, so the container is permanent and
+              only its text changes. */}
+            <span aria-live="polite" className="sr-only">
+              {ambientUnavailable ? 'Ambient capture is not available on this deployment.' : ''}
+            </span>
             {showAmbient ? (
               <AmbientCapture
                 onTranscript={applyRecording}
                 onSwitchToManual={switchToManual}
+                onUnavailable={() => {
+                  setAmbientUnavailable(true)
+                  switchToManual()
+                }}
                 onLiveChange={(live) => {
                   setAmbientLive(live)
                   onCaptureBusyChange(live)
@@ -465,12 +495,34 @@ export function CapturePanel({
                 patientName={patientName}
               />
             ) : (
-              <AudioCapture
-                engine={audio.engine}
-                transcript={text}
-                onTranscript={applyRecording}
-                onBusyChange={onCaptureBusyChange}
-              />
+              <div className="grid gap-3">
+                {/* Said rather than done quietly. A fallback that gives a
+                  different result with no word that it happened is what
+                  `.claude/rules/security.md` forbids on the sibling surface,
+                  and the reason is the same here: the doctor set this
+                  consultation to stream, and it is not going to.
+
+                  The second sentence is keyed on the record rather than
+                  assumed, because the write that moves it can fail and the
+                  doctor is told so by a toast that says nothing changed. It
+                  still moves when the transcript lands, which the API does
+                  itself, so both branches are true when they are shown. */}
+                {ambientUnavailable && (
+                  <p className="text-sm text-ink-muted">
+                    Ambient capture is not available on this deployment, so this consultation
+                    records one pass at a time.{' '}
+                    {captureMode === 'ambient'
+                      ? 'Its Capture Mode moves to Press To Record when the transcript is saved.'
+                      : 'Its Capture Mode has moved to Press To Record.'}
+                  </p>
+                )}
+                <AudioCapture
+                  engine={audio.engine}
+                  transcript={text}
+                  onTranscript={applyRecording}
+                  onBusyChange={onCaptureBusyChange}
+                />
+              </div>
             )}
           </Card>
         )}

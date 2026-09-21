@@ -144,6 +144,14 @@ function toDetail(
     editedMedicalRecordNote: row.editedMedicalRecordNote ?? null,
     prescriptions: row.prescriptions ?? null,
     noteTemplate: row.noteTemplate ?? 'soap',
+    /*
+     * Not the default a new consultation gets, which is `ambient` and is
+     * written at the create route below (#378). `row` is the full Prisma model
+     * and the column is `NOT NULL`, so this branch is statically unreachable
+     * outside the suite's stand-in store. It stays `manual` because that is the
+     * reading that understates the egress rather than claiming one that did
+     * not happen.
+     */
     captureMode: row.captureMode ?? 'manual',
     approvedAt: row.approvedAt,
     approvedBy,
@@ -322,6 +330,33 @@ consultationsRouter.post('/', async (req, res) => {
       status: 'draft',
       transcript: parsed.data.transcript ?? undefined,
       patientId: parsed.data.patientId ?? null,
+      /*
+       * Written rather than left to the column default (#378), because the two
+       * are applied by different hands at different times: migrations run from
+       * a dev machine and the API deploys on a merge (docs/trd.md §17). Stating
+       * it here means a backend that ships ahead of its migration still opens a
+       * consultation where the doctor expects it, and it is what lets a test
+       * see the default at all, since the suite's store has no column defaults.
+       *
+       * **Only where nothing contradicts it.** A transcript arriving with the
+       * request was captured before this row existed, and the mode locks the
+       * moment it lands, so an unconditional `'ambient'` would stamp a pasted,
+       * uploaded or fixture-seeded consultation with a claim that audio
+       * streamed to the provider, permanently and with no way to correct it.
+       * That is the falsehood `docs/decisions.md` D-007 refuses to write onto
+       * historical rows, arriving through the create route instead. Where the
+       * transcript says `asr_live` it did stream, and the same request audits
+       * it as `consultation.asr_live_used` below, so the two must agree.
+       *
+       * This covers the row as created and nothing after it. A consultation
+       * opened empty and then pasted into keeps `ambient`, because the mode is
+       * the path it was configured for rather than a record of what ran; the
+       * transcript's own `source` is that record.
+       */
+      captureMode:
+        parsed.data.transcript === undefined || parsed.data.transcript.source === 'asr_live'
+          ? 'ambient'
+          : 'manual',
     },
   })
 
@@ -1338,7 +1373,26 @@ consultationsRouter.patch('/:id', async (req, res) => {
     }
     const captured = await prisma.consultation.update({
       where: { id: consultation.id },
-      data: { transcript: patch.transcript },
+      data: {
+        transcript: patch.transcript,
+        /*
+         * Reconciled in the same write that closes the lock, because this is
+         * the last moment the mode can be made true (#378).
+         *
+         * `asr_live` is the only source that means the browser streamed to the
+         * provider, so anything else is a consultation captured some other way
+         * and the mode says so, whatever it was configured to before. A doctor
+         * who opened in ambient and then pasted, uploaded, or recorded
+         * press-to-record leaves a row that claims a stream that never
+         * happened, and it is uncorrectable from the next line onward.
+         *
+         * Server-side rather than in the browser, and that is the whole point:
+         * the Record tab also moves the mode when ambient is unavailable, but
+         * that write can fail, and the failure is silent enough that the
+         * doctor carries on recording. This one cannot be skipped.
+         */
+        ...(patch.transcript.source === 'asr_live' ? {} : { captureMode: 'manual' }),
+      },
     })
     await recordAuditEvent({
       action: 'consultation.edited',

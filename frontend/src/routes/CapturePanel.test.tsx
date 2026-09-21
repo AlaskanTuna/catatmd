@@ -41,6 +41,7 @@ vi.mock('../audio/live/AmbientCapture.js', () => {
 function MockAmbientCapture({
   onTranscript,
   onSwitchToManual,
+  onUnavailable,
   onLiveChange,
 }: {
   onTranscript: (result: {
@@ -55,12 +56,18 @@ function MockAmbientCapture({
     draftTurns?: readonly DraftTurn[]
   }) => void
   onSwitchToManual: () => void
+  onUnavailable?: () => void
   onLiveChange: (live: boolean) => void
 }) {
   return (
     <>
       <button type="button" onClick={() => onLiveChange(true)}>
         mock go live
+      </button>
+      {/* What the real panel reports when the config probe answers 503, which
+          is every deployment with no `SONIOX_API_KEY` (#378). */}
+      <button type="button" onClick={() => onUnavailable?.()}>
+        mock ambient unavailable
       </button>
       <button
         type="button"
@@ -603,11 +610,46 @@ function renderRoute(captureMode: 'ambient' | 'manual' = 'manual') {
 describe('ambient capture mode', () => {
   beforeEach(() => localStorage.clear())
 
-  it('leaves Record usable in the default press-to-record mode', async () => {
+  it('leaves Record usable in press-to-record mode', async () => {
     renderRoute()
 
     const record = await screen.findByRole('tab', { name: /record/i })
     expect(record.getAttribute('aria-disabled')).not.toBe('true')
+  })
+
+  /*
+   * A new consultation opens in ambient (#378), so a deployment with no
+   * `SONIOX_API_KEY` would otherwise greet every one of them with an alert
+   * instead of a recorder.
+   *
+   * The record has to move with the screen. Leaving it on `ambient` while the
+   * doctor records press-to-record locks it that way the instant the
+   * transcript lands, and the row then claims a stream that never happened.
+   */
+  it('moves the consultation to press-to-record where ambient is unavailable', async () => {
+    const { onCaptureModeChange } = renderRoute('ambient')
+
+    fireEvent.click(await screen.findByRole('tab', { name: /record/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock ambient unavailable' }))
+
+    expect(screen.getByRole('button', { name: 'mock transcribe' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'mock transcribe live' })).toBeNull()
+    expect(onCaptureModeChange).toHaveBeenCalledWith('manual')
+    /*
+     * Announced to a reader as well as a viewer, through a region that was
+     * already on screen before it had anything to say. Asserting the text
+     * rather than the role, because a live region inserted already populated
+     * carries the role and announces nothing.
+     */
+    expect(screen.getByText(/not available on this deployment\.$/i).className).toContain('sr-only')
+    /*
+     * The record has not moved yet: the PATCH is this mock's spy and nothing
+     * resolved it. The copy has to be true in that state too, so it promises
+     * the move rather than reporting it.
+     */
+    expect(screen.getByText(/records one pass at a time/i).textContent).toMatch(
+      /moves to Press To Record when the transcript is saved/i,
+    )
   })
 
   it('leaves Record usable when the consultation uses ambient mode', async () => {

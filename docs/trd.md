@@ -111,10 +111,10 @@ An empty canonical category renders as `Not established`; it is never omitted or
 
 ### Consultation Lifecycle
 
-| Schema                     | Fields                                                                                                                                                                                                                                                                                                 |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ConsultationStatusSchema` | `enum(['draft', 'analyzing', 'awaiting_review', 'approved'])`                                                                                                                                                                                                                                          |
-| `ConsultationSchema`       | `id: string`, `status: ConsultationStatus`, `noteTemplate: NoteTemplate` (rollout-safe default `soap`), `captureMode: CaptureMode` (rollout-safe default `manual`), `createdAt: coerce.date()`, `updatedAt: coerce.date()`, `transcript: Transcript \| null`, `analysis: ConsultationAnalysis \| null` |
+| Schema                     | Fields                                                                                                                                                                                                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ConsultationStatusSchema` | `enum(['draft', 'analyzing', 'awaiting_review', 'approved'])`                                                                                                                                                                                                                                                                              |
+| `ConsultationSchema`       | `id: string`, `status: ConsultationStatus`, `noteTemplate: NoteTemplate` (rollout-safe default `soap`), `captureMode: CaptureMode` (rollout-safe projection `manual`, which is not the column default), `createdAt: coerce.date()`, `updatedAt: coerce.date()`, `transcript: Transcript \| null`, `analysis: ConsultationAnalysis \| null` |
 
 `ConsultationSchema` does not carry `doctorId`, `editedNote`, or `editedMedicalRecordNote` — those exist only on the Prisma `Consultation` model (§4). §13's `ConsultationDetailSchema` resolves both edit representations; `doctorId` does not surface in any API response because the authenticated doctor already has it from their own session.
 
@@ -207,7 +207,7 @@ Source: `prisma/schema.prisma`. Datasource: Postgres, pooled `DATABASE_URL` (`:6
 | `analysis`                | `Json?`                              | Shape validated by `ConsultationAnalysisSchema`; regenerated on re-analysis                                   |
 | `editedNote`              | `Json?`                              | Deterministic SOAP projection of the doctor's canonical edit; also stores edits for legacy SOAP-only analyses |
 | `noteTemplate`            | `NoteTemplate @default(soap)`        | Presentation order; contains no clinical content and remains switchable after approval                        |
-| `captureMode`             | `CaptureMode @default(manual)`       | Per-consultation audio workflow; mutable only while `transcript` is null                                      |
+| `captureMode`             | `CaptureMode @default(ambient)`      | Per-consultation audio workflow; mutable only while `transcript` is null                                      |
 | `editedMedicalRecordNote` | `Json?`                              | Doctor's PHI-bearing edit to the canonical eight-field note; erased with the other content columns            |
 | `approvedAt`              | `DateTime?`                          | —                                                                                                             |
 | `createdAt`               | `DateTime @default(now())`           | —                                                                                                             |
@@ -1077,7 +1077,7 @@ Every row carries `actorId` (the authenticated doctor); every consultation-scope
 
 ### Consultation Erasure Tombstones
 
-**Status: `Built`** (issue #64). Erasure does not delete the `Consultation` row. It clears `title`, `transcript`, `analysis`, `editedNote`, and `editedMedicalRecordNote`, then sets `erasedAt` and appends `consultation.erased`. `noteTemplate` and `captureMode` may remain because they carry configuration choices, not clinical content. The surviving tombstone retains opaque system identifiers, workflow state, timestamps, and audit relationships.
+**Status: `Built`** (issue #64). Erasure does not delete the `Consultation` row. It clears `title`, `transcript`, `analysis`, `editedNote`, and `editedMedicalRecordNote`, then sets `erasedAt` and appends `consultation.erased`. `noteTemplate` and `captureMode` may remain because they carry configuration, not clinical content. Since D-007 `captureMode` may be a default nobody chose, so a tombstone reading `ambient` is evidence of neither a doctor's selection nor a stream; the transcript's `source` was the record of which path ran, and erasure clears it with the transcript. The surviving tombstone retains opaque system identifiers, workflow state, timestamps, and audit relationships.
 
 `AuditEvent.consultationId` is a hash input, so `onDelete: SetNull` was rejected. Nulling that foreign key after an audit row was written would change the row's hash input and turn a deleted consultation into a hash mismatch. The audit relation therefore uses `onDelete: Restrict`, and existing audit rows are never edited, deleted, or re-hashed. The consultation id stays valid through the tombstone, preserving the chain by construction.
 
@@ -1408,7 +1408,7 @@ A symlink was rejected outright: symlinks already fail on a Windows checkout her
 
 Locally: `bun run db:migrate` (`prisma migrate dev`, against `DIRECT_URL`). In production: `render.yaml`'s `buildCommand` does not run `prisma migrate deploy`, and **it should not**. Render's `preDeployCommand` is a paid-tier feature, and it is unnecessary here regardless — Postgres is Supabase, not Render, so migrations are applied from a developer machine against `DIRECT_URL` and are already live by the time the API deploys. The earlier proposal to add a `preDeployCommand` is withdrawn.
 
-The consultation-settings migration is additive, but its `NoteTemplate` and `CaptureMode` enums and the `noteTemplate`, `captureMode`, and `editedMedicalRecordNote` columns must exist before the corresponding API version serves traffic. Apply it first with `bun run db:migrate:deploy`; then deploy the backend and frontend. During a staggered rollout, shared response parsing projects missing `noteTemplate` and `captureMode` fields forward as `soap` and `manual`. The backend rejects legacy SOAP-only edits for canonical analyses rather than allowing the two note representations to diverge, and the frontend keeps a rejected settings draft inside the modal without claiming it was persisted.
+The consultation-settings migration is additive, but its `NoteTemplate` and `CaptureMode` enums and the `noteTemplate`, `captureMode`, and `editedMedicalRecordNote` columns must exist before the corresponding API version serves traffic. Apply it first with `bun run db:migrate:deploy`; then deploy the backend and frontend. During a staggered rollout, shared response parsing projects missing `noteTemplate` and `captureMode` fields forward as `soap` and `manual`, which for `captureMode` is what an absent field means and not the column default (§4). The backend rejects legacy SOAP-only edits for canonical analyses rather than allowing the two note representations to diverge, and the frontend keeps a rejected settings draft inside the modal without claiming it was persisted.
 
 **The manual step is now flagged rather than remembered** (issue #132). The premise above holds only when someone actually applies the migration, and PR #124 merged and deployed with `notificationsClearedAt` absent from production. `GET /api/notifications` would have thrown on every screen, since the chrome polls it sitewide; it was caught by running `prisma migrate status` by hand before the deploy landed, which is luck rather than process.
 
@@ -1530,7 +1530,16 @@ The resolution is not "audio never leaves the device" as an absolute, because §
 
 > **On-device is the default and the floor. Hosted is only ever entered by an explicit, recorded, per-consultation act. Failure degrades to paste, never to the cloud.**
 
-**One surface is a stated exception to the first sentence, and only the first sentence.** Prescription dictation defaults to streaming from 10/09/26 (§20.10, `docs/decisions.md` D-001). On-device remains its floor, every failure still lands there or on typing, and nothing is sent without the per-consultation act. This rule governs the press-to-record relay below unchanged.
+**Two surfaces are stated exceptions to the first sentence, and only the first sentence.** Prescription dictation defaults to streaming from 10/09/26 (§20.10, `docs/decisions.md` D-001), and from 21/09/26 a new consultation opens in ambient capture (D-007, #378).
+
+Failure degrades away from the cloud on both, but their floors differ and the difference is the part worth reading.
+
+| Surface                | Its floor when the streaming path cannot run                                                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prescription dictation | On-device recognition, or typing                                                                                                                                                            |
+| Ambient capture        | **No on-device path of its own.** It falls back to press-to-record, which has one. With `SONIOX_API_KEY` unset the Record tab shows that recorder instead of the ambient panel, and says so |
+
+Ambient still sends nothing without its per-consultation tick. This rule governs the press-to-record relay below unchanged.
 
 This is the direct analogue of `DEID_FAIL_CLOSED` (§7), and it is stated here in the same terms because a reviewer will — correctly — ask what happens when the on-device path cannot cope:
 
@@ -1544,6 +1553,21 @@ The second option is the one a performance-minded implementation reaches for by 
 ### Capture Mode Ownership And Manual Pause
 
 Capture Mode belongs to the consultation, not the browser. The hero's **Consultation Settings** dialog owns the Ambient / Press To Record choice alongside the clinical-note layout; the device-scoped Audio dialog retains only microphone, noise handling, gain, and manual transcription-engine preferences. A legacy `mode` key in local storage is ignored.
+
+**A new consultation opens in Ambient** (`docs/decisions.md` D-007). Three things follow, and the second is the one that is easy to get wrong.
+
+- **The value is written, not merely defaulted.** The column defaults to `ambient` and `POST /api/consultations` writes it too, because the migration is applied by hand while the API deploys on a merge (§17), so neither ordering may decide where a doctor lands.
+- **Only where nothing contradicts it.** A create carrying a transcript takes the mode that transcript's `source` implies: `asr_live` did stream and stays `ambient`, everything else is written `manual`. An unconditional `ambient` would stamp every pasted, uploaded and fixture-seeded consultation with a claim that audio reached the provider, and the mode locks the moment a transcript exists, so it could never be corrected.
+- **The mode is reconciled again when the transcript lands.** `PATCH` writes `manual` alongside any transcript whose `source` is not `asr_live`, in the same statement that closes the lock. That is what makes the rule hold rather than merely be intended: the browser also moves the mode when ambient turns out to be unavailable, and that write can fail silently while the doctor carries on recording.
+- **Existing consultations are untouched.** The migration sets the default and updates no row, so anything created before 21/09/26 keeps `manual`.
+
+Capture Mode is also one half of the ambient consent pair, so moving it pre-arms that half and leaves the per-consultation tick as the only control the doctor still exercises.
+
+**Where ambient cannot run, the Record tab moves the consultation to press-to-record and says so.** `SONIOX_API_KEY` unset answers the config probe `503 asr_unavailable`, and since every new consultation now opens in ambient, without this the tab would greet each one with an alert rather than a working recorder.
+
+- **The stored mode moves too**, through the same `onCaptureModeChange` the panel's own Use Press To Record button always called. Showing one path while the record claims the other is how a consultation ends up locked at `ambient` with nothing having streamed.
+- **The trigger is the error code, not the status.** A Render cold start through the `/api` rewrite also answers `503`, and treating that as "no provider" would flip a doctor's deliberate choice on a transient outage. Any other failure keeps the ambient panel and its Check Again button, because there is something to retry.
+- **The substitution is stated on screen** rather than made quietly, in a `role="status"` line, for the reason `.claude/rules/security.md` gives on the sibling surface.
 
 The persisted choice is mutable only before a transcript exists. Once `Consultation.transcript` is non-null, both Capture Mode controls are disabled with a visible explanation and the API independently rejects any `captureMode` write with `409 invalid_state`. While a recorder, transcription worker, upload, or live stream owns unsent audio, the hero gear is temporarily disabled so a mode change cannot unmount that work.
 
@@ -2798,12 +2822,12 @@ Two properties of that flow are load-bearing rather than incidental. The microph
 
 **The tick in that flow is unchanged. The paragraph above it is gone** (`docs/decisions.md` D-004, authorised by the owner). It named Soniox, the region read from `config.region`, and that our server issues the key and never receives the audio.
 
-| Property                       | State                                                                                                                                                                                         |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The two-control rule           | Both halves stand. Capture Mode preference plus a per-consultation tick, enforced in the start dispatcher, asserted to the mint as `consent: true`                                            |
-| What no longer exists anywhere | Any on-screen statement of the processor or the region for this path. The Audio dialog's ambient card names the provider only, and no longer points at a Record tab sentence that is gone     |
-| Why the prop is nullable       | `ConsentGate`'s `disclosure` defaults to the relay's sentence, which says ILMU in Malaysia. Ambient passes `null` rather than omitting it, so a fall-through cannot misstate the destination  |
-| How it is pinned               | `AmbientCapture.test.tsx` asserts the panel matches no `/Soniox\|United States\|leaves this device/i`. The removal is a test that must be deleted to undo, not an assertion quietly withdrawn |
+| Property                       | State                                                                                                                                                                                                                                     |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The two-control rule           | Both halves exist, but the Capture Mode half ships pre-set from 21/09/26 (`decisions.md` D-007), so the tick is the only one the doctor still chooses. It is enforced in the start dispatcher and asserted to the mint as `consent: true` |
+| What no longer exists anywhere | Any on-screen statement of the processor or the region for this path. The Audio dialog's ambient card names the provider only, and no longer points at a Record tab sentence that is gone                                                 |
+| Why the prop is nullable       | `ConsentGate`'s `disclosure` defaults to the relay's sentence, which says ILMU in Malaysia. Ambient passes `null` rather than omitting it, so a fall-through cannot misstate the destination                                              |
+| How it is pinned               | `AmbientCapture.test.tsx` asserts the panel matches no `/Soniox\|United States\|leaves this device/i`. The removal is a test that must be deleted to undo, not an assertion quietly withdrawn                                             |
 
 #### What Is Not Measured
 
