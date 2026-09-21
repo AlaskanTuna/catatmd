@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "private": true,
-  "license": "MIT",
+  "license": "BUSL-1.1",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
