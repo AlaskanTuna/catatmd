@@ -17,9 +17,54 @@ export { RequestTokenVault } from './vault.js'
 
 /** Shape of an already-minted token, e.g. `[PATIENT_1]`. */
 const TOKEN_PATTERN = /\[[A-Z]+_\d+\]/g
+const TOKEN_PLACEHOLDER = '\0'
+
+function detectOutsideTokens(content: string): ReturnType<typeof detect> {
+  let projected = ''
+  let cursor = 0
+  const shifts: { projectedAt: number; removed: number }[] = []
+
+  for (const token of content.matchAll(TOKEN_PATTERN)) {
+    projected += content.slice(cursor, token.index)
+    shifts.push({ projectedAt: projected.length, removed: token[0].length - 1 })
+    projected += TOKEN_PLACEHOLDER
+    cursor = token.index + token[0].length
+  }
+  projected += content.slice(cursor)
+
+  const restoreOffset = (offset: number) =>
+    offset +
+    shifts.reduce((removed, shift) => removed + (shift.projectedAt < offset ? shift.removed : 0), 0)
+
+  return detect(projected).map((match) => {
+    const start = restoreOffset(match.start)
+    const end = restoreOffset(match.end)
+    return { ...match, start, end, value: content.slice(start, end) }
+  })
+}
+
+export const DEIDENTIFICATION_FAILURE_STAGES = ['detector_failure', 'egress_block'] as const
+export type DeidentificationFailureStage = (typeof DEIDENTIFICATION_FAILURE_STAGES)[number]
+
+export const DEIDENTIFICATION_PAYLOAD_ORIGINS = [
+  'input',
+  'digest',
+  'system_prompt',
+  'history',
+  'current_message',
+  'egress_system',
+  'egress_turn',
+  'egress_content',
+  'egress_input',
+] as const
+export type DeidentificationPayloadOrigin = (typeof DEIDENTIFICATION_PAYLOAD_ORIGINS)[number]
 
 export class DeidentificationError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly failureStage: DeidentificationFailureStage,
+    readonly payloadOrigin: DeidentificationPayloadOrigin,
+  ) {
     super(message)
     this.name = 'DeidentificationError'
   }
@@ -35,27 +80,45 @@ export class DeidentificationError extends Error {
  * `markDeidentified` is called here and nowhere else — this function is the
  * only place in the codebase that mints the branded type.
  */
-export function deidentify(text: string, vault = new RequestTokenVault()): DeidentificationResult {
-  let matches: ReturnType<typeof detect>
-  try {
-    matches = detect(text)
-  } catch (cause) {
-    throw new DeidentificationError(
-      `De-identification failed; the LLM call must not proceed: ${
-        cause instanceof Error ? cause.name : 'unknown error'
-      }`,
-    )
-  }
-
-  // Right to left, so each replacement leaves earlier offsets valid.
+export function deidentify(
+  text: string,
+  vault = new RequestTokenVault(),
+  payloadOrigin: DeidentificationPayloadOrigin = 'input',
+): DeidentificationResult {
   let out = text
-  for (const match of [...matches].reverse()) {
-    const token = vault.tokenFor(match.label, match.value)
-    out = out.slice(0, match.start) + token + out.slice(match.end)
+  const detected = new Set<string>()
+
+  for (;;) {
+    let matches: ReturnType<typeof detect>
+    try {
+      matches = detectOutsideTokens(out)
+    } catch (cause) {
+      throw new DeidentificationError(
+        `De-identification failed; the LLM call must not proceed: ${
+          cause instanceof Error ? cause.name : 'unknown error'
+        }`,
+        'detector_failure',
+        payloadOrigin,
+      )
+    }
+
+    if (matches.length === 0) break
+
+    /*
+     * Replacing one identifier can shorten the surrounding text enough to
+     * bring a context cue inside another detector's window. Each pass uses the
+     * same token-stripped projection as the final egress guard and maps matches
+     * back to the original offsets. Re-scan until no matches remain so the
+     * value earns its brand at the fixed point the guard expects.
+     */
+    for (const match of [...matches].reverse()) {
+      detected.add(match.label)
+      const token = vault.tokenFor(match.label, match.value)
+      out = out.slice(0, match.start) + token + out.slice(match.end)
+    }
   }
 
-  const detected = [...new Set(matches.map((m) => m.label))].sort()
-  return { text: markDeidentified(out), vault, detected }
+  return { text: markDeidentified(out), vault, detected: [...detected].sort() }
 }
 
 /**
@@ -133,9 +196,12 @@ export function sliceDeidentified(content: Deidentified, maxChars: number): Deid
   return pieces
 }
 
-export function assertNoIdentifiers(content: Deidentified, operation: string): void {
-  const withoutTokens = content.replace(TOKEN_PATTERN, ' ')
-  const leaked = detect(withoutTokens)
+export function assertNoIdentifiers(
+  content: Deidentified,
+  operation: string,
+  payloadOrigin: DeidentificationPayloadOrigin = 'egress_content',
+): void {
+  const leaked = detectOutsideTokens(content)
   if (leaked.length === 0) return
 
   // Labels only. Never the matched values — an exception message is a log line
@@ -143,5 +209,7 @@ export function assertNoIdentifiers(content: Deidentified, operation: string): v
   const labels = [...new Set(leaked.map((m) => m.label))].sort().join(', ')
   throw new DeidentificationError(
     `Egress blocked for operation "${operation}": payload still carries ${labels}`,
+    'egress_block',
+    payloadOrigin,
   )
 }

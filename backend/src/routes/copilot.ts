@@ -98,6 +98,10 @@ copilotRouter.post('/', copilotRateLimit, async (req, res) => {
             ? 'model_error'
             : 'internal_error',
       errorName: cause instanceof Error ? cause.name : 'Unknown',
+      ...(cause instanceof DeidentificationError && {
+        failureStage: cause.failureStage,
+        payloadOrigin: cause.payloadOrigin,
+      }),
     })
     send({ type: 'error', message: known })
   } finally {

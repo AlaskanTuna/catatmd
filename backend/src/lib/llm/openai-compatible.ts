@@ -124,8 +124,10 @@ export class OpenAICompatibleClient implements LLMClient {
    */
   async *stream(request: StreamRequest): AsyncGenerator<StreamChunk> {
     if (env.DEID_FAIL_CLOSED) {
-      assertNoIdentifiers(request.system, request.operation)
-      for (const turn of request.turns) assertNoIdentifiers(turn.content, request.operation)
+      assertNoIdentifiers(request.system, request.operation, 'egress_system')
+      for (const turn of request.turns) {
+        assertNoIdentifiers(turn.content, request.operation, 'egress_turn')
+      }
     }
 
     const completion = await this.client.chat.completions.create(
@@ -210,7 +212,7 @@ export class OpenAICompatibleClient implements LLMClient {
     // It runs inside the adapter rather than being injected, because a guard a
     // caller can omit by constructing the client differently is not a boundary.
     if (env.DEID_FAIL_CLOSED) {
-      assertNoIdentifiers(request.content, request.operation)
+      assertNoIdentifiers(request.content, request.operation, 'egress_content')
     }
 
     const completion = await this.client.chat.completions.create({
@@ -317,7 +319,9 @@ export class OpenAICompatibleEmbeddingClient implements EmbeddingClient {
 
   async embed(inputs: readonly Deidentified[], operation: string): Promise<number[][]> {
     if (inputs.length === 0) return []
-    if (env.DEID_FAIL_CLOSED) for (const input of inputs) assertNoIdentifiers(input, operation)
+    if (env.DEID_FAIL_CLOSED) {
+      for (const input of inputs) assertNoIdentifiers(input, operation, 'egress_input')
+    }
 
     const vectors: number[][] = []
     for (let start = 0; start < inputs.length; start += EMBEDDING_MAX_BATCH) {
