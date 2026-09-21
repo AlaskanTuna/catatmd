@@ -62,6 +62,7 @@ graphify-out/*
 *.phi.json
 /transcripts/
 /patient-data/
+docs/source/
 .vercel
 .gstack/
 
