@@ -466,6 +466,15 @@ export function CapturePanel({
 
         {tab === 'record' && (
           <Card className="p-6">
+            {/* Mounted before it has anything to say, for the reason
+              `AudioCapture` gives at its own live region: one inserted into
+              the DOM already populated is not announced, and the whole
+              substitution below appears in a single commit. This card is on
+              screen from the first render, so the container is permanent and
+              only its text changes. */}
+            <span aria-live="polite" className="sr-only">
+              {ambientUnavailable ? 'Ambient capture is not available on this deployment.' : ''}
+            </span>
             {showAmbient ? (
               <AmbientCapture
                 onTranscript={applyRecording}
@@ -493,14 +502,18 @@ export function CapturePanel({
                   and the reason is the same here: the doctor set this
                   consultation to stream, and it is not going to.
 
-                  `role="status"` because the swap happens inside a region that
-                  is already on screen, so a reader that is not watching the
-                  DOM would otherwise be told nothing at all. The panel this
-                  replaces announced itself; this has to as well. */}
+                  The second sentence is keyed on the record rather than
+                  assumed, because the write that moves it can fail and the
+                  doctor is told so by a toast that says nothing changed. It
+                  still moves when the transcript lands, which the API does
+                  itself, so both branches are true when they are shown. */}
                 {ambientUnavailable && (
-                  <p role="status" className="text-sm text-ink-muted">
-                    Ambient capture is not available on this deployment, so this consultation has
-                    moved to Press To Record.
+                  <p className="text-sm text-ink-muted">
+                    Ambient capture is not available on this deployment, so this consultation
+                    records one pass at a time.{' '}
+                    {captureMode === 'ambient'
+                      ? 'Its Capture Mode moves to Press To Record when the transcript is saved.'
+                      : 'Its Capture Mode has moved to Press To Record.'}
                   </p>
                 )}
                 <AudioCapture

@@ -342,7 +342,7 @@ A consultation **that opens empty** is created in `ambient`. Press To Record rem
 
 Two populations are deliberately excluded, for the same reason.
 
-- **Consultations created with a transcript already in hand**, from a paste, an upload, or a fixture seed. Nothing streamed, the mode locks the instant a transcript exists, and a row asserting otherwise could never be corrected. They are written `manual`, exactly as before this decision.
+- **Any consultation whose transcript did not stream.** A `source` other than `asr_live` means the audio was captured some other way or never existed, so the mode is written `manual`, both on a create that carries the transcript and on the `PATCH` that later brings one in. The mode locks the instant a transcript exists, and a row asserting a stream that never happened could never be corrected afterwards. The transcript's `source` stays the record of which path ran; this only stops the mode contradicting it.
 - **Consultations created before 21/09/26.** The migration issues `SET DEFAULT` and no `UPDATE`, so it rewrites no row at all. That leaves untranscribed drafts on `manual` too, which is the conservative reading and is chosen rather than overlooked: the mode is consent-adjacent state, and a migration is the wrong place to change one on a record a doctor already opened.
 
 ### What Changes, And What Does Not

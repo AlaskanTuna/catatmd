@@ -481,6 +481,35 @@ describe('creating a consultation', () => {
     expect(audits.some((event) => event.action === 'consultation.asr_live_used')).toBe(true)
   })
 
+  /*
+   * The backstop, and the one that has to hold on its own. The browser moves
+   * the mode too, but that write can fail while the doctor carries on
+   * recording, so the row is made true in the statement that closes the lock.
+   */
+  it('reconciles an ambient mode against a transcript that did not stream', async () => {
+    seed('draft', { transcript: null, captureMode: 'ambient' })
+
+    const res = await call('PATCH', '/api/consultations/c1', { transcript: TRANSCRIPT })
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')?.captureMode).toBe('manual')
+    // And it is locked that way, so the reconciliation had one chance.
+    expect((await call('PATCH', '/api/consultations/c1', { captureMode: 'ambient' })).status).toBe(
+      409,
+    )
+  })
+
+  it('leaves an ambient mode alone when the transcript did stream', async () => {
+    seed('draft', { transcript: null, captureMode: 'ambient' })
+
+    const res = await call('PATCH', '/api/consultations/c1', {
+      transcript: { ...TRANSCRIPT, source: 'asr_live' },
+    })
+
+    expect(res.status).toBe(200)
+    expect(store.get('c1')?.captureMode).toBe('ambient')
+  })
+
   // The ordinary flow the default exists for: open a consultation, then change
   // your mind before anything has been captured into it.
   it('lets the doctor leave ambient before a transcript exists', async () => {

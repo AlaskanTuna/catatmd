@@ -1373,7 +1373,26 @@ consultationsRouter.patch('/:id', async (req, res) => {
     }
     const captured = await prisma.consultation.update({
       where: { id: consultation.id },
-      data: { transcript: patch.transcript },
+      data: {
+        transcript: patch.transcript,
+        /*
+         * Reconciled in the same write that closes the lock, because this is
+         * the last moment the mode can be made true (#378).
+         *
+         * `asr_live` is the only source that means the browser streamed to the
+         * provider, so anything else is a consultation captured some other way
+         * and the mode says so, whatever it was configured to before. A doctor
+         * who opened in ambient and then pasted, uploaded, or recorded
+         * press-to-record leaves a row that claims a stream that never
+         * happened, and it is uncorrectable from the next line onward.
+         *
+         * Server-side rather than in the browser, and that is the whole point:
+         * the Record tab also moves the mode when ambient is unavailable, but
+         * that write can fail, and the failure is silent enough that the
+         * doctor carries on recording. This one cannot be skipped.
+         */
+        ...(patch.transcript.source === 'asr_live' ? {} : { captureMode: 'manual' }),
+      },
     })
     await recordAuditEvent({
       action: 'consultation.edited',

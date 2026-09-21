@@ -635,8 +635,21 @@ describe('ambient capture mode', () => {
     expect(screen.getByRole('button', { name: 'mock transcribe' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'mock transcribe live' })).toBeNull()
     expect(onCaptureModeChange).toHaveBeenCalledWith('manual')
-    // Announced, not swapped in quietly, and to a reader as well as a viewer.
-    expect(screen.getByRole('status').textContent).toMatch(/moved to Press To Record/i)
+    /*
+     * Announced to a reader as well as a viewer, through a region that was
+     * already on screen before it had anything to say. Asserting the text
+     * rather than the role, because a live region inserted already populated
+     * carries the role and announces nothing.
+     */
+    expect(screen.getByText(/not available on this deployment\.$/i).className).toContain('sr-only')
+    /*
+     * The record has not moved yet: the PATCH is this mock's spy and nothing
+     * resolved it. The copy has to be true in that state too, so it promises
+     * the move rather than reporting it.
+     */
+    expect(screen.getByText(/records one pass at a time/i).textContent).toMatch(
+      /moves to Press To Record when the transcript is saved/i,
+    )
   })
 
   it('leaves Record usable when the consultation uses ambient mode', async () => {
