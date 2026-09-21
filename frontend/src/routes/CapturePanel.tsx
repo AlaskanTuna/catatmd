@@ -142,10 +142,15 @@ export function CapturePanel({
    * consultation on a deployment with no `SONIOX_API_KEY` would open on an
    * alert instead of on a recorder that works.
    *
-   * It shows the other panel and does not touch `captureMode`: a key missing
-   * from one deployment is not the doctor choosing press-to-record, and
-   * writing the record would say it was. A live session still wins, so this
-   * can never unmount one.
+   * It exists only to swap the panel on this render and to say so on screen.
+   * The record itself is moved to press-to-record by `switchToManual` on the
+   * same event, because a consultation left on `ambient` while the doctor
+   * records some other way locks that way the moment the transcript lands, and
+   * then claims a stream that never happened. `AmbientCapture`'s own Use Press
+   * To Record button always wrote the record; this is that button pressed for
+   * a doctor who has no other option, not a quieter version of it.
+   *
+   * A live session still wins, so this can never unmount one.
    */
   const [ambientUnavailable, setAmbientUnavailable] = useState(false)
   const showAmbient = (captureMode === 'ambient' && !ambientUnavailable) || ambientLive
@@ -465,7 +470,10 @@ export function CapturePanel({
               <AmbientCapture
                 onTranscript={applyRecording}
                 onSwitchToManual={switchToManual}
-                onUnavailable={() => setAmbientUnavailable(true)}
+                onUnavailable={() => {
+                  setAmbientUnavailable(true)
+                  switchToManual()
+                }}
                 onLiveChange={(live) => {
                   setAmbientLive(live)
                   onCaptureBusyChange(live)
@@ -483,11 +491,16 @@ export function CapturePanel({
                   different result with no word that it happened is what
                   `.claude/rules/security.md` forbids on the sibling surface,
                   and the reason is the same here: the doctor set this
-                  consultation to stream, and it is not going to. */}
-                {captureMode === 'ambient' && ambientUnavailable && (
-                  <p className="text-sm text-ink-muted">
-                    Ambient capture is not available on this deployment, so this consultation
-                    records one pass at a time instead. Its Capture Mode setting is unchanged.
+                  consultation to stream, and it is not going to.
+
+                  `role="status"` because the swap happens inside a region that
+                  is already on screen, so a reader that is not watching the
+                  DOM would otherwise be told nothing at all. The panel this
+                  replaces announced itself; this has to as well. */}
+                {ambientUnavailable && (
+                  <p role="status" className="text-sm text-ink-muted">
+                    Ambient capture is not available on this deployment, so this consultation has
+                    moved to Press To Record.
                   </p>
                 )}
                 <AudioCapture

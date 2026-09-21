@@ -620,10 +620,13 @@ describe('ambient capture mode', () => {
   /*
    * A new consultation opens in ambient (#378), so a deployment with no
    * `SONIOX_API_KEY` would otherwise greet every one of them with an alert
-   * instead of a recorder. The record itself must not move: a key missing here
-   * is not the doctor choosing press-to-record.
+   * instead of a recorder.
+   *
+   * The record has to move with the screen. Leaving it on `ambient` while the
+   * doctor records press-to-record locks it that way the instant the
+   * transcript lands, and the row then claims a stream that never happened.
    */
-  it('shows the recorder, not an alert, where ambient is unavailable', async () => {
+  it('moves the consultation to press-to-record where ambient is unavailable', async () => {
     const { onCaptureModeChange } = renderRoute('ambient')
 
     fireEvent.click(await screen.findByRole('tab', { name: /record/i }))
@@ -631,10 +634,9 @@ describe('ambient capture mode', () => {
 
     expect(screen.getByRole('button', { name: 'mock transcribe' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'mock transcribe live' })).toBeNull()
-    // Said out loud rather than swapped in quietly.
-    expect(screen.getByText(/not available on this deployment/i)).toBeTruthy()
-    // And the consultation is still configured for ambient.
-    expect(onCaptureModeChange).not.toHaveBeenCalled()
+    expect(onCaptureModeChange).toHaveBeenCalledWith('manual')
+    // Announced, not swapped in quietly, and to a reader as well as a viewer.
+    expect(screen.getByRole('status').textContent).toMatch(/moved to Press To Record/i)
   })
 
   it('leaves Record usable when the consultation uses ambient mode', async () => {

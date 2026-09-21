@@ -466,6 +466,21 @@ describe('creating a consultation', () => {
     )
   })
 
+  /*
+   * The other direction of the same rule. This transcript did stream, and the
+   * same request writes `consultation.asr_live_used`, so a `manual` mode would
+   * have the row and its own audit trail disagreeing out of one body.
+   */
+  it('keeps ambient for a transcript that did stream', async () => {
+    const res = await call('POST', '/api/consultations', {
+      transcript: { ...TRANSCRIPT, source: 'asr_live' },
+    })
+
+    expect(res.status).toBe(201)
+    expect(store.get('c1')?.captureMode).toBe('ambient')
+    expect(audits.some((event) => event.action === 'consultation.asr_live_used')).toBe(true)
+  })
+
   // The ordinary flow the default exists for: open a consultation, then change
   // your mind before anything has been captured into it.
   it('lets the doctor leave ambient before a transcript exists', async () => {

@@ -145,11 +145,12 @@ function toDetail(
     prescriptions: row.prescriptions ?? null,
     noteTemplate: row.noteTemplate ?? 'soap',
     /*
-     * A select-omission guard, not the default a new consultation gets, which
-     * is `ambient` and is written at the create route below (#378). The column
-     * is `NOT NULL`, so this fires only if someone later narrows a select and
-     * forgets this field. It stays `manual` because that is the reading that
-     * understates the egress rather than claiming one that did not happen.
+     * Not the default a new consultation gets, which is `ambient` and is
+     * written at the create route below (#378). `row` is the full Prisma model
+     * and the column is `NOT NULL`, so this branch is statically unreachable
+     * outside the suite's stand-in store. It stays `manual` because that is the
+     * reading that understates the egress rather than claiming one that did
+     * not happen.
      */
     captureMode: row.captureMode ?? 'manual',
     approvedAt: row.approvedAt,
@@ -337,16 +338,25 @@ consultationsRouter.post('/', async (req, res) => {
        * consultation where the doctor expects it, and it is what lets a test
        * see the default at all, since the suite's store has no column defaults.
        *
-       * **Only when the row opens empty**, and the condition is the whole point
-       * rather than a guard against nothing. A transcript arriving with the
-       * request has already been captured some other way, and the mode locks
-       * the moment it lands, so an unconditional `'ambient'` would stamp a
-       * pasted, uploaded or fixture-seeded consultation with a claim that
-       * audio streamed to the provider, permanently and with no way to correct
-       * it. That is the falsehood `docs/decisions.md` D-007 refuses to write
-       * onto historical rows, arriving through the create route instead.
+       * **Only where nothing contradicts it.** A transcript arriving with the
+       * request was captured before this row existed, and the mode locks the
+       * moment it lands, so an unconditional `'ambient'` would stamp a pasted,
+       * uploaded or fixture-seeded consultation with a claim that audio
+       * streamed to the provider, permanently and with no way to correct it.
+       * That is the falsehood `docs/decisions.md` D-007 refuses to write onto
+       * historical rows, arriving through the create route instead. Where the
+       * transcript says `asr_live` it did stream, and the same request audits
+       * it as `consultation.asr_live_used` below, so the two must agree.
+       *
+       * This covers the row as created and nothing after it. A consultation
+       * opened empty and then pasted into keeps `ambient`, because the mode is
+       * the path it was configured for rather than a record of what ran; the
+       * transcript's own `source` is that record.
        */
-      captureMode: parsed.data.transcript === undefined ? 'ambient' : 'manual',
+      captureMode:
+        parsed.data.transcript === undefined || parsed.data.transcript.source === 'asr_live'
+          ? 'ambient'
+          : 'manual',
     },
   })
 

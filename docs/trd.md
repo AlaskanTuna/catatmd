@@ -1562,7 +1562,11 @@ Capture Mode belongs to the consultation, not the browser. The hero's **Consulta
 
 Capture Mode is also one half of the ambient consent pair, so moving it pre-arms that half and leaves the per-consultation tick as the only control the doctor still exercises.
 
-**Where ambient cannot run, the Record tab shows press-to-record instead and says so.** `SONIOX_API_KEY` unset answers the config probe with `503`, and since every new consultation now opens in ambient, without this the tab would greet each one with an alert rather than a working recorder. The consultation's stored `captureMode` does not move: a key missing from one deployment is not the doctor choosing press-to-record, and writing the record would claim it was. The substitution is stated on screen rather than made quietly, for the reason `.claude/rules/security.md` gives on the sibling surface.
+**Where ambient cannot run, the Record tab moves the consultation to press-to-record and says so.** `SONIOX_API_KEY` unset answers the config probe `503 asr_unavailable`, and since every new consultation now opens in ambient, without this the tab would greet each one with an alert rather than a working recorder.
+
+- **The stored mode moves too**, through the same `onCaptureModeChange` the panel's own Use Press To Record button always called. Showing one path while the record claims the other is how a consultation ends up locked at `ambient` with nothing having streamed.
+- **The trigger is the error code, not the status.** A Render cold start through the `/api` rewrite also answers `503`, and treating that as "no provider" would flip a doctor's deliberate choice on a transient outage. Any other failure keeps the ambient panel and its Check Again button, because there is something to retry.
+- **The substitution is stated on screen** rather than made quietly, in a `role="status"` line, for the reason `.claude/rules/security.md` gives on the sibling surface.
 
 The persisted choice is mutable only before a transcript exists. Once `Consultation.transcript` is non-null, both Capture Mode controls are disabled with a visible explanation and the API independently rejects any `captureMode` write with `409 invalid_state`. While a recorder, transcription worker, upload, or live stream owns unsent audio, the hero gear is temporarily disabled so a mode change cannot unmount that work.
 

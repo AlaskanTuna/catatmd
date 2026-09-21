@@ -252,6 +252,34 @@ describe('availability', () => {
     expect(screen.queryByRole('button', { name: /start ambient/i })).toBeNull()
   })
 
+  /*
+   * The signal the Record tab acts on by writing the consultation's mode
+   * (#378), so it has to mean what it says. Only a real `asr_unavailable`
+   * counts: a bare 503 is also what a cold start through the `/api` rewrite
+   * returns, and flipping a doctor's deliberate choice on one of those would
+   * be a transient outage making a permanent claim.
+   */
+  it('reports unavailability on asr_unavailable, and not on a bare 503', async () => {
+    const onUnavailable = vi.fn()
+
+    liveAsrConfig.mockRejectedValue(new ApiError(503, 'asr_unavailable', 'nope'))
+    renderAmbient(null, { onUnavailable })
+    await settle()
+    expect(onUnavailable).toHaveBeenCalledTimes(1)
+
+    cleanup()
+    onUnavailable.mockClear()
+
+    liveAsrConfig.mockRejectedValue(new ApiError(503, 'unknown', 'cold start'))
+    renderAmbient(null, { onUnavailable })
+    await settle()
+
+    expect(onUnavailable).not.toHaveBeenCalled()
+    // And it stays retryable, rather than dead-ending on a false diagnosis.
+    expect(screen.getByRole('alert').textContent).toMatch(/could not be reached/i)
+    expect(screen.getByRole('button', { name: /check again/i })).toBeTruthy()
+  })
+
   it('offers a retry when the check itself failed', async () => {
     liveAsrConfig.mockRejectedValue(new Error('offline'))
     renderAmbient()
