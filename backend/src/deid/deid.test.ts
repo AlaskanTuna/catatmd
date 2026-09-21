@@ -264,6 +264,46 @@ describe('transcript-level de-identification', () => {
   })
 })
 
+describe('de-identification reaches a fixed point', () => {
+  const longSyntheticEmail = 'synthetic.identifier.with.padding.for.context@example.test'
+
+  it.each([
+    {
+      input: `Address ${longSyntheticEmail} Jalan Ampang 5`,
+      leaked: 'Jalan Ampang 5',
+      label: 'ADDRESS' as const,
+    },
+    {
+      input: `IC ${longSyntheticEmail} 990231145677`,
+      leaked: '990231145677',
+      label: 'NRIC' as const,
+    },
+    {
+      input: `Address ${longSyntheticEmail} ${'x'.repeat(33)} Jalan Ampang 5`,
+      leaked: 'Jalan Ampang 5',
+      label: 'ADDRESS' as const,
+    },
+  ])(
+    're-gates an identifier promoted after an earlier replacement ($label)',
+    ({ input, leaked, label }) => {
+      const result = deidentify(input)
+
+      expect(result.text).not.toContain(leaked)
+      expect(result.detected).toEqual(expect.arrayContaining(['EMAIL', label]))
+      expect(() => assertNoIdentifiers(result.text, 'copilot_turn')).not.toThrow()
+      expect(result.vault.rehydrate(result.text)).toBe(input)
+    },
+  )
+
+  it('does not promote an arbitrary reference number after masking nearby text', () => {
+    const result = deidentify(`Invoice ${longSyntheticEmail} reference 990231145677`)
+
+    expect(result.text).toContain('990231145677')
+    expect(result.detected).toEqual(['EMAIL'])
+    expect(() => assertNoIdentifiers(result.text, 'copilot_turn')).not.toThrow()
+  })
+})
+
 describe('the egress guard — fail closed (docs/trd.md §19 row 2)', () => {
   it('blocks a payload that never passed through the gate', () => {
     // Simulates the §5 provenance gap: a value branded outside deid/.
@@ -286,6 +326,10 @@ describe('the egress guard — fail closed (docs/trd.md §19 row 2)', () => {
       expect(message).not.toContain('850523')
       expect(message).not.toContain('Ahmad')
       expect(message).toMatch(/NRIC|PATIENT/)
+      expect(error).toMatchObject({
+        failureStage: 'egress_block',
+        payloadOrigin: 'egress_content',
+      })
     }
   })
 

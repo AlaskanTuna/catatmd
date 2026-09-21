@@ -154,7 +154,11 @@ describe('proposeModelCorrections', () => {
     // The egress guard firing is an alarm, not a correction outcome, and must
     // never be softened into one.
     stubClient(async () => {
-      throw new DeidentificationError('Egress blocked for operation "transcript_cleanup": NRIC')
+      throw new DeidentificationError(
+        'Egress blocked for operation "transcript_cleanup": NRIC',
+        'egress_block',
+        'egress_content',
+      )
     })
 
     await expect(proposeModelCorrections(uncertain)).rejects.toBeInstanceOf(DeidentificationError)

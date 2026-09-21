@@ -43,7 +43,7 @@ export async function* runCopilotTurn(options: {
    * which is what keeps token numbering stable between messages.
    */
   const vault = new RequestTokenVault()
-  const digestResult = deidentify(renderDigest(consultation), vault)
+  const digestResult = deidentify(renderDigest(consultation), vault, 'digest')
 
   /*
    * A signed note gets a copilot with no tools at all.
@@ -62,6 +62,7 @@ export async function* runCopilotTurn(options: {
       signed,
     }),
     vault,
+    'system_prompt',
   ).text
 
   /*
@@ -73,9 +74,9 @@ export async function* runCopilotTurn(options: {
   const turns: StreamTurn[] = [
     ...history.map((turn) => ({
       role: turn.role === 'doctor' ? ('user' as const) : ('assistant' as const),
-      content: deidentify(turn.content, vault).text,
+      content: deidentify(turn.content, vault, 'history').text,
     })),
-    { role: 'user' as const, content: deidentify(message, vault).text },
+    { role: 'user' as const, content: deidentify(message, vault, 'current_message').text },
   ]
 
   const stream = getLLMClient().stream({

@@ -66,6 +66,12 @@ function request(content: Deidentified) {
   }
 }
 
+async function drainStream(stream: AsyncGenerator<unknown>): Promise<void> {
+  for await (const _chunk of stream) {
+    // The egress guard runs before the provider can yield a chunk.
+  }
+}
+
 /**
  * The provenance gap this guard exists to close, reproduced deliberately.
  *
@@ -244,12 +250,39 @@ describe('the adapter re-scans every payload before it leaves the process', () =
     ).not.toHaveBeenCalled()
   })
 
+  it.each([
+    {
+      payloadOrigin: 'egress_system' as const,
+      system: SMUGGLED,
+      turns: [{ role: 'user' as const, content: deidentify('ordinary question').text }],
+    },
+    {
+      payloadOrigin: 'egress_turn' as const,
+      system: deidentify('ordinary system prompt').text,
+      turns: [{ role: 'user' as const, content: SMUGGLED }],
+    },
+  ])('classifies a blocked stream payload as $payloadOrigin', async (request) => {
+    const error = await drainStream(
+      client().stream({ operation: 'copilot_turn', tools: [], ...request }),
+    ).catch((caught: unknown) => caught)
+
+    expect(error).toMatchObject({
+      failureStage: 'egress_block',
+      payloadOrigin: request.payloadOrigin,
+    })
+    expect(completionsCreate).not.toHaveBeenCalled()
+  })
+
   it('names detector labels in the error and never the matched values', async () => {
     const error = await client()
       .generate(request(SMUGGLED))
       .catch((caught: unknown) => caught)
 
     expect(error).toBeInstanceOf(DeidentificationError)
+    expect(error).toMatchObject({
+      failureStage: 'egress_block',
+      payloadOrigin: 'egress_content',
+    })
     expect((error as Error).message).toContain('NRIC')
     expect(
       (error as Error).message,

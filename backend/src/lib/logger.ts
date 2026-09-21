@@ -1,6 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { env } from '../config/env.js'
 import { detect } from '../deid/detectors.js'
+import {
+  DEIDENTIFICATION_FAILURE_STAGES,
+  DEIDENTIFICATION_PAYLOAD_ORIGINS,
+  type DeidentificationFailureStage,
+  type DeidentificationPayloadOrigin,
+} from '../deid/index.js'
 
 /**
  * Privacy-safe structured logger (GitHub issue #15).
@@ -154,6 +160,8 @@ const FIELD_RULES = {
   operation: oneOf(LLM_OPERATIONS),
   errorClass: oneOf(ERROR_CLASSES),
   errorName: matching(NAME_PATTERN),
+  failureStage: oneOf(DEIDENTIFICATION_FAILURE_STAGES),
+  payloadOrigin: oneOf(DEIDENTIFICATION_PAYLOAD_ORIGINS),
   outcome: oneOf(OUTCOMES),
   detectorLabels: asDetectorLabels,
   detectorCount: asInteger,
@@ -184,6 +192,8 @@ export interface LogFields {
   errorClass?: ErrorClass
   /** Constructor name only. Never `error.message`, which may quote a transcript. */
   errorName?: string
+  failureStage?: DeidentificationFailureStage
+  payloadOrigin?: DeidentificationPayloadOrigin
   outcome?: 'ok' | 'error'
   /** Detector labels that fired, e.g. ["NRIC"]. Never the matched values. */
   detectorLabels?: readonly string[]

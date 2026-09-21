@@ -116,6 +116,20 @@ describe('what reaches the provider', () => {
     expect(sent).toMatch(/\[PATIENT_\d+\]/)
   })
 
+  it('fully gates an identifier promoted only after an earlier replacement', async () => {
+    chunks = [{ type: 'text', text: 'ok' }]
+    const email = 'synthetic.identifier.with.padding.for.context@example.test'
+
+    await drain(`Address ${email} Jalan Ampang 5`)
+
+    const sent = captured?.turns.at(-1)?.content ?? ''
+    expect(stream).toHaveBeenCalledTimes(1)
+    expect(sent).not.toContain(email)
+    expect(sent).not.toContain('Jalan Ampang 5')
+    expect(sent).toMatch(/\[EMAIL_\d+\]/)
+    expect(sent).toMatch(/\[ADDRESS_\d+\]/)
+  })
+
   it('gives the same person the same token in the digest and the question', async () => {
     // One vault across the whole turn. Two vaults would number independently
     // and the model would read two different people where there is one.

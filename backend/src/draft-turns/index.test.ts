@@ -78,7 +78,7 @@ describe('draftTurns', () => {
   it('passes a DeidentificationError from generate through unwrapped', async () => {
     const { text: content } = deidentify('doctor how are you feeling')
     stubClient(async () => {
-      throw new DeidentificationError('egress blocked')
+      throw new DeidentificationError('egress blocked', 'egress_block', 'egress_content')
     })
 
     await expect(draftTurns(content)).rejects.toBeInstanceOf(DeidentificationError)

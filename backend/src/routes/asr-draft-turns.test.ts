@@ -304,7 +304,7 @@ describe('the draft pair: egress, audit, respond', () => {
 
   it('answers 500 with no audit row when the egress guard itself fires', async () => {
     llmState.generate.mockImplementation(async () => {
-      throw new DeidentificationError('egress blocked')
+      throw new DeidentificationError('egress blocked', 'egress_block', 'egress_content')
     })
 
     const res = await post({ text: 'doctor how are you feeling' })
