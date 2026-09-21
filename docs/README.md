@@ -284,7 +284,14 @@ The claim stops there, because on modest clinic hardware the on-device path has 
 
 > **On-device is the default and the floor. Hosted is only ever entered by an explicit, recorded, per-consultation act. Failure degrades to paste, never to the cloud.**
 
-**One surface is a stated exception to the first sentence, and only the first sentence.** Prescription dictation streams by default from 10/09/26 ([`decisions.md`](./decisions.md) D-001). The rest of the rule holds there unchanged: on-device remains its fallback, nothing is sent without the per-consultation act, and failure still degrades to typing rather than to the cloud.
+**Two surfaces are stated exceptions to the first sentence, and only the first sentence.**
+
+| Surface                | Streams by default since | What it falls back to                                                     |
+| ---------------------- | ------------------------ | ------------------------------------------------------------------------- |
+| Prescription dictation | 10/09/26 (D-001)         | On-device recognition, or typing                                          |
+| Ambient capture        | 21/09/26 (D-007)         | Press to record, which has an on-device path. Ambient has none of its own |
+
+The rest of the rule holds on both: failure degrades to press-to-record, to the device, or to typing, never to the cloud. Ambient still sends nothing without its per-consultation tick. See [`decisions.md`](./decisions.md).
 
 **That last clause is the load-bearing one.** Silently switching to hosted transcription because a device is slow would be a privacy control that fails **open** under load, degrading exactly when the doctor is least able to notice. It is written down as rejected rather than left to an implementer's judgement.
 
@@ -303,16 +310,18 @@ The hosted adapter is **built and live**, and reaching it takes two separate act
 
 **Four capture paths exist, and they leave the device by different routes.**
 
-| Path                       | Where the audio goes                                                      | Region        |
-| -------------------------- | ------------------------------------------------------------------------- | ------------- |
-| Press to record, on-device | Nowhere. The model runs in the browser                                    | The device    |
-| Press to record, hosted    | One finished recording, through our API, to ILMU                          | Malaysia      |
-| Ambient capture            | Streamed from the browser straight to Soniox, under a key our API mints   | United States |
-| Prescription dictation     | One phrase to Soniox by default, same route. Choose on-device and nowhere | Device, or US |
+| Path                       | Where the audio goes                                                                                       | Region        |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------- |
+| Press to record, on-device | Nowhere. The model runs in the browser                                                                     | The device    |
+| Press to record, hosted    | One finished recording, through our API, to ILMU                                                           | Malaysia      |
+| Ambient capture            | Streamed from the browser straight to Soniox, under a key our API mints. **A new consultation opens here** | United States |
+| Prescription dictation     | One phrase to Soniox by default, same route. Choose on-device and nowhere                                  | Device, or US |
 
 **Soniox is the one destination that leaves the region, and two paths reach it.** It offers the United States, the European Union, Japan and India, and no Malaysian or Singapore option. That is the honest cost of the only streaming recogniser tested here that handles Malay, English and Chinese switching mid-sentence, and the transfer basis is recorded as open in [`dpia.md`](./dpia.md) rather than treated as solved. Our servers never hold that audio.
 
-**Prescription dictation streams by default, and it is the one audio path with no consent control left.** Dictate opens a full-screen surface and the microphone with it; the disclosure and the per-consultation tick were removed on 10/09/26 on the owner's instruction, so a doctor who touches nothing sends a patient's voice to a United States endpoint on one press. Authorised and scoped to that one surface ([`trd.md`](./trd.md) §20.10). The cost is recorded as a cost rather than argued away: the live count of consent controls there is zero ([`decisions.md`](./decisions.md) D-001). What did not weaken is the trail, which now records `consentAsserted: false` on that path instead of claiming an agreement nobody gave. Every failure still lands back on the device or on typing rather than on the cloud, and ambient capture keeps both halves of the rule.
+**Prescription dictation streams by default, and it is the one audio path with no consent control left.** Dictate opens a full-screen surface and the microphone with it; the disclosure and the per-consultation tick were removed on 10/09/26 on the owner's instruction, so a doctor who touches nothing sends a patient's voice to a United States endpoint on one press. Authorised and scoped to that one surface ([`trd.md`](./trd.md) §20.10). The cost is recorded as a cost rather than argued away: the live count of consent controls there is zero ([`decisions.md`](./decisions.md) D-001). What did not weaken is the trail, which now records `consentAsserted: false` on that path instead of claiming an agreement nobody gave. Every failure still lands back on the device or on typing rather than on the cloud.
+
+**Ambient keeps its tick, and lost the other half on 21/09/26.** A new consultation now opens in ambient ([`decisions.md`](./decisions.md) D-007), so the capture-mode half of the rule ships already set and the per-consultation tick is the only control the doctor still exercises there. Nothing streams without it: the start dispatcher refuses, and the API rejects an ambient session request that does not assert it.
 
 **The split is deliberate, and it was got wrong once.** For three weeks the engine preference was the whole gate while the interface still said each patient was asked. A remembered agreement is one the next patient never gave, so the per-consultation half was restored and is now pinned by a test that fails if the claim and the control ever part company again (#254).
 

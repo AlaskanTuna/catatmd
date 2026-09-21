@@ -1149,6 +1149,13 @@ export const ConsultationSchema = z.object({
   /**
    * Additive and rollout-safe: manual was the device default before capture
    * mode became consultation state.
+   *
+   * **`manual` here is not the default a new consultation gets**, which is
+   * `ambient` since #378. This fallback answers a narrower question: what an
+   * absent field means, and only an API predating #272 can omit it. Those
+   * deployments genuinely were manual, so moving this to `ambient` would
+   * assert a stream on evidence that does not exist, and in the direction that
+   * overstates rather than understates the egress.
    */
   captureMode: CaptureModeSchema.nullish().transform((value) => value ?? 'manual'),
   /*

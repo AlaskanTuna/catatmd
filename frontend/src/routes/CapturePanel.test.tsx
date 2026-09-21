@@ -41,6 +41,7 @@ vi.mock('../audio/live/AmbientCapture.js', () => {
 function MockAmbientCapture({
   onTranscript,
   onSwitchToManual,
+  onUnavailable,
   onLiveChange,
 }: {
   onTranscript: (result: {
@@ -55,12 +56,18 @@ function MockAmbientCapture({
     draftTurns?: readonly DraftTurn[]
   }) => void
   onSwitchToManual: () => void
+  onUnavailable?: () => void
   onLiveChange: (live: boolean) => void
 }) {
   return (
     <>
       <button type="button" onClick={() => onLiveChange(true)}>
         mock go live
+      </button>
+      {/* What the real panel reports when the config probe answers 503, which
+          is every deployment with no `SONIOX_API_KEY` (#378). */}
+      <button type="button" onClick={() => onUnavailable?.()}>
+        mock ambient unavailable
       </button>
       <button
         type="button"
@@ -603,11 +610,31 @@ function renderRoute(captureMode: 'ambient' | 'manual' = 'manual') {
 describe('ambient capture mode', () => {
   beforeEach(() => localStorage.clear())
 
-  it('leaves Record usable in the default press-to-record mode', async () => {
+  it('leaves Record usable in press-to-record mode', async () => {
     renderRoute()
 
     const record = await screen.findByRole('tab', { name: /record/i })
     expect(record.getAttribute('aria-disabled')).not.toBe('true')
+  })
+
+  /*
+   * A new consultation opens in ambient (#378), so a deployment with no
+   * `SONIOX_API_KEY` would otherwise greet every one of them with an alert
+   * instead of a recorder. The record itself must not move: a key missing here
+   * is not the doctor choosing press-to-record.
+   */
+  it('shows the recorder, not an alert, where ambient is unavailable', async () => {
+    const { onCaptureModeChange } = renderRoute('ambient')
+
+    fireEvent.click(await screen.findByRole('tab', { name: /record/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock ambient unavailable' }))
+
+    expect(screen.getByRole('button', { name: 'mock transcribe' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'mock transcribe live' })).toBeNull()
+    // Said out loud rather than swapped in quietly.
+    expect(screen.getByText(/not available on this deployment/i)).toBeTruthy()
+    // And the consultation is still configured for ambient.
+    expect(onCaptureModeChange).not.toHaveBeenCalled()
   })
 
   it('leaves Record usable when the consultation uses ambient mode', async () => {

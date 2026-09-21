@@ -83,6 +83,7 @@ const clock = (seconds: number): string =>
 export function AmbientCapture({
   onTranscript,
   onSwitchToManual,
+  onUnavailable,
   onLiveChange,
   onLiveSegments,
   deviceId,
@@ -107,6 +108,19 @@ export function AmbientCapture({
   }) => void
   /** Returns the Record tab to press-to-record, and remembers that choice. */
   onSwitchToManual: () => void
+  /**
+   * Fired once the config probe says this deployment has no ambient provider,
+   * so the Record tab can show the recorder that does work (#378).
+   *
+   * Reported rather than acted on here, and it deliberately does not call
+   * `onSwitchToManual`: that writes the consultation's mode, and a missing key
+   * on one deployment is not the doctor choosing press-to-record. The record
+   * keeps saying `ambient`; only what is on screen changes.
+   *
+   * Unavailability only, never a transient error. An error keeps this panel
+   * and its Check Again button, because there is something to retry.
+   */
+  onUnavailable?: () => void
   /** Latches the panel open while a session runs, so a settings save cannot unmount it. */
   onLiveChange: (live: boolean) => void
   /**
@@ -248,6 +262,7 @@ export function AmbientCapture({
   const onTranscriptRef = useRef(onTranscript)
   const onLiveChangeRef = useRef(onLiveChange)
   const onLiveSegmentsRef = useRef(onLiveSegments)
+  const onUnavailableRef = useRef(onUnavailable)
 
   useEffect(() => {
     agreedRef.current = agreed
@@ -257,6 +272,7 @@ export function AmbientCapture({
     onTranscriptRef.current = onTranscript
     onLiveChangeRef.current = onLiveChange
     onLiveSegmentsRef.current = onLiveSegments
+    onUnavailableRef.current = onUnavailable
   })
 
   /*
@@ -281,11 +297,12 @@ export function AmbientCapture({
         if (attempt.current !== id) return
         // A deployment with no ambient provider is a plain unavailability with
         // a way out, not an error the doctor has to interpret.
-        setAvailability(
-          cause instanceof ApiError && cause.status === 503
-            ? { status: 'unavailable' }
-            : { status: 'error' },
-        )
+        const unavailable = cause instanceof ApiError && cause.status === 503
+        setAvailability(unavailable ? { status: 'unavailable' } : { status: 'error' })
+        // Through the ref so the callback's identity cannot re-enter this
+        // effect: `loadConfig` is its own `useEffect` dependency, and an inline
+        // arrow from the caller would re-probe on every render.
+        if (unavailable) onUnavailableRef.current?.()
       })
   }, [])
 

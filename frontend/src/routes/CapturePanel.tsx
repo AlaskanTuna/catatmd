@@ -136,7 +136,19 @@ export function CapturePanel({
    * only path that delivers text, so nothing may take it away.
    */
   const [ambientLive, setAmbientLive] = useState(false)
-  const showAmbient = captureMode === 'ambient' || ambientLive
+  /*
+   * Set when the config probe reports this deployment has no ambient provider
+   * (#378). Since a new consultation opens in ambient, without this every
+   * consultation on a deployment with no `SONIOX_API_KEY` would open on an
+   * alert instead of on a recorder that works.
+   *
+   * It shows the other panel and does not touch `captureMode`: a key missing
+   * from one deployment is not the doctor choosing press-to-record, and
+   * writing the record would say it was. A live session still wins, so this
+   * can never unmount one.
+   */
+  const [ambientUnavailable, setAmbientUnavailable] = useState(false)
+  const showAmbient = (captureMode === 'ambient' && !ambientUnavailable) || ambientLive
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>(TABS[0].id)
   const audioDialog = useRef<HTMLDialogElement>(null)
   const [text, setText] = useState('')
@@ -453,6 +465,7 @@ export function CapturePanel({
               <AmbientCapture
                 onTranscript={applyRecording}
                 onSwitchToManual={switchToManual}
+                onUnavailable={() => setAmbientUnavailable(true)}
                 onLiveChange={(live) => {
                   setAmbientLive(live)
                   onCaptureBusyChange(live)
@@ -465,12 +478,25 @@ export function CapturePanel({
                 patientName={patientName}
               />
             ) : (
-              <AudioCapture
-                engine={audio.engine}
-                transcript={text}
-                onTranscript={applyRecording}
-                onBusyChange={onCaptureBusyChange}
-              />
+              <div className="grid gap-3">
+                {/* Said rather than done quietly. A fallback that gives a
+                  different result with no word that it happened is what
+                  `.claude/rules/security.md` forbids on the sibling surface,
+                  and the reason is the same here: the doctor set this
+                  consultation to stream, and it is not going to. */}
+                {captureMode === 'ambient' && ambientUnavailable && (
+                  <p className="text-sm text-ink-muted">
+                    Ambient capture is not available on this deployment, so this consultation
+                    records one pass at a time instead. Its Capture Mode setting is unchanged.
+                  </p>
+                )}
+                <AudioCapture
+                  engine={audio.engine}
+                  transcript={text}
+                  onTranscript={applyRecording}
+                  onBusyChange={onCaptureBusyChange}
+                />
+              </div>
             )}
           </Card>
         )}

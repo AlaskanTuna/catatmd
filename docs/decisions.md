@@ -233,14 +233,14 @@ The removed sentence read: "This consultation leaves this device as it happens: 
 
 ### What Changes, And What Does Not
 
-|                         |                                                                                                                                                                         |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **What changed**        | The residency paragraph is gone from the ambient panel. The tick now reads "This patient has agreed to be recorded and transcribed, for this consultation only"         |
-| **What it costs**       | **No screen in the product names the processor or the region for ambient capture.** The doctor is asked to record, and is told nothing about where the audio goes       |
-| **What still gates it** | Both halves of the two-control rule, untouched: the Capture Mode preference and the per-consultation tick. Nothing streams without the tick, enforced in the dispatcher |
-| **What did not weaken** | The trail. `LiveSessionRequestSchema` still refuses an ambient body without `consent: true`, and that mint still records `consentAsserted: true`                        |
-| **What moved with it**  | Three claims elsewhere pointed at the removed sentence and were corrected in the same change: two in the Audio dialog, one in the theatre header comment                |
-| **Who authorised it**   | The repository owner, 2026-09-10, scoped to the ambient panel and nothing else                                                                                          |
+|                         |                                                                                                                                                                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What changed**        | The residency paragraph is gone from the ambient panel. The tick now reads "This patient has agreed to be recorded and transcribed, for this consultation only"                                                                                            |
+| **What it costs**       | **No screen in the product names the processor or the region for ambient capture.** The doctor is asked to record, and is told nothing about where the audio goes                                                                                          |
+| **What still gates it** | Both halves of the two-control rule, untouched: the Capture Mode preference and the per-consultation tick. Nothing streams without the tick, enforced in the dispatcher. **The Capture Mode half was superseded on 21/09/26, see D-007; the tick was not** |
+| **What did not weaken** | The trail. `LiveSessionRequestSchema` still refuses an ambient body without `consent: true`, and that mint still records `consentAsserted: true`                                                                                                           |
+| **What moved with it**  | Three claims elsewhere pointed at the removed sentence and were corrected in the same change: two in the Audio dialog, one in the theatre header comment                                                                                                   |
+| **Who authorised it**   | The repository owner, 2026-09-10, scoped to the ambient panel and nothing else                                                                                                                                                                             |
 
 ### The Reason Given Was Usability, And It Is Recorded As That
 
@@ -323,3 +323,53 @@ An approved consultation's printed report is a separate document with its own fi
 - **No patient identifiers in the §23 payload.** The EHR export contract still excludes them; this decision runs the other way only, licensing identifiers on the printed report because its recipient differs.
 - **No reading of the report as an EHR integration.** It is a browser-rendered document. §23's push direction, authentication, transport and FHIR assessment are untouched and still unbuilt.
 - **No citation of the de-identification gate as protecting either artefact.** The gate guards LLM egress. The report never crosses it, and a real EHR export is an identifiable-data path the gate does not protect — the point §23's PHI-boundary subsection already makes, recorded here from the other end.
+
+---
+
+## D-007: A New Consultation Opens In Ambient Capture
+
+|                |                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **Date**       | 2026-09-21                                                                                                               |
+| **Status**     | Adopted                                                                                                                  |
+| **Issues**     | #378                                                                                                                     |
+| **Supersedes** | `Consultation.captureMode @default(manual)` (#272), and D-004's "What still gates it" row for the Capture Mode half only |
+| **Follows**    | D-001's third amendment, which made the same move on the dictation surface on 10/09/26                                   |
+
+### Decision
+
+A consultation **that opens empty** is created in `ambient`. Press To Record remains a full capture path, selectable per consultation in Consultation Settings until a transcript exists.
+
+Two populations are deliberately excluded, for the same reason.
+
+- **Consultations created with a transcript already in hand**, from a paste, an upload, or a fixture seed. Nothing streamed, the mode locks the instant a transcript exists, and a row asserting otherwise could never be corrected. They are written `manual`, exactly as before this decision.
+- **Consultations created before 21/09/26.** The migration issues `SET DEFAULT` and no `UPDATE`, so it rewrites no row at all. That leaves untranscribed drafts on `manual` too, which is the conservative reading and is chosen rather than overlooked: the mode is consent-adjacent state, and a migration is the wrong place to change one on a record a doctor already opened.
+
+### What Changes, And What Does Not
+
+|                               |                                                                                                                                                                                                                                                                              |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What changed**              | `Consultation.captureMode` defaults to `ambient`, and the create route writes it on the empty-create path so the value does not depend on migration-versus-deploy ordering                                                                                                   |
+| **What backing it out takes** | A forward migration, `SET DEFAULT 'manual'`, plus removing the write. Reverting the code alone is a no-op, because the column default then supplies `ambient` anyway. Never delete this migration directory: Prisma would see an applied migration with no local counterpart |
+| **What it costs**             | Capture Mode is one half of the ambient two-control rule, and it now ships pre-set to the value that can stream. A doctor who changes nothing lands on ambient                                                                                                               |
+| **What still gates it**       | The per-consultation tick, unchanged. `AmbientCapture`'s start dispatcher refuses without it, and `LiveSessionRequestSchema` rejects an ambient body lacking it                                                                                                              |
+| **What did not weaken**       | The trail. The mint still records `consentAsserted: true` for ambient, and a stream nobody agreed to still cannot be opened                                                                                                                                                  |
+| **What did not move**         | The egress. Same vendor, socket, region, minting route and session cap. Nothing new leaves the browser and no new surface may open it                                                                                                                                        |
+| **Who authorised it**         | @Andersonnn7788, 2026-09-21, scoped to the capture-mode default and nothing else                                                                                                                                                                                             |
+
+### The Reason Given Was Workflow, And It Is Recorded As That
+
+The owner's words were that a coming consultation should land on ambient scribe rather than press to record. No measurement supports the change and none is claimed: ambient was already the mode a doctor reaches for when the consultation is the thing being recorded, and the default was asking them to say so every time.
+
+**What it costs is honest to state as a count.** On ambient the rule was two chosen controls; it is now one defaulted preference plus one deliberate tick, which is the shape the dictation surface took on 10/09/26. The difference from that surface is the half worth reading: dictation ended with zero live controls, ambient keeps its tick, so a doctor still agrees per patient before anything streams.
+
+**The asymmetry with the relay is deliberate.** `DEFAULT_AUDIO_SETTINGS.engine` stays `'local'`, so the press-to-record path still sends nothing by default. Only the mode moved.
+
+### What This Decision Does Not License
+
+- **No change to the two-control rule.** `.claude/rules/security.md` still governs this surface in full. The tick may not be folded into the mode, and the start dispatcher may not fall through to another path instead of refusing.
+- **No backfill.** Rewriting `captureMode` on a consultation that already has a transcript would make the column claim audio was taken a way it was not. The transcript's own `source` remains the record of which path actually ran.
+- **No weakening of the transcript lock.** The mode is still immutable once `Consultation.transcript` is non-null, and the API still answers `409 invalid_state` to a late write.
+- **No second disclosure, and no restored one.** D-004 removed the residency paragraph above the ambient tick and that stands. This decision makes the unexplained path the default one, which sharpens D-004's recorded cost rather than reopening it.
+- **No silent substitution.** Where `SONIOX_API_KEY` is unset the Record tab shows press-to-record instead of an unusable ambient panel, and says on screen that it did. The stored mode is not rewritten: a key missing from one deployment is not the doctor choosing anything.
+- **No change to the release gate.** Synthetic data only until the controller decides otherwise.

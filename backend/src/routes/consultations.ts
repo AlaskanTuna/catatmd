@@ -144,6 +144,13 @@ function toDetail(
     editedMedicalRecordNote: row.editedMedicalRecordNote ?? null,
     prescriptions: row.prescriptions ?? null,
     noteTemplate: row.noteTemplate ?? 'soap',
+    /*
+     * A select-omission guard, not the default a new consultation gets, which
+     * is `ambient` and is written at the create route below (#378). The column
+     * is `NOT NULL`, so this fires only if someone later narrows a select and
+     * forgets this field. It stays `manual` because that is the reading that
+     * understates the egress rather than claiming one that did not happen.
+     */
     captureMode: row.captureMode ?? 'manual',
     approvedAt: row.approvedAt,
     approvedBy,
@@ -322,6 +329,24 @@ consultationsRouter.post('/', async (req, res) => {
       status: 'draft',
       transcript: parsed.data.transcript ?? undefined,
       patientId: parsed.data.patientId ?? null,
+      /*
+       * Written rather than left to the column default (#378), because the two
+       * are applied by different hands at different times: migrations run from
+       * a dev machine and the API deploys on a merge (docs/trd.md §17). Stating
+       * it here means a backend that ships ahead of its migration still opens a
+       * consultation where the doctor expects it, and it is what lets a test
+       * see the default at all, since the suite's store has no column defaults.
+       *
+       * **Only when the row opens empty**, and the condition is the whole point
+       * rather than a guard against nothing. A transcript arriving with the
+       * request has already been captured some other way, and the mode locks
+       * the moment it lands, so an unconditional `'ambient'` would stamp a
+       * pasted, uploaded or fixture-seeded consultation with a claim that
+       * audio streamed to the provider, permanently and with no way to correct
+       * it. That is the falsehood `docs/decisions.md` D-007 refuses to write
+       * onto historical rows, arriving through the create route instead.
+       */
+      captureMode: parsed.data.transcript === undefined ? 'ambient' : 'manual',
     },
   })
 
