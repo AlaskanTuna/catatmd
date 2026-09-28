@@ -443,6 +443,33 @@ export const FIXTURES: readonly Fixture[] = [
       ],
     },
   },
+  // ─── urti-script-mixed-paste ──────────────────────────────────────────────
+  // Identifiers: SCRIPT (a Bengali and an Urdu phrase, invented for this
+  // fixture). Exercises: the gate tokenising script no other detector reads
+  // (#391), on the paste path, where a doctor copies in what a relative wrote
+  // down. Nothing the model receives may contain Bengali or Urdu script. The
+  // breathing and chest-pain question is denied by a reviewed patient turn, so
+  // no rule fires.
+  {
+    id: 'urti-script-mixed-paste',
+    label: 'Pasted URTI transcript carrying Bengali and Urdu phrases',
+    transcript: {
+      source: 'fixture',
+      labelsReviewed: true,
+      turns: [
+        { speaker: 'doctor', text: 'Good morning. What brings you in today?' },
+        {
+          speaker: 'patient',
+          text: 'Sore throat and cough for four days. My daughter wrote it down: আমার গলা ব্যথা আর কাশি।',
+        },
+        { speaker: 'doctor', text: 'Any fever?' },
+        { speaker: 'patient', text: 'A little fever at night. بخار رات کو ہوتا ہے۔' },
+        { speaker: 'doctor', text: 'Any difficulty breathing or chest pain?' },
+        { speaker: 'patient', text: 'No, none of that.' },
+        { speaker: 'doctor', text: 'I will examine your throat now.' },
+      ],
+    },
+  },
 ]
 
 for (const fixture of FIXTURES) {

@@ -655,7 +655,7 @@ describe('regressions introduced by this PR, now pinned', () => {
     // The prefix fix can only recover text some other detector actually
     // matched. Here nothing does: `CAPITALISED_RUN` caps at four words and the
     // gazetteer pass needs its *first* word to be a known given name, and
-    // `zarul`, `qaseh` and `damia` are all outside the roughly 130 names in
+    // `zarul`, `qaseh` and `damia` are all outside the roughly 200 names in
     // `GIVEN_NAMES`. So no match covers `Zarul Aina Sofea`, and there is no
     // uncovered prefix to preserve.
     //
@@ -941,5 +941,131 @@ describe('sliceDeidentified', () => {
     for (const piece of sliceDeidentified(content, 6)) {
       expect(piece.trim()).not.toBe('')
     }
+  })
+})
+
+/*
+ * Urdu and Bengali translation puts Pakistani and Bangladeshi names,
+ * transliterated, into English transcripts (#391). No sentence below carries an
+ * introducer or an honorific, because a cue catches a name whether or not the
+ * gazetteer knows it, and the gazetteer pass has to be the only thing that can.
+ */
+describe('Pakistani and Bangladeshi names with no cue in front of them (#391)', () => {
+  it.each([
+    { sentence: 'Asif, please sit down.', parts: ['Asif'] },
+    { sentence: 'Nasrin Akter came with her brother.', parts: ['Nasrin', 'Akter'] },
+    { sentence: 'Sanjoy Das has had a fever since Monday.', parts: ['Sanjoy', 'Das'] },
+    { sentence: 'Imran has had a sore throat for three days.', parts: ['Imran'] },
+    { sentence: 'Rahim Uddin has had a runny nose since Friday.', parts: ['Rahim', 'Uddin'] },
+    { sentence: 'Kalpana Biswas has a sore throat but no fever.', parts: ['Kalpana', 'Biswas'] },
+    // Only the first word of a run is looked up, so an unlisted leading element
+    // hides every listed name behind it.
+    { sentence: 'Mohammad Rubel Hossain has a cough.', parts: ['Mohammad', 'Rubel', 'Hossain'] },
+    { sentence: 'Md Sumon Miah was seen yesterday with a fever.', parts: ['Md', 'Sumon', 'Miah'] },
+    { sentence: 'Syed Kashif has burning on passing urine.', parts: ['Syed', 'Kashif'] },
+    { sentence: 'Abdur Rahim has been coughing at night.', parts: ['Abdur', 'Rahim'] },
+    { sentence: 'Begum Rokeya has had a fever for two days.', parts: ['Begum', 'Rokeya'] },
+    // Second elements people are addressed by on their own.
+    { sentence: 'Please ask Chowdhury to wait outside.', parts: ['Chowdhury'] },
+    { sentence: 'Khan says the cough is worse at night.', parts: ['Khan'] },
+  ])('tokenises the name in $sentence', ({ sentence, parts }) => {
+    const { text } = deidentify(sentence)
+    for (const part of parts) expect(text, part).not.toContain(part)
+    expect(text).toMatch(/\[PATIENT_\d+\]/)
+  })
+
+  /*
+   * The precision half. No new entry is a common English word or a clinical
+   * term, and only `karim` doubles as a Malay word, a rare adjective; these pin
+   * the lookup to whole words against the nearest clinical look-alikes. `rubel` opens `Rubella`,
+   * `Rash` opens `rashid`, `Imuran` is one letter from `imran`, and the `MD` of
+   * a medical degree is upper-case where the Bangladeshi `Md` is not.
+   */
+  it('does not tokenise a clinical word that only resembles a new entry', () => {
+    for (const sentence of [
+      'Rubella vaccination is up to date and there is no rash.',
+      'Rash started on Tuesday, two days after the sore throat.',
+      'Imuran was stopped last year, and the cough began on Friday.',
+      'Discussed with the MD on call, who advised nitrofurantoin for the burning urine.',
+    ]) {
+      expect(labelsIn(sentence), sentence).not.toContain('PATIENT')
+    }
+  })
+
+  /*
+   * "shah" and "alam" are common Pakistani and Bangladeshi surnames, and were
+   * stopwords because "Shah Alam" is a Selangor city. `trimNameSpan` strips a
+   * trailing stopword, so the surname was left in cleartext after the given
+   * name was tokenised. The owner chose to treat both as names (28/09/26).
+   */
+  it('keeps a trailing Shah or Alam inside the name token', () => {
+    expect(deidentify('Imran Shah has a cough.').text).toBe('[PATIENT_1] has a cough.')
+    expect(deidentify('Mohammad Alam has fever.').text).toBe('[PATIENT_1] has fever.')
+    expect(deidentify('My name is Imran Shah.').text).toBe('My name is [PATIENT_1].')
+  })
+
+  // The cost of that choice, pinned so it stays visible: the city is still
+  // left alone with no name cue in front of it, and tokenised after one.
+  it('leaves the city Shah Alam alone unless a name cue precedes it', () => {
+    expect(labelsIn('She drove in from Shah Alam this morning.')).not.toContain('PATIENT')
+    expect(labelsIn('This is Shah Alam traffic, doctor.')).toContain('PATIENT')
+  })
+})
+
+/*
+ * Script no other detector reads (#391, docs/trd.md §20.12). Bengali, Urdu in
+ * Arabic script, and Devanagari are tokenised as whole runs at the gate, so a
+ * name written in one of them cannot reach the model whatever a client sends.
+ * Synthetic text throughout.
+ */
+describe('SCRIPT, the detector for script the gate cannot otherwise read', () => {
+  const UNREADABLE = /[ঀ-৿؀-ۿऀ-ॿ]/u
+
+  it.each([
+    ['Bengali', 'She wrote: আমার নাম রহিম উদ্দিন, আমার জ্বর।'],
+    ['Urdu', 'He said میرا نام عمران شاہ ہے before the exam.'],
+    ['Devanagari', 'The note read मुझे बुखार है.'],
+  ])('tokenises a %s run as one span', (_script, sentence) => {
+    const { text, detected } = deidentify(sentence)
+    expect(text).not.toMatch(UNREADABLE)
+    expect(text.match(/\[SCRIPT_\d+\]/g)).toHaveLength(1)
+    expect(detected).toContain('SCRIPT')
+  })
+
+  it('lets the egress guard refuse a payload that kept any of it', () => {
+    const smuggled = 'Patient said আমার নাম রহিম' as never
+    expect(() => assertNoIdentifiers(smuggled, 'note_and_gaps')).toThrow(/SCRIPT/)
+  })
+
+  it('never names the matched script in the exception', () => {
+    const smuggled = 'Patient said আমার নাম রহিম' as never
+    try {
+      assertNoIdentifiers(smuggled, 'note_and_gaps')
+      expect.unreachable('guard should have thrown')
+    } catch (error) {
+      expect(String(error)).not.toMatch(UNREADABLE)
+    }
+  })
+
+  it('leaves English, Malay, Chinese and Tamil alone', () => {
+    for (const sentence of [
+      'Cough for three days, no fever.',
+      'Batuk tiga hari, tiada demam.',
+      '咳嗽三天,没有发烧。',
+      'இருமல் மூன்று நாட்கள்.',
+    ]) {
+      expect(labelsIn(sentence), sentence).not.toContain('SCRIPT')
+    }
+  })
+
+  it('carries the pasted fixture to the model with no unreadable script', () => {
+    const fixture = FIXTURES.find((f) => f.id === 'urti-script-mixed-paste')
+    if (!fixture) throw new Error('fixture missing')
+
+    const { text, detected } = deidentifyTranscript(fixture.transcript)
+
+    expect(text).not.toMatch(UNREADABLE)
+    expect(detected).toContain('SCRIPT')
+    expect(text).toContain('Sore throat and cough for four days.')
   })
 })

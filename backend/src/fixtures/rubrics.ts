@@ -151,4 +151,18 @@ export const FIXTURE_RUBRICS: readonly FixtureRubric[] = [
       'vital-signs-concern',
     ],
   },
+  {
+    fixtureId: 'urti-script-mixed-paste',
+    gradedAgainst: ['TRD §9 detector inventory', 'TRD §20.12'],
+    expectedBehaviour:
+      'The de-identification gate replaces the Bengali phrase and the Urdu phrase each with a ' +
+      'single SCRIPT token, so the model receives the English turns and two tokens. Sore ' +
+      'throat, cough and a mild fever resolve PRESENT from the English words. The reviewed ' +
+      'denial of breathing difficulty and chest pain holds.',
+    failsQaIf:
+      'Any Bengali or Urdu character reaches the LLM egress point, or a rule flag fires from the ' +
+      'denied screening question.',
+    identifierClasses: ['SCRIPT'],
+    expectedRedFlagIds: [],
+  },
 ]
