@@ -6,11 +6,13 @@ import type {
   Disposition,
   DispositionInput,
   GuidelineChunk,
+  InterpretedLanguage,
   MedicalRecordNote,
   NoteTemplate,
   SoapNote,
   TextRange,
   Transcript,
+  TranscriptTurn,
 } from '@shared/types'
 import {
   ANALYSIS_POLL_MS,
@@ -23,6 +25,7 @@ import { Copy, Maximize2, Pause, Play, Printer, Settings2, Sparkles } from 'luci
 import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { INTERPRETED_LANGUAGE_NAMES, untranslatedTurnText } from '../audio/live/bilingual.js'
 import type { LivePanes } from '../audio/live/use-live-panes.js'
 import { useLivePanes } from '../audio/live/use-live-panes.js'
 import { useTranscriptAudio } from '../audio/use-transcript-audio.js'
@@ -145,6 +148,65 @@ function FindingsPanel({
 }
 
 /**
+ * A translated turn's other half, under the English it pairs with (#393).
+ *
+ * Labelled with the direction the translation ran, because the two halves
+ * swap roles by speaker: on a patient's turn the English is the machine's and
+ * the words beneath are what was said, and on the doctor's the English was
+ * said and the words beneath are what the patient was shown.
+ *
+ * Beneath the bubble rather than inside it. A playable bubble is a button
+ * whose label names the playback, and a button's contents are not read out, so
+ * inside it these words would never reach a screen reader.
+ */
+function OtherLanguageLine({ other }: { other: NonNullable<TranscriptTurn['otherLanguage']> }) {
+  const name = INTERPRETED_LANGUAGE_NAMES[other.language]
+  return (
+    <div className="mt-1 max-w-full px-3 text-sm leading-relaxed text-ink">
+      <p className="text-2xs text-ink-muted">
+        {other.spoken ? `Said in ${name}` : `Shown in ${name}`}
+      </p>
+      <p lang={other.language} dir={other.language === 'ur' ? 'rtl' : undefined}>
+        {other.text}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * Says the conversation was interpreted by a machine, and how much of it the
+ * safety checks could not read (#393).
+ *
+ * Counted from the stored turns rather than carried from capture, so it stays
+ * true after the doctor edits the transcript and after a reload.
+ */
+function TranslationNotice({
+  languages,
+  turns,
+}: {
+  languages: readonly InterpretedLanguage[]
+  turns: readonly { text: string }[]
+}) {
+  const placeholders = new Set(languages.map(untranslatedTurnText))
+  const untranslated = turns.filter((turn) => placeholders.has(turn.text)).length
+  const names = languages.map((language) => INTERPRETED_LANGUAGE_NAMES[language]).join(' and ')
+  return (
+    <div role="note" className="mb-3 rounded-card bg-surface px-3 py-2 text-xs text-ink-muted">
+      <p>
+        Machine-translated between English and {names}. The safety checks and the note read the
+        English only.
+      </p>
+      {untranslated > 0 && (
+        <p className="mt-1 font-medium text-ink">
+          {count(untranslated, 'line')} had no translation, so the safety checks could not read{' '}
+          {untranslated === 1 ? 'it' : 'them'}. Check with the patient.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/**
  * The settled transcript, wherever it is asked for.
  *
  * One implementation rather than two. It renders in the transcript column and
@@ -154,6 +216,7 @@ function FindingsPanel({
  */
 function SettledConversation({
   turns,
+  translatedFrom,
   onPlay,
   playing,
 }: {
@@ -165,7 +228,11 @@ function SettledConversation({
     uncertain?: readonly TextRange[]
     offsetSeconds?: number
     endSeconds?: number
+    /** The words said or shown in the paired language, on a translated turn (#393). */
+    otherLanguage?: TranscriptTurn['otherLanguage']
   }[]
+  /** The transcript's `machineTranslation` languages, when it has them. */
+  translatedFrom?: readonly InterpretedLanguage[]
   /**
    * Plays this turn back from the recording (#293). Absent when the session is
    * holding no audio, which is every reload and every transcript that was
@@ -177,6 +244,9 @@ function SettledConversation({
 }) {
   return (
     <>
+      {translatedFrom !== undefined && translatedFrom.length > 0 && (
+        <TranslationNotice languages={translatedFrom} turns={turns} />
+      )}
       <ol className="flex flex-col gap-3">
         {turns.map((turn, index) => {
           const opensTurn = turns[index - 1]?.speaker !== turn.speaker
@@ -265,6 +335,7 @@ function SettledConversation({
                   <UncertainText text={turn.text} uncertain={turn.uncertain} />
                 </p>
               )}
+              {turn.otherLanguage && <OtherLanguageLine other={turn.otherLanguage} />}
             </li>
           )
         })}
@@ -1191,6 +1262,7 @@ export function ConsultationReview() {
               */}
               <SettledConversation
                 turns={keyedTurns}
+                translatedFrom={detail.transcript.machineTranslation?.languages}
                 onPlay={audio.available ? audio.play : undefined}
                 playing={audio.playing}
               />
@@ -1552,6 +1624,7 @@ export function ConsultationReview() {
             <div className="@container min-h-0 flex-1 overflow-y-auto bg-sunken p-6">
               <SettledConversation
                 turns={keyedTurns}
+                translatedFrom={detail.transcript?.machineTranslation?.languages}
                 onPlay={audio.available ? audio.play : undefined}
                 playing={audio.playing}
               />

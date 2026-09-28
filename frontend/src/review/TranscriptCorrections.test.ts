@@ -126,4 +126,32 @@ describe('applyProposal', () => {
 
     expect(after.turns[0]?.uncertain).toBeUndefined()
   })
+
+  // A translated turn (#393): the correction changes the English, and the
+  // words the patient actually said, and the marker, stay as they were.
+  it('keeps the other language and the machine-translation marker', () => {
+    const translated: Transcript = {
+      source: 'asr_live',
+      labelsReviewed: false,
+      machineTranslation: { languages: ['bn'] },
+      turns: [
+        {
+          speaker: 'patient',
+          text: 'I have a teman.',
+          otherLanguage: { language: 'bn', text: 'আমার জ্বর।', spoken: true },
+        },
+      ],
+    }
+
+    const after = applyProposal(translated, {
+      turnIndex: 0,
+      start: 9,
+      original: 'teman',
+      suggested: 'demam',
+      source: 'mishear',
+    })
+
+    expect(after.turns[0]?.otherLanguage).toEqual(translated.turns[0]?.otherLanguage)
+    expect(after.machineTranslation).toEqual({ languages: ['bn'] })
+  })
 })

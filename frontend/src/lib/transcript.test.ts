@@ -1,5 +1,6 @@
+import type { TranscriptTurn } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { parseTranscript, serialiseTurns } from './transcript.js'
+import { parseTranscript, reattachOtherLanguage, serialiseTurns } from './transcript.js'
 
 /*
  * First tests for the single shared parser (issue #118). All four input paths
@@ -154,5 +155,74 @@ describe('turn end times', () => {
     expect(parseTranscript('Patient [1:05-2:00]: Sakit tekak.')).toEqual([
       { speaker: 'patient', text: 'Sakit tekak.', offsetSeconds: 65, endSeconds: 120 },
     ])
+  })
+})
+
+/*
+ * A translated turn's other language, carried across a round trip through the
+ * textarea (#393). Synthetic Bengali throughout.
+ */
+describe('reattachOtherLanguage', () => {
+  const said = (text: string) => ({ language: 'bn' as const, text, spoken: true })
+  const shown = (text: string) => ({ language: 'bn' as const, text, spoken: false })
+
+  const stored: TranscriptTurn[] = [
+    { speaker: 'doctor', text: 'Any fever?', otherLanguage: shown('জ্বর আছে?') },
+    { speaker: 'patient', text: 'Yes.', otherLanguage: said('হ্যাঁ।') },
+    { speaker: 'doctor', text: 'Any cough?', otherLanguage: shown('কাশি আছে?') },
+    { speaker: 'patient', text: 'Yes.', otherLanguage: said('হ্যাঁ, অনেক।') },
+  ]
+
+  const others = (turns: readonly TranscriptTurn[]) => turns.map((t) => t.otherLanguage?.text)
+
+  it('keeps each pair by position, on a line the doctor corrected too', () => {
+    const edited = parseTranscript(
+      serialiseTurns(stored).replace('Any cough?', 'Any cough at night?'),
+    )
+    expect(others(reattachOtherLanguage(stored, edited))).toEqual([
+      'জ্বর আছে?',
+      'হ্যাঁ।',
+      'কাশি আছে?',
+      'হ্যাঁ, অনেক।',
+    ])
+  })
+
+  it('keeps each repeated line on its own pair when a line is added', () => {
+    const added = parseTranscript(`Doctor: Good morning.\n${serialiseTurns(stored)}`)
+    expect(others(reattachOtherLanguage(stored, added))).toEqual([
+      undefined,
+      'জ্বর আছে?',
+      'হ্যাঁ।',
+      'কাশি আছে?',
+      'হ্যাঁ, অনেক।',
+    ])
+  })
+
+  it('drops the pair of a line whose text and position both moved', () => {
+    const removedAndEdited = parseTranscript(
+      'Doctor: Any fever?\nPatient: Yes, since Monday.\nPatient: Yes.',
+    )
+    expect(others(reattachOtherLanguage(stored, removedAndEdited))).toEqual([
+      'জ্বর আছে?',
+      undefined,
+      'হ্যাঁ।',
+    ])
+  })
+
+  it('matches by text once a speaker at the same position changed', () => {
+    const swapped = parseTranscript(
+      serialiseTurns(stored).replace('Doctor: Any cough?', 'Patient: Any cough?'),
+    )
+    expect(others(reattachOtherLanguage(stored, swapped))).toEqual([
+      'জ্বর আছে?',
+      'হ্যাঁ।',
+      undefined,
+      'হ্যাঁ, অনেক।',
+    ])
+  })
+
+  it('returns the turns untouched when nothing was paired', () => {
+    const plain = parseTranscript('Doctor: Any fever?\nPatient: Yes.')
+    expect(reattachOtherLanguage(plain, plain)).toEqual(plain)
   })
 })

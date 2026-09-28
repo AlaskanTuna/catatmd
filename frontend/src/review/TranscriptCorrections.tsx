@@ -4,7 +4,7 @@ import { Check, X } from 'lucide-react'
 import { useState } from 'react'
 import toast from 'react-hot-toast'
 import { api } from '../lib/api.js'
-import { parseTranscript, serialiseTurns } from '../lib/transcript.js'
+import { parseTranscript, reattachOtherLanguage, serialiseTurns } from '../lib/transcript.js'
 import { Button } from '../ui/Button.js'
 import { Card } from '../ui/Card.js'
 
@@ -95,7 +95,9 @@ export function TranscriptCorrections({
   })
 
   const saveEdits = () => {
-    const turns = parseTranscript(draft)
+    // The textarea carries English lines only, so a translated turn's other
+    // language is put back from the stored turns rather than erased (#393).
+    const turns = reattachOtherLanguage(transcript.turns, parseTranscript(draft))
     if (turns.length === 0) {
       toast.error('Every line needs a Doctor: or Patient: prefix.')
       return

@@ -1,6 +1,7 @@
 import type {
   CaptureMode,
   DraftTurn,
+  InterpretedLanguage,
   TextRange,
   Transcript,
   TranscriptSource,
@@ -21,9 +22,10 @@ import {
   timeDraftLines,
 } from '../audio/draft-turns.js'
 import { AmbientCapture } from '../audio/live/AmbientCapture.js'
-import type { TranscriptSegment } from '../audio/protocol.js'
+import type { OtherLanguage } from '../audio/live/bilingual.js'
+import type { LiveFoldSegment } from '../audio/live/live-fold.js'
 import { cn } from '../lib/cn.js'
-import { parseTranscript, serialiseTurns } from '../lib/transcript.js'
+import { parseTranscript, reattachOtherLanguage, serialiseTurns } from '../lib/transcript.js'
 import { Button } from '../ui/Button.js'
 import { Card } from '../ui/Card.js'
 
@@ -104,7 +106,7 @@ export function CapturePanel({
    * consultation while it is still being spoken (#219). Optional and inert on
    * the manual path, which has nothing live to report.
    */
-  onLiveSegments?: (segments: readonly TranscriptSegment[]) => void
+  onLiveSegments?: (segments: readonly LiveFoldSegment[]) => void
   /**
    * Forwarded to the ambient panel, which owns the conversation dialog because
    * it owns the live transcript. This component only carries them across; the
@@ -178,6 +180,24 @@ export function CapturePanel({
   const uncertainByText = useRef(new Map<string, readonly TextRange[]>())
 
   /*
+   * The turns as last submitted, each carrying its other language where a
+   * translated recording gave it one (#393).
+   *
+   * The same round trip as the cues above loses these too, and a text-keyed map
+   * like that one would collide: an interpreted consultation says "Yes." many
+   * times, each with its own original. `reattachOtherLanguage` aligns the
+   * re-parsed turns against these instead, by position while the shape holds.
+   */
+  const pairedTurns = useRef<TranscriptTurn[]>([])
+
+  /**
+   * Every language any recording paired with English. Like the provenance
+   * stamp it only ever widens: a later untranslated pass does not make the
+   * earlier lines any less machine-translated.
+   */
+  const translatedLanguages = useRef<InterpretedLanguage[]>([])
+
+  /*
    * `labelsReviewed` says whether a person stands behind the speaker on every
    * turn, and the red-flag engine reads it before it is willing to drop a
    * trigger hit (shared/src/index.ts). True on Paste only, because the doctor
@@ -189,14 +209,18 @@ export function CapturePanel({
   const submitText = (fullText: string, nextSource: TranscriptSource) => {
     const parsed = parseTranscript(fullText)
     if (parsed.length === 0) return
-    const withUncertainty = parsed.map((turn) => {
+    const paired = reattachOtherLanguage(pairedTurns.current, parsed)
+    pairedTurns.current = paired
+    const withUncertainty = paired.map((turn) => {
       const uncertain = uncertainByText.current.get(turn.text)
       return uncertain === undefined ? turn : { ...turn, uncertain: [...uncertain] }
     })
+    const languages = translatedLanguages.current
     onCapture({
       source: nextSource,
       turns: withUncertainty,
       labelsReviewed: nextSource === 'paste',
+      ...(languages.length > 0 ? { machineTranslation: { languages: [...languages] } } : {}),
     })
   }
 
@@ -251,12 +275,16 @@ export function CapturePanel({
     segments,
     source: from,
     draftTurns,
+    otherLanguages,
+    translation,
     audio: recording,
   }: {
     text: string
     segments: readonly MarkedSegment[]
     source: TranscriptSource
     draftTurns?: readonly DraftTurn[]
+    otherLanguages?: readonly (OtherLanguage | null)[]
+    translation?: InterpretedLanguage
     audio?: Blob
   }) => {
     /*
@@ -354,6 +382,26 @@ export function CapturePanel({
       for (const turn of applied) {
         if (turn.uncertain !== undefined) uncertainByText.current.set(turn.text, turn.uncertain)
       }
+      /*
+       * A translated recording's pairs line up with its drafted turns index for
+       * index (#393), and only then are they attached. Any other shape means
+       * the lines came from somewhere else, and no pair is better than a wrong
+       * one.
+       */
+      if (
+        otherLanguages !== undefined &&
+        lines === labelledLines &&
+        otherLanguages.length === applied.length
+      ) {
+        const withPairs = applied.map((turn, index) => {
+          const other = otherLanguages[index]
+          return other ? { ...turn, otherLanguage: other } : turn
+        })
+        pairedTurns.current = [
+          ...reattachOtherLanguage(pairedTurns.current, parseTranscript(text)),
+          ...withPairs,
+        ]
+      }
       addition = serialiseTurns(applied)
     } else {
       // No usable timing: fall back to the unlabelled prose the
@@ -382,6 +430,9 @@ export function CapturePanel({
      */
     const nextSource = RECORDED_RANK[from] >= RECORDED_RANK[source] ? from : source
     setSource(nextSource)
+    if (translation !== undefined && !translatedLanguages.current.includes(translation)) {
+      translatedLanguages.current = [...translatedLanguages.current, translation]
+    }
     submitText(nextText, nextSource)
   }
 

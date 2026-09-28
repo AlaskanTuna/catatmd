@@ -24,6 +24,11 @@ import type { TranscriptSegment } from '../protocol.js'
  * different from saying it was unsure. Every reader below must test for `null`
  * before comparing, so a stream that carries no confidence produces no cues at
  * all rather than marking every word.
+ *
+ * `translated` marks a machine translation of other tokens rather than speech
+ * (#393). **Nothing in this file may read one as something somebody said**, so
+ * every reader below drops them; only `bilingual.ts` pairs them with the words
+ * they translate. Optional, because only a translated session produces one.
  */
 export type LiveToken = {
   text: string
@@ -34,7 +39,14 @@ export type LiveToken = {
   language: string | null
   confidence: number | null
   endpoint: boolean
+  translated?: boolean
+  /** The language a translated token was translated from. */
+  sourceLanguage?: string | null
 }
+
+/** The tokens that are speech, which is every token that is not a translation. */
+const spoken = (tokens: readonly LiveToken[]): LiveToken[] =>
+  tokens.filter((token) => token.translated !== true)
 
 /**
  * The running transcript, split by how settled it is.
@@ -82,6 +94,14 @@ export const EMPTY_LIVE_TRANSCRIPT: LiveTranscript = { final: [], interim: [] }
 export type LiveSegment = TranscriptSegment & {
   speaker: string | null
   uncertain?: readonly TextRange[]
+  /**
+   * Set only on a translated session (#393): the language `text` was spoken
+   * in, and its machine translation shown beneath it. Present means the pane
+   * lays the turn out by language rather than by speaker number.
+   */
+  language?: string | null
+  translation?: string
+  translationLanguage?: string | null
 }
 
 /**
@@ -137,15 +157,20 @@ export const UNCERTAIN_CONFIDENCE_THRESHOLD = 0.6
  * `../draft-turns.ts` reads a segment boundary as its primary evidence of a
  * real speaker handoff, so an invented boundary becomes an invented turn.
  *
- * Scoped to Latin script on purpose. Tokens carry their own leading spaces, so
- * a space is what marks a word boundary; Chinese tokens carry none and are
- * each a word of their own, which is why testing for whitespace alone would
- * stop Chinese cutting at all.
+ * Scoped to scripts that separate words with spaces, on purpose. Tokens carry
+ * their own leading spaces, so a space is what marks a word boundary; Chinese
+ * tokens carry none and are each a word of their own, which is why testing for
+ * whitespace alone would stop Chinese cutting at all. Urdu and Bengali space
+ * their words like Latin does, and a Bengali subword can open on a vowel sign,
+ * a combining mark that cannot begin a word (#393).
  */
+const WORD_CHARACTER_END = /[\p{Script=Latin}\p{Script=Arabic}\p{Script=Bengali}\p{N}\p{M}]$/u
+const WORD_CHARACTER_START = /^[\p{Script=Latin}\p{Script=Arabic}\p{Script=Bengali}\p{N}\p{M}]/u
+
 const continuesWord = (previous: LiveToken, next: LiveToken): boolean =>
   next.startMs - previous.endMs <= MID_WORD_CONTIGUITY_MS &&
-  /[\p{Script=Latin}\p{N}]$/u.test(previous.text) &&
-  /^[\p{Script=Latin}\p{N}]/u.test(next.text)
+  WORD_CHARACTER_END.test(previous.text) &&
+  WORD_CHARACTER_START.test(next.text)
 
 /**
  * Who a group belongs to, measured by how long each speaker held it.
@@ -214,7 +239,7 @@ const tidy = (text: string): string => text.replace(/\s+/g, ' ').trim()
  * feeds `segmentsToDraft`, which refuses to label anything that does not
  * reconstruct exactly.
  */
-function joinTokens(group: readonly LiveToken[]): {
+export function joinTokens(group: readonly LiveToken[]): {
   text: string
   spans: readonly (TextRange | null)[]
 } {
@@ -256,7 +281,7 @@ function joinTokens(group: readonly LiveToken[]): {
  * two. The result is therefore already ordered and non-overlapping, which is
  * what `TranscriptTurnSchema` asserts and what lets a renderer walk it once.
  */
-function uncertainRanges(
+export function uncertainRanges(
   group: readonly LiveToken[],
   spans: readonly (TextRange | null)[],
 ): TextRange[] | undefined {
@@ -286,7 +311,8 @@ function uncertainRanges(
  * Chinese tokens carry none, so they are joined with nothing rather than with a
  * space: inserting one would put gaps inside Chinese words.
  */
-export function tokensToSegments(final: readonly LiveToken[]): LiveSegment[] {
+export function tokensToSegments(tokens: readonly LiveToken[]): LiveSegment[] {
+  const final = spoken(tokens)
   const segments: LiveSegment[] = []
   let group: LiveToken[] = []
 
@@ -355,13 +381,13 @@ export function tokensToText(final: readonly LiveToken[]): string {
  * otherwise put the chip on the wrong speaker for the whole unsettled line.
  */
 export function interimSpeaker(interim: readonly LiveToken[]): string | null {
-  return dominantSpeaker(interim.filter((token) => !token.endpoint))
+  return dominantSpeaker(spoken(interim).filter((token) => !token.endpoint))
 }
 
 /** The unsettled tail, shown muted beneath the settled text. */
 export function interimText(interim: readonly LiveToken[]): string {
   return tidy(
-    interim
+    spoken(interim)
       .filter((token) => !token.endpoint)
       .map((token) => token.text)
       .join(''),

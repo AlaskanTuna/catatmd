@@ -906,3 +906,190 @@ describe('the conversation theatre', () => {
     expect(theatre()?.textContent).not.toMatch(/Soniox/)
   })
 })
+
+/*
+ * Two-way translation (#393). Synthetic throughout: the Bengali is a question
+ * and a one-word answer, the adjacency `findDeniedAbility` reads.
+ */
+describe('translation', () => {
+  const translatedConfig = { ...config, availableTranslations: ['bn', 'ur'] }
+  const translatedSession = {
+    ...session,
+    config: {
+      ...session.config,
+      languageHints: ['bn', 'en', 'ms'],
+      speakerDiarization: false,
+      endpointDetection: true,
+      translation: { type: 'two_way', languageA: 'bn', languageB: 'en' },
+    },
+  }
+
+  const UNREADABLE = /[ঀ-৿؀-ۿऀ-ॿ]/u
+
+  const doctorAsks = [
+    {
+      text: 'Can you swallow?',
+      start_ms: 0,
+      end_ms: 900,
+      is_final: true,
+      language: 'en',
+      translation_status: 'original',
+    },
+    {
+      text: 'আপনি কি গিলতে পারেন?',
+      is_final: true,
+      language: 'bn',
+      translation_status: 'translation',
+      source_language: 'en',
+    },
+    { text: '<end>', is_final: true },
+  ]
+  const patientDenies = [
+    {
+      text: 'না।',
+      start_ms: 2_000,
+      end_ms: 2_400,
+      is_final: true,
+      language: 'bn',
+      translation_status: 'original',
+    },
+    {
+      text: 'No.',
+      is_final: true,
+      language: 'en',
+      translation_status: 'translation',
+      source_language: 'bn',
+    },
+    { text: '<end>', is_final: true },
+  ]
+
+  async function choose(name: string) {
+    await act(async () => screen.getByRole('button', { name: "Patient's language" }).click())
+    await act(async () => screen.getByRole('option', { name }).click())
+  }
+
+  async function startTranslated() {
+    liveAsrConfig.mockResolvedValue(translatedConfig)
+    createLiveSession.mockResolvedValue(translatedSession)
+    const view = renderAmbient()
+    await settle()
+    await choose('Bengali')
+    await act(async () => tick().click())
+    await act(async () => startButton().click())
+    await settle()
+    await act(async () => socket().open())
+    await settle()
+    return view
+  }
+
+  it('offers a language only when the API advertises one', async () => {
+    renderAmbient()
+    await settle()
+    expect(screen.queryByRole('button', { name: "Patient's language" })).toBeNull()
+
+    cleanup()
+    liveAsrConfig.mockResolvedValue(translatedConfig)
+    renderAmbient()
+    await settle()
+    await act(async () => screen.getByRole('button', { name: "Patient's language" }).click())
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'English or Malay',
+      'Bengali',
+      'Urdu',
+    ])
+  })
+
+  it('asks for the agreement again, in words that name translation, when the language changes', async () => {
+    liveAsrConfig.mockResolvedValue(translatedConfig)
+    renderAmbient()
+    await settle()
+    await act(async () => tick().click())
+    expect(tick().checked).toBe(true)
+
+    await choose('Bengali')
+
+    expect(tick().checked).toBe(false)
+    expect(screen.getByRole('checkbox', { name: /machine-translated/i })).toBeTruthy()
+  })
+
+  it('asks the API for the chosen pair', async () => {
+    await startTranslated()
+    expect(createLiveSession).toHaveBeenCalledWith(expect.anything(), 'ambient', true, 'bn')
+  })
+
+  it('refuses a session the API minted without translation, before any audio is sent', async () => {
+    liveAsrConfig.mockResolvedValue(translatedConfig)
+    createLiveSession.mockResolvedValue(session)
+    renderAmbient()
+    await settle()
+    await choose('Bengali')
+    await act(async () => tick().click())
+    await act(async () => startButton().click())
+    await settle()
+
+    expect(screen.getByRole('alert').textContent).toMatch(/translation is not available/i)
+    expect(sockets).toHaveLength(0)
+    expect(tracks[0]?.stop).toHaveBeenCalled()
+  })
+
+  it('feeds the live panes English only, each line carrying the role its language settled', async () => {
+    const { onLiveSegments } = await startTranslated()
+
+    await act(async () => socket().message({ tokens: doctorAsks }))
+    await act(async () => socket().message({ tokens: patientDenies }))
+
+    const latest = onLiveSegments.mock.calls.at(-1)?.[0]
+    expect(latest).toMatchObject([
+      { text: 'Can you swallow?', role: 'doctor' },
+      { text: 'No.', role: 'patient' },
+    ])
+    expect(JSON.stringify(onLiveSegments.mock.calls)).not.toMatch(UNREADABLE)
+  })
+
+  it('shows each line in the words it was spoken, with its translation beneath', async () => {
+    await startTranslated()
+
+    await act(async () => socket().message({ tokens: doctorAsks }))
+    await act(async () => socket().message({ tokens: patientDenies }))
+
+    expect(screen.getByText('Can you swallow?')).toBeTruthy()
+    const translation = screen.getByText('আপনি কি গিলতে পারেন?')
+    expect(translation.getAttribute('lang')).toBe('bn')
+    expect(screen.getByText('না।').closest('[lang]')?.getAttribute('lang')).toBe('bn')
+    expect(screen.getByText('Bengali')).toBeTruthy()
+    expect(screen.getByText(/translations are machine-generated/i)).toBeTruthy()
+  })
+
+  it('delivers the pairs with the roles its languages settled, and no labelling pass', async () => {
+    const { onTranscript } = await startTranslated()
+
+    await act(async () => socket().message({ tokens: doctorAsks }))
+    await act(async () => socket().message({ tokens: patientDenies }))
+
+    const stopped = act(async () => {
+      screen.getByRole('button', { name: /stop and finish/i }).click()
+    })
+    await settle()
+    await act(async () => socket().message({ tokens: [], finished: true }))
+    await stopped
+    await settle()
+
+    expect(draftHostedTurns).not.toHaveBeenCalled()
+    expect(onTranscript).toHaveBeenCalledTimes(1)
+    const delivered = onTranscript.mock.calls[0]?.[0]
+    expect(delivered).toMatchObject({
+      source: 'asr_live',
+      text: 'Can you swallow? No.',
+      translation: 'bn',
+      draftTurns: [
+        { speaker: 'doctor', text: 'Can you swallow?' },
+        { speaker: 'patient', text: 'No.' },
+      ],
+      otherLanguages: [
+        { language: 'bn', text: 'আপনি কি গিলতে পারেন?', spoken: false },
+        { language: 'bn', text: 'না।', spoken: true },
+      ],
+    })
+    expect(delivered.text).not.toMatch(UNREADABLE)
+  })
+})

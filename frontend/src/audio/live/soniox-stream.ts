@@ -47,7 +47,20 @@ const SonioxTokenSchema = z.object({
    * records that this vendor has already changed a field's type once.
    */
   confidence: z.number().min(0).max(1).optional().catch(undefined),
+  /*
+   * Whether a token is speech or a machine translation of speech (#393).
+   *
+   * Kept as a raw string here and judged in `toLiveToken`, because what an
+   * unexpected value means depends on the session. Unlike `confidence`, this
+   * decides what counts as something a person said, so on a translated
+   * session an unknown value ends the stream rather than being read as speech.
+   */
+  translation_status: z.string().optional(),
+  source_language: z.string().optional(),
 })
+
+/** The statuses a translated session may carry, from the vendor's docs and #389. */
+const SPEECH_STATUSES = new Set(['original', 'none'])
 
 const SonioxMessageSchema = z.object({
   tokens: z.array(SonioxTokenSchema).default([]),
@@ -118,7 +131,31 @@ export type SonioxStream = {
   abort: () => void
 }
 
-function toLiveToken(raw: z.infer<typeof SonioxTokenSchema>): LiveToken {
+/**
+ * Whether a token is a translation, or `null` when a translated session sent a
+ * status this client cannot place.
+ *
+ * **Fails closed on a translated session only.** There every token carries a
+ * status (#389 measured all of them), so an absent or unknown one means the
+ * contract moved, and reading it as speech could put a translation into the
+ * transcript as words somebody said, labelled as the doctor's. An untranslated
+ * session never asked for translation, so its status is ignored, and a stray
+ * translation token there is marked and dropped by every reader rather than
+ * ending a consultation over a field it does not use.
+ */
+function translationOf(
+  raw: z.infer<typeof SonioxTokenSchema>,
+  translatedSession: boolean,
+): boolean | null {
+  if (CONTROL_TOKEN.test(raw.text)) return false
+  if (raw.translation_status === 'translation') return true
+  if (!translatedSession) return false
+  return raw.translation_status !== undefined && SPEECH_STATUSES.has(raw.translation_status)
+    ? false
+    : null
+}
+
+function toLiveToken(raw: z.infer<typeof SonioxTokenSchema>, translated: boolean): LiveToken {
   const endpoint = CONTROL_TOKEN.test(raw.text)
   return {
     // A control token contributes no text, so a caller that ignores `endpoint`
@@ -134,6 +171,9 @@ function toLiveToken(raw: z.infer<typeof SonioxTokenSchema>): LiveToken {
     // consultation the moment a vendor stopped sending this.
     confidence: raw.confidence ?? null,
     endpoint,
+    // Only ever set on a translation, so an untranslated stream produces
+    // tokens byte-identical to the ones it produced before #393.
+    ...(translated ? { translated: true, sourceLanguage: raw.source_language ?? null } : {}),
   }
 }
 
@@ -153,6 +193,7 @@ export function openSonioxStream(
   handlers: SonioxStreamHandlers,
 ): SonioxStream {
   let state: SonioxStream['state'] = 'connecting'
+  const translation = session.config.translation
   let connectTimer: ReturnType<typeof setTimeout> | undefined
   let finishTimer: ReturnType<typeof setTimeout> | undefined
   let settleFinish: ((result: { finished: boolean }) => void) | undefined
@@ -217,6 +258,19 @@ export function openSonioxStream(
         // added to here: this frame is the audio egress, and the one guarantee
         // behind this field is that no request shaped it.
         context: session.config.context,
+        // Present only on a translated session, so every other frame is
+        // byte-identical to what it was before #393. The values are the API's
+        // closed literals, mapped to the vendor's wire names here and nowhere
+        // else.
+        ...(translation === undefined
+          ? {}
+          : {
+              translation: {
+                type: translation.type,
+                language_a: translation.languageA,
+                language_b: translation.languageB,
+              },
+            }),
       }),
     )
     state = 'streaming'
@@ -246,7 +300,16 @@ export function openSonioxStream(
     }
 
     if (parsed.data.tokens.length > 0) {
-      handlers.onTokens(parsed.data.tokens.map(toLiveToken))
+      const tokens: LiveToken[] = []
+      for (const raw of parsed.data.tokens) {
+        const translated = translationOf(raw, translation !== undefined)
+        if (translated === null) {
+          settle('invalid_message')
+          return
+        }
+        tokens.push(toLiveToken(raw, translated))
+      }
+      handlers.onTokens(tokens)
     }
 
     if (parsed.data.finished) {

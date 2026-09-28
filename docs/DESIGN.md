@@ -386,6 +386,13 @@ live pane and the settled transcript.
   conversation bodily across the pane. That is louder than a chip changing text,
   and it is the cost this layout accepts for legibility. It is also why the
   diarisation config is a correctness concern rather than a cosmetic one.
+- **A translated session is the one exception: its sides follow the language**
+  (#393). English sits left and the patient's language right, and the chip
+  names the language rather than a number. There the side and the drafted role
+  agree by construction, because the role is taken from the same language
+  (`decisions.md` D-008), and a code-switched line that tips towards English
+  crosses the pane. That is the same cost, accepted for the same reason, and
+  the turn stays `labelsReviewed: false` either way.
 
 ### The Footer Reveal
 
