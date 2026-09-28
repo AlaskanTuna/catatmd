@@ -47,9 +47,10 @@ export const NAME_INTRODUCERS = [
 ] as const
 
 /**
- * Given names common in Malaysia across the three main communities. Deliberately
- * a *given*-name list: surnames and second elements are picked up by the
- * adjacency rules, and a longer list would trade precision for little recall.
+ * Given names common in Malaysia across the three main communities, and among
+ * its Pakistani and Bangladeshi patients. Deliberately a *given*-name list:
+ * surnames and second elements are picked up by the adjacency rules, and a
+ * longer list would trade precision for little recall.
  */
 export const GIVEN_NAMES = new Set(
   [
@@ -181,6 +182,94 @@ export const GIVEN_NAMES = new Set(
     'kavitha',
     'meena',
     'nithya',
+    // Pakistani and Bangladeshi (#391). Urdu and Bengali translation puts these
+    // names, transliterated, into English transcripts. A name listed above
+    // appears again where these communities spell it differently ('fatima',
+    // 'hasan'), because the lookup is exact. 'bilal' and 'arif' are absent
+    // although common: both are Malay words (a mosque's muezzin; knowledgeable).
+    'asif',
+    'imran',
+    'tariq',
+    'rashid',
+    'kashif',
+    'faisal',
+    'usman',
+    'hamza',
+    'zubair',
+    'naveed',
+    'shahid',
+    'sajid',
+    'adnan',
+    'arshad',
+    'javed',
+    'nadeem',
+    'sohail',
+    'zahid',
+    'aamir',
+    'ayesha',
+    'fatima',
+    'sadia',
+    'rabia',
+    'saima',
+    'bushra',
+    'uzma',
+    'karim',
+    'rafiq',
+    'rafiqul',
+    'nazrul',
+    'shafiq',
+    'mizanur',
+    'habibur',
+    'kamrul',
+    'jahangir',
+    'shahidul',
+    'hasan',
+    'monir',
+    'sumon',
+    'rubel',
+    'shakil',
+    'sabbir',
+    'tanvir',
+    'masud',
+    'mamun',
+    'nasrin',
+    'taslima',
+    'shirin',
+    'rokeya',
+    'sanjoy',
+    'bishwajit',
+    'pradip',
+    'dipankar',
+    'subrata',
+    'tapan',
+    'uttam',
+    'shyamal',
+    'liton',
+    'kalpana',
+    'shikha',
+    'anjali',
+    'sabita',
+    // Leading elements. Only the first word of a run is looked up, so an
+    // unlisted one hides every listed name behind it. 'md' is Bangladesh's 'mohd'.
+    'mohammad',
+    'mohammed',
+    'md',
+    'syed',
+    'abdur',
+    'qazi',
+    'sheikh',
+    'shaikh',
+    'hafiz',
+    // Second elements, only those used on their own as a form of address, as
+    // 'singh' and 'kaur' are. The rest ('uddin', 'akter', 'khatun', 'miah') are
+    // left to the adjacency rules.
+    'khan',
+    'hossain',
+    'hussain',
+    'ahmed',
+    'rahman',
+    'chowdhury',
+    'begum',
   ].map((n) => n.toLowerCase()),
 )
 
@@ -366,8 +455,11 @@ export const NAME_STOPWORDS = new Set(
     'lumpur',
     'putrajaya',
     'labuan',
-    'shah',
-    'alam',
+    // Deliberately absent although they spell a Selangor city: 'shah' and
+    // 'alam' are common Pakistani and Bangladeshi surnames, and as stopwords
+    // trimNameSpan stripped them off the end of a name and left them in
+    // cleartext (#391). A recall loss on the PHI boundary outranks the
+    // precision gain.
     'petaling',
     'jaya',
   ].map((w) => w.toLowerCase()),

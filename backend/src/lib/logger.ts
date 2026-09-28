@@ -103,7 +103,16 @@ const LLM_OPERATIONS = [
 
 export type LlmOperation = (typeof LLM_OPERATIONS)[number]
 
-const DETECTOR_LABELS = ['PATIENT', 'NRIC', 'PHONE', 'ADDRESS', 'DOB', 'MRN', 'EMAIL'] as const
+const DETECTOR_LABELS = [
+  'PATIENT',
+  'NRIC',
+  'PHONE',
+  'ADDRESS',
+  'DOB',
+  'MRN',
+  'EMAIL',
+  'SCRIPT',
+] as const
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const
 const OUTCOMES = ['ok', 'error'] as const
 const PROVIDERS = ['qwen', 'gemini', 'deepseek'] as const
