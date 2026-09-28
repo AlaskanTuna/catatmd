@@ -88,7 +88,7 @@ const SHORT_TAIL_NOTICE =
  * the session is refused before any audio is sent.
  */
 const TRANSLATION_UNAVAILABLE_ERROR =
-  'Translation is not available right now, and nothing was sent. Choose English or Malay, or try again shortly.'
+  'Translation is not available right now, and nothing was sent. Choose Auto-detect, or try again shortly.'
 
 type Phase = 'idle' | 'starting' | 'listening' | 'finishing' | 'labelling'
 
@@ -201,7 +201,7 @@ export function AmbientCapture({
   const [micStream, setMicStream] = useState<MediaStream | null>(null)
   /**
    * The patient's language when the consultation is interpreted (#393). `null`
-   * is English or Malay, which the recogniser transcribes as spoken.
+   * is auto-detect, which the recogniser transcribes as spoken.
    */
   const [translation, setTranslation] = useState<InterpretedLanguage | null>(null)
   /**
@@ -797,10 +797,10 @@ export function AmbientCapture({
             label="Patient's language"
             value={translation ?? ''}
             options={[
-              { value: '', label: 'English or Malay' },
+              { value: '', label: 'Auto-detect' },
               ...offered.map((language) => ({
                 value: language,
-                label: INTERPRETED_LANGUAGE_NAMES[language],
+                label: `${INTERPRETED_LANGUAGE_NAMES[language]} (translated)`,
               })),
             ]}
             onChange={(value) => {
@@ -811,12 +811,11 @@ export function AmbientCapture({
               setAgreed(false)
             }}
           />
-          {translation !== null && (
-            <p className="text-ink-muted text-xs">
-              Both of you see each line with its translation. Translations are machine-generated.
-              Check anything important with the patient.
-            </p>
-          )}
+          <p className="text-ink-muted text-xs">
+            {translation === null
+              ? 'Detects English, Malay, Mandarin and Tamil, even when mixed in one sentence. No translation.'
+              : 'Both of you see each line with its translation. Translations are machine-generated. Check anything important with the patient.'}
+          </p>
         </div>
       )}
 
