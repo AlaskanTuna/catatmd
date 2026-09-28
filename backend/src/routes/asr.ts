@@ -1,6 +1,7 @@
 import {
   DraftTurnsRequestSchema,
   DraftTurnsResponseSchema,
+  InterpretedLanguageSchema,
   LiveAsrConfigSchema,
   LiveAsrModeSchema,
   LiveSessionRequestSchema,
@@ -23,6 +24,7 @@ import {
   mintSonioxSession,
   SonioxMintError,
   sonioxHosts,
+  translatedAmbientConfig,
 } from '../lib/asr/soniox.js'
 import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor } from '../lib/llm/index.js'
@@ -235,11 +237,26 @@ asrRouter.get('/live-sessions/config', requireSonioxConfigured, (req, res) => {
     throw new HttpError(400, 'invalid_query', 'Unknown ambient session mode.')
   }
 
+  // Refused rather than ignored for the reason an unknown mode is: a client
+  // asking for a translation this deployment cannot give must not read a plain
+  // config and open an untranslated socket believing otherwise.
+  const translation = InterpretedLanguageSchema.optional().safeParse(req.query.translation)
+  if (!translation.success) {
+    throw new HttpError(400, 'invalid_query', 'Unknown translation language.')
+  }
+  if (translation.data !== undefined && mode.data !== 'ambient') {
+    throw new HttpError(400, 'invalid_query', 'Translation is available on ambient capture only.')
+  }
+
   const body = LiveAsrConfigSchema.safeParse({
     provider: 'soniox',
     region: env.SONIOX_REGION,
     websocketUrl: sonioxHosts(env.SONIOX_REGION).websocket,
-    config: liveSessionConfig(mode.data),
+    config:
+      translation.data === undefined
+        ? liveSessionConfig(mode.data)
+        : translatedAmbientConfig(translation.data),
+    availableTranslations: mode.data === 'ambient' ? [...InterpretedLanguageSchema.options] : [],
   })
   // A failure here is a configuration defect, not a caller error: the shared
   // schema refuses a socket address the browser would also refuse.
@@ -278,12 +295,33 @@ asrRouter.post('/live-sessions', requireSonioxConfigured, async (req, res) => {
 
   const parsed = LiveSessionRequestSchema.safeParse(req.body)
   if (!parsed.success) {
-    throw new HttpError(400, 'invalid_body', 'Consent for this consultation is required.')
+    // Static text per cause, never the value: an enum failure skips the object
+    // refines, so an unknown language and a refused pairing are told apart by
+    // the issue code rather than by the path they share. An unknown mode used
+    // to be reported as missing consent, which a body asserting consent is not.
+    const issueAt = (field: string) => parsed.error.issues.find((issue) => issue.path[0] === field)
+    const translationIssue = issueAt('translation')
+    throw new HttpError(
+      400,
+      'invalid_body',
+      translationIssue !== undefined
+        ? translationIssue.code === 'custom'
+          ? 'Translation is available on ambient capture only.'
+          : 'Unknown translation language.'
+        : issueAt('mode') !== undefined
+          ? 'Unknown capture mode.'
+          : 'Consent for this consultation is required.',
+    )
   }
 
-  const { mode } = parsed.data
+  const { mode, translation } = parsed.data
   const { model, region } = getLiveAsrDescriptor()
   const startedAt = performance.now()
+
+  // Built before anything is minted, so a config that cannot be built fails as
+  // a pre-flight error rather than after a key exists that no row recorded.
+  const config =
+    translation === undefined ? liveSessionConfig(mode) : translatedAmbientConfig(translation)
 
   try {
     const session = await mintSonioxSession(mode)
@@ -294,7 +332,7 @@ asrRouter.post('/live-sessions', requireSonioxConfigured, async (req, res) => {
       provider: 'soniox',
       region,
       websocketUrl: sonioxHosts(region).websocket,
-      config: liveSessionConfig(mode),
+      config,
       apiKey: session.apiKey,
       expiresAt: session.expiresAt,
     })
@@ -332,6 +370,9 @@ asrRouter.post('/live-sessions', requireSonioxConfigured, async (req, res) => {
          * field must not be able to say.
          */
         consentAsserted: mode === 'ambient' && parsed.data.consent === true,
+        // Deliberately nothing about translation. With two languages on offer,
+        // even "translated" says where a patient is likely from, and this trail
+        // outlives erasure (docs/trd.md §20.12).
       },
     })
 

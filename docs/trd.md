@@ -2744,6 +2744,17 @@ The grant above is scoped to ambient capture, and its "What it does not" row nam
 
 **What it does not license is the interesting half.** The two-control consent rule is not waived by the surface being small: a dictated phrase leaves the device exactly as a consultation does, so it takes the same standing device preference plus a per-consultation tick that dies with the component. On-device Whisper stays the floor on that page and is where every failure lands (`docs/decisions.md` D-001). **Both halves of that sentence were overtaken the same day.** The default moved in the next subsection, and the tick was removed outright in the one after it; the paragraph is kept as written because the grant rested on it and a reader needs to see what was undertaken before seeing what was withdrawn.
 
+#### Extended 28/09/26: The Sign-Off Reaches Two-Way Translation
+
+| Question         | Answer                                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Who              | @Andersonnn7788, the repo owner, on 28/09/26                                                                                                                              |
+| What it covers   | Two-way machine translation between English and Urdu or Bengali on ambient capture, on the same Soniox socket, key type, region and minting route (§20.12)                |
+| What it does not | Any other language pair, translation on prescription dictation, any spoken or synthesised output, and any other vendor or transport                                       |
+| What prompted it | Pakistani and Bangladeshi patients who cannot describe symptoms in English or Malay, and #389 measuring translation as one first-frame field with a deterministic pairing |
+
+**Not a new surface and not a new egress.** Ambient capture opens the socket exactly as before. What changes is the recognition config in the first frame, selected by a closed enum, and the processor now translates as well as transcribes. That second half is what this row exists to name.
+
 #### Amended 10/09/26: Streaming Becomes The Default On That Page
 
 The sign-off above is unchanged and is not re-opened here: same vendor, socket, region and minting route, so no new egress and no new grant. What moved is `DEFAULT_AUDIO_SETTINGS.dictationEngine`, from `'local'` to `'streaming'` (@Andersonnn7788, 10/09/26, #363). The rationale is the measurement in §20.1 and the table above: an on-device default whose real-time factor sits above 1.0 on typical clinic hardware cannot deliver words as the doctor speaks, so it is a default most doctors would have to leave.
@@ -3062,6 +3073,128 @@ Each window repeats the previous window's last closed segment. `findDeniedAbilit
 - **No spend cap**, per-actor or global. The two limiters bound a caller, not a bill. Same open gap as `hostedAsrRateLimit`.
 - **Nothing is persisted**, so a reload loses the live panes exactly as it loses the transcript. Session resumption is still #256.
 - **The live pass is additive and advisory.** It can surface a flag earlier than Finish would; it can never remove one. `evaluateRedFlags` over the whole stored transcript at Finish stays the authoritative, persisted, audited run.
+
+---
+
+### 20.12 Two-Way Translation On Ambient Capture
+
+**Status: `Decided, building`.** Recorded 28/09/26. The grant is §20.10 "Extended 28/09/26". Work is split across #389 (measurement), #390 (engine phrasings), #391 (names), #392 (API) and #393 (UI).
+
+A Pakistani or Bangladeshi patient speaks Urdu or Bengali, and the doctor answers in English. Each turn shows what was said with its translation beneath, in both directions, while the consultation is running.
+
+#### Why Soniox, After Research
+
+Researched 28/09/26 across Soniox, the hyperscalers, and specialist and open-source models. The live two-way requirement narrows the field quickly.
+
+| Candidate                       | Urdu       | Bengali    | Live Two-Way Translation | Verdict                                                        |
+| ------------------------------- | ---------- | ---------- | ------------------------ | -------------------------------------------------------------- |
+| **Soniox `stt-rt-v5`**          | Yes        | Yes        | Yes, same socket         | **Chosen.** No new egress, and translation is not billed extra |
+| Alibaba Qwen LiveTranslate      | Yes        | Yes        | Yes                      | The follow-up pilot, because it has a Singapore endpoint       |
+| Gladia Solaria                  | Yes        | Yes        | Yes                      | Plausible, on vendor claims only                               |
+| Azure Speech Translation        | ur-IN only | bn-IN only | Yes                      | The Indian variants of both languages, at about $2.50 per hour |
+| OpenAI `gpt-realtime-translate` | **No**     | Yes        | Yes                      | Disqualified for Urdu by its own language list                 |
+| AWS Transcribe                  | **No**     | bn-IN only | No                       | Disqualified                                                   |
+| Deepgram, Speechmatics          | Yes        | Yes        | No                       | Recognition only, with no Urdu or Bengali translation          |
+
+- **The deciding property is egress.** Every other candidate is a third audio egress, needing a fresh sign-off, a CSP change, a new guard and a new way to authenticate a browser.
+- **Accuracy evidence for Urdu and Bengali is vendor-published everywhere.** Soniox quotes 6.3% WER for both, against Google at 13.4% and 48.9%. No independent benchmark covers any commercial vendor on either language.
+- **Independent numbers exist only for open models.** On FLEURS, SeamlessM4T v2 scores 9.6% CER on Urdu and 9.0% on Bengali. Whisper large-v3 scores 9.4% and 33.9%, so the on-device path is a poor fallback for Bengali in particular.
+- **Clinical guidance.** NHS England advises against automated translation in place of professional interpreters, for consent and high-stakes content above all.
+
+#### The Mechanism
+
+| Piece       | What it is                                                                                                                                                                                               |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Request     | `POST /api/asr/live-sessions` takes `translation: 'ur' \| 'bn'`, valid with `mode: 'ambient'` only. Consent, cap and rate-limit bucket are ambient's, unchanged                                          |
+| Config      | `translatedAmbientConfig(language)` in `backend/src/lib/asr/soniox.ts`, a written-out table selected by a closed enum. `liveSessionConfig` is untouched                                                  |
+| First frame | Hints `[language, 'en', 'ms']`, diarisation off, endpoint detection on, no `terms`, and `translation: { type: 'two_way' }` pairing the language with English                                             |
+| Probe       | `GET /api/asr/live-sessions/config` advertises `availableTranslations`, so an SPA hides the option against an older API instead of failing                                                               |
+| Audit       | Unchanged, and deliberately so: neither live-session row records translation                                                                                                                             |
+| Stored      | `turn.text` is always Latin script: English, or Malay the recogniser left untranslated. `turn.otherLanguage` keeps the other half, and `transcript.machineTranslation` records that translation happened |
+
+#### Measured 28/09/26: What The Stream Actually Does
+
+#389 streamed synthetic two-voice dialogues at real-time pace: 9 runs, about 3,600 final tokens and 190 translation runs. The audio was edge-tts voices, synthetic only, per §20.1.
+
+| Question                                   | Answer                                                                                                                             |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Where does a translated segment end?       | **Translations arrive in lockstep.** Every translation run directly follows the original chunk it translates, with zero violations |
+| Does `<end>` ever precede its translation? | Never. With endpoint detection off the lockstep still holds, so it belongs to the translation pipeline rather than to endpointing  |
+| Timing on translation tokens               | None. Turn timing comes from the original tokens                                                                                   |
+| Non-final translation tokens               | None seen. Translations arrive final, 10 to 60 ms after their original chunk                                                       |
+| `speaker` on translation tokens            | Only when diarisation is on                                                                                                        |
+| Urdu tagged as Hindi                       | No. Tagged `ur`, in Perso-Arabic script                                                                                            |
+| English words inside Bengali or Urdu       | Carried into the English. Urdu writes them in its own script, and both still translate to "chest pain"                             |
+| `language_hints_strict`                    | Accepted, and behaved identically to plain hints, so it is not used                                                                |
+| Latency                                    | Text settles about 0.7 s after the speaker stops, and the translation follows within about 50 ms                                   |
+
+**The lockstep is what makes pairing safe.** `findDeniedAbility` composes an emergency flag from turn adjacency alone on unreviewed labels, so a translated "No." attached to the wrong turn would silently drop that flag. Pairing each translation with the chunk directly before it is deterministic, and the UI tests pin it (#393).
+
+#### Measured 28/09/26: Malay Is The Dangerous Case
+
+| Hints                  | The patient says "Tak ada, doktor." ("No, doctor")                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| `[bn, en]`             | Heard as Bengali script "তা আদা, ডক্টর।" and translated **"Yes, doctor."**, a negation flip |
+| `[bn, en]` plus strict | The same flip                                                                               |
+| `[bn, en, ms]`         | Recognised as Malay, left untranslated, and read natively by the engine                     |
+
+This is §20.1 finding 2 on a new vendor: declaring the wrong language produces fluent fabrication. Malay therefore stays hinted.
+
+#### Measured 28/09/26: Red-Flag Recall On The Translated English
+
+One patient sentence per trigger, in each language, run through the real engine:
+
+- **Before #390: 7/12 in both languages.** Every translation was semantically right. The five misses were plain English the engine lacked: "blood is coming along with the cough", saliva coming out of the mouth, "my body is shaking", "passed out" and "haven't been able to urinate".
+- **After #390: 12/12.** `redflag-list-v13` appends those forms. Review of #390 also found "No, I haven't been able to urinate" silenced by its leading "No". That is fixed and pinned.
+- **Full dialogues.** Both raise chest pain, dyspnoea, fever, and the swallowing flag from "Can you swallow?" followed by "No.". The negated "No blood comes with the cough" raises nothing.
+
+#### Decisions A Reviewer Will Question
+
+| Decision                                      | Why                                                                                                                                                                    |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Translation is a request field, not a mode    | A translated consultation is an ambient one. Consent, session cap and rate-limit bucket carry over with no change, and `liveSessionConfig`'s pinned signature stays    |
+| English is `turn.text`, never the original    | The engine matches English and Malay only, and de-identification reads Latin script only, so the original would disable every trigger and pass names to the LLM        |
+| The audit rows say nothing about translation  | With two languages on offer even a boolean names a likely national origin, and the trail outlives erasure. The transcript records it instead, where erasure reaches it |
+| No refine tying pairs to `machineTranslation` | A missing marker costs a banner; a refine would refuse the save and lose the transcript over a display fact                                                            |
+| Diarisation off, endpoint detection on        | Roles come from the spoken language, so a frozen wrong speaker id has nothing to damage, the argument that inverts dictation's settings. `<end>` bounds each turn      |
+| No `terms`                                    | Both vocabularies target Malay consultations, and §20.7.1 measured a wrong-language context scoring worse than none                                                    |
+| Consent stays English only                    | The owner's decision, 28/09/26, recorded with its cost in `docs/decisions.md` D-008                                                                                    |
+
+#### Never Sent To A Model
+
+- **What is shielded.** `otherLanguage.text` is Bengali or Urdu script, which no name detector reads, so a name written in it would pass them untouched.
+- **What enforces it.** `backend/src/deid/no-stray-other-language.test.ts` pins it behaviourally, on `serialiseTranscript` and the copilot digest.
+- **Structurally, too.** The same test finds the field named nowhere in backend source. The API stores the transcript and never needs to read this field. That half matches the name only, so a spread or a stringified transcript would slip past it.
+- **At the gate, whatever a client sends.** The `SCRIPT` detector (#391) tokenises any run of Bengali, Arabic or Devanagari script, so script reaching model-bound text by any route becomes a token. `assertNoIdentifiers` re-runs it at egress.
+- **The gap that remains.** Chinese and Tamil script sit outside `SCRIPT` on purpose, because ambient capture hints both and tokenising them would blind the note. A name written in either still passes the gate, as it did before this section.
+- **Erasure.** `eraseConsultation` already nulls the whole transcript column, originals included.
+
+#### What Is Not Measured
+
+| Unmeasured                             | Why it matters                                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Accuracy on real speech                | #389 used clean synthetic voices. It measures the wire and the pipeline, not recognition quality |
+| Translation quality                    | No vendor publishes BLEU or COMET for Urdu or Bengali, and nothing here scores it                |
+| Sylheti and Chittagonian               | Spoken by many Bangladeshi patients, never mentioned by the vendor, and likely to fare poorly    |
+| Pashto and Sindhi                      | Not supported by the vendor                                                                      |
+| Overlapping speech, load, clinic noise | None of these occur in synthetic audio                                                           |
+
+**Machine translation is a third fabrication surface**, after recognition and before the engine. §20.3 finding 1 has already measured a translation erasing the exact phrase the chest-pain trigger matches. Nothing here supports a claim to a client about translated accuracy.
+
+#### Follow-Ups
+
+- A pilot of Qwen LiveTranslate against Soniox on native-speaker recordings. It is the one candidate with a Singapore endpoint.
+- Malay as the doctor's language in the pair, since Soniox supports it and the engine reads it.
+- Punjabi, which the vendor lists and nobody here has measured.
+- `context.translation_terms` for clinical terms, measured before adoption.
+- #394, a denied first mention silencing a later genuine one in the same turn, found in review of #390.
+
+#### Provenance Of The Sources In This Section
+
+- Soniox: real-time translation, data residency and pricing documentation, read 28/09/26.
+- Vendor language lists: Azure Speech, OpenAI `gpt-realtime-translate`, AWS Transcribe, Google Speech-to-Text and Alibaba Model Studio, read 28/09/26.
+- Open-model numbers: Fleurs-SLU (arXiv 2501.06117), and "WER We Stand" (arXiv 2409.11252) for Urdu.
+- Clinical guidance: NHS England interpreting guidance and its improvement framework for translation and interpreting services.
 
 ---
 

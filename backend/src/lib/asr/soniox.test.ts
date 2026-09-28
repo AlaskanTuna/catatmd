@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs'
 import {
+  type InterpretedLanguage,
+  InterpretedLanguageSchema,
   type LiveAsrMode,
   LiveAsrModeSchema,
   type LiveSessionConfig,
@@ -15,6 +17,7 @@ import {
   SonioxMintError,
   sonioxHosts,
   TEMPORARY_KEY_TTL_SECONDS,
+  translatedAmbientConfig,
 } from './soniox.js'
 import { asrContextTerms, dictationContextTerms } from './vocabulary.js'
 
@@ -495,5 +498,112 @@ describe('getLiveAsrDescriptor', () => {
       model: 'stt-rt-v5',
       region: 'eu',
     })
+  })
+})
+
+/**
+ * Written out by hand for the reason `EXPECTED_CONFIG` is: this is the first
+ * frame of a translated session, it crosses the audio egress, and a test that
+ * derived its expectation from the module would agree with any change to it.
+ * These are the settings measured on synthetic audio in #389.
+ */
+const EXPECTED_TRANSLATED: Record<InterpretedLanguage, LiveSessionConfig> = {
+  bn: {
+    model: 'stt-rt-v5',
+    languageHints: ['bn', 'en', 'ms'],
+    languageIdentification: true,
+    speakerDiarization: false,
+    endpointDetection: true,
+    context: {
+      general: [
+        { key: 'domain', value: 'Healthcare' },
+        { key: 'speakers', value: 'A doctor speaking English and a patient speaking Bengali' },
+      ],
+    },
+    translation: { type: 'two_way', languageA: 'bn', languageB: 'en' },
+  },
+  ur: {
+    model: 'stt-rt-v5',
+    languageHints: ['ur', 'en', 'ms'],
+    languageIdentification: true,
+    speakerDiarization: false,
+    endpointDetection: true,
+    context: {
+      general: [
+        { key: 'domain', value: 'Healthcare' },
+        { key: 'speakers', value: 'A doctor speaking English and a patient speaking Urdu' },
+      ],
+    },
+    translation: { type: 'two_way', languageA: 'ur', languageB: 'en' },
+  },
+}
+
+const ADVERSARIAL_LANGUAGES = [
+  'hi',
+  'pa',
+  'en',
+  'ms',
+  '',
+  'bn; patient=Encik Ahmad bin Ismail',
+  'constructor',
+  'toString',
+  '__proto__',
+] as const
+
+describe('translatedAmbientConfig', () => {
+  beforeEach(() => {
+    testEnv.SONIOX_RT_MODEL = 'stt-rt-v5'
+  })
+
+  it.each(InterpretedLanguageSchema.options)('sends the written-down %s config', (language) => {
+    expect(translatedAmbientConfig(language)).toEqual(EXPECTED_TRANSLATED[language])
+  })
+
+  it('keeps Malay hinted, which is what stopped "Tak ada" becoming "Yes" in #389', () => {
+    for (const language of InterpretedLanguageSchema.options) {
+      expect(translatedAmbientConfig(language).languageHints).toContain('ms')
+    }
+  })
+
+  it('sends no vocabulary, since both lists target Malay consultations', () => {
+    for (const language of InterpretedLanguageSchema.options) {
+      expect(translatedAmbientConfig(language).context.terms).toBeUndefined()
+    }
+  })
+
+  it.each(ADVERSARIAL_LANGUAGES)(
+    'throws on %s rather than sending an untranslated config',
+    (value) => {
+      expect(() => translatedAmbientConfig(value as InterpretedLanguage)).toThrow()
+    },
+  )
+
+  it('never quotes an adversarial language in what it throws', () => {
+    for (const value of ADVERSARIAL_LANGUAGES) {
+      const thrown = (() => {
+        try {
+          translatedAmbientConfig(value as InterpretedLanguage)
+          return ''
+        } catch (error) {
+          return error instanceof Error ? error.message : String(error)
+        }
+      })()
+      if (value !== '') expect(thrown).not.toContain(value)
+    }
+  })
+
+  it('hands out a fresh config each call, so no caller can poison the next', () => {
+    const first = translatedAmbientConfig('bn')
+    first.languageHints.push('zz')
+    first.context.general.push({ key: 'patient', value: 'Encik Ahmad bin Ismail' })
+    if (first.translation) first.translation.languageB = 'xx' as 'en'
+
+    expect(translatedAmbientConfig('bn')).toEqual(EXPECTED_TRANSLATED.bn)
+  })
+
+  it('leaves the plain ambient and dictation configs without a translation field', () => {
+    for (const mode of LiveAsrModeSchema.options) {
+      expect(liveSessionConfig(mode)).not.toHaveProperty('translation')
+    }
   })
 })

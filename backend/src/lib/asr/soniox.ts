@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import type { LiveAsrMode, LiveAsrRegion, LiveSessionConfig } from '@shared/types'
+import type {
+  InterpretedLanguage,
+  LiveAsrMode,
+  LiveAsrRegion,
+  LiveSessionConfig,
+} from '@shared/types'
 import { z } from 'zod'
 import type { LiveSessionFailureReason } from '../../audit/index.js'
 import { env } from '../../config/env.js'
@@ -308,6 +313,85 @@ export function liveSessionConfig(mode: LiveAsrMode): LiveSessionConfig {
       // change what the next consultation sends across the audio egress.
       terms: settings.terms(),
     },
+  }
+}
+
+type TranslatedSettings = Omit<ModeSettings, 'terms'> & {
+  readonly translation: NonNullable<LiveSessionConfig['translation']>
+}
+
+/**
+ * Ambient capture translated both ways between English and one other language
+ * (docs/trd.md §20.12, #392).
+ *
+ * **Static and written out per language, for every reason `MODE_SETTINGS`
+ * gives.** All of it crosses the audio egress in the first frame, and the
+ * language is a closed enum that selects an entry and can reach nothing else.
+ * These are the settings measured on synthetic audio in #389, unchanged.
+ *
+ * Three of them invert ambient's, each on stated grounds:
+ *
+ * - **Diarisation off, endpoint detection on.** Roles are drafted from the
+ *   spoken language rather than from speaker ids, so the cost that keeps
+ *   endpoint detection off for ambient, a wrong speaker id frozen early, has
+ *   nothing left to damage, the same argument that inverts dictation. What
+ *   remains is the benefit: `<end>` bounds each utterance, and #389 measured
+ *   every translation arriving before the `<end>` of the utterance it
+ *   translates.
+ * - **Malay stays hinted.** Without it #389 recorded "Tak ada, doktor" ("No,
+ *   doctor") heard as Bengali script and translated "Yes, doctor". With it,
+ *   Malay is recognised as Malay and left untranslated, which the red-flag
+ *   engine reads natively.
+ * - **No `terms`.** Both vocabularies target Malay consultations, nothing has
+ *   measured them against these languages, and section 20.7.1 measured a
+ *   wrong-language context scoring worse than none at all.
+ */
+const TRANSLATED_AMBIENT_SETTINGS: Record<InterpretedLanguage, TranslatedSettings> = {
+  bn: {
+    languageHints: ['bn', 'en', 'ms'],
+    speakerDiarization: false,
+    endpointDetection: true,
+    general: [
+      { key: 'domain', value: 'Healthcare' },
+      { key: 'speakers', value: 'A doctor speaking English and a patient speaking Bengali' },
+    ],
+    translation: { type: 'two_way', languageA: 'bn', languageB: 'en' },
+  },
+  ur: {
+    languageHints: ['ur', 'en', 'ms'],
+    speakerDiarization: false,
+    endpointDetection: true,
+    general: [
+      { key: 'domain', value: 'Healthcare' },
+      { key: 'speakers', value: 'A doctor speaking English and a patient speaking Urdu' },
+    ],
+    translation: { type: 'two_way', languageA: 'ur', languageB: 'en' },
+  },
+}
+
+/**
+ * The recognition settings for one translated ambient session.
+ *
+ * A function of its own rather than a second argument to `liveSessionConfig`,
+ * so that function's one-enum signature, pinned in `soniox.test.ts`, stays
+ * exactly what it was. The lookup discipline is the same: an unknown value
+ * throws, and never falls back to an untranslated config the caller did not
+ * ask for. The session cap and minting are ambient's, unchanged.
+ */
+export function translatedAmbientConfig(language: InterpretedLanguage): LiveSessionConfig {
+  if (!Object.hasOwn(TRANSLATED_AMBIENT_SETTINGS, language)) {
+    throw new Error('Unknown translation language')
+  }
+  const settings = TRANSLATED_AMBIENT_SETTINGS[language]
+
+  return {
+    model: env.SONIOX_RT_MODEL,
+    languageHints: [...settings.languageHints],
+    languageIdentification: true,
+    speakerDiarization: settings.speakerDiarization,
+    endpointDetection: settings.endpointDetection,
+    context: { general: settings.general.map((entry) => ({ ...entry })) },
+    translation: { ...settings.translation },
   }
 }
 
