@@ -297,16 +297,20 @@ asrRouter.post('/live-sessions', requireSonioxConfigured, async (req, res) => {
   if (!parsed.success) {
     // Static text per cause, never the value: an enum failure skips the object
     // refines, so an unknown language and a refused pairing are told apart by
-    // the issue code rather than by the path they share.
-    const translationIssue = parsed.error.issues.find((issue) => issue.path[0] === 'translation')
+    // the issue code rather than by the path they share. An unknown mode used
+    // to be reported as missing consent, which a body asserting consent is not.
+    const issueAt = (field: string) => parsed.error.issues.find((issue) => issue.path[0] === field)
+    const translationIssue = issueAt('translation')
     throw new HttpError(
       400,
       'invalid_body',
-      translationIssue === undefined
-        ? 'Consent for this consultation is required.'
-        : translationIssue.code === 'custom'
+      translationIssue !== undefined
+        ? translationIssue.code === 'custom'
           ? 'Translation is available on ambient capture only.'
-          : 'Unknown translation language.',
+          : 'Unknown translation language.'
+        : issueAt('mode') !== undefined
+          ? 'Unknown capture mode.'
+          : 'Consent for this consultation is required.',
     )
   }
 

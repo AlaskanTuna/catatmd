@@ -672,6 +672,18 @@ describe('two-way translation, an ambient session with a different first frame',
     })
   })
 
+  // Found in review: the only issue here is the mode, and the body asserts
+  // consent, so blaming consent sent the reader to the wrong field.
+  it('names an unknown mode as unknown, not as missing consent', async () => {
+    const res = await mint({ consent: true, mode: 'bogus', translation: 'ur' })
+
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({
+      error: { message: 'Unknown capture mode.' },
+    })
+    expect(upstream).not.toHaveBeenCalled()
+  })
+
   it('spends the ambient allowance, not the dictation one', async () => {
     const ip = nextIp()
     for (let i = 0; i < 5; i += 1) {
