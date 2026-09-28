@@ -256,6 +256,10 @@ export const GIVEN_NAMES = new Set(
     'md',
     'syed',
     'abdur',
+    'qazi',
+    'sheikh',
+    'shaikh',
+    'hafiz',
     // Second elements, only those used on their own as a form of address, as
     // 'singh' and 'kaur' are. The rest ('uddin', 'akter', 'khatun', 'miah') are
     // left to the adjacency rules.

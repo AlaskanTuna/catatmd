@@ -263,10 +263,21 @@ function detectEmail(text: string): Match[] {
  */
 const SCRIPT_CHARACTERS =
   '\\u0980-\\u09FF\\u0600-\\u06FF\\u0750-\\u077F\\u08A0-\\u08FF\\uFB50-\\uFDFF\\uFE70-\\uFEFF\\u0900-\\u097F'
-// Whitespace, joiners and ordinary punctuation between two script words stay
-// inside the run, so a phrase is one token rather than one per clause.
+// Whitespace, joiners, direction marks and ordinary punctuation between two
+// script words stay inside the run, so a phrase is one token rather than one
+// per clause, and an Urdu name split by a right-to-left mark stays one name.
+const SCRIPT_JOIN = `[\\s\\u200C-\\u200F,.;:!?'"()-]+`
+/*
+ * Up to three Latin words with script on both sides join the run too, found in
+ * review: "میرا نام عمران chowdhury شاہ ہے" left the lowercase surname between
+ * two tokens, where no Latin detector reads a lowercase name. The cost is an
+ * English word inside a script sentence going with it, which is the trade this
+ * module makes. The join around them stays on one line and inside one clause,
+ * so the `Patient:` label of the next transcript line is never swallowed.
+ */
+const ISLAND_JOIN = `[ \\t\\u00A0\\u200C-\\u200F,'"()-]+`
 const SCRIPT_RUN = new RegExp(
-  `[${SCRIPT_CHARACTERS}]+(?:[\\s\\u200C\\u200D,.;:!?'"()-]+[${SCRIPT_CHARACTERS}]+)*`,
+  `[${SCRIPT_CHARACTERS}]+(?:${SCRIPT_JOIN}[${SCRIPT_CHARACTERS}]+|${ISLAND_JOIN}(?:[A-Za-z][A-Za-z'-]*${ISLAND_JOIN}){1,3}[${SCRIPT_CHARACTERS}]+)*`,
   'gu',
 )
 

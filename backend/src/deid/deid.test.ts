@@ -965,6 +965,10 @@ describe('Pakistani and Bangladeshi names with no cue in front of them (#391)', 
     { sentence: 'Syed Kashif has burning on passing urine.', parts: ['Syed', 'Kashif'] },
     { sentence: 'Abdur Rahim has been coughing at night.', parts: ['Abdur', 'Rahim'] },
     { sentence: 'Begum Rokeya has had a fever for two days.', parts: ['Begum', 'Rokeya'] },
+    // Leading elements review found hiding the listed names behind them.
+    { sentence: 'Qazi Imran Ahmed has a cough.', parts: ['Qazi', 'Imran', 'Ahmed'] },
+    { sentence: 'Sheikh Nasrin has had a fever since Monday.', parts: ['Sheikh', 'Nasrin'] },
+    { sentence: 'Hafiz Kashif has burning on passing urine.', parts: ['Hafiz', 'Kashif'] },
     // Second elements people are addressed by on their own.
     { sentence: 'Please ask Chowdhury to wait outside.', parts: ['Chowdhury'] },
     { sentence: 'Khan says the cough is worse at night.', parts: ['Khan'] },
@@ -1067,5 +1071,39 @@ describe('SCRIPT, the detector for script the gate cannot otherwise read', () =>
     expect(text).not.toMatch(UNREADABLE)
     expect(detected).toContain('SCRIPT')
     expect(text).toContain('Sore throat and cough for four days.')
+  })
+
+  /*
+   * Found in review. A lowercase Latin surname between two script runs was
+   * left between two tokens, and no Latin detector reads a lowercase name.
+   */
+  it('takes a Latin word with script on both sides into the run', () => {
+    const { text } = deidentify('میرا نام عمران chowdhury شاہ ہے')
+    expect(text).toBe('[SCRIPT_1]')
+  })
+
+  it('keeps an Urdu name split by a right-to-left mark as one token', () => {
+    expect(deidentify('عمران‏شاہ has a cough.').text).toBe('[SCRIPT_1] has a cough.')
+  })
+
+  it('never swallows the speaker label of the next transcript line', () => {
+    const { text } = deidentify('Doctor: আপনার নাম কী?\nPatient: আমার নাম রহিম')
+    expect(text).toMatch(/^Doctor: \[SCRIPT_\d\]\?\nPatient: \[SCRIPT_\d\]$/)
+    expect(new Set(text.match(/\[SCRIPT_\d\]/g))).toHaveProperty('size', 2)
+  })
+
+  it('leaves Latin words after the last script word readable', () => {
+    expect(deidentify('আমার জ্বর and chest pain.').text).toBe('[SCRIPT_1] and chest pain.')
+  })
+
+  /*
+   * Digits written in these scripts go into the token too, which review found
+   * costs a vital sign written that way ("SpO2 was ۹۵%"). Kept, because the
+   * NRIC, phone and date detectors read ASCII digits only: an identifier in
+   * Bengali or Urdu digits would pass every one of them.
+   */
+  it('tokenises digits written in these scripts, which no number detector reads', () => {
+    expect(deidentify('IC ৯০০১০১-১৪-৫৬৭৮ on file.').text).toBe('IC [SCRIPT_1] on file.')
+    expect(deidentify('SpO2 was ۹۵%').text).toBe('SpO2 was [SCRIPT_1]%')
   })
 })
