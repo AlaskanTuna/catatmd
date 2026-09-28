@@ -10,6 +10,7 @@ import {
   DraftTurnsResponseSchema,
   ErrorEnvelopeSchema,
   GuidelineChunkSchema,
+  LiveAsrConfigSchema,
   LiveSessionRequestSchema,
   LiveSessionSchema,
   LlmClinicalAssertionSchema,
@@ -765,6 +766,103 @@ describe('LiveSessionRequestSchema', () => {
     expect(LiveSessionRequestSchema.safeParse({ consent: true, mode: 'dictation' }).success).toBe(
       true,
     )
+  })
+
+  describe('translation (#392)', () => {
+    it('pairs a named language with English on an ambient body', () => {
+      for (const translation of ['bn', 'ur']) {
+        expect(LiveSessionRequestSchema.safeParse({ consent: true, translation }).success).toBe(
+          true,
+        )
+      }
+    })
+
+    it('still requires the tick, because a translated session is an ambient one', () => {
+      expect(LiveSessionRequestSchema.safeParse({ translation: 'bn' }).success).toBe(false)
+    })
+
+    it('refuses translation on dictation rather than quietly dropping it', () => {
+      const parsed = LiveSessionRequestSchema.safeParse({ mode: 'dictation', translation: 'bn' })
+      expect(parsed.success).toBe(false)
+      expect(parsed.error?.issues.some((issue) => issue.path[0] === 'translation')).toBe(true)
+    })
+
+    it.each(['hi', 'pa', 'en', 'ms', 'BN', ''])(
+      'refuses %j, since only measured languages pair',
+      (translation) => {
+        expect(LiveSessionRequestSchema.safeParse({ consent: true, translation }).success).toBe(
+          false,
+        )
+      },
+    )
+  })
+})
+
+describe('LiveAsrConfigSchema from an older API', () => {
+  it('still parses without availableTranslations, so the probe cannot fail on skew', () => {
+    const olderResponse = {
+      provider: 'soniox',
+      region: 'us',
+      websocketUrl: 'wss://stt-rt.soniox.com/transcribe-websocket',
+      config: {
+        model: 'stt-rt-v5',
+        languageHints: ['ms', 'en'],
+        languageIdentification: true,
+        speakerDiarization: true,
+        endpointDetection: false,
+        context: { general: [{ key: 'domain', value: 'Healthcare' }] },
+      },
+    }
+    expect(LiveAsrConfigSchema.safeParse(olderResponse).success).toBe(true)
+  })
+})
+
+describe('TranscriptTurn.otherLanguage and Transcript.machineTranslation (#392)', () => {
+  const turn = { speaker: 'patient', text: 'Yes, my chest hurts.' } as const
+
+  it('carries the other language of a translated turn', () => {
+    const parsed = TranscriptSchema.safeParse({
+      source: 'asr_live',
+      labelsReviewed: false,
+      machineTranslation: { languages: ['bn'] },
+      turns: [
+        { ...turn, otherLanguage: { language: 'bn', text: 'হ্যাঁ, বুকে ব্যথা করে।', spoken: true } },
+      ],
+    })
+    expect(parsed.success).toBe(true)
+  })
+
+  it('bounds the other-language text like the turn it belongs to', () => {
+    const parsed = TranscriptSchema.safeParse({
+      source: 'asr_live',
+      turns: [
+        { ...turn, otherLanguage: { language: 'ur', text: 'x'.repeat(4_001), spoken: true } },
+      ],
+    })
+    expect(parsed.success).toBe(false)
+  })
+
+  it.each([
+    [{ language: 'hi', text: 'x', spoken: true }, 'an unmeasured language'],
+    [{ language: 'bn', text: '', spoken: true }, 'empty text'],
+    [{ language: 'bn', text: 'x' }, 'no statement of which half was said'],
+  ])('refuses %j (%s)', (otherLanguage, _reason) => {
+    expect(
+      TranscriptSchema.safeParse({ source: 'asr_live', turns: [{ ...turn, otherLanguage }] })
+        .success,
+    ).toBe(false)
+  })
+
+  it('accepts pairs without the marker, which costs a banner rather than a save', () => {
+    const parsed = TranscriptSchema.safeParse({
+      source: 'asr_live',
+      turns: [{ ...turn, otherLanguage: { language: 'bn', text: 'হ্যাঁ', spoken: true } }],
+    })
+    expect(parsed.success).toBe(true)
+  })
+
+  it('still parses a transcript stored before either field existed', () => {
+    expect(TranscriptSchema.safeParse({ source: 'paste', turns: [turn] }).success).toBe(true)
   })
 })
 

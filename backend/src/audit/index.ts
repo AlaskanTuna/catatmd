@@ -393,6 +393,12 @@ export type AsrAuditEvent =
    * row is the right home because the two modes cost different amounts and the
    * trail is what a spend reconciliation reads. It appears on the failure row
    * too, so a mode that fails to mint is not invisible in the trail.
+   *
+   * **Neither row says whether a session was translated** (#392), and that is
+   * deliberate. Two languages are on offer, so even a boolean says where a
+   * patient is likely from, and this trail is append-only and outlives
+   * erasure. The consultation's transcript records the translation instead,
+   * where erasure reaches it.
    */
   | {
       action: 'asr.live_session_minted'

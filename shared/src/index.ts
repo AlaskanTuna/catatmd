@@ -63,6 +63,16 @@ export const TextRangeSchema = z.object({
   end: z.number().int().positive(),
 })
 
+/**
+ * The languages translated ambient capture pairs with English (#392).
+ *
+ * A closed enum for the reason `LiveAsrModeSchema` is one: the value selects a
+ * static recognition config that crosses the audio egress, so a caller chooses
+ * which language and never what is sent for it. Urdu and Bengali only, the two
+ * measured on this vendor (docs/trd.md §20.12).
+ */
+export const InterpretedLanguageSchema = z.enum(['ur', 'bn'])
+
 export const TranscriptTurnSchema = z
   .object({
     speaker: SpeakerSchema,
@@ -103,6 +113,30 @@ export const TranscriptTurnSchema = z
      * duration, the same way an absent `offsetSeconds` never renders as 0:00.
      */
     endSeconds: z.number().nonnegative().optional(),
+    /**
+     * The same turn in the consultation's other language, when it was captured
+     * through two-way machine translation (docs/trd.md §20.12).
+     *
+     * **`text` above is always Latin script, the English or Malay the
+     * recogniser left untranslated, and nothing that reaches a model reads
+     * this.** The red-flag engine matches English and Malay only, and the name
+     * detectors read Latin script only, so the other language is kept for the
+     * doctor and the record and nowhere else.
+     *
+     * `spoken` says which half the person actually said. `true`: this is their
+     * speech, and the English is the machine translation. `false`: the English
+     * was said, and this is what the patient was shown.
+     *
+     * Inside the turn, like `uncertain`, so `Consultation.transcript` stays the
+     * single PHI column `eraseConsultation` already nulls.
+     */
+    otherLanguage: z
+      .object({
+        language: InterpretedLanguageSchema,
+        text: z.string().min(1).max(MAX_TURN_CHARACTERS),
+        spoken: z.boolean(),
+      })
+      .optional(),
   })
   .refine(
     (turn) =>
@@ -195,6 +229,22 @@ export const TranscriptSchema = z.object({
    * dishonest one, so no safety control may rest on it alone.
    */
   labelsReviewed: z.boolean().optional(),
+  /**
+   * Whether any pass of this consultation went through two-way machine
+   * translation, and with which languages (docs/trd.md §20.12).
+   *
+   * **Provenance for the doctor, not a control.** It tells the review page that
+   * some English on screen is a machine translation, and it outlives the
+   * per-turn pairs: a line the doctor rewrites loses its `otherLanguage`, but
+   * the consultation was still translated. Client-asserted, like `source`.
+   *
+   * Deliberately not tied to the pairs by a refine. A pair without this marker
+   * is a missing banner; a refine would turn it into a refused save, and the
+   * doctor would lose the transcript over a display fact.
+   */
+  machineTranslation: z
+    .object({ languages: z.array(InterpretedLanguageSchema).min(1).max(2) })
+    .optional(),
 })
 
 // ─── Hosted ASR ──────────────────────────────────────────────────────────────
@@ -317,6 +367,11 @@ export const LiveAsrRegionSchema = z.enum(['us', 'eu', 'jp', 'in'])
  *
  * `ambient` is a consultation, two voices, up to thirty minutes.
  * `dictation` is one doctor reading out a prescription, in seconds.
+ *
+ * Translation is a second closed enum on the same request rather than a third
+ * mode (`LiveSessionRequestSchema.translation`, #392): a translated
+ * consultation is still an ambient one, with ambient's consent rule, session
+ * cap and rate-limit bucket, and only its recognition config differs.
  */
 export const LiveAsrModeSchema = z.enum(['ambient', 'dictation'])
 
@@ -403,6 +458,22 @@ export const LiveSessionConfigSchema = z.object({
      */
     terms: z.array(z.string().min(1).max(64)).max(MAX_ASR_CONTEXT_TERMS).optional(),
   }),
+  /**
+   * Two-way translation between English and one other language, asked of the
+   * recogniser in the socket's first frame (docs/trd.md §20.12).
+   *
+   * Closed literals and a closed enum only, because this crosses the audio
+   * egress like everything else here. Absent on every config except the
+   * translated ambient ones, so the plain ambient and dictation frames are
+   * byte-identical to what they were before this existed.
+   */
+  translation: z
+    .object({
+      type: z.literal('two_way'),
+      languageA: InterpretedLanguageSchema,
+      languageB: z.literal('en'),
+    })
+    .optional(),
 })
 
 /**
@@ -419,6 +490,14 @@ export const LiveAsrConfigSchema = z.object({
   region: LiveAsrRegionSchema,
   websocketUrl: z.string().regex(LIVE_ASR_WEBSOCKET_URL),
   config: LiveSessionConfigSchema,
+  /**
+   * The languages this deployment can pair with English on ambient capture.
+   *
+   * Optional because Vercel and Render deploy independently: an SPA reading an
+   * older API sees it absent and offers no translation, rather than failing
+   * the probe and losing ambient capture altogether.
+   */
+  availableTranslations: z.array(InterpretedLanguageSchema).optional(),
 })
 
 /**
@@ -448,10 +527,20 @@ export const LiveSessionRequestSchema = z
   .object({
     consent: z.boolean().optional(),
     mode: LiveAsrModeSchema.default('ambient'),
+    /**
+     * Pair this language with English in both directions (docs/trd.md §20.12).
+     * Ambient only: dictation is one doctor reading out a prescription, and the
+     * second refine refuses the pair rather than quietly dropping the field.
+     */
+    translation: InterpretedLanguageSchema.optional(),
   })
   .refine((body) => body.mode !== 'ambient' || body.consent === true, {
     message: 'Consent for this consultation is required.',
     path: ['consent'],
+  })
+  .refine((body) => body.translation === undefined || body.mode === 'ambient', {
+    message: 'Translation is available on ambient capture only.',
+    path: ['translation'],
   })
 
 /**
@@ -2066,6 +2155,7 @@ export type TranscriptSource = z.infer<typeof TranscriptSourceSchema>
 export type Transcript = z.infer<typeof TranscriptSchema>
 export type HostedAsrSegment = z.infer<typeof HostedAsrSegmentSchema>
 export type HostedAsrResult = z.infer<typeof HostedAsrResultSchema>
+export type InterpretedLanguage = z.infer<typeof InterpretedLanguageSchema>
 export type LiveAsrRegion = z.infer<typeof LiveAsrRegionSchema>
 export type LiveAsrMode = z.infer<typeof LiveAsrModeSchema>
 export type LiveSessionConfig = z.infer<typeof LiveSessionConfigSchema>

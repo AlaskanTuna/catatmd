@@ -570,3 +570,117 @@ describe('credential containment (the logger.leak.test.ts pattern)', () => {
     expect(JSON.stringify(auditState.writes)).not.toContain(UPSTREAM_ERROR_MARKER)
   })
 })
+
+/*
+ * Two-way translation on ambient capture (#392, docs/trd.md §20.12). Same
+ * socket, key type and cap as ambient; what moves is the recognition config
+ * the first frame carries, and one boolean on the audit row.
+ */
+describe('two-way translation, an ambient session with a different first frame', () => {
+  it('advertises the languages it can pair with English, on ambient only', async () => {
+    const ambient = LiveAsrConfigSchema.parse(await (await readConfig()).json())
+    const dictation = LiveAsrConfigSchema.parse(await (await readConfig('?mode=dictation')).json())
+
+    expect(ambient.availableTranslations).toEqual(['ur', 'bn'])
+    expect(dictation.availableTranslations).toEqual([])
+  })
+
+  it('describes the translated config when a language is asked for', async () => {
+    const body = LiveAsrConfigSchema.parse(await (await readConfig('?translation=bn')).json())
+
+    expect(body.config.translation).toEqual({ type: 'two_way', languageA: 'bn', languageB: 'en' })
+    expect(body.config.languageHints).toEqual(['bn', 'en', 'ms'])
+    expect(upstream).not.toHaveBeenCalled()
+    expect(auditState.writes).toEqual([])
+  })
+
+  it.each([
+    '?translation=hi',
+    '?translation=',
+    '?translation=bn&translation=ur',
+    '?mode=dictation&translation=bn',
+  ])('refuses %s rather than describing a config nobody asked for', async (query) => {
+    expect((await readConfig(query)).status).toBe(400)
+  })
+
+  it('mints a translated session under the ambient cap and row', async () => {
+    upstream.mockResolvedValueOnce(mintedKey())
+
+    const res = await mint({ consent: true, mode: 'ambient', translation: 'ur' })
+
+    expect(res.status).toBe(200)
+    const body = LiveSessionSchema.parse(await res.json())
+    expect(body.config.translation).toEqual({ type: 'two_way', languageA: 'ur', languageB: 'en' })
+    expect(
+      (JSON.parse(String(upstream.mock.calls[0]?.[1]?.body)) as Record<string, unknown>)
+        .max_session_duration_seconds,
+    ).toBe(1800)
+    expect(auditState.writes[0]?.data).toMatchObject({
+      action: 'asr.live_session_minted',
+      metadata: { mode: 'ambient', consentAsserted: true },
+    })
+  })
+
+  /*
+   * With two languages on offer, a row saying only "translated" already says
+   * where the patient is likely from, and this trail outlives erasure. So the
+   * rows for a translated and a plain session must be indistinguishable.
+   */
+  it('writes rows that cannot tell a translated session from a plain one', async () => {
+    upstream.mockResolvedValueOnce(mintedKey())
+    await mint({ consent: true, translation: 'bn' })
+    upstream.mockResolvedValueOnce(mintedKey())
+    await mint({ consent: true })
+    upstream.mockRejectedValueOnce(new TypeError('fetch failed'))
+    await mint({ consent: true, translation: 'ur' })
+
+    const [translated, plain, failed] = auditState.writes.map(
+      (write) => write.data.metadata as Record<string, unknown>,
+    )
+    expect(Object.keys(translated ?? {}).sort()).toEqual(Object.keys(plain ?? {}).sort())
+    expect(JSON.stringify(auditState.writes.map((write) => write.data.metadata))).not.toMatch(
+      /"(?:bn|ur)"|bengali|urdu|translat/i,
+    )
+    expect(failed).toEqual({ reason: 'unavailable', mode: 'ambient' })
+  })
+
+  it.each([
+    [{ consent: true, translation: 'hi' }, 'an unknown language'],
+    [{ mode: 'dictation', translation: 'bn' }, 'dictation'],
+    [{ translation: 'bn' }, 'a missing consent'],
+  ])('refuses %j (%s) before minting or auditing anything', async (request, _reason) => {
+    const res = await mint(request)
+
+    expect(res.status).toBe(400)
+    expect(upstream).not.toHaveBeenCalled()
+    expect(auditState.writes).toEqual([])
+  })
+
+  it('names translation, not consent, when translation is what was refused', async () => {
+    const res = await mint({ mode: 'dictation', translation: 'bn' })
+
+    await expect(res.json()).resolves.toMatchObject({
+      error: { message: 'Translation is available on ambient capture only.' },
+    })
+  })
+
+  it('names an unknown language as unknown, not as a mode mismatch', async () => {
+    const res = await mint({ consent: true, translation: 'hi' })
+
+    await expect(res.json()).resolves.toMatchObject({
+      error: { message: 'Unknown translation language.' },
+    })
+  })
+
+  it('spends the ambient allowance, not the dictation one', async () => {
+    const ip = nextIp()
+    for (let i = 0; i < 5; i += 1) {
+      upstream.mockResolvedValueOnce(mintedKey())
+      expect((await mint({ consent: true }, ip)).status).toBe(200)
+    }
+
+    const res = await mint({ consent: true, translation: 'ur' }, ip)
+
+    expect(res.status).toBe(429)
+  })
+})
