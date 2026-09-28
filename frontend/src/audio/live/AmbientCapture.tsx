@@ -1,15 +1,25 @@
-import type { DraftTurn, LiveAsrConfig } from '@shared/types'
+import type { DraftTurn, InterpretedLanguage, LiveAsrConfig } from '@shared/types'
 import { MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
 import { Loader2, Maximize2, Mic, Minimize2, Square } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from '../../lib/api.js'
 import { Button } from '../../ui/Button.js'
 import { InfoTip } from '../../ui/InfoTip.js'
+import { Select } from '../../ui/Select.js'
 import { ConsentGate } from '../ConsentGate.js'
 import type { MarkedSegment } from '../draft-turns.js'
 import { InputMeter } from '../InputMeter.js'
-import type { TranscriptSegment } from '../protocol.js'
+import {
+  bilingualDelivery,
+  bilingualDisplay,
+  bilingualLiveSegments,
+  INTERPRETED_LANGUAGE_NAMES,
+  interimLanguage,
+  type OtherLanguage,
+  tokensToBilingualTurns,
+} from './bilingual.js'
 import { LiveConversation } from './LiveConversation.js'
+import type { LiveFoldSegment } from './live-fold.js'
 import {
   absorb,
   EMPTY_LIVE_TRANSCRIPT,
@@ -69,6 +79,17 @@ const DROPPED_ERROR =
 const SHORT_TAIL_NOTICE =
   'The transcription service did not confirm the end of the recording, so the last few words may be missing. Check the end of the transcript.'
 
+/**
+ * Shown when the API minted a session without the translation asked for.
+ *
+ * That is an API deployed behind this bundle: it ignores the field and mints
+ * plain ambient. Starting anyway would give a patient who cannot follow
+ * English a transcript in words they never said, with nothing saying why, so
+ * the session is refused before any audio is sent.
+ */
+const TRANSLATION_UNAVAILABLE_ERROR =
+  'Translation is not available right now, and nothing was sent. Choose English or Malay, or try again shortly.'
+
 type Phase = 'idle' | 'starting' | 'listening' | 'finishing' | 'labelling'
 
 type Availability =
@@ -103,6 +124,13 @@ export function AmbientCapture({
     segments: readonly MarkedSegment[]
     source: 'asr_live'
     draftTurns?: readonly DraftTurn[]
+    /**
+     * Index for index with `draftTurns` on a translated session (#393): each
+     * turn's other language, the words said or the translation shown.
+     */
+    otherLanguages?: readonly (OtherLanguage | null)[]
+    /** The language a translated session paired with English. */
+    translation?: InterpretedLanguage
     /** The consultation's audio, for playing a sentence back in review (#293). */
     audio?: Blob
   }) => void
@@ -133,8 +161,12 @@ export function AmbientCapture({
    * re-sent in full and rewritten as the speaker talks, and analysing it would
    * mean sending words the patient did not finish saying. Optional, so the
    * component is unchanged for any caller that does not want the panes.
+   *
+   * **English only on a translated session** (#393), each segment carrying the
+   * role its language settled, so no script the gate cannot read reaches the
+   * live analysis model.
    */
-  onLiveSegments?: (segments: readonly TranscriptSegment[]) => void
+  onLiveSegments?: (segments: readonly LiveFoldSegment[]) => void
   /** The input chosen in the Audio dialog. `null` leaves the choice to the browser. */
   deviceId?: string | null
   /**
@@ -167,6 +199,17 @@ export function AmbientCapture({
   const [error, setError] = useState<string | null>(null)
   const [seconds, setSeconds] = useState(0)
   const [micStream, setMicStream] = useState<MediaStream | null>(null)
+  /**
+   * The patient's language when the consultation is interpreted (#393). `null`
+   * is English or Malay, which the recogniser transcribes as spoken.
+   */
+  const [translation, setTranslation] = useState<InterpretedLanguage | null>(null)
+  /**
+   * The pair the running session was minted with, set only once the API has
+   * confirmed it, so the conversation never renders a pair the socket is not
+   * producing.
+   */
+  const [interpreting, setInterpreting] = useState<InterpretedLanguage | null>(null)
   const conversationDialog = useRef<HTMLDialogElement>(null)
 
   /*
@@ -261,6 +304,8 @@ export function AmbientCapture({
   const chunks = useRef<Blob[]>([])
   const mime = useRef<string>('')
   const settled = useRef<LiveTranscript>(EMPTY_LIVE_TRANSCRIPT)
+  /** `interpreting` for the callbacks, which must not wait for a render. */
+  const pair = useRef<InterpretedLanguage | null>(null)
   const onTranscriptRef = useRef(onTranscript)
   const onLiveChangeRef = useRef(onLiveChange)
   const onLiveSegmentsRef = useRef(onLiveSegments)
@@ -284,7 +329,12 @@ export function AmbientCapture({
    * while provisional text is churning.
    */
   useEffect(() => {
-    onLiveSegmentsRef.current?.(tokensToSegments(live.final))
+    const language = pair.current
+    onLiveSegmentsRef.current?.(
+      language === null
+        ? tokensToSegments(live.final)
+        : bilingualLiveSegments(tokensToBilingualTurns(live.final), language),
+    )
   }, [live.final])
 
   const loadConfig = useCallback(() => {
@@ -366,6 +416,42 @@ export function AmbientCapture({
    * resolves to unlabelled prose rather than losing the consultation.
    */
   const deliver = useCallback(async (transcript: LiveTranscript) => {
+    const takeRecording = (): Blob | undefined => {
+      const recording =
+        chunks.current.length > 0
+          ? new Blob(chunks.current, ...(mime.current ? [{ type: mime.current }] : []))
+          : undefined
+      chunks.current = []
+      return recording
+    }
+
+    /*
+     * A translated session takes no labelling pass (#393). Its roles came from
+     * the language each line was spoken in, which is firmer ground than a model
+     * reading the English, and the pass re-slices turns the pairs are aligned
+     * to one for one.
+     */
+    const language = pair.current
+    if (language !== null) {
+      const bilingual = bilingualDelivery(tokensToBilingualTurns(transcript.final), language)
+      if (bilingual.text.trim() === '') {
+        setPhase('idle')
+        return
+      }
+      const recording = takeRecording()
+      onTranscriptRef.current({
+        text: bilingual.text,
+        segments: bilingual.segments,
+        source: 'asr_live',
+        draftTurns: bilingual.draftTurns,
+        otherLanguages: bilingual.others,
+        translation: language,
+        ...(recording ? { audio: recording } : {}),
+      })
+      setPhase('idle')
+      return
+    }
+
     const text = tokensToText(transcript.final)
     const segments = tokensToSegments(transcript.final)
     if (text.trim() === '') {
@@ -389,11 +475,7 @@ export function AmbientCapture({
       }
     }
 
-    const recording =
-      chunks.current.length > 0
-        ? new Blob(chunks.current, ...(mime.current ? [{ type: mime.current }] : []))
-        : undefined
-    chunks.current = []
+    const recording = takeRecording()
 
     onTranscriptRef.current({
       text,
@@ -444,6 +526,9 @@ export function AmbientCapture({
     chunks.current = []
     mime.current = ''
     setSeconds(0)
+    const requested = translation
+    pair.current = null
+    setInterpreting(null)
     const id = attempt.current
 
     let microphone: MediaStream
@@ -488,11 +573,24 @@ export function AmbientCapture({
     const controller = new AbortController()
     inflight.current = controller
     try {
-      const session = await api.createLiveSession(controller.signal, 'ambient', true)
+      const session =
+        requested === null
+          ? await api.createLiveSession(controller.signal, 'ambient', true)
+          : await api.createLiveSession(controller.signal, 'ambient', true, requested)
       if (attempt.current !== id) {
         releaseMicrophone()
         return
       }
+
+      // The minted config, not the request, says what the socket will do.
+      if (requested !== null && session.config.translation?.languageA !== requested) {
+        releaseMicrophone()
+        setPhase('idle')
+        setError(TRANSLATION_UNAVAILABLE_ERROR)
+        return
+      }
+      pair.current = requested
+      setInterpreting(requested)
 
       /*
        * Whether audio ever started flowing, tracked in the closure rather than
@@ -527,11 +625,15 @@ export function AmbientCapture({
         },
         onTokens: (tokens) => {
           if (attempt.current !== id) return
-          setLive((current) => {
-            const next = absorb(current, tokens)
-            settled.current = next
-            return next
-          })
+          /*
+           * Folded here rather than inside a state updater, which React runs
+           * at the next render. A message landing just before Stop could still
+           * be queued when `deliver` read `settled.current`, and a translation
+           * is exactly what lands last: it follows the words it translates.
+           */
+          const next = absorb(settled.current, tokens)
+          settled.current = next
+          setLive(next)
         },
         onFailure: () => {
           if (attempt.current !== id) return
@@ -556,7 +658,7 @@ export function AmbientCapture({
     } finally {
       if (inflight.current === controller) inflight.current = null
     }
-  }, [availability, deviceId, onStreamFailure, releaseMicrophone])
+  }, [availability, deviceId, onStreamFailure, releaseMicrophone, translation])
 
   const stop = useCallback(async () => {
     const active = recorder.current
@@ -644,6 +746,26 @@ export function AmbientCapture({
     )
   }
 
+  /*
+   * Offered only as the API advertises them, so a picker never offers a pair
+   * the deployment behind it cannot mint. An older API sends no list at all.
+   */
+  const offered = availability.config.availableTranslations ?? []
+  const conversation =
+    interpreting === null
+      ? {
+          mode: 'speakers' as const,
+          segments: tokensToSegments(live.final),
+          interimSpeaker: interimSpeaker(live.interim),
+          note: 'Speakers are numbered while recording. Roles are assigned when you stop.',
+        }
+      : {
+          mode: 'languages' as const,
+          segments: bilingualDisplay(tokensToBilingualTurns(live.final)),
+          interimSpeaker: interimLanguage(live.interim),
+          note: 'Translations are machine-generated. Check anything important with the patient.',
+        }
+
   return (
     <div className="grid gap-4">
       {phase === 'idle' && (
@@ -668,6 +790,36 @@ export function AmbientCapture({
         </div>
       )}
 
+      {phase === 'idle' && offered.length > 0 && (
+        <div className="grid gap-1.5">
+          <span className="font-semibold text-xs">Patient&apos;s Language</span>
+          <Select
+            label="Patient's language"
+            value={translation ?? ''}
+            options={[
+              { value: '', label: 'English or Malay' },
+              ...offered.map((language) => ({
+                value: language,
+                label: INTERPRETED_LANGUAGE_NAMES[language],
+              })),
+            ]}
+            onChange={(value) => {
+              const next = offered.find((language) => language === value) ?? null
+              if (next === translation) return
+              setTranslation(next)
+              // The tick agreed to a different promise, so it is asked again.
+              setAgreed(false)
+            }}
+          />
+          {translation !== null && (
+            <p className="text-ink-muted text-xs">
+              Both of you see each line with its translation. Translations are machine-generated.
+              Check anything important with the patient.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* `null`, not omitted: the default is the relay's sentence, and falling
           through to it would say the audio is processed in Malaysia on the one
           path that streams to the United States. The residency disclosure was
@@ -678,6 +830,7 @@ export function AmbientCapture({
         onAgreedChange={setAgreed}
         disabled={phase !== 'idle'}
         disclosure={null}
+        translated={translation !== null}
       />
 
       {error && (
@@ -739,20 +892,21 @@ export function AmbientCapture({
           {!expanded && (
             <>
               <LiveConversation
-                segments={tokensToSegments(live.final)}
+                mode={conversation.mode}
+                segments={conversation.segments}
                 interim={interimText(live.interim)}
-                interimSpeaker={interimSpeaker(live.interim)}
+                interimSpeaker={conversation.interimSpeaker}
               />
 
               {/*
                 Says out loud what the chips above deliberately do not claim. The
                 recogniser separates voices but does not know which is the doctor,
                 and a doctor who reads "Speaker 2" without this line may reasonably
-                wonder whether the system has failed to work something out.
+                wonder whether the system has failed to work something out. On a
+                translated session it says instead that the second line of every
+                turn is a machine's.
               */}
-              <p className="text-2xs text-ink-muted">
-                Speakers are numbered while recording. Roles are assigned when you stop.
-              </p>
+              <p className="text-2xs text-ink-muted">{conversation.note}</p>
             </>
           )}
 
@@ -837,13 +991,12 @@ export function AmbientCapture({
                 <div className="order-2 flex min-h-0 flex-col gap-2 lg:order-1">
                   <LiveConversation
                     fill
-                    segments={tokensToSegments(live.final)}
+                    mode={conversation.mode}
+                    segments={conversation.segments}
                     interim={interimText(live.interim)}
-                    interimSpeaker={interimSpeaker(live.interim)}
+                    interimSpeaker={conversation.interimSpeaker}
                   />
-                  <p className="text-2xs text-ink-muted">
-                    Speakers are numbered while recording. Roles are assigned when you stop.
-                  </p>
+                  <p className="text-2xs text-ink-muted">{conversation.note}</p>
                 </div>
 
                 {prompter && (

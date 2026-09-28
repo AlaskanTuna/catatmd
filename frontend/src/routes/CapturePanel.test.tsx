@@ -54,6 +54,8 @@ function MockAmbientCapture({
     }[]
     source: 'asr_live'
     draftTurns?: readonly DraftTurn[]
+    otherLanguages?: readonly ({ language: 'bn' | 'ur'; text: string; spoken: boolean } | null)[]
+    translation?: 'bn' | 'ur'
   }) => void
   onSwitchToManual: () => void
   onUnavailable?: () => void
@@ -63,6 +65,39 @@ function MockAmbientCapture({
     <>
       <button type="button" onClick={() => onLiveChange(true)}>
         mock go live
+      </button>
+      {/* A translated consultation (#393), synthetic: two identical English
+          answers, each translated from a different Bengali original. */}
+      <button
+        type="button"
+        onClick={() => {
+          onLiveChange(false)
+          onTranscript({
+            text: 'Any fever? Yes. Any cough? Yes.',
+            segments: [
+              { text: 'Any fever?', start: 0, end: 1 },
+              { text: 'Yes.', start: 2, end: 3 },
+              { text: 'Any cough?', start: 4, end: 5 },
+              { text: 'Yes.', start: 6, end: 7 },
+            ],
+            source: 'asr_live',
+            draftTurns: [
+              { speaker: 'doctor', text: 'Any fever?' },
+              { speaker: 'patient', text: 'Yes.' },
+              { speaker: 'doctor', text: 'Any cough?' },
+              { speaker: 'patient', text: 'Yes.' },
+            ],
+            otherLanguages: [
+              { language: 'bn', text: 'জ্বর আছে?', spoken: false },
+              { language: 'bn', text: 'হ্যাঁ।', spoken: true },
+              { language: 'bn', text: 'কাশি আছে?', spoken: false },
+              { language: 'bn', text: 'হ্যাঁ, অনেক।', spoken: true },
+            ],
+            translation: 'bn',
+          })
+        }}
+      >
+        mock transcribe translated
       </button>
       {/* What the real panel reports when the config probe answers 503, which
           is every deployment with no `SONIOX_API_KEY` (#378). */}
@@ -904,5 +939,83 @@ describe('uncertain spans across the textarea', () => {
     const turns = lastCapture().turns
     expect(turns[0]?.uncertain).toEqual([{ start: 5, end: 10 }])
     expect(turns[1]?.uncertain).toBeUndefined()
+  })
+})
+
+/*
+ * A translated recording (#393). The textarea carries English lines only, so
+ * each turn's other language has to come back on the far side of the parse,
+ * and on the right turn: the two "Yes." answers below were translated from
+ * different Bengali.
+ */
+describe('translated pairs across the textarea', () => {
+  const captured = vi.fn()
+
+  type Captured = {
+    labelsReviewed?: boolean
+    machineTranslation?: { languages: string[] }
+    turns: { speaker: string; text: string; otherLanguage?: { text: string; spoken: boolean } }[]
+  }
+
+  const lastCapture = () => {
+    const call = captured.mock.calls.at(-1)
+    if (!call) throw new Error('expected a transcript to have been captured')
+    return call[0] as Captured
+  }
+
+  function openTranslated() {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <CapturePanel
+            captureMode="ambient"
+            onCaptureModeChange={vi.fn()}
+            onCaptureBusyChange={vi.fn()}
+            onCapture={captured}
+            saving={false}
+            error={null}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(screen.getByRole('tab', { name: /record/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe translated' }))
+  }
+
+  beforeEach(() => captured.mockClear())
+
+  it('keeps each repeated answer on its own original, and marks the transcript', () => {
+    openTranslated()
+
+    const { turns, machineTranslation, labelsReviewed } = lastCapture()
+    expect(machineTranslation).toEqual({ languages: ['bn'] })
+    // Roles drafted from the spoken language are still drafts: the engine must
+    // never trust them for a question-denial suppression.
+    expect(labelsReviewed).toBe(false)
+    expect(turns.map((turn) => [turn.text, turn.otherLanguage?.text])).toEqual([
+      ['Any fever?', 'জ্বর আছে?'],
+      ['Yes.', 'হ্যাঁ।'],
+      ['Any cough?', 'কাশি আছে?'],
+      ['Yes.', 'হ্যাঁ, অনেক।'],
+    ])
+    expect(turns[1]?.otherLanguage?.spoken).toBe(true)
+  })
+
+  it('keeps the pairs on lines the doctor corrected', () => {
+    openTranslated()
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(textarea, {
+      target: { value: textarea.value.replace('Any cough?', 'Any cough at night?') },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /use this transcript/i }))
+
+    const { turns, machineTranslation } = lastCapture()
+    expect(machineTranslation).toEqual({ languages: ['bn'] })
+    expect(turns[2]).toMatchObject({
+      text: 'Any cough at night?',
+      otherLanguage: { text: 'কাশি আছে?' },
+    })
+    expect(turns[3]?.otherLanguage?.text).toBe('হ্যাঁ, অনেক।')
   })
 })

@@ -8,8 +8,13 @@ import {
 } from '@shared/types'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from '../../lib/api.js'
-import type { TranscriptSegment } from '../protocol.js'
-import { closedSegments, deltaFor, mergeFlags, segmentsToDelta } from './live-fold.js'
+import {
+  closedSegments,
+  deltaFor,
+  type LiveFoldSegment,
+  mergeFlags,
+  segmentsToDelta,
+} from './live-fold.js'
 
 /**
  * Drives the three live panes while ambient capture runs (#219).
@@ -119,7 +124,7 @@ export function useLivePanes(consultationId: string | null) {
    * so a fresh identity here costs nothing, and pinning one would mean either
    * a stale closure over `consultationId` or a dependency list that lies.
    */
-  function absorb(segments: readonly TranscriptSegment[]) {
+  function absorb(segments: readonly LiveFoldSegment[]) {
     if (consultationId === null) return
     const closed = closedSegments(segments)
     if (closed.length === 0) return
@@ -128,7 +133,7 @@ export function useLivePanes(consultationId: string | null) {
     void runAnalysis(closed, consultationId)
   }
 
-  async function runFlags(closed: readonly TranscriptSegment[], id: string) {
+  async function runFlags(closed: readonly LiveFoldSegment[], id: string) {
     if (flagsBusy.current) return
     const window_ = deltaFor(closed, flagsCommitted.current)
     if (window_.length === 0) return
@@ -177,7 +182,7 @@ export function useLivePanes(consultationId: string | null) {
     }
   }
 
-  async function runAnalysis(closed: readonly TranscriptSegment[], id: string) {
+  async function runAnalysis(closed: readonly LiveFoldSegment[], id: string) {
     if (analysisBusy.current) return
 
     /*

@@ -1266,6 +1266,64 @@ describe('reopening the settled conversation', () => {
   })
 })
 
+/*
+ * A translated consultation (#393), synthetic Bengali. The English is what the
+ * checks read, so the page says so, and counts the lines nobody translated.
+ */
+describe('a machine-translated conversation', () => {
+  const TRANSLATED = {
+    ...APPROVED,
+    transcript: {
+      source: 'asr_live',
+      labelsReviewed: false,
+      machineTranslation: { languages: ['bn'] },
+      turns: [
+        {
+          speaker: 'doctor',
+          text: 'Can you swallow?',
+          otherLanguage: { language: 'bn', text: 'আপনি কি গিলতে পারেন?', spoken: false },
+        },
+        {
+          speaker: 'patient',
+          text: 'No.',
+          otherLanguage: { language: 'bn', text: 'না।', spoken: true },
+        },
+        {
+          speaker: 'patient',
+          text: '[Untranslated Bengali speech]',
+          otherLanguage: { language: 'bn', text: 'আমার গলা ব্যথা।', spoken: true },
+        },
+      ],
+    },
+  }
+
+  beforeEach(() => {
+    vi.mocked(api.guidelineDocuments).mockResolvedValue([])
+    vi.mocked(api.getConsultation).mockReset()
+    vi.mocked(api.getConsultation).mockResolvedValue(TRANSLATED as never)
+  })
+
+  it('shows each line with its other language, labelled with the way it ran', async () => {
+    setup()
+
+    const said = await screen.findByText('না।')
+    expect(said.getAttribute('lang')).toBe('bn')
+    expect(screen.getAllByText('Said in Bengali')).toHaveLength(2)
+    expect(screen.getByText('Shown in Bengali')).toBeTruthy()
+    // Beneath the bubble, never inside it: a playable bubble is a button whose
+    // label replaces its contents for a screen reader.
+    expect(said.parentElement?.closest('p, button')).toBeNull()
+  })
+
+  it('says the conversation was machine-translated, and counts what the checks could not read', async () => {
+    setup()
+
+    const [notice] = await screen.findAllByRole('note')
+    expect(notice?.textContent).toMatch(/machine-translated between English and Bengali/i)
+    expect(notice?.textContent).toMatch(/1 line had no translation/)
+  })
+})
+
 describe('transcript column layout', () => {
   const WITH_TRANSCRIPT = {
     ...APPROVED,

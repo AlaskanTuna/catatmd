@@ -21,6 +21,7 @@ import {
   GuidelineDocumentSchema,
   type HostedAsrResult,
   HostedAsrResultSchema,
+  type InterpretedLanguage,
   type LiveAnalysisResponse,
   LiveAnalysisResponseSchema,
   type LiveAnalysisState,
@@ -416,15 +417,24 @@ export const api = {
    * not claim an agreement, because the audit row records exactly this value.
    * Ambient holds a tick and passes it; dictation omits it and the API refuses
    * the omission only on ambient.
+   *
+   * **`translation` asks for two-way machine translation, on ambient only
+   * (#393).** Absent, the body is byte-identical to what it was. The caller
+   * checks the minted config carries it, because an API deployed behind the
+   * SPA would mint an untranslated session and say nothing.
    */
   createLiveSession: (
     signal: AbortSignal,
     mode: LiveAsrMode,
     consent?: true,
+    translation?: InterpretedLanguage,
   ): Promise<LiveSession> =>
     request('/asr/live-sessions', LiveSessionSchema, {
       method: 'POST',
-      body: JSON.stringify(consent === undefined ? { mode } : { consent, mode }),
+      body: JSON.stringify({
+        ...(consent === undefined ? { mode } : { consent, mode }),
+        ...(translation === undefined ? {} : { translation }),
+      }),
       signal,
     }),
 

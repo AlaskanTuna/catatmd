@@ -31,13 +31,17 @@ import { Checkbox } from '../ui/Checkbox.js'
  * Malaysia. That surface names neither the processor nor the region anywhere
  * now, so nothing else in the app may point at a sentence it no longer shows.
  *
- * The tick's own wording is shared, because the promise it makes is identical.
+ * The tick's own wording is shared, because the promise it makes is identical,
+ * with one exception: a translated ambient session also machine-translates
+ * what is said (#393), so its tick says so. The wording stays English only, on
+ * the owner's decision (`docs/decisions.md` D-008).
  */
 export function ConsentGate({
   agreed,
   onAgreedChange,
   disabled = false,
   disclosure = 'This recording leaves this device: sent via our server to ILMU, processed in Malaysia.',
+  translated = false,
 }: {
   agreed: boolean
   onAgreedChange: (next: boolean) => void
@@ -45,6 +49,8 @@ export function ConsentGate({
   disabled?: boolean
   /** Where this path's audio goes, stated before the tick rather than after. */
   disclosure?: string | null
+  /** The session will also machine-translate, which the agreement has to name. */
+  translated?: boolean
 }) {
   const id = useId()
 
@@ -65,8 +71,9 @@ export function ConsentGate({
           onChange={(event) => onAgreedChange(event.target.checked)}
         />
         <span>
-          This patient has agreed to be recorded and transcribed, for this consultation only. This
-          is not remembered.
+          {translated
+            ? 'This patient has agreed to be recorded, transcribed and machine-translated, for this consultation only. This is not remembered.'
+            : 'This patient has agreed to be recorded and transcribed, for this consultation only. This is not remembered.'}
         </span>
       </label>
     </div>

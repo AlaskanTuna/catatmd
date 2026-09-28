@@ -79,3 +79,51 @@ export function serialiseTurns(turns: readonly TranscriptTurn[]): string {
     })
     .join('\n')
 }
+
+/**
+ * Puts each turn's other-language half back after the text was re-parsed
+ * (#393).
+ *
+ * The textarea carries only `Doctor:` and `Patient:` lines, so a translated
+ * turn's original or translation cannot survive a round trip through it, and
+ * both the capture path and the corrections box parse fresh turns. This reads
+ * the pairs off the turns they were stored on and puts them back:
+ *
+ * - **By position when the shape is unchanged**, the same count and the same
+ *   speaker at every index. That is the common edit, words changed inside
+ *   lines, and it keeps a pair on a line the doctor corrected. The other half
+ *   is still what the patient said, or what they were shown.
+ * - **Otherwise by exact speaker and text, with a cursor that only moves
+ *   forward**, so repeated lines such as "Okay." each keep their own pair in
+ *   order rather than all taking the first.
+ *
+ * A turn that matches nothing carries no pair, which is the honest failure:
+ * no pair is a missing line on screen, and a wrong pair would show the doctor
+ * words a different turn was translated from.
+ */
+export function reattachOtherLanguage(
+  source: readonly TranscriptTurn[],
+  target: readonly TranscriptTurn[],
+): TranscriptTurn[] {
+  if (!source.some((turn) => turn.otherLanguage !== undefined)) return [...target]
+
+  const withPair = (turn: TranscriptTurn, from: TranscriptTurn | undefined): TranscriptTurn =>
+    from?.otherLanguage === undefined ? turn : { ...turn, otherLanguage: from.otherLanguage }
+
+  const sameShape =
+    source.length === target.length &&
+    source.every((turn, index) => turn.speaker === target[index]?.speaker)
+  if (sameShape) return target.map((turn, index) => withPair(turn, source[index]))
+
+  let cursor = 0
+  return target.map((turn) => {
+    for (let index = cursor; index < source.length; index += 1) {
+      const candidate = source[index]
+      if (candidate?.speaker === turn.speaker && candidate.text === turn.text) {
+        cursor = index + 1
+        return withPair(turn, candidate)
+      }
+    }
+    return turn
+  })
+}

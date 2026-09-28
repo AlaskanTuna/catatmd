@@ -2,10 +2,20 @@ import {
   LIVE_DELTA_LOOKBACK_SEGMENTS,
   MAX_LIVE_DELTA_SEGMENTS,
   type RedFlag,
+  type Speaker,
   type TranscriptTurn,
 } from '@shared/types'
 import { draftToTurns, segmentsToDraft } from '../draft-turns.js'
 import type { TranscriptSegment } from '../protocol.js'
+
+/**
+ * A segment whose speaker is already known (#393).
+ *
+ * A translated consultation drafts its roles from the language each utterance
+ * was spoken in, one segment per utterance, so the panes must carry them
+ * through rather than guess again from the English.
+ */
+export type LiveFoldSegment = TranscriptSegment & { role?: Speaker }
 
 /*
  * Turning a growing live transcript into bounded windows, and merging what
@@ -26,7 +36,7 @@ import type { TranscriptSegment } from '../protocol.js'
  * the safe direction, because a window built on a segment that later grows
  * would analyse text the doctor never finished saying.
  */
-export function closedSegments(segments: readonly TranscriptSegment[]): TranscriptSegment[] {
+export function closedSegments<S extends TranscriptSegment>(segments: readonly S[]): S[] {
   return segments.slice(0, -1)
 }
 
@@ -38,10 +48,10 @@ export function closedSegments(segments: readonly TranscriptSegment[]): Transcri
  * requirement rather than a hedge: see the constant's own comment and
  * `backend/src/redflags/live-window.test.ts`, which fails without it.
  */
-export function deltaFor(
-  closed: readonly TranscriptSegment[],
+export function deltaFor<S extends TranscriptSegment>(
+  closed: readonly S[],
   committed: number,
-): TranscriptSegment[] {
+): S[] {
   if (closed.length <= committed) return []
   const from = Math.max(0, committed - LIVE_DELTA_LOOKBACK_SEGMENTS)
   /*
@@ -62,8 +72,26 @@ export function deltaFor(
  * Reuses the shipped labelling path rather than a second one. `segmentsToDraft`
  * refuses to label unless the segments reconstruct the text exactly, so the
  * text is joined from those same segments, exactly as `tokensToText` does.
+ *
+ * **Segments that carry a role keep it, one turn each** (#393). Guessing again
+ * from the English would override a role the spoken language settled, and
+ * merging two lines would hand a late "No." to the wrong question, which is the
+ * adjacency `findDeniedAbility` reads.
  */
-export function segmentsToDelta(segments: readonly TranscriptSegment[]): TranscriptTurn[] {
+export function segmentsToDelta(segments: readonly LiveFoldSegment[]): TranscriptTurn[] {
+  const hasRole = (segment: LiveFoldSegment): segment is TranscriptSegment & { role: Speaker } =>
+    segment.role !== undefined
+  if (segments.length > 0 && segments.every(hasRole)) {
+    return draftToTurns(
+      segments.map((segment, index) => ({
+        id: `seg-${index}`,
+        speaker: segment.role,
+        text: segment.text.replace(/\s+/g, ' ').trim(),
+        offsetSeconds: segment.start,
+        ...(segment.end === null ? {} : { endSeconds: segment.end }),
+      })),
+    )
+  }
   const text = segments.map((segment) => segment.text).join(' ')
   return draftToTurns(segmentsToDraft(segments, text, { withOffsets: true }))
 }

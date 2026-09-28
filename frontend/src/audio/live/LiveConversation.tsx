@@ -1,7 +1,36 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../../lib/cn.js'
 import { UncertainLegend, UncertainText } from '../../ui/UncertainText.js'
+import { INTERPRETED_LANGUAGE_NAMES } from './bilingual.js'
 import type { LiveSegment } from './live-tokens.js'
+
+/**
+ * What a turn's chip names: a diarised speaker, or on a translated session
+ * (#393) the language the line was spoken in.
+ */
+type ConversationMode = 'speakers' | 'languages'
+
+/** The names a translated session's chips use, by the code the recogniser tags. */
+const LANGUAGE_NAMES: Readonly<Record<string, string>> = {
+  en: 'English',
+  ms: 'Malay',
+  hi: 'Hindi',
+  ...INTERPRETED_LANGUAGE_NAMES,
+}
+
+const languageName = (code: string): string => LANGUAGE_NAMES[code] ?? code.toUpperCase()
+
+/** Urdu is the one right-to-left language a session can pair with English. */
+const directionOf = (code: string | null | undefined): 'rtl' | undefined =>
+  code === 'ur' ? 'rtl' : undefined
+
+/*
+ * The doctor speaks English, so on a translated session English sits on the
+ * left and every other language on the right, the same shape speaker numbers
+ * give. A line in no known language stays left, with no chip.
+ */
+const onRight = (mode: ConversationMode, speaker: string | null): boolean =>
+  mode === 'languages' ? speaker !== null && speaker !== 'en' : speaker === '2'
 
 /**
  * The consultation as it is spoken, turn by turn (#219).
@@ -35,16 +64,18 @@ const elapsed = (seconds: number): string =>
  * doctor-question / patient-denial pair as grounds to drop a trigger. Roles are
  * assigned after Stop, by the labelling pass, where they can be reviewed.
  */
-function SpeakerChip({ speaker }: { speaker: string }) {
+function SpeakerChip({ speaker, mode }: { speaker: string; mode: ConversationMode }) {
   return (
     <span
       className={cn(
         'rounded-pill px-2 py-0.5 text-2xs font-medium',
         // Colour is redundant reinforcement; the word carries the meaning.
-        speaker === '1' ? 'bg-sunken text-ink-muted' : 'bg-accent-soft text-accent',
+        (mode === 'languages' ? onRight(mode, speaker) : speaker !== '1')
+          ? 'bg-accent-soft text-accent'
+          : 'bg-sunken text-ink-muted',
       )}
     >
-      Speaker {speaker}
+      {mode === 'languages' ? languageName(speaker) : `Speaker ${speaker}`}
     </span>
   )
 }
@@ -68,12 +99,14 @@ function SpeakerChip({ speaker }: { speaker: string }) {
  * honest rather than a cosmetic detail.
  */
 function Turn({
+  mode,
   speaker,
   time,
   opensTurn,
   muted = false,
   children,
 }: {
+  mode: ConversationMode
   speaker: string | null
   /** Only on the row that opens a turn; a grouped row would repeat it. */
   time: string | null
@@ -82,7 +115,7 @@ function Turn({
   muted?: boolean
   children: ReactNode
 }) {
-  const right = speaker === '2'
+  const right = onRight(mode, speaker)
   return (
     <li
       className={cn(
@@ -99,7 +132,7 @@ function Turn({
     >
       {opensTurn && speaker !== null && (
         <span className={cn('mb-1 flex items-center gap-2', right && 'flex-row-reverse')}>
-          <SpeakerChip speaker={speaker} />
+          <SpeakerChip speaker={speaker} mode={mode} />
           {time !== null && <span className="text-2xs text-ink-muted tabular-nums">{time}</span>}
         </span>
       )}
@@ -117,11 +150,18 @@ function Turn({
 }
 
 export function LiveConversation({
+  mode = 'speakers',
   segments,
   interim,
   interimSpeaker,
   fill = false,
 }: {
+  /**
+   * `languages` on a translated session (#393): each turn is chipped with the
+   * language it was spoken in, and its translation sits beneath it, so the
+   * doctor and the patient can each read every line.
+   */
+  mode?: ConversationMode
   segments: readonly LiveSegment[]
   /** The unsettled tail. Rewritten on every message, so never given a timestamp. */
   interim: string
@@ -154,6 +194,16 @@ export function LiveConversation({
    * `pinned` never became false either.
    */
   const pinnedRef = useRef(true)
+  /*
+   * True while this pane's own smooth scroll is on its way down.
+   *
+   * That animation fires scroll events above the bottom, and read as the
+   * reader scrolling up they unpinned the pane mid-animation, so it stopped
+   * following with nobody touching it. Growth under 24px hid it; a translated
+   * session exposed it (#393), because a translation lands as a whole line at
+   * once. Only real input hands the pane back to the reader.
+   */
+  const selfScrolling = useRef(false)
 
   const stickToBottom = useCallback(() => {
     const node = scroller.current
@@ -167,9 +217,25 @@ export function LiveConversation({
      */
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
     if (typeof node.scrollTo === 'function') {
+      selfScrolling.current = !reduced
       node.scrollTo({ top: node.scrollHeight, behavior: reduced ? 'auto' : 'smooth' })
     } else {
       node.scrollTop = node.scrollHeight
+    }
+  }, [])
+
+  useEffect(() => {
+    const node = scroller.current
+    if (!node) return
+    const settle = () => {
+      selfScrolling.current = false
+    }
+    // `scrollend` is the animation finishing; the rest are the reader taking
+    // the pane back, whatever the scroll events in flight say.
+    const events = ['scrollend', 'wheel', 'touchstart', 'pointerdown', 'keydown'] as const
+    for (const name of events) node.addEventListener(name, settle, { passive: true })
+    return () => {
+      for (const name of events) node.removeEventListener(name, settle)
     }
   }, [])
 
@@ -190,7 +256,10 @@ export function LiveConversation({
      * what makes it fire at all: appending to an overflow container raises no
      * scroll event and changes no state of its own.
      */
-    const tail = `${segments.length}:${segments[segments.length - 1]?.text ?? ''}:${interim}`
+    // The translation counts as the closing turn growing: it lands under the
+    // words it translates after they have settled (#393).
+    const closing = segments[segments.length - 1]
+    const tail = `${segments.length}:${closing?.text ?? ''}:${closing?.translation ?? ''}:${interim}`
     if (tail === followed.current) return
     followed.current = tail
 
@@ -203,6 +272,11 @@ export function LiveConversation({
     if (!node) return
     // A slack of a few pixels, because smooth scrolling lands fractionally short.
     const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 24
+    if (selfScrolling.current) {
+      // The pane's own animation: only its arrival means anything.
+      if (atBottom) selfScrolling.current = false
+      return
+    }
     pinnedRef.current = atBottom
     setPinned(atBottom)
   }
@@ -251,16 +325,51 @@ export function LiveConversation({
               const opensTurn = previous === undefined || previous.speaker !== segment.speaker
               const isLast = index === segments.length - 1
 
+              const spoken = (
+                <>
+                  <UncertainText text={segment.text} uncertain={segment.uncertain} />
+                  {isLast && interimJoinsLastTurn && (
+                    <span className="text-ink-muted"> {interim}</span>
+                  )}
+                </>
+              )
+
               return (
                 <Turn
-                  key={`${segment.start}-${segment.text}`}
+                  // The translation is part of the key because an orphan
+                  // translation has no spoken words, so two could share both.
+                  key={`${segment.start}-${segment.text}-${segment.translation ?? ''}`}
+                  mode={mode}
                   speaker={segment.speaker}
                   time={opensTurn ? elapsed(segment.start) : null}
                   opensTurn={opensTurn}
                 >
-                  <UncertainText text={segment.text} uncertain={segment.uncertain} />
-                  {isLast && interimJoinsLastTurn && (
-                    <span className="text-ink-muted"> {interim}</span>
+                  {mode === 'speakers' ? (
+                    spoken
+                  ) : (
+                    <>
+                      {/* Each line carries its own language, so a screen reader
+                          switches voice and Urdu runs right to left. */}
+                      <span
+                        lang={segment.language ?? undefined}
+                        dir={directionOf(segment.language)}
+                        className="block"
+                      >
+                        {spoken}
+                      </span>
+                      {segment.translation !== undefined && segment.translation !== '' && (
+                        <span
+                          lang={segment.translationLanguage ?? undefined}
+                          dir={directionOf(segment.translationLanguage)}
+                          className={cn(
+                            'block',
+                            segment.text !== '' && 'mt-1.5 border-line border-t pt-1.5',
+                          )}
+                        >
+                          {segment.translation}
+                        </span>
+                      )}
+                    </>
                   )}
                 </Turn>
               )
@@ -270,8 +379,13 @@ export function LiveConversation({
                 deliberately no timestamp: it would shift the moment the tokens
                 settle and the real one is known. */}
             {interim !== '' && !interimJoinsLastTurn && (
-              <Turn speaker={interimSpeaker} time={null} opensTurn muted>
-                {interim}
+              <Turn mode={mode} speaker={interimSpeaker} time={null} opensTurn muted>
+                <span
+                  lang={mode === 'languages' ? (interimSpeaker ?? undefined) : undefined}
+                  dir={mode === 'languages' ? directionOf(interimSpeaker) : undefined}
+                >
+                  {interim}
+                </span>
               </Turn>
             )}
           </ol>

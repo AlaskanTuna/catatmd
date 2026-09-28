@@ -90,6 +90,38 @@ describe('segmentsToDelta', () => {
   it('returns nothing for no segments', () => {
     expect(segmentsToDelta([])).toEqual([])
   })
+
+  /*
+   * A translated consultation (#393). Content rules would call "Yes, doctor."
+   * the doctor's continuation of a question here, and merging the two doctor
+   * lines would hand the patient's "No." to the swallowing question as well as
+   * the fever one, which is exactly the adjacency `findDeniedAbility` reads.
+   */
+  it('keeps a role the spoken language settled, one turn per segment', () => {
+    const turns = segmentsToDelta([
+      { ...segment('Can you swallow?', 0), role: 'doctor' },
+      { ...segment('Yes, doctor.', 3), role: 'patient' },
+      { ...segment('Any fever?', 6), role: 'doctor' },
+      { ...segment('Is there any cough?', 9), role: 'doctor' },
+      { ...segment('No.', 12), role: 'patient' },
+    ])
+    expect(turns).toEqual([
+      { speaker: 'doctor', text: 'Can you swallow?', offsetSeconds: 0, endSeconds: 2 },
+      { speaker: 'patient', text: 'Yes, doctor.', offsetSeconds: 3, endSeconds: 5 },
+      { speaker: 'doctor', text: 'Any fever?', offsetSeconds: 6, endSeconds: 8 },
+      { speaker: 'doctor', text: 'Is there any cough?', offsetSeconds: 9, endSeconds: 11 },
+      { speaker: 'patient', text: 'No.', offsetSeconds: 12, endSeconds: 14 },
+    ])
+  })
+
+  it('falls back to guessing when any segment lacks a role', () => {
+    const turns = segmentsToDelta([
+      { ...segment('Any fever?', 0), role: 'doctor' },
+      segment('A little.', 3),
+    ])
+    expect(turns.length).toBeGreaterThan(0)
+    expect(turns.map((turn) => turn.text).join(' ')).toBe('Any fever? A little.')
+  })
 })
 
 describe('mergeFlags', () => {
