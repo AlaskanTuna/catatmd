@@ -51,9 +51,13 @@ import type { RedFlagTrigger } from './types.js'
  * semantically right, so these are gaps in English coverage rather than
  * translation errors, and a native speaker says every one of them. Every fix
  * is an appended pattern, and the ability question "have you been able to
- * pass urine" joins the urine trigger's adjacency list. `SPAN_CARRIES_NEGATOR`
- * gains "wasn't" and "weren't", which can only add fires. No transcript that
- * fired under v12 stops firing under v13.
+ * pass urine" joins the urine trigger's adjacency list. An adversarial review
+ * added the forms it found: blood told after the cough, saliva "falling",
+ * "haven't swallowed anything", "trembling all over", "unconscious", and urine
+ * as the subject ("urine hasn't come out"). `SPAN_CARRIES_NEGATOR` gains the
+ * contracted "is", "was", "were", "does" and "did", but only before "able" or
+ * "come out", which can only add fires. No transcript that fired under v12
+ * stops firing under v13.
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
   id: 'redflag-list-v13',
@@ -288,14 +292,16 @@ const isSafetyNetting = (turn: TranscriptTurn, matchIndex: number): boolean => {
  * exactly the patterns that spell these words, because no other matcher in
  * this file can return a span containing one.
  *
- * "wasn't" and "weren't" joined with v13, for the "No, I wasn't able to drink
- * anything" form translation produces (#389). They are the one exception to
- * that blast radius: the vital-sign patterns bridge up to twenty non-digits,
- * so "No, the fever wasn't very high" now fires, exactly as "No, the fever was
- * not very high" already did through `\bnot\b`.
+ * v13 adds the contractions translation produces (#389), "No, I wasn't able to
+ * drink anything" and "No, urine isn't coming out", and adds them **only with
+ * the words that follow**. A bare "wasn't" would reach the vital-sign patterns,
+ * which bridge up to twenty non-digits, so "No, the oxygen level wasn't low"
+ * fired an urgent flag on a plain denial; review measured that for all four
+ * vital signs, and this form keeps the blast radius to the spans that spell an
+ * inability.
  */
 const SPAN_CARRIES_NEGATOR =
-  /\b(?:no|not|cannot|tak|tidak|takde|tiada)\b|can'?t|won'?t|couldn'?t|haven'?t|hasn'?t|hadn'?t|wasn'?t|weren'?t/i
+  /\b(?:no|not|cannot|tak|tidak|takde|tiada)\b|can'?t|won'?t|couldn'?t|haven'?t|hasn'?t|hadn'?t|\b(?:is|was|were|does|did)n'?t\s+(?:been\s+)?(?:able|com(?:e|ing)\s+out)\b/i
 
 const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string | null => {
   const recorded = isRecorded(transcript)
@@ -522,6 +528,10 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
          * blood comes with the cough"), where `isNegated` reads it.
          */
         /blood\s+(?:is\s+|was\s+)?(?:com(?:es|ing)|came)\s+(?:up\s+|out\s+)?(?:along\s+)?(?:with|in|when)\s+(?:the\s+|my\s+|a\s+|i\s+)?cough/i,
+        // The same event told cough first ("When I cough, blood comes out"),
+        // found in review. The cough sits in a lookbehind so the span starts
+        // at "blood", leaving a denial's negator in front of it for `isNegated`.
+        /(?<=\bcough(?:s|ed|ing)?\b[^.!?]{0,30})\bblood\s+(?:is\s+|was\s+|also\s+)?(?:com(?:es|ing)|came)\s+(?:out|up)\b/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
     guidelineIds: NAG_SCOPE_REFS,
@@ -642,6 +652,9 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
          * is a clinical call recorded on #390 rather than guessed.
          */
         /saliva\s+(?:is\s+|keeps\s+)?(?:com(?:es|ing)|drip(?:s|ping)|run(?:s|ning)|drool(?:s|ing)|flow(?:s|ing))\s+(?:out\s+of|out\s+from|from)\s+(?:my|the|his|her)\s+mouth/i,
+        // "Falling" is the literal rendering of Bengali "লালা পড়ছে", found in
+        // review; appended so a negated mention cannot spend the exec above.
+        /saliva\s+(?:is\s+|keeps\s+)?(?:fall(?:s|ing)|fell|leak(?:s|ing))\s+(?:out\s+of|out\s+from|from)\s+(?:my|the|his|her)\s+mouth/i,
       ]),
     clinicalSource: DELPHI_AIRWAY_NOTE,
     guidelineIds: DELPHI_AIRWAY_REFS,
@@ -694,6 +707,13 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         // above never had.
         /\b(?:have|has|had|was|were)n'?t\s+(?:been\s+)?able\s+to\s+(?:swallow|eat|drink)/i,
         /\bnot\s+(?:been\s+)?able\s+to\s+swallow/i,
+        /*
+         * Intake that has stopped, told as a fact rather than an inability
+         * ("I haven't swallowed anything since yesterday"), found in review.
+         * "anything" is required, and a qualifier after it is refused, so the
+         * answer to "Have you eaten anything unusual?" stays silent.
+         */
+        /\b(?:have|has|had)(?:n'?t|\s+not)\s+(?:been\s+(?:eating|drinking|swallowing)|swallowed|eaten|drunk|drank)\s+anything\b(?!\s+(?:unusual|different|new|strange|spicy|oily|bad|special|else|wrong|odd|outside))/i,
       ]) ??
       findDeniedAbility(transcript, [
         /(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat|lalu)\s+(?:nak\s+)?(?:telan|makan|minum)/i,
@@ -778,6 +798,9 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         // The body is named because a bare "shaking" also fits a hand or a
         // voice.
         /\bbody\s+(?:is\s+|was\s+|keeps\s+)?(?:shak(?:es|ing|e)|shook|trembl(?:es|ing|ed|e))\b/i,
+        // "All over" does the body's job in the form review found ("I am
+        // trembling all over").
+        /\b(?:trembl(?:e|es|ed|ing)|shak(?:e|es|ing)|shook|shiver(?:s|ed|ing)?)\s+all\s+over\b/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
     guidelineIds: UTI_SCOPE_REFS,
@@ -830,6 +853,9 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /\bpass(?:ed|es|ing)?\s+out\b/i,
         /\bblack(?:ed|s|ing)?\s+out\b/i,
         /\blost\s+consciousness\b/i,
+        // "I became unconscious", found in review.
+        /\bunconscious\b/i,
+        /\bloss\s+of\s+consciousness\b/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
     guidelineIds: UTI_SCOPE_REFS,
@@ -910,6 +936,10 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
          */
         /\b(?:have|has|had|was|were)n'?t\s+(?:been\s+)?able\s+to\s+(?:pass\s+(?:any\s+)?urine|pee|urinate)/i,
         /\bnot\s+(?:been\s+)?able\s+to\s+(?:pass\s+(?:any\s+)?urine|pee|urinate)/i,
+        // Urine as the subject ("Urine hasn't come out since morning"), found
+        // in review. The negated auxiliary sits inside the span, so a leading
+        // "No" takes the `SPAN_CARRIES_NEGATOR` bypass rather than a denial.
+        /\burine\s+(?:(?:has|is|does|did|was|will)(?:n'?t|\s+not)|won'?t)\s+(?:been\s+)?(?:com(?:e|ing)|came)\s+out\b/i,
       ]) ??
       findDeniedAbility(transcript, [
         /(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat)\s+(?:nak\s+)?(?:kencing|buang\s+air\s+kecil)/i,

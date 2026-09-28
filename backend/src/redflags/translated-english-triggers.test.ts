@@ -148,8 +148,84 @@ describe('the new patterns stay narrow', () => {
     ['uti-systemic-features', 'My hands shake when I am nervous.'],
     ['uti-unable-to-pass-urine', 'I have been able to pass urine normally.'],
     ['swallowing-oral-intake', 'I have been able to eat and drink.'],
+    ['swallowing-oral-intake', "No, I haven't eaten anything unusual."],
+    ['uti-unable-to-pass-urine', 'Urine is coming out normally.'],
   ])('%s stays silent on "%s"', (trigger, text) => {
     expect(ruleIds(patient(text))).not.toContain(trigger)
+  })
+})
+
+/*
+ * An adversarial review of this change (28/09/26) wrote further translations
+ * of the same symptoms and ran them. Each missed before, and an emergency
+ * trigger is among them twice.
+ */
+describe('the adversarial review found seven more forms', () => {
+  it.each([
+    ['haemoptysis', 'When I cough, blood comes out.'],
+    ['haemoptysis', 'I coughed and blood came out.'],
+    ['stridor-airway-compromise', 'Saliva keeps falling from my mouth.'],
+    ['swallowing-oral-intake', "I haven't swallowed anything since yesterday."],
+    ['swallowing-oral-intake', "No, I haven't been eating anything."],
+    ['uti-systemic-features', 'I am trembling all over.'],
+    ['uti-systemic-deterioration', 'I became unconscious.'],
+    ['uti-unable-to-pass-urine', "Urine hasn't come out since morning."],
+    ['uti-unable-to-pass-urine', "No, urine isn't coming out."],
+  ])('%s fires on "%s"', (trigger, text) => {
+    expect(ruleIds(patient(text))).toContain(trigger)
+  })
+
+  it.each([
+    ['haemoptysis', 'When I cough, no blood comes out.'],
+    ['stridor-airway-compromise', 'No saliva is falling from my mouth.'],
+    ['uti-systemic-features', 'I am not trembling all over.'],
+    ['uti-systemic-deterioration', 'I was never unconscious.'],
+  ])('%s stays silent on the denial "%s"', (trigger, text) => {
+    expect(ruleIds(patient(text))).not.toContain(trigger)
+  })
+})
+
+/*
+ * The negator bypass takes a contraction only with the words that spell an
+ * inability. Review measured the bare "wasn't" of the first v13 draft firing
+ * an urgent flag on each of these plain denials.
+ */
+describe('a contracted denial of a vital sign stays a denial', () => {
+  it.each([
+    "No, the oxygen level wasn't low.",
+    "No, the fever wasn't very high.",
+    "No, the heart rate wasn't very fast.",
+    "No, the blood pressure wasn't very low.",
+  ])('stays silent on "%s"', (text) => {
+    expect(ruleIds(patient(text))).not.toContain('vital-signs-concern')
+  })
+})
+
+/*
+ * Over-fires review found and this change keeps, pinned so the choice stays
+ * visible. Each narrowing would also remove a genuine fire:
+ *
+ * - Refusing "passed out" before a determiner or an object loses "I passed
+ *   out the other day".
+ * - Requiring more than "saliva comes out of my mouth" loses the exact
+ *   sentence the Bengali translation produced for drooling.
+ * - Skipping an ability question with an "or" loses "Can you pass urine, or is
+ *   it too painful?" answered "No.", which is retention.
+ */
+describe('over-fires kept because narrowing them would cost a true fire', () => {
+  it.each([
+    ['uti-systemic-deterioration', 'I passed out flyers at school.'],
+    ['stridor-airway-compromise', 'When I cough, saliva comes out of my mouth.'],
+  ])('%s fires on "%s"', (trigger, text) => {
+    expect(ruleIds(patient(text))).toContain(trigger)
+  })
+
+  it('pairs a denial with the ability half of a compound question', () => {
+    const exchange = translated([
+      { speaker: 'doctor', text: 'Have you been able to pass urine, or is it painful?' },
+      { speaker: 'patient', text: "No, it isn't painful." },
+    ])
+    expect(ruleIds(exchange)).toContain('uti-unable-to-pass-urine')
   })
 })
 
