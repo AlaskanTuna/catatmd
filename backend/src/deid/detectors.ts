@@ -22,7 +22,15 @@ import { isStructurallyValidNric, NRIC_PATTERN, NRIC_UNHYPHENATED_PATTERN } from
  * too. Raw transcripts are therefore still treated as sensitive at rest.
  */
 
-export type DetectorLabel = 'PATIENT' | 'NRIC' | 'PHONE' | 'ADDRESS' | 'DOB' | 'MRN' | 'EMAIL'
+export type DetectorLabel =
+  | 'PATIENT'
+  | 'NRIC'
+  | 'PHONE'
+  | 'ADDRESS'
+  | 'DOB'
+  | 'MRN'
+  | 'EMAIL'
+  | 'SCRIPT'
 
 export interface Match {
   readonly label: DetectorLabel
@@ -230,6 +238,56 @@ function detectEmail(text: string): Match[] {
     end: m.index + m[0].length,
     value: m[0],
     score: 0.95,
+  }))
+}
+
+// ─── Unreadable script ───────────────────────────────────────────────────────
+
+/**
+ * Any run of Bengali, Arabic or Devanagari script (#391).
+ *
+ * Every other detector here reads Latin script, so a name written in one of
+ * these passes them untouched, and `assertNoIdentifiers` re-runs the same
+ * detectors and shares the gap. Two-way translation (docs/trd.md §20.12) makes
+ * Bengali and Urdu a designed part of the product for the first time; the SPA
+ * keeps them out of model-bound text, and this is the same rule at the gate
+ * itself, whatever a client sends. The whole run is one span, because nothing
+ * here can tell a name inside it from the words around it, so a sentence in
+ * one of these scripts reaches the model as a single token.
+ *
+ * Devanagari is here because a recogniser may write Urdu speech in it.
+ * **Chinese and Tamil are deliberately not**, although the same gap applies:
+ * ambient capture hints both, and tokenising every Mandarin sentence would
+ * blind the note to consultations that work today. That gap is recorded in
+ * docs/trd.md §20.12 rather than closed here.
+ */
+const SCRIPT_CHARACTERS =
+  '\\u0980-\\u09FF\\u0600-\\u06FF\\u0750-\\u077F\\u08A0-\\u08FF\\uFB50-\\uFDFF\\uFE70-\\uFEFF\\u0900-\\u097F'
+// Whitespace, joiners, direction marks and ordinary punctuation between two
+// script words stay inside the run, so a phrase is one token rather than one
+// per clause, and an Urdu name split by a right-to-left mark stays one name.
+const SCRIPT_JOIN = `[\\s\\u200C-\\u200F,.;:!?'"()-]+`
+/*
+ * Up to three Latin words with script on both sides join the run too, found in
+ * review: "میرا نام عمران chowdhury شاہ ہے" left the lowercase surname between
+ * two tokens, where no Latin detector reads a lowercase name. The cost is an
+ * English word inside a script sentence going with it, which is the trade this
+ * module makes. The join around them stays on one line and inside one clause,
+ * so the `Patient:` label of the next transcript line is never swallowed.
+ */
+const ISLAND_JOIN = `[ \\t\\u00A0\\u200C-\\u200F,'"()-]+`
+const SCRIPT_RUN = new RegExp(
+  `[${SCRIPT_CHARACTERS}]+(?:${SCRIPT_JOIN}[${SCRIPT_CHARACTERS}]+|${ISLAND_JOIN}(?:[A-Za-z][A-Za-z'-]*${ISLAND_JOIN}){1,3}[${SCRIPT_CHARACTERS}]+)*`,
+  'gu',
+)
+
+function detectScript(text: string): Match[] {
+  return [...text.matchAll(SCRIPT_RUN)].map((m) => ({
+    label: 'SCRIPT' as const,
+    start: m.index,
+    end: m.index + m[0].length,
+    value: m[0],
+    score: 0.99,
   }))
 }
 
@@ -519,7 +577,7 @@ const HONORIFIC_PHRASES = HONORIFICS.filter((h) => h.includes(' ')).map((h) =>
  * Jumping to the first word `GIVEN_NAMES` recognised is how `Zarul bin Ismail`
  * tokenised as `Ismail` and sent `Zarul` to the model in cleartext: the anchor
  * landed on the one element the gazetteer happened to know and discarded
- * everything before it on that basis alone. The gazetteer holds roughly 130
+ * everything before it on that basis alone. The gazetteer holds roughly 200
  * names, so being outside it is the ordinary case for a real patient, and
  * `assertNoIdentifiers` cannot catch the miss because the egress guard re-runs
  * these same detectors and shares the blind spot.
@@ -663,6 +721,7 @@ const DETECTORS = [
   detectDob,
   detectMrn,
   detectNames,
+  detectScript,
 ] as const
 
 /**
