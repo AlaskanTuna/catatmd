@@ -43,10 +43,21 @@ import type { RedFlagTrigger } from './types.js'
  * deterministic layer on the curated chunk corpus.
  * Citations count because they now travel on the flag itself, so a stored
  * analysis and this list can otherwise disagree about what backed a hit.
+ * **v13 adds matchers to six triggers and changes no severity, no label and
+ * no cited guidance.** Two-way machine translation of Bengali and Urdu speech
+ * (#389) produced plain English this engine did not match: "blood is coming
+ * along with the cough", saliva coming out of the mouth, "my body is shaking",
+ * "passed out", "haven't been able to urinate". Every translation was
+ * semantically right, so these are gaps in English coverage rather than
+ * translation errors, and a native speaker says every one of them. Every fix
+ * is an appended pattern, and the ability question "have you been able to
+ * pass urine" joins the urine trigger's adjacency list. `SPAN_CARRIES_NEGATOR`
+ * gains "wasn't" and "weren't", which can only add fires. No transcript that
+ * fired under v12 stops firing under v13.
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v12',
-  effectiveDate: '2026-09-09',
+  id: 'redflag-list-v13',
+  effectiveDate: '2026-09-28',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -276,9 +287,15 @@ const isSafetyNetting = (turn: TranscriptTurn, matchIndex: number): boolean => {
  * entry: "could not breathe" already carries `\bnot\b`. Their blast radius is
  * exactly the patterns that spell these words, because no other matcher in
  * this file can return a span containing one.
+ *
+ * "wasn't" and "weren't" joined with v13, for the "No, I wasn't able to drink
+ * anything" form translation produces (#389). They are the one exception to
+ * that blast radius: the vital-sign patterns bridge up to twenty non-digits,
+ * so "No, the fever wasn't very high" now fires, exactly as "No, the fever was
+ * not very high" already did through `\bnot\b`.
  */
 const SPAN_CARRIES_NEGATOR =
-  /\b(?:no|not|cannot|tak|tidak|takde|tiada)\b|can'?t|won'?t|couldn'?t|haven'?t|hasn'?t|hadn'?t/i
+  /\b(?:no|not|cannot|tak|tidak|takde|tiada)\b|can'?t|won'?t|couldn'?t|haven'?t|hasn'?t|hadn'?t|wasn'?t|weren'?t/i
 
 const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string | null => {
   const recorded = isRecorded(transcript)
@@ -497,6 +514,14 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         // second. The bounded gap admits the intervening verb without
         // reaching across a clause.
         /darah\s+[^.!?]{0,20}?(?:bila|masa|waktu|semasa)\s+(?:saya\s+)?batuk/i,
+        /*
+         * The shape machine translation from Bengali and Urdu gives it (#389):
+         * the blood arrives with the cough rather than being coughed up. The
+         * reversed form above needs a time word ("when I cough") and so did
+         * not reach it. A denial keeps its negator in front of the match ("No
+         * blood comes with the cough"), where `isNegated` reads it.
+         */
+        /blood\s+(?:is\s+|was\s+)?(?:com(?:es|ing)|came)\s+(?:up\s+|out\s+)?(?:along\s+)?(?:with|in|when)\s+(?:the\s+|my\s+|a\s+|i\s+)?cough/i,
       ]),
     clinicalSource: NAG_SCOPE_NOTE,
     guidelineIds: NAG_SCOPE_REFS,
@@ -607,6 +632,16 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /berbunyi\s+(?:bila|masa|waktu|ketika)\s+(?:tarik\s+)?na[fp]as/i,
         /air\s+liur\s+(?:asyik\s+)?meleleh/i,
         /meleleh\s+air\s+liur/i,
+        /*
+         * Drooling in the words translation from Bengali and Urdu chose
+         * (#389): saliva coming out of, or dripping from, the mouth.
+         *
+         * A whistle on breathing, which the same sentence described, is
+         * deliberately absent. It is closer to wheeze than to stridor, and this
+         * trigger's label claims airway compromise, so whether it belongs here
+         * is a clinical call recorded on #390 rather than guessed.
+         */
+        /saliva\s+(?:is\s+|keeps\s+)?(?:com(?:es|ing)|drip(?:s|ping)|run(?:s|ning)|drool(?:s|ing)|flow(?:s|ing))\s+(?:out\s+of|out\s+from|from)\s+(?:my|the|his|her)\s+mouth/i,
       ]),
     clinicalSource: DELPHI_AIRWAY_NOTE,
     guidelineIds: DELPHI_AIRWAY_REFS,
@@ -651,6 +686,14 @@ export const REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         // makan and minum in the two patterns above but was missing from the
         // post-posed form, so "makan pun tak dapat" raised nothing.
         /(?:telan|makan|minum)\s+(?:pun\s+)?tak\s+dapat/i,
+        // The contracted negator, which /not been able to eat/ above cannot
+        // see: "haven't been able to swallow". Translation from Bengali and
+        // Urdu produced exactly this shape for urine (#389). Anchored on the
+        // auxiliary for the `SPAN_CARRIES_NEGATOR` reason the urine trigger
+        // gives, and the spelled-out form gains the `swallow` the verb list
+        // above never had.
+        /\b(?:have|has|had|was|were)n'?t\s+(?:been\s+)?able\s+to\s+(?:swallow|eat|drink)/i,
+        /\bnot\s+(?:been\s+)?able\s+to\s+swallow/i,
       ]) ??
       findDeniedAbility(transcript, [
         /(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat|lalu)\s+(?:nak\s+)?(?:telan|makan|minum)/i,
@@ -731,6 +774,10 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /\bdemam\b/i,
         /\bmenggigil\b/i,
         /seram\s+sejuk/i,
+        // Rigors in the words translation from Bengali and Urdu chose (#389).
+        // The body is named because a bare "shaking" also fits a hand or a
+        // voice.
+        /\bbody\s+(?:is\s+|was\s+|keeps\s+)?(?:shak(?:es|ing|e)|shook|trembl(?:es|ing|ed|e))\b/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
     guidelineIds: UTI_SCOPE_REFS,
@@ -776,6 +823,13 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         /lemah\s+(?:sangat|teruk)/i,
         /sangat\s+lemah/i,
         /tak\s+larat\s+(?:nak\s+)?bangun/i,
+        // Loss of consciousness in plain English, which is how translation
+        // from Bengali and Urdu rendered fainting (#389). The bare form is kept
+        // ("I pass out when I stand up"): a doctor asking "did you pass out"
+        // fires too, and over-firing is the direction this engine fails in.
+        /\bpass(?:ed|es|ing)?\s+out\b/i,
+        /\bblack(?:ed|s|ing)?\s+out\b/i,
+        /\blost\s+consciousness\b/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
     guidelineIds: UTI_SCOPE_REFS,
@@ -842,11 +896,29 @@ export const UTI_REDFLAG_TRIGGERS: readonly RedFlagTrigger[] = [
         // while reaching the pre-posed one, the same unevenness as the
         // swallowing trigger above.
         /kencing\s+(?:pun\s+)?tak\s+(?:dapat|keluar)/i,
+        /*
+         * "Been able to", which translation from Bengali and Urdu produced
+         * (#389): "I haven't been able to urinate since morning". The object
+         * is required for the "pass motion" reason given above.
+         *
+         * **The match starts at the auxiliary, and that is load-bearing.** A
+         * span beginning at "n't" carries no word `SPAN_CARRIES_NEGATOR`
+         * recognises, so "No, I haven't been able to urinate" had its leading
+         * "No" read as a denial of the inability that follows it, and this
+         * emergency trigger went silent on the commonest answer to a negative
+         * question. Starting at "haven't" or "not" takes the bypass instead.
+         */
+        /\b(?:have|has|had|was|were)n'?t\s+(?:been\s+)?able\s+to\s+(?:pass\s+(?:any\s+)?urine|pee|urinate)/i,
+        /\bnot\s+(?:been\s+)?able\s+to\s+(?:pass\s+(?:any\s+)?urine|pee|urinate)/i,
       ]) ??
       findDeniedAbility(transcript, [
         /(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat)\s+(?:nak\s+)?(?:kencing|buang\s+air\s+kecil)/i,
         /\bkencing\b[^.!?]{0,16}?(?<!\b(?:tak|tidak)\s)\b(?:boleh|dapat)\s+keluar/i,
         /can\s+you\s+(?:pass\s+urine|pee|urinate)/i,
+        // "Have you been able to pass urine?" answered "No.", the shape a
+        // doctor's English question and a translated one-word reply take on
+        // the translated path. Swallowing has carried this form since v10.
+        /(?<!\bnot\s)\bable\s+to\s+(?:pass\s+(?:any\s+)?urine|pee|urinate)/i,
       ]),
     clinicalSource: UTI_SCOPE_NOTE,
     guidelineIds: UTI_SCOPE_REFS,
