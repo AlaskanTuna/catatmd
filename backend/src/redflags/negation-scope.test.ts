@@ -24,6 +24,10 @@ describe('a denied first mention does not silence a later one in the same turn (
   it.each([
     ['uti-systemic-deterioration', 'I never passed out before. Today I passed out.'],
     ['chest-pain', 'I never had chest pain before. Today I have chest pain.'],
+    [
+      'significant-dyspnoea',
+      'I never had shortness of breath before. Today I have shortness of breath.',
+    ],
     ['chest-pain', 'Dulu tak ada sakit dada. Sekarang sakit dada.'],
   ])('%s fires on "%s"', (trigger, text) => {
     expect(ruleIds(text)).toContain(trigger)
@@ -60,6 +64,13 @@ describe('a comma followed by a new subject ends a denial (#398)', () => {
     ['chest-pain', 'No fever, no chest pain.'],
     ['chest-pain', 'No fever, I have no chest pain.'],
     ['chest-pain', 'Tak demam, saya tak ada sakit dada.'],
+    // Negation spelled the way a typed or pasted transcript spells it.
+    ['chest-pain', 'No, I dont have chest pain.'],
+    ['uti-systemic-deterioration', 'No fever, I havent passed out.'],
+    ['chest-pain', 'No, I deny chest pain.'],
+    ['chest-pain', "No, I've had zero chest pain."],
+    ['chest-pain', 'Tak, saya takdak sakit dada.'],
+    ['chest-pain', 'Tak, saya xde sakit dada.'],
   ])('%s stays silent on "%s"', (trigger, text) => {
     expect(ruleIds(text)).not.toContain(trigger)
   })

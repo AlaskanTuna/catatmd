@@ -202,12 +202,14 @@ const NEW_SUBJECT_CLAUSE =
 
 /**
  * Any negation at all, broader than `TRAILING_NEGATOR` on purpose: it includes
- * "don't" and "haven't". It is used only to decide that a clause is *not*
- * plainly affirmative, which keeps a denial in reach exactly as it was, so
- * reading too much here can never silence anything.
+ * "don't", "dont" as typed without the apostrophe, "deny", "zero", "free of"
+ * and the Malay spellings of "tiada" ("takdak", "xde", "tarak", "ndak"). It is
+ * used only to decide that a clause is *not* plainly affirmative, which keeps a
+ * denial in reach exactly as it was, so reading too much here can never
+ * silence anything.
  */
 const CLAUSE_NEGATION =
-  /\b(?:no|not|never|none|nothing|nor|neither|without|cannot|denies|denied|tak|tidak|takde|tiada|belum|bukan)\b|n['’]t\b/i
+  /\b(?:no|not|never|none|nothing|nor|neither|without|cannot|deny|denies|denied|zero|free\s+of|(?:do|does|did|have|has|had|ca|wo|is|are|was|were|could|would)nt|tak|tidak|takde|takda|takdak|tadak|xde|xda|tarak|ndak|tiada|belum|bukan)\b|n['’]t\b/i
 
 /**
  * Does the match sit in a new, affirmative clause after a denial (#398)? "No
