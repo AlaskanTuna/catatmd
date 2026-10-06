@@ -207,6 +207,18 @@ describe('useLivePanes', () => {
     expect(result.current.panes.redFlags).toHaveLength(1)
   })
 
+  it('earns "none so far" from a first check that raises nothing (#401)', async () => {
+    // The commonest consultation has no red flags at all. Its first clean check
+    // must still count as a check, or the pane waits for one forever.
+    const { result } = renderHook(() => useLivePanes('c1'))
+    expect(result.current.panes.flagsChecked).toBe(false)
+
+    await act(async () => result.current.absorb(withClosed(1)))
+    await waitFor(() => expect(result.current.panes.flagsChecked).toBe(true))
+    expect(result.current.panes.redFlags).toEqual([])
+    expect(result.current.panes.flagsStalled).toBe(false)
+  })
+
   it('reports that the safety check has stalled, rather than claiming none so far', async () => {
     /*
      * The blocker clinical review found. A swallowed failure left the pane

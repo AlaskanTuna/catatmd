@@ -154,10 +154,13 @@ export function useLivePanes(consultationId: string | null) {
       )
       flagsCommitted.current = sent
       // Insert-only. A window that raises nothing must never clear the pane,
-      // and the API is additive against the authoritative Finish run.
+      // and the API is additive against the authoritative Finish run. It still
+      // counts as a check: a clean first window is what earns "none so far".
       setPanes((current) => {
         const redFlags = mergeFlags(current.redFlags, raised)
-        return redFlags.length === current.redFlags.length && !current.flagsStalled
+        return redFlags.length === current.redFlags.length &&
+          !current.flagsStalled &&
+          current.flagsChecked
           ? current
           : { ...current, redFlags, flagsStalled: false, flagsChecked: true }
       })
