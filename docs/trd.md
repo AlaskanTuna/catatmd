@@ -3187,7 +3187,7 @@ One patient sentence per trigger, in each language, run through the real engine:
 - Malay as the doctor's language in the pair, since Soniox supports it and the engine reads it.
 - Punjabi, which the vendor lists and nobody here has measured.
 - `context.translation_terms` for clinical terms, measured before adoption.
-- #394, a denied first mention silencing a later genuine one in the same turn, found in review of #390.
+- ~~#394, a denied first mention silencing a later genuine one in the same turn, found in review of #390.~~ Fixed in `redflag-list-v14`, with #398, the comma that never ended a denial.
 
 #### Provenance Of The Sources In This Section
 
