@@ -35,19 +35,21 @@ export const INTERPRETED_LANGUAGE_NAMES: Record<InterpretedLanguage, string> = {
 export type OtherLanguage = NonNullable<TranscriptTurn['otherLanguage']>
 
 /**
- * Scripts no de-identification detector reads: Bengali, Arabic (which Urdu is
- * written in) with its supplements and presentation forms, Devanagari, which a
- * recogniser may use if it hears Urdu as Hindi, and Chinese and Tamil with the
- * CJK and fullwidth punctuation Chinese is written with.
+ * Anything but Latin script and the punctuation, digits and symbols every
+ * script shares, plus the punctuation Bengali, Urdu and Chinese write with,
+ * which Unicode files under that shared set. An allowlist, not a list of the
+ * scripts a pair produces: a Tamil session recognised as Malayalam, or Urdu
+ * written in Gurmukhi, must not reach `turn.text` either.
  *
- * Chinese and Tamil are here although the gate's `SCRIPT` detector leaves
- * them alone on purpose (docs/trd.md §20.12): that detector also guards the
- * untranslated Auto-detect path, where both are read natively. This module
+ * Chinese and Tamil are caught here although the gate's `SCRIPT` detector
+ * leaves them alone on purpose (docs/trd.md §20.12): that detector also guards
+ * the untranslated Auto-detect path, where both are read natively. This module
  * runs on translated sessions only, where the English is the text and the
- * original belongs in `otherLanguage`, so neither may reach `turn.text`.
+ * original belongs in `otherLanguage`. A combining mark is stripped too, which
+ * only matters for decomposed Latin the recogniser does not produce.
  */
 const UNREADABLE_SCRIPT =
-  /[ঀ-৿؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿ऀ-ॿ\p{Script=Han}\p{Script=Tamil}\u3000-\u303F\uFF00-\uFFEF]+/gu
+  /(?:[^\p{Script=Latin}\p{Script=Common}]|[ঀ-৿؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿ऀ-ॿ\u3000-\u303F\u3200-\u33FF\uFF00-\uFFEF])+/gu
 
 /**
  * The English of a patient turn whose translation never arrived.

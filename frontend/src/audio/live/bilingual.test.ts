@@ -321,6 +321,28 @@ describe('the script guard', () => {
     },
   )
 
+  it('treats Tamil heard as Malayalam as untranslated patient speech', () => {
+    // The pair is unmeasured, and a neighbouring script is the likely miss.
+    const delivery = bilingualDelivery(
+      tokensToBilingualTurns([said(' എന്റെ പേര് മുരുകൻ.', 'ml'), end]),
+      'ta',
+    )
+    expect(delivery.draftTurns).toEqual([{ speaker: 'patient', text: untranslatedTurnText('ta') }])
+    expect(delivery.text).toMatch(/^[\p{Script=Latin}\p{Script=Common}]*$/u)
+  })
+
+  it('keeps any script but Latin out of an English translation', () => {
+    const delivery = bilingualDelivery(
+      tokensToBilingualTurns([
+        said(' 我叫陈伟。', 'zh'),
+        translatedAs(' My name is 한나 and かな.', 'en', 'zh'),
+        end,
+      ]),
+      'zh',
+    )
+    expect(delivery.draftTurns[0]?.text).toBe('My name is [untranslated] and [untranslated].')
+  })
+
   it('replaces Chinese script and punctuation inside an English translation', () => {
     const delivery = bilingualDelivery(
       tokensToBilingualTurns([
