@@ -10,12 +10,12 @@ Scope decisions that change what this product does, recorded rather than silentl
 
 ## D-001: Dictated Medication Capture
 
-|                |                                                            |
-| -------------- | ---------------------------------------------------------- |
-| **Date**       | 2026-09-09                                                 |
-| **Status**     | Adopted. Amended 2026-09-10 twice: transport, then default |
-| **Issues**     | #310, #311, #312, #313, #355, #356, #357, #363             |
-| **Supersedes** | Nothing. Clarifies `docs/prd.md` Section 6                 |
+|                |                                                         |
+| -------------- | ------------------------------------------------------- |
+| **Date**       | 2026-09-09                                              |
+| **Status**     | Adopted. Amended 2026-09-10 three times, and 2026-10-06 |
+| **Issues**     | #310, #311, #312, #313, #355, #356, #357, #363          |
+| **Supersedes** | Nothing. Clarifies `docs/prd.md` Section 6              |
 
 ### Decision
 
@@ -98,6 +98,18 @@ Section 11's intended-purpose statement already describes exactly this, and is *
 **What was deliberately not done, because it would have been the #228 failure again.** The tick was not folded into the device preference, and no remembered agreement was introduced. There is simply no agreement now, which is a smaller claim than a false one.
 
 **One thing got stronger.** `consentAsserted` was the literal `true` in the audit type, so the route could not have recorded anything else even had it wanted to. It is a boolean now, derived as `mode === 'ambient' && consent === true`, which is what lets the trail tell an asked patient from an unasked one. Derived rather than read from the body on purpose: the schema constrains `consent` on ambient only, so an older SPA reaching a newer API during a deploy skew could otherwise assert an agreement on a surface that no longer asks for one.
+
+### Amended 2026-10-06: The Engine Choice Goes
+
+**The last device-level choice on this surface is removed, on the owner's instruction.** Nothing about the egress changes: same vendor, socket, region and minting route.
+
+|                       |                                                                                                                                                                                                 |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What changed**      | The Prescription Dictation section left the Audio dialog, the dialog's mount in the dictation theatre went with it, and `AudioSettings.dictationEngine` no longer exists                        |
+| **What runs now**     | Streaming, always, falling back to this device when streaming is unavailable or unreachable, with the notice that says so. A stored `dictationEngine` is dropped on load                        |
+| **What it costs**     | The doctor's last way to keep dictation on this device by choice. A device that had chosen on-device now streams. This is the owner's call, recorded here rather than argued away               |
+| **What still holds**  | Every failure lands on this device or on typing, never silently on the cloud: key unset, config unreachable, mint refused, socket dropped. The audit row still records `consentAsserted: false` |
+| **Who authorised it** | @AlaskanTuna, 2026-10-06, scoped to prescription dictation on the review page                                                                                                                   |
 
 ### The Per-Drug Sig, And Why It Is Not The Whole Phrase
 

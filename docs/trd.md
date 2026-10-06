@@ -2783,6 +2783,10 @@ The sign-off above is unchanged and is not re-opened here: same vendor, socket, 
 
 **What it costs is a control, and `docs/decisions.md` D-001 carries the full accounting.** In short: the standing device preference ships already set to send, so this surface holds one defaulted preference and one deliberate tick rather than two chosen controls. The tick is untouched and still gates every send. Separately, #363 found the preference had been unreachable from the review page for the whole of #357's life, because its only writer was mounted in `CapturePanel`; it is now mounted on both surfaces, which stay mutually exclusive by their render conditions.
 
+#### Amended 06/10/26: The Preference Goes
+
+The device preference this subsection describes no longer exists (`docs/decisions.md` D-001, "Amended 2026-10-06"). Dictation always prefers streaming and falls back to this device only when streaming is unavailable or unreachable, with the notice that says so. `loadAudioSettings` drops a stored `dictationEngine`, so a device that once chose on-device cannot stay pinned to a choice no screen shows. The failure table above is unchanged.
+
 #### Why The Provider Changed
 
 §20.9's own analysis is what makes the case, because it names three costs and calls one of them the risk.

@@ -90,9 +90,16 @@ describe('the retention period', () => {
   it('states that nothing enforces the period yet', async () => {
     setup()
 
-    expect(
-      await screen.findByText(/no retention job, no automatic expiry, and no deletion sweep/i),
-    ).toBeTruthy()
+    expect(await screen.findByText(/nothing deletes records automatically yet/i)).toBeTruthy()
+    expect(screen.getByText(/not a legal determination/i)).toBeTruthy()
+  })
+
+  it('offers English as the only default language, and stores nothing', async () => {
+    setup()
+
+    const picker = await screen.findByRole('button', { name: 'Default language' })
+    expect(picker.textContent).toMatch(/English/)
+    expect(localStorage.length).toBe(0)
   })
 
   it('adopts the entered period', async () => {

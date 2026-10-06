@@ -6,7 +6,6 @@ import { InfoTip } from '../ui/InfoTip.js'
 import { Select } from '../ui/Select.js'
 import {
   type AudioSettings,
-  type DictationEngine,
   saveAudioSettings,
   type TranscriptionEngine,
   toConstraints,
@@ -15,61 +14,27 @@ import { InputMeter } from './InputMeter.js'
 
 /**
  * The two transcription engines, named the way the Record tab's picker named
- * them so the two screens cannot drift into different vocabularies. The
- * summaries state the real tradeoff in one line each; the elaboration sits
- * behind the tip.
+ * them so the two screens cannot drift into different vocabularies. Each card
+ * states where the audio goes in one line, which is the whole tradeoff.
  */
 const ENGINES: {
   id: TranscriptionEngine
   name: string
   Icon: typeof Cpu
-  detail: React.ReactNode
+  summary: string
 }[] = [
   {
     id: 'local',
     name: 'On this device (whisper-small · WebGPU)',
     Icon: Cpu,
-    detail: 'Runs on this device. Audio is not uploaded.',
+    summary: 'The audio never leaves this device.',
   },
   {
     id: 'hosted',
     name: 'ILMU (Malaysia) · ilmu-asr-v4.2',
     Icon: Server,
-    detail: 'Sends audio to ILMU in Malaysia. Review the transcript carefully.',
-  },
-]
-
-/**
- * Where a dictated prescription phrase is recognised (#357).
- *
- * **The region is deliberately not named here.** It comes from the API, and a
- * copy in this dialog would be a residency claim made by a component that
- * cannot see the socket. This dialog has shipped exactly that kind of outlived
- * claim once before, so the consent disclosure on the review page keeps the
- * job of saying where the audio goes, and the sentence below points at it.
- */
-const DICTATION_ENGINES: {
-  id: DictationEngine
-  name: string
-  Icon: typeof Cpu
-  summary: string
-  detail: React.ReactNode
-}[] = [
-  {
-    id: 'local',
-    name: 'On-device recognition (whisper-small)',
-    Icon: Cpu,
-    summary: 'The audio never leaves this device. Text appears when you stop speaking.',
-    detail:
-      'Runs the speech model in this browser. Nothing is uploaded, and a device without the memory for it falls back to typing.',
-  },
-  {
-    id: 'streaming',
-    name: 'Streaming recognition (Soniox)',
-    Icon: Radio,
-    summary: 'The audio leaves this device. Words appear as you speak them.',
-    detail:
-      'Streams from this browser straight to Soniox under a key our server issues; the server never receives the audio. Nothing on the review page asks the patient, so this preference is the only thing standing between a dictated phrase and that socket.',
+    summary:
+      'The audio leaves this device, processed in Malaysia. Better on Malay-dominant consultations.',
   },
 ]
 
@@ -127,14 +92,14 @@ function Toggle({
  * sent is asked by `audio/ConsentGate.tsx` on whichever surface would send it,
  * the Record tab or the review page's Prescriptions card, and dies with that
  * screen. A reader must not be able to leave here believing they have agreed
- * to anything on a patient's behalf, which is why the note saying so sits in
- * visible copy rather than behind a tip.
+ * to anything on a patient's behalf. The note saying so sits behind the tip
+ * beside "Transcription Engine", on the owner's instruction (06/10/26), so the
+ * engine list carries no paragraph beneath it.
  *
- * **Mounted on two surfaces that cannot both be on screen** (#363).
- * `CapturePanel` renders only before a transcript exists and
- * `PrescriptionBlock` only after one does, so the two copies never coexist and
- * neither can overwrite the other's snapshot of the stored object. This
- * remains its single writer.
+ * **Mounted on the Record tab only.** The prescription-dictation choice it
+ * used to hold, and the copy the review page mounted to reach it, were removed
+ * on 06/10/26 (`docs/decisions.md` D-001): dictation streams and falls back to
+ * this device on its own. This remains the single writer of the stored object.
  *
  * The engine choice is the half that belongs here: it names where the audio
  * goes rather than whether it may go, and the hosted option states that in its
@@ -198,7 +163,19 @@ export function AudioSettingsDialog({
         </p>
 
         <fieldset className="mt-5">
-          <legend className="mb-2 font-semibold text-xs">Transcription Engine</legend>
+          <legend className="mb-2 flex items-center gap-1.5 font-semibold text-xs">
+            Transcription Engine
+            {/* The claim and the control it describes must live or die
+                together. This sentence outlived its control once already: the
+                tick was removed in #228 and the copy stayed, so the dialog told
+                the doctor each patient was asked while nothing asked. Pinned by
+                a test that renders both. */}
+            <InfoTip label="About Transcription Engine" layered>
+              Applies to Press To Record. Ambient capture always uses Soniox. Choosing ILMU does not
+              send anything on its own. Each patient is asked on the Record tab, and that agreement
+              is never remembered.
+            </InfoTip>
+          </legend>
           <div className="grid gap-2">
             {/*
               First, and not a control. Ambient streams to Soniox whatever is
@@ -238,9 +215,6 @@ export function AudioSettingsDialog({
                   </span>
                 </div>
                 <Radio aria-hidden className="mt-0.5 size-4 shrink-0" />
-                {/* Holds the column the tips below occupy, so all three icons
-                    line up rather than this one sitting 30px further out. */}
-                <span aria-hidden className="size-5 shrink-0" />
               </div>
             )}
             {ENGINES.map((engine) => {
@@ -262,81 +236,13 @@ export function AudioSettingsDialog({
                     className="min-w-0 flex-1 text-left focus-visible:outline-none"
                   >
                     <span className="block font-semibold text-sm">{engine.name}</span>
-                    <span className="mt-0.5 block text-ink-muted text-xs">
-                      {engine.id === 'local'
-                        ? 'The audio never leaves this device.'
-                        : 'The audio leaves this device, processed in Malaysia. Better on Malay-dominant consultations.'}
-                    </span>
+                    <span className="mt-0.5 block text-ink-muted text-xs">{engine.summary}</span>
                   </button>
                   <engine.Icon aria-hidden className="mt-0.5 size-4 shrink-0" />
-                  <InfoTip label={`About ${engine.name} transcription`} align="right" layered>
-                    {engine.detail}
-                  </InfoTip>
                 </div>
               )
             })}
           </div>
-          {/* The claim and the control it describes must live or die together.
-              This sentence outlived its control once already: the tick was
-              removed in #228 and the copy stayed, so the dialog told the doctor
-              each patient was asked while nothing asked. Pinned by a test that
-              renders both. */}
-          <p className="mt-2.5 text-ink-muted text-xs">
-            Applies to Press To Record. Ambient capture always uses Soniox. Choosing ILMU does not
-            send anything on its own. Each patient is asked on the Record tab, and that agreement is
-            never remembered.
-          </p>
-        </fieldset>
-
-        {/* A second section rather than a third option above, because that
-            picker answers "where does a whole recording go" and this answers a
-            different question about a different surface. Folding them together
-            would make one control mean ILMU in Malaysia on the Record tab and
-            Soniox in the United States on the review page. */}
-        <fieldset className="mt-5">
-          <legend className="mb-2 font-semibold text-xs">Prescription Dictation</legend>
-          <div className="grid gap-2">
-            {DICTATION_ENGINES.map((option) => {
-              const selected = draft.dictationEngine === option.id
-              return (
-                <div
-                  key={option.id}
-                  className={cn(
-                    'flex gap-2.5 rounded-card border p-3 text-left transition-colors',
-                    selected ? 'border-transparent bg-accent-soft' : 'border-line',
-                  )}
-                >
-                  <button
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => setDraft({ ...draft, dictationEngine: option.id })}
-                    className="min-w-0 flex-1 text-left focus-visible:outline-none"
-                  >
-                    <span className="block font-semibold text-sm">{option.name}</span>
-                    <span className="mt-0.5 block text-ink-muted text-xs">{option.summary}</span>
-                  </button>
-                  <option.Icon aria-hidden className="mt-0.5 size-4 shrink-0" />
-                  <InfoTip label={`About ${option.name}`} align="right" layered>
-                    {option.detail}
-                  </InfoTip>
-                </div>
-              )
-            })}
-          </div>
-          {/* Same pairing rule as the sentence above, and it broke here first.
-              This sentence claimed the patient agrees on the review page for
-              three days after #365 removed the tick that asked, which is the
-              failure the comment above describes rather than a new one. It now
-              claims no control, so there is nothing left to outlive: what it
-              states is an absence, and an absence cannot be deleted somewhere
-              else. It still avoids "each patient is asked", because that phrase
-              is asserted to appear exactly once in this dialog and a second
-              copy would make the Record tab's test pass for the wrong reason. */}
-          <p className="mt-2.5 text-ink-muted text-xs">
-            Applies to the microphone on the review page. Streaming is what runs unless you choose
-            on-device here, and it sends audio as you dictate. Nothing on that page asks the
-            patient.
-          </p>
         </fieldset>
 
         <div className="mt-5">

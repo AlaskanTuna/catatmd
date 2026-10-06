@@ -65,7 +65,9 @@ function renderDialog(ambient = false) {
 describe('the Audio dialog and the control it describes', () => {
   it('says consent is per patient, and is only allowed to while a per-patient control exists', () => {
     renderDialog()
-    // The engine choice is device scoped, but consent remains per patient.
+    // The engine choice is device scoped, but consent remains per patient. The
+    // sentence sits behind the tip beside the engine list (06/10/26).
+    fireEvent.click(screen.getByRole('button', { name: 'About Transcription Engine' }))
     const claims = screen.getAllByText(/each patient is asked/i)
     expect(claims).toHaveLength(1)
     for (const claim of claims) expect(claim.textContent).toMatch(/never remembered/i)
@@ -112,6 +114,7 @@ describe('the Audio dialog and the control it describes', () => {
 
     // Ambient always uses the streaming provider, so an engine picker that
     // silently did nothing there would be a claim the app does not honour.
+    fireEvent.click(screen.getByRole('button', { name: 'About Transcription Engine' }))
     expect(screen.getByText(/applies to press to record/i)).toBeTruthy()
   })
 
@@ -183,9 +186,10 @@ describe('the Audio dialog and the control it describes', () => {
 
     // Press-to-record never opens a socket, so naming a running Soniox engine
     // there would be the same class of untrue claim in the other direction.
-    // The scoping sentence below the list still names Soniox, and must: it is
-    // what tells the reader the list does not cover every path.
+    // The scoping sentence behind the engine tip still names Soniox, and must:
+    // it is what tells the reader the list does not cover every path.
     expect(screen.queryByText(/soniox \(streaming\)/i)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'About Transcription Engine' }))
     expect(screen.getByText(/ambient capture always uses soniox/i)).toBeTruthy()
   })
 
@@ -198,28 +202,22 @@ describe('the Audio dialog and the control it describes', () => {
   })
 })
 
-describe('the engine tooltips', () => {
-  const forbidden =
-    /GPU|CDN|model weights|segment timing|voice model|Other languages are untested here/i
-
-  it('states the local boundary in plain language', () => {
+describe('the engine cards', () => {
+  it('states where each engine sends the audio on the card itself, with no tip to open', () => {
     renderDialog()
 
-    fireEvent.click(screen.getByRole('button', { name: /^About On this device/ }))
-    const tip = screen.getByRole('tooltip')
-    expect(tip.textContent).toMatch(/Runs on this device\./)
-    expect(tip.textContent).toMatch(/Audio is not uploaded\./)
-    expect(tip.textContent).not.toMatch(forbidden)
+    expect(screen.getByText('The audio never leaves this device.')).toBeTruthy()
+    expect(screen.getByText(/The audio leaves this device, processed in Malaysia\./)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^About On this device/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^About ILMU/ })).toBeNull()
   })
 
-  it('states the hosted boundary and residency in plain language', () => {
+  it('offers no prescription-dictation choice, which streams and falls back on its own', () => {
     renderDialog()
 
-    fireEvent.click(screen.getByRole('button', { name: /^About ILMU/ }))
-    const tip = screen.getByRole('tooltip')
-    expect(tip.textContent).toMatch(/Sends audio to ILMU in Malaysia\./)
-    expect(tip.textContent).toMatch(/Review the transcript carefully\./)
-    expect(tip.textContent).not.toMatch(forbidden)
+    expect(screen.queryByText('Prescription Dictation')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Streaming recognition/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /On-device recognition/ })).toBeNull()
   })
 })
 
