@@ -45,10 +45,14 @@ export function InputMeter({
       try {
         const source =
           provided ?? (await navigator.mediaDevices.getUserMedia({ audio: constraints }))
-        if (cancelled) return
         // Only a stream this component opened is a stream this component may
         // stop. A provided one outlives the meter by design.
         if (!provided) owned = source
+        if (cancelled) {
+          // Granted after the cleanup ran, so nothing else will ever stop it.
+          for (const track of owned?.getTracks() ?? []) track.stop()
+          return
+        }
         context = new AudioContext()
         const analyser = context.createAnalyser()
         analyser.fftSize = 512

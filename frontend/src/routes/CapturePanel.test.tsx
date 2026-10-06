@@ -1,6 +1,6 @@
 import type { DraftTurn, TextRange } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -762,6 +762,100 @@ describe('ambient capture mode', () => {
     const ambient = renderRoute('ambient')
     fireEvent.click(screen.getByRole('button', { name: 'mock go live' }))
     expect(ambient.onCaptureBusyChange).toHaveBeenCalledWith(true)
+  })
+})
+
+/*
+ * Rendering the capture screen used to open a microphone (#365). The Audio
+ * dialog was mounted unconditionally, a closed `<dialog>` still mounts its
+ * children, and its input meter opens a stream in a mount effect. That lit a
+ * recording indicator, or raised a permission prompt, before the doctor had
+ * pressed anything.
+ */
+describe('the microphone on the capture screen', () => {
+  const nativeDialog = {
+    showModal: HTMLDialogElement.prototype.showModal,
+    close: HTMLDialogElement.prototype.close,
+  }
+  let getUserMedia: ReturnType<typeof vi.fn>
+  let stop: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    localStorage.clear()
+    // jsdom implements neither half of the modal API.
+    HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
+      this.open = true
+    }
+    HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+      this.open = false
+      this.dispatchEvent(new Event('close'))
+    }
+    stop = vi.fn()
+    getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] })
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia, enumerateDevices: vi.fn().mockResolvedValue([]) },
+    })
+  })
+
+  afterEach(() => {
+    Object.assign(HTMLDialogElement.prototype, nativeDialog)
+    Reflect.deleteProperty(navigator, 'mediaDevices')
+    localStorage.clear()
+  })
+
+  it('opens no stream until the doctor opens Audio settings', async () => {
+    renderRoute('ambient')
+    await act(async () => {})
+    expect(getUserMedia).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /audio settings/i }))
+    // Settled first, so a re-render once the device list lands is counted.
+    await act(async () => {})
+    expect(getUserMedia).toHaveBeenCalledTimes(1)
+  })
+
+  it('releases the stream when Audio settings closes', async () => {
+    renderRoute('ambient')
+    fireEvent.click(screen.getByRole('button', { name: /audio settings/i }))
+    await act(async () => {})
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+
+    expect(stop).toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /cancel/i })).toBeNull()
+  })
+
+  /*
+   * The permission prompt now appears as the dialog opens, and the page stays
+   * usable behind it, so a doctor can close the dialog and only then answer
+   * Allow. A stream granted after its meter is gone has nobody else to stop it.
+   */
+  it('releases a stream granted only after Audio settings closed', async () => {
+    let grant: (stream: unknown) => void = () => {}
+    getUserMedia.mockReturnValue(
+      new Promise((resolve) => {
+        grant = resolve
+      }),
+    )
+    renderRoute('ambient')
+    fireEvent.click(screen.getByRole('button', { name: /audio settings/i }))
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+
+    await act(async () => grant({ getTracks: () => [{ stop }] }))
+
+    expect(stop).toHaveBeenCalled()
+  })
+
+  it('still applies a saved setting, which the next open shows', async () => {
+    renderRoute('manual')
+    fireEvent.click(screen.getByRole('button', { name: /audio settings/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^ILMU/ }))
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await act(async () => {})
+
+    fireEvent.click(screen.getByRole('button', { name: /audio settings/i }))
+    expect(screen.getByRole('button', { name: /^ILMU/ }).getAttribute('aria-pressed')).toBe('true')
   })
 })
 
