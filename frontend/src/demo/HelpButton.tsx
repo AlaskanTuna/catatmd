@@ -101,8 +101,19 @@ export function HelpButton() {
               <span aria-hidden className="text-accent">
                 &middot;
               </span>
-              It runs the real pipeline on a simulated transcript. The analysis starts now and runs
-              while you walk the first couple of screens. Nothing is mocked or replayed.
+              {/* A pull request preview has no pipeline behind it, so there the
+                promise would be false (docs/trd.md §17, Pull Request Previews). */}
+              {import.meta.env.VITE_PREVIEW_STUB === 'true' ? (
+                <>
+                  This is a preview build. Its backend is a stub, so the analysis is a placeholder
+                  on synthetic data.
+                </>
+              ) : (
+                <>
+                  It runs the real pipeline on a simulated transcript. The analysis starts now and
+                  runs while you walk the first couple of screens. Nothing is mocked or replayed.
+                </>
+              )}
             </li>
             <li className="flex gap-2">
               <span aria-hidden className="text-accent">
