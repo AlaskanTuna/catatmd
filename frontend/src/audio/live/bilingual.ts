@@ -28,16 +28,26 @@ import { joinTokens, type LiveSegment, type LiveToken, uncertainRanges } from '.
 export const INTERPRETED_LANGUAGE_NAMES: Record<InterpretedLanguage, string> = {
   bn: 'Bengali',
   ur: 'Urdu',
+  zh: 'Mandarin',
+  ta: 'Tamil',
 }
 
 export type OtherLanguage = NonNullable<TranscriptTurn['otherLanguage']>
 
 /**
  * Scripts no de-identification detector reads: Bengali, Arabic (which Urdu is
- * written in) with its supplements and presentation forms, and Devanagari,
- * which a recogniser may use if it hears Urdu as Hindi.
+ * written in) with its supplements and presentation forms, Devanagari, which a
+ * recogniser may use if it hears Urdu as Hindi, and Chinese and Tamil with the
+ * CJK and fullwidth punctuation Chinese is written with.
+ *
+ * Chinese and Tamil are here although the gate's `SCRIPT` detector leaves
+ * them alone on purpose (docs/trd.md §20.12): that detector also guards the
+ * untranslated Auto-detect path, where both are read natively. This module
+ * runs on translated sessions only, where the English is the text and the
+ * original belongs in `otherLanguage`, so neither may reach `turn.text`.
  */
-const UNREADABLE_SCRIPT = /[ঀ-৿؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿ऀ-ॿ]+/gu
+const UNREADABLE_SCRIPT =
+  /[ঀ-৿؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿ऀ-ॿ\p{Script=Han}\p{Script=Tamil}\u3000-\u303F\uFF00-\uFFEF]+/gu
 
 /**
  * The English of a patient turn whose translation never arrived.

@@ -413,3 +413,15 @@ Ambient capture can pair English with Urdu or Bengali, in both directions.
 - **No unreadable script in model input.** Only Latin script reaches `turn.text`, and the `SCRIPT` detector (#391) refuses anything else at the gate whatever a client sends.
 - **No claim about accuracy.** #389 measured the wire and the red-flag engine on synthetic voices, never recognition or translation quality on real speech.
 - **Who authorised it:** @Andersonnn7788, 2026-09-28, for the scope above and nothing else.
+
+### Amended 06/10/26: Mandarin And Tamil, Unmeasured
+
+The same two-way translation now pairs English with Mandarin (`zh`) or Tamil (`ta`), for Mandarin- and Tamil-speaking patients (#385).
+
+|                                        |                                                                                                                                                                                                                                                           |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What it adds**                       | Two rows in `translatedAmbientConfig`, each hinting `[language, 'en', 'ms']` with diarisation off and endpoint detection on, exactly as Urdu and Bengali                                                                                                  |
+| **What it skips**                      | The measurement this decision asks of every new pair. Neither language has been streamed through Soniox's translation here, and red-flag recall on their translated English is unknown. The grant comes ahead of the measurement and is recorded as that  |
+| **What differs from Urdu and Bengali** | The gate's `SCRIPT` detector does not read Chinese or Tamil, because the untranslated Auto-detect path relies on both reaching the note. On a translated session the script guard in `frontend/src/audio/live/bilingual.ts` keeps them out of `turn.text` |
+| **Cantonese**                          | Not a pair of its own. Chinese-script speech the recogniser tags as anything but `zh` is still kept out of `turn.text`: its English is used if a translation arrives, and otherwise the turn reads as untranslated                                        |
+| **Who authorised it**                  | @AlaskanTuna, 2026-10-06, for these two languages on ambient capture and nothing else                                                                                                                                                                     |

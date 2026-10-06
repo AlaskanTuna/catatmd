@@ -581,7 +581,7 @@ describe('two-way translation, an ambient session with a different first frame',
     const ambient = LiveAsrConfigSchema.parse(await (await readConfig()).json())
     const dictation = LiveAsrConfigSchema.parse(await (await readConfig('?mode=dictation')).json())
 
-    expect(ambient.availableTranslations).toEqual(['ur', 'bn'])
+    expect(ambient.availableTranslations).toEqual(['ur', 'bn', 'zh', 'ta'])
     expect(dictation.availableTranslations).toEqual([])
   })
 

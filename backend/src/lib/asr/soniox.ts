@@ -367,6 +367,26 @@ const TRANSLATED_AMBIENT_SETTINGS: Record<InterpretedLanguage, TranslatedSetting
     ],
     translation: { type: 'two_way', languageA: 'ur', languageB: 'en' },
   },
+  zh: {
+    languageHints: ['zh', 'en', 'ms'],
+    speakerDiarization: false,
+    endpointDetection: true,
+    general: [
+      { key: 'domain', value: 'Healthcare' },
+      { key: 'speakers', value: 'A doctor speaking English and a patient speaking Mandarin' },
+    ],
+    translation: { type: 'two_way', languageA: 'zh', languageB: 'en' },
+  },
+  ta: {
+    languageHints: ['ta', 'en', 'ms'],
+    speakerDiarization: false,
+    endpointDetection: true,
+    general: [
+      { key: 'domain', value: 'Healthcare' },
+      { key: 'speakers', value: 'A doctor speaking English and a patient speaking Tamil' },
+    ],
+    translation: { type: 'two_way', languageA: 'ta', languageB: 'en' },
+  },
 }
 
 /**

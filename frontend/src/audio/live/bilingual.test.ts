@@ -282,6 +282,56 @@ describe('the script guard', () => {
     expect(delivery.draftTurns).toEqual([{ speaker: 'patient', text: untranslatedTurnText('ur') }])
     expect(delivery.untranslated).toBe(1)
   })
+
+  /*
+   * Chinese and Tamil script is read natively on the untranslated Auto-detect
+   * path, which is why the gate's `SCRIPT` detector leaves it alone. On a
+   * translated session the English is the text, so it must never reach it.
+   */
+  const HAN_OR_TAMIL = /[\p{Script=Han}\p{Script=Tamil}]/u
+
+  it.each([
+    ['zh', ' 我胸口痛。', ' My chest hurts.'],
+    ['ta', ' எனக்கு நெஞ்சு வலி.', ' I have chest pain.'],
+  ] as const)(
+    'stores the English of a %s turn and keeps the original beside it',
+    (pair, spoken, english) => {
+      const delivery = bilingualDelivery(
+        tokensToBilingualTurns([said(spoken, pair), translatedAs(english, 'en', pair), end]),
+        pair,
+      )
+      expect(delivery.draftTurns).toEqual([{ speaker: 'patient', text: english.trim() }])
+      expect(delivery.others[0]).toEqual({ language: pair, text: spoken.trim(), spoken: true })
+      expect(delivery.text).not.toMatch(HAN_OR_TAMIL)
+    },
+  )
+
+  it.each([
+    // Cantonese is not a pair of its own, and may come back under another tag.
+    ['zh', ' 我好頭痛。', 'yue'],
+    ['ta', ' தலைவலி.', 'ml'],
+  ] as const)(
+    'treats %s-script speech tagged outside the pair as untranslated patient speech',
+    (pair, spoken, tag) => {
+      const delivery = bilingualDelivery(tokensToBilingualTurns([said(spoken, tag), end]), pair)
+      expect(delivery.draftTurns).toEqual([
+        { speaker: 'patient', text: untranslatedTurnText(pair) },
+      ])
+      expect(delivery.text).not.toMatch(HAN_OR_TAMIL)
+    },
+  )
+
+  it('replaces Chinese script and punctuation inside an English translation', () => {
+    const delivery = bilingualDelivery(
+      tokensToBilingualTurns([
+        said(' 我叫陈伟。', 'zh'),
+        translatedAs(' My name is 陈伟，', 'en', 'zh'),
+        end,
+      ]),
+      'zh',
+    )
+    expect(delivery.draftTurns[0]?.text).toBe('My name is [untranslated]')
+  })
 })
 
 describe('what the live pane shows', () => {

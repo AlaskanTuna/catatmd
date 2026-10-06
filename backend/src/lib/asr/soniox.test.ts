@@ -505,7 +505,8 @@ describe('getLiveAsrDescriptor', () => {
  * Written out by hand for the reason `EXPECTED_CONFIG` is: this is the first
  * frame of a translated session, it crosses the audio egress, and a test that
  * derived its expectation from the module would agree with any change to it.
- * These are the settings measured on synthetic audio in #389.
+ * Urdu and Bengali are the settings measured on synthetic audio in #389;
+ * Mandarin and Tamil follow the same shape, unmeasured (D-008, 06/10/26).
  */
 const EXPECTED_TRANSLATED: Record<InterpretedLanguage, LiveSessionConfig> = {
   bn: {
@@ -535,6 +536,34 @@ const EXPECTED_TRANSLATED: Record<InterpretedLanguage, LiveSessionConfig> = {
       ],
     },
     translation: { type: 'two_way', languageA: 'ur', languageB: 'en' },
+  },
+  zh: {
+    model: 'stt-rt-v5',
+    languageHints: ['zh', 'en', 'ms'],
+    languageIdentification: true,
+    speakerDiarization: false,
+    endpointDetection: true,
+    context: {
+      general: [
+        { key: 'domain', value: 'Healthcare' },
+        { key: 'speakers', value: 'A doctor speaking English and a patient speaking Mandarin' },
+      ],
+    },
+    translation: { type: 'two_way', languageA: 'zh', languageB: 'en' },
+  },
+  ta: {
+    model: 'stt-rt-v5',
+    languageHints: ['ta', 'en', 'ms'],
+    languageIdentification: true,
+    speakerDiarization: false,
+    endpointDetection: true,
+    context: {
+      general: [
+        { key: 'domain', value: 'Healthcare' },
+        { key: 'speakers', value: 'A doctor speaking English and a patient speaking Tamil' },
+      ],
+    },
+    translation: { type: 'two_way', languageA: 'ta', languageB: 'en' },
   },
 }
 

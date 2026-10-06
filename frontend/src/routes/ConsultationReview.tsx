@@ -189,7 +189,9 @@ function TranslationNotice({
 }) {
   const placeholders = new Set(languages.map(untranslatedTurnText))
   const untranslated = turns.filter((turn) => placeholders.has(turn.text)).length
-  const names = languages.map((language) => INTERPRETED_LANGUAGE_NAMES[language]).join(' and ')
+  const names = new Intl.ListFormat('en', { type: 'conjunction' }).format(
+    languages.map((language) => INTERPRETED_LANGUAGE_NAMES[language]),
+  )
   return (
     <div role="note" className="mb-3 rounded-card bg-surface px-3 py-2 text-xs text-ink-muted">
       <p>

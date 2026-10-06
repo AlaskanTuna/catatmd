@@ -327,14 +327,14 @@ The hosted adapter is **built and live**, and reaching it takes two separate act
 
 **A recording returns as timestamped, speaker-labelled draft lines.** Each Doctor/Patient label is a guess from segment timing and what the sentence says, never from the voices. The doctor no longer confirms them line by line: that gate was removed in #233 because the ambient workflow replacing it has no moment to stop and tweak labels. The safety it bought moved rather than went, and the transcript now carries `labelsReviewed: false` so the red-flag engine will not drop a trigger hit on a label nobody stood behind (`docs/trd.md` §20.2).
 
-**Ambient capture can interpret for a patient who speaks Urdu or Bengali** (#392, #393). The doctor picks the patient's language before starting, and the same Soniox socket returns every line with a machine translation beneath it, so each person reads the whole conversation in their own language.
+**Ambient capture can interpret for a patient who speaks Urdu, Bengali, Mandarin or Tamil** (#392, #393, #385). The doctor picks the patient's language before starting, and the same Soniox socket returns every line with a machine translation beneath it, so each person reads the whole conversation in their own language.
 
-| Property                        | Behaviour                                                                                                                                                                      |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **What the safety checks read** | The English only. The red-flag engine and de-identification read Latin script, so the Urdu or Bengali half is stored beside each turn and never sent to a model                |
-| **Roles**                       | Taken from the language spoken: English is the doctor and anything else the patient. Still a draft, and still `labelsReviewed: false`                                          |
-| **Consent**                     | The tick says the patient agreed to machine translation. It is written in English only, by the owner's decision (`decisions.md` D-008)                                         |
-| **Measured**                    | On synthetic voices only (#389). Every translation arrived directly after the words it translated, and the red-flag engine caught 12 of 12 translated warning signs after #390 |
+| Property                        | Behaviour                                                                                                                                                                                                             |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **What the safety checks read** | The English only. The red-flag engine and de-identification read Latin script, so the other-language half is stored beside each turn and never sent to a model                                                        |
+| **Roles**                       | Taken from the language spoken: English is the doctor and anything else the patient. Still a draft, and still `labelsReviewed: false`                                                                                 |
+| **Consent**                     | The tick says the patient agreed to machine translation. It is written in English only, by the owner's decision (`decisions.md` D-008)                                                                                |
+| **Measured**                    | On synthetic voices only (#389). Every translation arrived directly after the words it translated, and the red-flag engine caught 12 of 12 translated warning signs after #390. **Mandarin and Tamil are unmeasured** |
 
 **Machine translation is not an interpreter.** Nothing here measures it on real speech, speakers of Sylheti or Chittagonian are likely poorly served, and a line that comes back untranslated is counted on the review page as one the safety checks could not read. See [`trd.md`](./trd.md) §20.12.
 
