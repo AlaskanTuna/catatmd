@@ -43,6 +43,17 @@ export function Spotlight() {
     const selector = target
     let observed: Element | null = null
     const observer = new ResizeObserver(() => update())
+    /*
+     * A target inside a scrolling rail may be out of view even once it exists,
+     * so it is scrolled to, once per step, a beat after it is first seen.
+     *
+     * Counted from first sight rather than from the step starting (#347). A
+     * step that changes route sees its anchor mount whenever the new screen
+     * finishes rendering, and a fixed timer from the step's start fired before
+     * that and found nothing to scroll. Once only, so the viewer's own
+     * scrolling afterwards is never pulled back.
+     */
+    let settle = 0
 
     function update() {
       const element = document.querySelector(selector)
@@ -54,6 +65,12 @@ export function Spotlight() {
       if (box.width <= 0 || box.height <= 0) {
         setRect(null)
         return
+      }
+      if (!settle) {
+        settle = window.setTimeout(() => {
+          document.querySelector(selector)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+          update()
+        }, ROUTE_RENDER_DELAY_MS)
       }
       setRect(box)
       setRadius(window.getComputedStyle(element).borderRadius || null)
@@ -87,12 +104,6 @@ export function Spotlight() {
       })
     })
     watcher.observe(document.body, { childList: true, subtree: true })
-
-    // A target inside a scrolling rail may be out of view even once it exists.
-    const settle = window.setTimeout(() => {
-      document.querySelector(selector)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      update()
-    }, ROUTE_RENDER_DELAY_MS)
 
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)

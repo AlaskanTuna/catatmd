@@ -651,9 +651,18 @@ export function DemoTourProvider({ children }: { children: ReactNode }) {
    * interruption when it lands somewhere the tour did not send it. Comparing
    * against the path the tour last requested is what separates the two; a bare
    * location listener would tear the tour down on its own first step.
+   *
+   * Only a change of path is an interruption, not the tour switching on (#346).
+   * React Router commits navigation in a transition, so `start` lands `active`
+   * one render before its own navigation arrives, and on any page but the
+   * first step's this effect saw the old path and ended the tour it had just
+   * started.
    */
+  const seenPath = useRef(location.pathname)
   useEffect(() => {
-    if (!active) return
+    const moved = location.pathname !== seenPath.current
+    seenPath.current = location.pathname
+    if (!active || !moved) return
     if (expectedPath.current === null) return
     if (location.pathname === expectedPath.current) return
     stop()
