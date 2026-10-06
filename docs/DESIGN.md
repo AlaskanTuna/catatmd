@@ -320,11 +320,11 @@ the capture theatre and with two deliberate differences (#365).
 **Sized by its content, not the viewport (06/10/26).** A dictation is a few
 lines, so a full-viewport room left most of the screen empty.
 
-| State     | Width                         | Height                                |
-| --------- | ----------------------------- | ------------------------------------- |
-| Listening | One column, up to 40rem       | Grows with the text, up to the cap    |
-| Reviewing | Two columns, up to 64rem      | Grows with the rows, up to the cap    |
-| Cap       | `100vw - 2rem` on small views | `min(85vh, 48rem)`, then body scrolls |
+| State     | Width                                                  | Height                                |
+| --------- | ------------------------------------------------------ | ------------------------------------- |
+| Listening | One column, up to 40rem                                | Grows with the text, up to the cap    |
+| Reviewing | One column, up to 64rem: the box, then the lines table | Grows with the rows, up to the cap    |
+| Cap       | `100vw - 2rem` on small views                          | `min(85vh, 48rem)`, then body scrolls |
 
 The cap is the one `ChecklistPanel` and CatatAI use. Past it the header and the
 Confirm footer stay put. The microphone shows as a small wave rather than words.
@@ -339,16 +339,22 @@ because the field it filled was off screen, so a wired button read as broken.
 | ---------- | ------------------------------------------------------------------------- |
 | Opens      | By itself, on Dictate. Add opens the same room idle, with the box focused |
 | Escape     | **Stops, then closes.** The first press ends the dictation and stays open |
-| Discarding | Escape with rows staged asks first, because they were never saved         |
-| Confirm    | Commits the whole staged list at once, then closes                        |
+| Discarding | Escape with lines ticked asks first, because they were never saved        |
+| Confirm    | Commits every ticked line at once, then closes                            |
 
-**It is one column while listening and two after Stop, and that is the
-difference from the capture theatre.** The ambient one is two throughout because
-red flags stream in beside the transcript, so both halves are alive at once.
-Here the parse runs once, on Stop, so drug names and sig fields do not exist
-while the doctor is speaking: a second column then would be furniture. After
-Stop the dictated text moves left as the evidence, and the decisions take the
-right at 440px.
+**It is one column throughout, and the lines table appears after Stop.** The
+ambient theatre is two columns because red flags stream in beside the
+transcript. Here drug names and sig fields do not exist while the doctor is
+speaking, so a second column would be furniture. After Stop the box shrinks and
+the Prescription Lines table sits below it, one row per drug, every field
+editable in place (06/10/26).
+
+| Row           | Looks like                                                                                                             |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Exact name    | Ticked                                                                                                                 |
+| Near-match    | Unticked, with what was heard and any other reading. Holds Confirm until ticked or left out                            |
+| Nobody named  | Dashed outline, the gap grammar rather than a severity colour. Empty drug field; holds Confirm until named or unticked |
+| Shared fields | Name the clause they came from, as in "Frequency from “all of them”"                                                   |
 
 **Escape stops rather than docks, and that is the second difference.** Ambient
 docks because a consultation must keep recording while the doctor uses the page

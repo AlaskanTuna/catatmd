@@ -1,14 +1,15 @@
 import {
   type LiveAsrConfig,
   MAX_PRESCRIPTIONS,
-  type MedicationCandidateWire,
   type Prescription,
+  type PrescriptionLine,
+  type ShareableSigField,
   type SigFoodTiming,
   type SigFrequency,
   type SigRoute,
 } from '@shared/types'
 import { useMutation } from '@tanstack/react-query'
-import { Check, Mic, Pencil, Plus, Square, Trash2, X } from 'lucide-react'
+import { Check, CircleHelp, Mic, Plus, Square, Trash2, X } from 'lucide-react'
 import { type SyntheticEvent, useCallback, useEffect, useId, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
@@ -22,28 +23,19 @@ import type { WorkerRequest, WorkerResponse } from '../audio/protocol.js'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
+import { Checkbox } from '../ui/Checkbox.js'
 import { Select } from '../ui/Select.js'
 import {
-  acceptCandidate,
-  candidateKey,
   capDictation,
-  EMPTY_DRAFT,
   FOOD_OPTIONS,
   FREQUENCY_OPTIONS,
-  fromSig,
+  type LineEdit,
+  type LineRow,
   MAX_DICTATED_CHARACTERS,
-  narrowToSig,
-  type PrescriptionDraft,
+  manualRow,
   ROUTE_OPTIONS,
-  type Span,
-  type StagedPrescription,
-  setDrugByHand,
-  spanForCandidate,
-  stretchKey,
-  summarise,
-  toPrescription,
-  unclaimedStretches,
-  visibleCandidates,
+  rowsFrom,
+  toConfirm,
 } from './prescription-draft.js'
 import { START_FAILED_ERROR, useDictationStream } from './use-dictation-stream.js'
 
@@ -57,11 +49,11 @@ import { START_FAILED_ERROR, useDictationStream } from './use-dictation-stream.j
  * prescription was stacked in that column and most of it was below the fold,
  * which is what made a wired Accept button read as dead.
  *
- * **It is one column while listening and two after Stop.** The ambient theatre
- * is two throughout because red flags stream in beside the transcript. This one
- * has nothing to put there: the parse runs once, on complete, so drug names and
- * sig fields do not exist until the talking is over. A second column while the
- * doctor is speaking would be furniture.
+ * **One table of lines, read from the whole box** (`docs/decisions.md` D-001,
+ * amended 06/10/26). One parse returns every drug said, each with its own sig,
+ * and the box is read again shortly after the doctor stops editing it. An exact
+ * name starts ticked, a near-match waits for a tick, and a line with a sig but
+ * no recognised name holds Confirm until it is named or unticked.
  *
  * **A native `<dialog>` rather than a fixed panel.** `showModal()` promotes it
  * to the top layer, outside every backdrop root, which is what keeps the glass
@@ -71,7 +63,7 @@ import { START_FAILED_ERROR, useDictationStream } from './use-dictation-stream.j
  * surface.
  *
  * **Nothing is stored until Confirm.** Parsing writes nothing server-side, the
- * staged list is local state, and confirming is one ordinary
+ * table is local state, and confirming is one ordinary
  * `PATCH /api/consultations/:id { prescriptions }` carrying the whole list.
  */
 
@@ -91,31 +83,69 @@ const TEXT_INPUT =
   'h-11 rounded-control border border-line bg-surface px-3.5 text-sm transition-colors hover:border-accent focus:border-accent'
 const PANEL = 'rounded-card bg-surface p-4 shadow-card'
 
+/** Dose, duration, frequency, food and route: one row wide; the lists take a full row on a phone. */
+const SIG_GRID =
+  'grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,0.7fr)_minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1.2fr)]'
+
+const SHARED_NAMES: Record<ShareableSigField, string> = {
+  route: 'Route',
+  frequency: 'Frequency',
+  duration: 'Duration',
+  food: 'With Food',
+}
+
+/**
+ * A field's name, shown above it while the table wraps. On a wide screen the
+ * header row names the columns instead, and every control carries its own
+ * label for a screen reader either way.
+ */
+function FieldName({ children }: { children: string }) {
+  return (
+    <span aria-hidden className={cn(FIELD_LABEL, 'lg:hidden')}>
+      {children}
+    </span>
+  )
+}
+
+/** A line's own words, with the drug name heard in them marked. */
+function Quote({
+  text,
+  span,
+  name,
+}: {
+  text: string
+  span: { start: number; end: number }
+  name: { start: number; end: number } | undefined
+}) {
+  if (name === undefined || name.start < span.start || name.end > span.end) {
+    return <>“{text.slice(span.start, span.end)}”</>
+  }
+  return (
+    <>
+      “{text.slice(span.start, name.start)}
+      <mark className="bg-transparent font-semibold text-ink underline decoration-accent decoration-2 underline-offset-2">
+        {text.slice(name.start, name.end)}
+      </mark>
+      {text.slice(name.end, span.end)}”
+    </>
+  )
+}
+
 /** Queried rather than reffed, because `Button` does not declare a `ref` prop. */
 const STOP_LABEL = 'Stop dictation'
+const ADD_LINE_LABEL = 'Add Line'
 
 const DISCARD_PROMPT = 'Discard the prescriptions you have not confirmed?'
 
 const clock = (seconds: number): string =>
   `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 
-/** How much of the dictation is kept in front of a heard name. */
-const LEAD_IN = 48
-
 /**
- * The text before a heard name, cut at a word boundary when it is long.
- *
- * Each candidate quotes the dictation clamped to three lines, so in a column
- * this wide a name heard past roughly the second sentence was clipped out of
- * its own quote. Trimming the front keeps the marked span on screen, and the
- * ellipsis says text was left out rather than implying it starts there.
+ * How long the box rests before it is read again. Long enough not to parse on
+ * every keystroke, short enough that the table has caught up by the time the
+ * doctor looks at it.
  */
-const leadIn = (text: string, start: number): string => {
-  if (start <= LEAD_IN) return text.slice(0, start)
-  const space = text.indexOf(' ', start - LEAD_IN)
-  const from = space === -1 || space >= start ? start - LEAD_IN : space + 1
-  return `…${text.slice(from, start)}`
-}
+const REPARSE_DELAY_MS = 600
 
 export function PrescriptionTheatre({
   consultationId,
@@ -138,6 +168,8 @@ export function PrescriptionTheatre({
   const self = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   const boxId = useId()
+  const linesId = useId()
+  const genericsId = useId()
 
   /*
    * Streaming is always preferred here, and on-device is only the fallback when
@@ -166,20 +198,15 @@ export function PrescriptionTheatre({
 
   const [dictation, setDictation] = useState('')
   const [parsedFrom, setParsedFrom] = useState<string | null>(null)
-  const [candidates, setCandidates] = useState<readonly MedicationCandidateWire[]>([])
-  const [rejected, setRejected] = useState<ReadonlySet<string>>(new Set())
+  const [lines, setLines] = useState<readonly PrescriptionLine[]>([])
+  const [generics, setGenerics] = useState<readonly string[]>([])
   /**
-   * Unclaimed stretches the doctor has looked at and set aside.
-   *
-   * **Without it the block is wallpaper.** A dictation almost always ends on
-   * something that is not a drug ("no antibiotics for now", "come back if it
-   * worsens"), so the remainder is rarely empty, and a panel that is always
-   * there stops being read. Dismissing is the same act as rejecting a
-   * candidate and is deliberately as cheap.
+   * What the doctor did to each line, kept apart from the parse so reading the
+   * box again cannot overwrite it (`LineEdit`).
    */
-  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set())
-  const [staged, setStaged] = useState<readonly StagedPrescription[]>([])
-  const [editing, setEditing] = useState<string | null>(null)
+  const [edits, setEdits] = useState<ReadonlyMap<string, LineEdit>>(new Map())
+  const [manual, setManual] = useState<readonly { key: string; phrase: string }[]>([])
+  const [parseFailed, setParseFailed] = useState(false)
   const [phase, setPhase] = useState<'idle' | 'recording' | 'loading-model' | 'transcribing'>(
     'idle',
   )
@@ -207,92 +234,54 @@ export function PrescriptionTheatre({
     onError: () => setError(SAVE_FAILED),
   })
 
+  /*
+   * The latest text, and the last text sent. A response for text the doctor has
+   * since changed is dropped rather than rendered: a newer read is coming, and
+   * offsets into the old text would quote the wrong words.
+   */
+  const latest = useRef('')
+  const sent = useRef<string | null>(null)
+  useEffect(() => {
+    latest.current = dictation.trim()
+  })
+
   const parse = useMutation({
     mutationFn: (dictated: string) => api.parsePrescription(consultationId, dictated),
     onSuccess: (response, dictated) => {
+      if (dictated !== latest.current) {
+        // Dropped, so not read: going back to these words must read them again.
+        if (sent.current === dictated) sent.current = null
+        return
+      }
       setError(null)
-      setCandidates(response.candidates)
-      setRejected(new Set())
-      // New text means new offsets, so a stretch set aside against the old one
-      // is a decision about characters that no longer exist.
-      setDismissed(new Set())
+      setParseFailed(false)
+      setLines(response.lines ?? [])
+      setGenerics(response.generics ?? [])
       setParsedFrom(dictated)
     },
-    onError: () =>
-      toast.error('That medication could not be checked. The fields are still yours to fill in.'),
+    onError: (_cause, dictated) => {
+      if (dictated === latest.current) setParseFailed(true)
+      else if (sent.current === dictated) sent.current = null
+    },
   })
+  const mutateParse = parse.mutate
 
-  /**
-   * The sig for one accepted drug, read from that drug's own stretch of text.
-   *
-   * The parse endpoint returns one sig per phrase, so a four-drug dictation
-   * cannot hand four sigs back from one response. Re-parsing the slice is what
-   * gives each drug the dose said beside it; reusing the whole-phrase sig is how
-   * paracetamol's 500 mg lands on cetirizine, which `docs/decisions.md` D-001
-   * exists to prevent. The route is deterministic, stores nothing, writes no
-   * audit row and allows thirty a minute, so a handful of extra calls per
-   * dictation costs nothing that matters.
-   */
-  const segment = useMutation({
-    mutationFn: ({ source }: { key: string; source: string }) =>
-      api.parsePrescription(consultationId, source),
-    onSuccess: (response, { key }) =>
-      setStaged((rows) =>
-        rows.map((row) => {
-          if (row.key !== key) return row
-          /*
-           * Fills what is still blank and replaces nothing. The row stays
-           * editable while its request is in flight, so a wholesale merge let a
-           * response arriving half a second later overwrite a dose the doctor
-           * had already typed. On this field that is the difference between a
-           * gap and a wrong number.
-           */
-          const parsed = fromSig(response.sig)
-          const draft: PrescriptionDraft = {
-            ...row.draft,
-            dose: row.draft.dose === '' ? parsed.dose : row.draft.dose,
-            route: row.draft.route === '' ? parsed.route : row.draft.route,
-            frequency: row.draft.frequency === '' ? parsed.frequency : row.draft.frequency,
-            duration: row.draft.duration === '' ? parsed.duration : row.draft.duration,
-            food: row.draft.food === '' ? parsed.food : row.draft.food,
-          }
-          /*
-           * The quote narrows even though the fields only fill, and the
-           * asymmetry is deliberate. A field the doctor typed is theirs and a
-           * late response must not overwrite it; the quote is evidence of where
-           * these fields were read from and is not editable, so leaving it wide
-           * would keep claiming text this sig never accounted for. That claim is
-           * the whole defect (#369): with nothing narrowing it, one row holds
-           * every character and a second drug in the same breath has no
-           * remainder to be offered from.
-           */
-          if (row.sourceSpan === undefined || response.sigReadTo == null) return { ...row, draft }
-          /*
-           * Cut from `row.source`, never from `parsedFrom`. `sigReadTo` indexes
-           * the string that was posted, and that string is this row's quote, so
-           * this holds whatever the doctor has since done to the box. Pressing
-           * Check replaces `parsedFrom` while staged rows keep the spans they
-           * were cut with, and re-slicing there would quote the new text at the
-           * old offsets.
-           */
-          const source = row.source.slice(0, response.sigReadTo).trim()
-          return source.length === 0
-            ? { ...row, draft }
-            : { ...row, draft, source, sourceSpan: narrowToSig(row.sourceSpan, response.sigReadTo) }
-        }),
-      ),
-    onError: () =>
-      toast('The dose and frequency could not be read for that drug. Fill them in on the row.'),
-  })
+  const read = useCallback(
+    (text: string) => {
+      sent.current = text
+      mutateParse(text)
+    },
+    [mutateParse],
+  )
 
   const onDictated = useRef((text: string) => {
     setDictation(text)
-    parse.mutate(text)
+    read(text)
   })
   useEffect(() => {
     onDictated.current = (text: string) => {
       setDictation(text)
-      parse.mutate(text)
+      read(text)
     }
   })
 
@@ -607,128 +596,103 @@ export function PrescriptionTheatre({
   const reset = useCallback(() => {
     setDictation('')
     setParsedFrom(null)
-    setCandidates([])
-    setRejected(new Set())
-    setDismissed(new Set())
-    setStaged([])
-    setEditing(null)
+    setLines([])
+    setEdits(new Map())
+    setManual([])
+    setParseFailed(false)
     setError(null)
+    sent.current = null
     cappedRef.current = false
   }, [])
 
-  const busy = phase !== 'idle' || stream.phase !== null || parse.isPending
-  const dirty = parsedFrom !== null && dictation.trim() !== parsedFrom.trim()
-  const room = MAX_PRESCRIPTIONS - stored.length - staged.length
+  /** The microphone or the on-device model has the box. */
+  const listening = phase !== 'idle' || stream.phase !== null
+  const busy = listening || parse.isPending
+
   /*
-   * A candidate is resolved when it was rejected, or when a staged row already
-   * claims a span it overlaps. Removing the row releases the span, which is
-   * what hands every candidate on it back.
+   * Read again once the doctor stops editing, rather than on a button. The box
+   * stays editable while a read is in flight; a response for text since
+   * changed is dropped by `parse`.
    */
-  const claimed = staged.flatMap((row) => (row.span === undefined ? [] : [row.span]))
-  const offered = visibleCandidates(candidates, rejected).filter(
-    (candidate) =>
-      !claimed.some((span) => candidate.start < span.end && span.start < candidate.end),
-  )
+  useEffect(() => {
+    if (!open || listening) return
+    const text = dictation.trim()
+    if (text === '') {
+      setLines([])
+      setParsedFrom(null)
+      sent.current = null
+      return
+    }
+    if (text === sent.current) return
+    const timer = window.setTimeout(() => read(text), REPARSE_DELAY_MS)
+    return () => window.clearTimeout(timer)
+  }, [open, listening, dictation, read])
+
+  /** The table is from the text as it stands, not from words since changed. */
+  const fresh = parsedFrom !== null && dictation.trim() === parsedFrom
+  const rows: LineRow[] = [
+    ...(parsedFrom === null ? [] : rowsFrom(parsedFrom, lines, edits)),
+    ...manual.map(({ key, phrase }) => manualRow(key, phrase, edits.get(key))),
+  ]
+  const { ready, unnamed, undecided } = toConfirm(rows)
+  const room = MAX_PRESCRIPTIONS - stored.length
   /*
-   * The dictation minus every stretch a row quotes. It exists because a drug
-   * the lexicon does not hold raises no candidate, so nothing bounds the
-   * previous drug's slice and nothing announces the second drug either: a
-   * dictation naming two drugs recorded one, and its quote swallowed the other
-   * (#369). Showing the gap is the whole fix. It names no drug, because the
-   * reason the gap is a gap is that no name was recognised in it.
-   *
-   * Derived from `staged` rather than stored, so removing a row hands its
-   * stretch straight back, exactly as removing a row releases its candidates.
+   * After the first read rather than on the first keystroke, so a doctor typing
+   * from Add does not watch the surface widen under the words.
    */
-  const remainder =
-    parsedFrom === null || staged.length === 0
-      ? []
-      : unclaimedStretches(
-          parsedFrom,
-          staged.flatMap((row) => (row.sourceSpan === undefined ? [] : [row.sourceSpan])),
-        ).filter((stretch) => !dismissed.has(stretchKey(stretch)))
-  /*
-   * The right column appears once there is anything to work with, not only
-   * after a successful parse. Gating it on `parsedFrom` meant a failed parse
-   * left the doctor reading "the fields are still yours to fill in" beside no
-   * fields at all.
-   */
-  const reviewing = !capturing && (parsedFrom !== null || dictation.trim().length > 0)
-  const ready = staged.flatMap((row) => {
-    const prescription = toPrescription(row.draft, row.source)
-    return prescription === null ? [] : [prescription]
-  })
+  const reviewing = !capturing && (parsedFrom !== null || parseFailed || manual.length > 0)
 
   /** Stable across edits, so a row's React key and focus target never move. */
   const mintKey = () => {
     nextKey.current += 1
-    return `staged-${nextKey.current}`
+    return `manual-${nextKey.current}`
   }
 
-  const accept = (candidate: MedicationCandidateWire) => {
-    if (parsedFrom === null || room <= 0) return
-    const key = mintKey()
-    const sourceSpan = spanForCandidate(parsedFrom, candidates, candidate)
-    const source = parsedFrom.slice(sourceSpan.start, sourceSpan.end).trim()
-    setStaged((rows) => [
-      ...rows,
-      {
-        key,
-        draft: acceptCandidate(EMPTY_DRAFT, candidate),
-        source: source.length > 0 ? source : parsedFrom,
-        span: { start: candidate.start, end: candidate.end },
-        ...(source.length > 0 ? { sourceSpan } : {}),
-      },
-    ])
-    if (source.length > 0) segment.mutate({ key, source })
-  }
+  /** Each row's drug field, so focus can follow the doctor's act. */
+  const drugFields = useRef(new Map<string, HTMLInputElement>())
+  const focusNext = useRef<string | null>(null)
+  useEffect(() => {
+    const key = focusNext.current
+    if (key === null) return
+    focusNext.current = null
+    drugFields.current.get(key)?.focus()
+  })
 
-  /**
-   * Stage a stretch the dictation holds and no row claims (#369).
-   *
-   * **It proposes no drug name, and that is the point.** The row opens with an
-   * empty `drug` for the doctor to type, because the reason this stretch is
-   * unclaimed is that the matcher recognised no name in it, and inventing one
-   * from unmatched text is the substitution `docs/decisions.md` D-001 bans.
-   *
-   * It does parse the sig, which `addByHand` does not. The stretch is a span of
-   * the dictation with known bounds, so there is a right answer to what dose was
-   * said inside it; the hand path has only the whole box, where there is not.
-   */
-  const addFromRemainder = (stretch: Span & { text: string }) => {
-    if (room <= 0) return
-    const key = mintKey()
-    setStaged((rows) => [
-      ...rows,
-      { key, draft: EMPTY_DRAFT, source: stretch.text, sourceSpan: stretch },
-    ])
-    setEditing(key)
-    segment.mutate({ key, source: stretch.text })
-  }
+  const edit = (key: string, change: LineEdit) =>
+    setEdits((current) => {
+      const before = current.get(key)
+      return new Map(current).set(key, {
+        ...before,
+        ...change,
+        fields: { ...before?.fields, ...change.fields },
+      })
+    })
 
   const addByHand = () => {
     /*
-     * The live box, not the last parsed text. A doctor who checked one phrase,
-     * edited the box and then added by hand would otherwise have the row record
-     * the phrase they replaced as the evidence its fields came from.
+     * The live box is the evidence, because a row typed by hand was read from
+     * no line of it. Without words behind it there is nothing to quote, and
+     * `dictated` is required.
      */
     const phrase = dictation.trim()
-    if (phrase.length === 0 || room <= 0) return
+    if (phrase.length === 0) return
     const key = mintKey()
-    setStaged((rows) => [...rows, { key, draft: EMPTY_DRAFT, source: phrase }])
-    setEditing(key)
+    focusNext.current = key
+    setManual((current) => [...current, { key, phrase }])
   }
 
-  const patch = (key: string, change: Partial<PrescriptionDraft>) =>
-    setStaged((rows) =>
-      rows.map((row) => (row.key === key ? { ...row, draft: { ...row.draft, ...change } } : row)),
-    )
-
-  /** Rows that are not a prescription yet, so Confirm cannot quietly drop them. */
-  const incomplete = staged.length - ready.length
+  const stale = parsedFrom !== null && !fresh
+  const confirmable =
+    ready.length > 0 &&
+    unnamed === 0 &&
+    undecided === 0 &&
+    ready.length <= room &&
+    !busy &&
+    !stale &&
+    !save.isPending
 
   const confirm = () => {
-    if (ready.length === 0 || incomplete > 0) return
+    if (!confirmable) return
     save.mutate([...stored, ...ready], {
       onSuccess: () => {
         reset()
@@ -751,21 +715,22 @@ export function PrescriptionTheatre({
         : `Downloading the speech model, ${progress}%.`
     }
     if (phase === 'transcribing') return 'Transcribing on this device.'
-    if (parse.isPending) return 'Checking the medication.'
-    if (segment.isPending) return 'Reading the dose for that drug.'
+    if (parse.isPending || (stale && !parseFailed)) return 'Reading the prescription.'
     return ''
   }
 
   const status =
     statusLine() !== ''
       ? statusLine()
-      : incomplete > 0
-        ? `Name every drug before confirming. ${incomplete} still ${
-            incomplete === 1 ? 'needs' : 'need'
-          } a name.`
-        : reviewing
-          ? `${staged.length} to confirm, ${stored.length} already recorded`
-          : ''
+      : undecided > 0
+        ? `${undecided} ${undecided === 1 ? 'line was' : 'lines were'} not an exact match. Tick to accept, or leave it out.`
+        : unnamed > 0
+          ? `${unnamed} ticked ${unnamed === 1 ? 'line has' : 'lines have'} no drug name. Name it, or untick it to leave it out.`
+          : ready.length > room
+            ? `Ten is the most this record holds, and ${stored.length} already recorded. Untick a line.`
+            : reviewing
+              ? `${ready.length} to confirm, ${stored.length} already recorded`
+              : ''
   const failure = error ?? stream.error
 
   /**
@@ -775,7 +740,7 @@ export function PrescriptionTheatre({
    * `close()`, so the header's X and the Discard button each wiped the list
    * without asking. A guard reachable by one of three doors is not a guard.
    */
-  const mayDiscard = () => staged.length === 0 || window.confirm(DISCARD_PROMPT)
+  const mayDiscard = () => ready.length === 0 || window.confirm(DISCARD_PROMPT)
 
   const requestClose = () => {
     if (mayDiscard()) self.current?.close()
@@ -879,21 +844,12 @@ export function PrescriptionTheatre({
                       size="sm"
                       variant="neutral"
                       icon={<Mic aria-hidden className="size-3.5" />}
-                      disabled={busy}
+                      disabled={listening}
                       onClick={startDictation}
                     >
                       {parsedFrom === null ? 'Dictate' : 'Dictate Again'}
                     </Button>
                   )}
-                  <Button
-                    size="sm"
-                    variant="neutral"
-                    disabled={busy || dictation.trim().length === 0}
-                    loading={parse.isPending}
-                    onClick={() => parse.mutate(dictation.trim())}
-                  >
-                    Check
-                  </Button>
                   <button
                     type="button"
                     aria-label="Close prescription dictation"
@@ -907,389 +863,356 @@ export function PrescriptionTheatre({
             </div>
           </header>
 
-          {/* A flex column below `lg`, so the two halves stacked on a narrow
-            screen keep the same gap they have side by side. At `lg` the single
-            row is pinned to the body's height, which is what lets each column
-            scroll on its own instead of the taller one being clipped. */}
-          <div
-            className={cn(
-              'flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto p-4 sm:p-5',
-              reviewing &&
-                'lg:grid lg:grid-cols-[minmax(0,1fr)_440px] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden',
-            )}
-          >
-            <div
-              className={cn(
-                'flex min-w-0 flex-col gap-4',
-                reviewing && 'lg:min-h-0 lg:overflow-y-auto lg:pr-1',
+          <div className="flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto p-4 sm:p-5">
+            <section className={PANEL}>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-xs font-semibold text-ink" id={boxId}>
+                  What You Prescribed
+                </span>
+                <span aria-hidden className="tabular-nums text-2xs text-ink-muted">
+                  {dictation.length} / {MAX_DICTATED_CHARACTERS}
+                </span>
+              </div>
+
+              {/* Grows with the words as they arrive, where the browser can
+                size a field to its content, and scrolls past the ceiling. It
+                stays editable while a read is in flight, so typing never loses
+                focus to a parse. */}
+              <textarea
+                ref={box}
+                aria-labelledby={boxId}
+                className={cn(
+                  'mt-2 block w-full resize-y rounded-control border border-line bg-surface p-3 text-sm leading-relaxed transition-colors field-sizing-content hover:border-accent focus:border-accent',
+                  reviewing ? 'max-h-32 min-h-12' : 'max-h-72 min-h-36',
+                )}
+                placeholder="amoxicillin 500 mg, three times a day, after food, for five days"
+                maxLength={MAX_DICTATED_CHARACTERS}
+                value={dictation}
+                onChange={(event) => setDictation(event.target.value)}
+                disabled={listening}
+              />
+
+              {/* Provisional tokens, outside the field on purpose: they are
+                rewritten as the doctor speaks, and one truncated at
+                `maxLength` would stay truncated once it settled. No
+                `aria-live` either, since a region firing per token floods a
+                screen reader; the status line already narrates the phase. */}
+              {stream.interim !== '' && (
+                <p className="mt-2 text-xs italic text-ink-muted">{stream.interim}</p>
               )}
-            >
-              <section className={PANEL}>
+
+              {reviewing && (
+                <p className="mt-2 text-2xs text-ink-muted">
+                  The lines below follow this text as you edit it.
+                </p>
+              )}
+
+              {configFailure !== null && (
+                <p className="mt-2 text-xs text-ink-muted">
+                  {configFailure === 'unavailable'
+                    ? 'Streaming recognition is not available on this deployment, so Dictate transcribes on this device.'
+                    : 'Streaming recognition could not be reached, so Dictate transcribes on this device.'}
+                </p>
+              )}
+
+              {thin && (
+                <p className="mt-2 text-xs text-ink-muted">
+                  This device does not have the memory to run the speech model, so type the
+                  medication above instead.
+                </p>
+              )}
+            </section>
+
+            {reviewing && (
+              <section className={PANEL} aria-labelledby={linesId}>
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-xs font-semibold text-ink" id={boxId}>
-                    What You Prescribed
-                  </span>
-                  <span aria-hidden className="tabular-nums text-2xs text-ink-muted">
-                    {dictation.length} / {MAX_DICTATED_CHARACTERS}
+                  <h3 id={linesId} className="text-xs font-semibold text-ink">
+                    Prescription Lines
+                  </h3>
+                  <span className="tabular-nums text-2xs text-ink-muted">
+                    {rows.filter(({ ticked }) => ticked).length} of {rows.length} ticked
                   </span>
                 </div>
 
-                {/* Grows with the words as they arrive, where the browser can
-                  size a field to its content, and scrolls past the ceiling. */}
-                <textarea
-                  ref={box}
-                  aria-labelledby={boxId}
-                  className="mt-2 block max-h-72 min-h-36 w-full resize-y rounded-control border border-line bg-surface p-3 text-sm leading-relaxed transition-colors field-sizing-content hover:border-accent focus:border-accent"
-                  placeholder="amoxicillin 500 mg, three times a day, after food, for five days"
-                  maxLength={MAX_DICTATED_CHARACTERS}
-                  value={dictation}
-                  onChange={(event) => setDictation(event.target.value)}
-                  disabled={busy}
-                />
-
-                {/* Provisional tokens, outside the field on purpose: they are
-                  rewritten as the doctor speaks, and one truncated at
-                  `maxLength` would stay truncated once it settled. No
-                  `aria-live` either, since a region firing per token floods a
-                  screen reader; the status line already narrates the phase. */}
-                {stream.interim !== '' && (
-                  <p className="mt-2 text-xs italic text-ink-muted">{stream.interim}</p>
-                )}
-
-                {reviewing && (
-                  <p className="mt-2 text-2xs text-ink-muted">
-                    Edit the text and press Check to read it again.
-                  </p>
-                )}
-
-                {configFailure !== null && (
-                  <p className="mt-2 text-xs text-ink-muted">
-                    {configFailure === 'unavailable'
-                      ? 'Streaming recognition is not available on this deployment, so Dictate transcribes on this device.'
-                      : 'Streaming recognition could not be reached, so Dictate transcribes on this device.'}
-                  </p>
-                )}
-
-                {thin && (
-                  <p className="mt-2 text-xs text-ink-muted">
-                    This device does not have the memory to run the speech model, so type the
-                    medication above instead.
-                  </p>
-                )}
-              </section>
-
-              {reviewing && offered.length > 0 && parsedFrom !== null && (
-                <section className={PANEL}>
-                  <h3 className="text-xs font-semibold text-ink">
-                    Drug Names Heard ({offered.length})
-                  </h3>
-                  <p className="mt-1 text-2xs text-ink-muted">
-                    Each is a separate decision, and nothing is recorded until you accept it.
-                  </p>
-
-                  <ul aria-label="Drug names heard" className="mt-3 space-y-2">
-                    {offered.map((candidate) => {
-                      const heardIsGeneric = candidate.heard.toLowerCase() === candidate.generic
-                      return (
-                        <li
-                          key={candidateKey(candidate)}
-                          className="rounded-control bg-sunken-soft p-3 text-xs text-ink-muted"
-                        >
-                          {/* Sliced from the text the offsets belong to, never
-                            from the live box, so the marked span stays truthful
-                            while the doctor is mid-edit. */}
-                          <p className="line-clamp-3 font-mono leading-relaxed">
-                            {leadIn(parsedFrom, candidate.start)}
-                            <mark className="bg-transparent font-semibold text-ink underline decoration-accent decoration-2 underline-offset-2">
-                              {parsedFrom.slice(candidate.start, candidate.end)}
-                            </mark>
-                            {parsedFrom.slice(candidate.end)}
-                          </p>
-
-                          <div className="mt-2 flex flex-wrap items-center gap-2">
-                            <span className="text-ink">
-                              {heardIsGeneric ? 'Record as' : 'Read as'}{' '}
-                              <strong className="font-semibold">{candidate.generic}</strong>?
-                            </span>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              icon={<Check aria-hidden className="size-3.5" />}
-                              disabled={dirty || room <= 0}
-                              onClick={() => accept(candidate)}
-                            >
-                              Accept
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="neutral"
-                              icon={<X aria-hidden className="size-3.5" />}
-                              onClick={() =>
-                                setRejected((current) =>
-                                  new Set(current).add(candidateKey(candidate)),
-                                )
-                              }
-                            >
-                              Reject
-                            </Button>
-                            {dirty && <span>Check the dictation again first.</span>}
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </section>
-              )}
-
-              {/* The same silence as the block below, in the case that block
-                cannot see: one drug matched and a second did not, so the count
-                is 1 rather than 0 and nothing said the second was dropped
-                (#369). Quoted and never named, because the matcher recognised
-                no drug here and reading one out of the text is the
-                substitution D-001 bans. */}
-              {reviewing && remainder.length > 0 && (
-                <section className={PANEL}>
-                  <h3 className="text-xs font-semibold text-ink">
-                    Not Claimed By Any Row ({remainder.length})
-                  </h3>
-                  <p className="mt-1 text-2xs text-ink-muted">
-                    You said this and no prescription covers it. If it is a drug, add it and name it
-                    yourself.
-                  </p>
-
-                  <ul aria-label="Not claimed by any row" className="mt-3 space-y-2">
-                    {remainder.map((stretch) => (
-                      <li
-                        key={`${stretch.start}:${stretch.end}`}
-                        className="rounded-control bg-sunken-soft p-3 text-xs text-ink-muted"
-                      >
-                        <p className="line-clamp-3 font-mono leading-relaxed">“{stretch.text}”</p>
-
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            icon={<Plus aria-hidden className="size-3.5" />}
-                            disabled={dirty || room <= 0}
-                            onClick={() => addFromRemainder(stretch)}
-                          >
-                            Add As A Prescription
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="neutral"
-                            icon={<X aria-hidden className="size-3.5" />}
-                            onClick={() =>
-                              setDismissed((current) => new Set(current).add(stretchKey(stretch)))
-                            }
-                          >
-                            Dismiss
-                          </Button>
-                          {dirty && <span>Check the dictation again first.</span>}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-
-              {/* A parse that found nothing rendered no block at all before
-                #365, so a doctor who said a drug the lexicon does not hold got
-                silence. Brand names are outside the lexicon by D-001, which
-                makes this the common case rather than the rare one. */}
-              {reviewing && parsedFrom !== null && candidates.length === 0 && (
-                <section className={PANEL}>
-                  <h3 className="text-xs font-semibold text-ink">Drug Names Heard (0)</h3>
-                  <p className="mt-1 text-xs text-ink-muted">
-                    No drug name in the list matched what you said. Add it by hand on the right, or
-                    edit the text above and press Check.
-                  </p>
-                </section>
-              )}
-            </div>
-
-            {reviewing && (
-              <div className="flex min-w-0 flex-col gap-4 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
-                <section className={PANEL}>
-                  <div className="flex items-baseline justify-between gap-3">
-                    <h3 className="text-xs font-semibold text-ink">Prescriptions To Confirm</h3>
-                    <span className="tabular-nums text-2xs text-ink-muted">{staged.length}</span>
-                  </div>
-
-                  {staged.length === 0 ? (
-                    <p className="mt-2 text-xs text-ink-muted">
-                      Accept a drug name on the left, or add one by hand.
-                    </p>
-                  ) : (
-                    <ul aria-label="Prescriptions to confirm" className="mt-3 space-y-2">
-                      {staged.map((row, index) => (
-                        <li
-                          key={row.key}
-                          className={cn(
-                            'rounded-control p-3',
-                            editing === row.key ? 'bg-accent-soft' : 'bg-sunken-soft',
-                          )}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold text-ink">
-                                <span className="tabular-nums text-ink-muted">{index + 1}. </span>
-                                {row.draft.drug.trim() === '' ? (
-                                  <span className="font-normal italic text-ink-muted">
-                                    Name this drug
-                                  </span>
-                                ) : (
-                                  row.draft.drug
-                                )}
-                              </p>
-                              <p className="mt-0.5 text-xs text-ink-muted">
-                                {summarise(row.draft) === ''
-                                  ? 'No dose or frequency read.'
-                                  : summarise(row.draft)}
-                              </p>
-                              {/* The stretch these fields were read from, so a
-                                bad split is visible rather than silent. */}
-                              <p className="mt-1 line-clamp-2 font-mono text-2xs italic text-ink-muted">
-                                from “{row.source}”
-                              </p>
-                            </div>
-                            <div className="flex shrink-0 gap-1.5">
-                              <Button
-                                size="sm"
-                                variant="neutral"
-                                aria-label={`Edit prescription ${index + 1}`}
-                                icon={<Pencil aria-hidden className="size-3.5" />}
-                                onClick={() =>
-                                  setEditing((current) => (current === row.key ? null : row.key))
-                                }
-                              />
-                              <Button
-                                size="sm"
-                                variant="neutral"
-                                aria-label={`Remove prescription ${index + 1}`}
-                                icon={<Trash2 aria-hidden className="size-3.5" />}
-                                onClick={() => {
-                                  setStaged((rows) => rows.filter(({ key }) => key !== row.key))
-                                  setEditing((current) => (current === row.key ? null : current))
-                                }}
-                              />
-                            </div>
-                          </div>
-
-                          {editing === row.key && (
-                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                              <label className="flex flex-col gap-1.5 sm:col-span-2">
-                                <span className={FIELD_LABEL}>Drug</span>
-                                <input
-                                  className={TEXT_INPUT}
-                                  value={row.draft.drug}
-                                  placeholder="Type the name"
-                                  onChange={(event) =>
-                                    setStaged((rows) =>
-                                      rows.map((other) =>
-                                        other.key === row.key
-                                          ? {
-                                              ...other,
-                                              draft: setDrugByHand(other.draft, event.target.value),
-                                            }
-                                          : other,
-                                      ),
-                                    )
-                                  }
-                                />
-                              </label>
-
-                              <label className="flex flex-col gap-1.5">
-                                <span className={FIELD_LABEL}>Dose</span>
-                                <input
-                                  className={TEXT_INPUT}
-                                  value={row.draft.dose}
-                                  onChange={(event) => patch(row.key, { dose: event.target.value })}
-                                />
-                              </label>
-
-                              <div className="flex flex-col gap-1.5">
-                                <span className={FIELD_LABEL}>Route</span>
-                                <Select
-                                  label="Route"
-                                  value={row.draft.route}
-                                  options={ROUTE_OPTIONS}
-                                  onChange={(route) =>
-                                    patch(row.key, { route: route as SigRoute | '' })
-                                  }
-                                />
-                              </div>
-
-                              <div className="flex flex-col gap-1.5">
-                                <span className={FIELD_LABEL}>Frequency</span>
-                                <Select
-                                  label="Frequency"
-                                  value={row.draft.frequency}
-                                  options={FREQUENCY_OPTIONS}
-                                  onChange={(frequency) =>
-                                    patch(row.key, { frequency: frequency as SigFrequency | '' })
-                                  }
-                                />
-                              </div>
-
-                              <div className="flex flex-col gap-1.5">
-                                <span className={FIELD_LABEL}>With Food</span>
-                                <Select
-                                  label="With Food"
-                                  value={row.draft.food}
-                                  options={FOOD_OPTIONS}
-                                  onChange={(food) =>
-                                    patch(row.key, { food: food as SigFoodTiming | '' })
-                                  }
-                                />
-                              </div>
-
-                              <label className="flex flex-col gap-1.5">
-                                <span className={FIELD_LABEL}>Duration</span>
-                                <input
-                                  className={TEXT_INPUT}
-                                  value={row.draft.duration}
-                                  onChange={(event) =>
-                                    patch(row.key, { duration: event.target.value })
-                                  }
-                                />
-                              </label>
-
-                              <div className="sm:col-span-2">
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  icon={<Check aria-hidden className="size-3.5" />}
-                                  onClick={() => setEditing(null)}
-                                >
-                                  Done
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="neutral"
-                      icon={<Plus aria-hidden className="size-3.5" />}
-                      disabled={room <= 0 || dictation.trim().length === 0}
-                      onClick={addByHand}
-                    >
-                      Add By Hand
+                {parseFailed && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+                    <span>The text could not be read. The lines may be out of date.</span>
+                    <Button size="sm" variant="neutral" onClick={() => read(dictation.trim())}>
+                      Try Again
                     </Button>
-                    {room <= 0 && (
-                      <span className="text-2xs text-ink-muted">
-                        Ten is the most this record holds. Remove one to add another.
-                      </span>
-                    )}
                   </div>
-                </section>
-              </div>
+                )}
+
+                {/* A parse that found nothing must say so. Brand names are
+                  outside the lexicon by D-001, so this is a common case. */}
+                {rows.length === 0 && fresh && (
+                  <p className="mt-2 text-xs text-ink-muted">
+                    No drug name or dose was read from the text. Add a line and fill it in.
+                  </p>
+                )}
+
+                {rows.length > 0 && (
+                  <>
+                    <div aria-hidden className={cn('mt-3 hidden gap-2 px-3 lg:flex', FIELD_LABEL)}>
+                      <span className="w-56 shrink-0 pl-6.5">Drug</span>
+                      <span className={cn(SIG_GRID, 'flex-1')}>
+                        <span>Dose</span>
+                        <span>Duration</span>
+                        <span>Frequency</span>
+                        <span>With Food</span>
+                        <span>Route</span>
+                      </span>
+                    </div>
+
+                    <ul aria-label="Prescription lines" className="mt-2 space-y-2">
+                      {rows.map((row, index) => {
+                        const line = index + 1
+                        const needsName = row.ticked && row.draft.drug.trim() === ''
+                        const prompt = needsName || row.undecided
+                        const noteId = `${linesId}-needs-${line}`
+                        const pick = row.candidates.find(
+                          ({ lexiconId }) => lexiconId === row.draft.lexiconId,
+                        )
+                        const others = row.exact
+                          ? []
+                          : row.candidates.filter(
+                              (candidate, at, all) =>
+                                candidate.lexiconId !== row.draft.lexiconId &&
+                                all.findIndex(
+                                  ({ lexiconId }) => lexiconId === candidate.lexiconId,
+                                ) === at,
+                            )
+                        return (
+                          <li
+                            key={row.key}
+                            className={cn(
+                              'rounded-control p-3',
+                              // The prompt grammar information gaps use, not a
+                              // severity colour: this asks for a name, it warns
+                              // of nothing (docs/DESIGN.md, Severity).
+                              prompt
+                                ? 'border border-dashed border-ink-muted bg-surface'
+                                : 'bg-sunken-soft',
+                            )}
+                          >
+                            <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+                              <div className="flex items-center gap-2 lg:w-56 lg:shrink-0">
+                                <Checkbox
+                                  aria-label={`Include line ${line}`}
+                                  checked={row.ticked}
+                                  onChange={(event) =>
+                                    edit(row.key, { ticked: event.target.checked })
+                                  }
+                                />
+                                <input
+                                  ref={(node) => {
+                                    if (node === null) drugFields.current.delete(row.key)
+                                    else drugFields.current.set(row.key, node)
+                                  }}
+                                  aria-label={`Drug, line ${line}`}
+                                  aria-invalid={needsName || undefined}
+                                  aria-describedby={prompt ? noteId : undefined}
+                                  list={genericsId}
+                                  className={cn(TEXT_INPUT, 'min-w-0 flex-1')}
+                                  value={row.draft.drug}
+                                  placeholder="Name this drug"
+                                  onChange={(event) => edit(row.key, { drug: event.target.value })}
+                                />
+                                {row.kind === 'manual' && (
+                                  <Button
+                                    size="sm"
+                                    variant="neutral"
+                                    aria-label={`Remove line ${line}`}
+                                    icon={<Trash2 aria-hidden className="size-3.5" />}
+                                    onClick={() => {
+                                      setManual((current) =>
+                                        current.filter(({ key }) => key !== row.key),
+                                      )
+                                      self.current
+                                        ?.querySelector<HTMLButtonElement>(
+                                          `[aria-label="${ADD_LINE_LABEL}"]`,
+                                        )
+                                        ?.focus()
+                                    }}
+                                  />
+                                )}
+                              </div>
+
+                              <div className={cn(SIG_GRID, 'lg:flex-1')}>
+                                <div className="flex min-w-0 flex-col gap-1">
+                                  <FieldName>Dose</FieldName>
+                                  <input
+                                    aria-label={`Dose, line ${line}`}
+                                    className={cn(TEXT_INPUT, 'min-w-0')}
+                                    value={row.draft.dose}
+                                    onChange={(event) =>
+                                      edit(row.key, { fields: { dose: event.target.value } })
+                                    }
+                                  />
+                                </div>
+                                <div className="flex min-w-0 flex-col gap-1">
+                                  <FieldName>Duration</FieldName>
+                                  <input
+                                    aria-label={`Duration, line ${line}`}
+                                    className={cn(TEXT_INPUT, 'min-w-0')}
+                                    value={row.draft.duration}
+                                    onChange={(event) =>
+                                      edit(row.key, { fields: { duration: event.target.value } })
+                                    }
+                                  />
+                                </div>
+                                <div className="col-span-2 flex min-w-0 flex-col gap-1 sm:col-span-1">
+                                  <FieldName>Frequency</FieldName>
+                                  <Select
+                                    label={`Frequency, line ${line}`}
+                                    value={row.draft.frequency}
+                                    options={FREQUENCY_OPTIONS}
+                                    onChange={(frequency) =>
+                                      edit(row.key, {
+                                        fields: { frequency: frequency as SigFrequency | '' },
+                                      })
+                                    }
+                                  />
+                                </div>
+                                <div className="col-span-2 flex min-w-0 flex-col gap-1 sm:col-span-1">
+                                  <FieldName>With Food</FieldName>
+                                  <Select
+                                    label={`With food, line ${line}`}
+                                    value={row.draft.food}
+                                    options={FOOD_OPTIONS}
+                                    onChange={(food) =>
+                                      edit(row.key, {
+                                        fields: { food: food as SigFoodTiming | '' },
+                                      })
+                                    }
+                                  />
+                                </div>
+                                <div className="col-span-2 flex min-w-0 flex-col gap-1 sm:col-span-1">
+                                  <FieldName>Route</FieldName>
+                                  <Select
+                                    label={`Route, line ${line}`}
+                                    value={row.draft.route}
+                                    options={ROUTE_OPTIONS}
+                                    onChange={(route) =>
+                                      edit(row.key, { fields: { route: route as SigRoute | '' } })
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-2 space-y-1 text-2xs text-ink-muted lg:pl-6.5">
+                              {/* The words this line was read from, so a wrong
+                                split is visible rather than silent. */}
+                              {row.span !== undefined && parsedFrom !== null && (
+                                <p className="line-clamp-2 font-mono">
+                                  <Quote text={parsedFrom} span={row.span} name={pick} />
+                                </p>
+                              )}
+                              {row.kind === 'manual' && <p>Added by hand.</p>}
+                              {needsName && (
+                                <p id={noteId} className="flex items-center gap-1.5 text-ink">
+                                  <CircleHelp aria-hidden className="size-3.5 shrink-0" />
+                                  <span>
+                                    <strong className="font-semibold">Needs a drug name.</strong>{' '}
+                                    None was recognised. Name it, or untick it to leave it out.
+                                  </span>
+                                </p>
+                              )}
+                              {row.kind === 'heard' && !row.exact && pick !== undefined && (
+                                <div
+                                  id={row.undecided ? noteId : undefined}
+                                  className={cn(
+                                    'flex flex-wrap items-center gap-x-2 gap-y-1',
+                                    row.undecided && 'text-ink',
+                                  )}
+                                >
+                                  {row.undecided && (
+                                    <CircleHelp aria-hidden className="size-3.5 shrink-0" />
+                                  )}
+                                  <span>
+                                    {row.undecided && (
+                                      <strong className="font-semibold">Needs a decision. </strong>
+                                    )}
+                                    {pick.heard.toLowerCase() === pick.generic
+                                      ? 'Another drug or reading was heard in the same phrase.'
+                                      : `Heard “${pick.heard}”, which is not an exact match.`}
+                                    {row.undecided ? ` Tick to accept ${pick.generic}, or` : ''}
+                                  </span>
+                                  {row.undecided && (
+                                    <button
+                                      type="button"
+                                      aria-label={`Leave line ${line} out`}
+                                      className="font-semibold text-ink underline decoration-ink-muted underline-offset-2 hover:text-accent"
+                                      onClick={() => edit(row.key, { ticked: false })}
+                                    >
+                                      leave it out
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              {others.length > 0 && (
+                                <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                  <span>Or read as</span>
+                                  {others.map((candidate) => (
+                                    <button
+                                      key={candidate.lexiconId}
+                                      type="button"
+                                      aria-label={`Read line ${line} as ${candidate.generic}`}
+                                      className="font-semibold text-ink underline decoration-accent underline-offset-2 hover:text-accent"
+                                      onClick={() => {
+                                        // The button leaves with the choice, so
+                                        // focus goes to the name it just set.
+                                        drugFields.current.get(row.key)?.focus()
+                                        edit(row.key, {
+                                          chosen: candidate.lexiconId,
+                                          drug: undefined,
+                                          ticked: true,
+                                        })
+                                      }}
+                                    >
+                                      {candidate.generic}
+                                    </button>
+                                  ))}
+                                </p>
+                              )}
+                              {parsedFrom !== null &&
+                                [...new Set(row.shared.map(({ start }) => start))].map((start) => {
+                                  const from = row.shared.filter((each) => each.start === start)
+                                  return (
+                                    <p key={start}>
+                                      {from.map(({ field }) => SHARED_NAMES[field]).join(', ')} from
+                                      “{parsedFrom.slice(start, from[0]?.end ?? start)}”
+                                    </p>
+                                  )
+                                })}
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </>
+                )}
+
+                <datalist id={genericsId}>
+                  {generics.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+
+                <div className="mt-3">
+                  <Button
+                    size="sm"
+                    variant="neutral"
+                    aria-label={ADD_LINE_LABEL}
+                    icon={<Plus aria-hidden className="size-3.5" />}
+                    disabled={dictation.trim().length === 0}
+                    onClick={addByHand}
+                  >
+                    Add Line
+                  </Button>
+                </div>
+              </section>
             )}
           </div>
 
@@ -1334,15 +1257,13 @@ export function PrescriptionTheatre({
               </Button>
             )}
 
-            {staged.length > 0 && (
+            {rows.length > 0 && (
               <Button
                 size="sm"
                 variant="neutral"
                 disabled={save.isPending}
                 onClick={() => {
-                  if (!mayDiscard()) return
-                  setStaged([])
-                  setEditing(null)
+                  if (mayDiscard()) reset()
                 }}
               >
                 Discard
@@ -1351,7 +1272,7 @@ export function PrescriptionTheatre({
 
             <Button
               variant="primary"
-              disabled={ready.length === 0 || incomplete > 0 || busy || segment.isPending}
+              disabled={!confirmable}
               loading={save.isPending}
               icon={<Check aria-hidden className="size-4" />}
               onClick={confirm}

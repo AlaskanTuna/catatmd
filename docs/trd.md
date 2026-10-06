@@ -2576,6 +2576,36 @@ Four properties hold it in place.
 - **`sourceSpan` is kept apart from `span`.** `span` is the drug's name and decides which candidates stay on offer; `sourceSpan` is the stretch its fields came from and decides which characters no row accounts for. One field doing both would suppress a candidate merely for sitting downstream of an accepted drug.
 - **`null` leaves the claim alone.** No field read is no evidence about where the drug's text stops, and a quote cut on nothing is worse than one that is too wide.
 
+##### Amended 06/10/26: One Read Returns Every Line
+
+**The per-drug re-parse and the unclaimed-stretch panel are replaced by one read of the whole box** (D-001, amended 06/10/26). The two sections above are the history of that mechanism; `narrowToSig`, `unclaimedStretches` and the per-row parse are gone.
+
+| Piece                                     | Where                                       | What it is                                                                                               |
+| ----------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `parsePrescriptionLines(text, profileId)` | `backend/src/medications/lines.ts`          | Pure. Cuts the dictation into clauses, places each on a line, then fills shared fields. No model, no I/O |
+| `PrescriptionLineSchema`                  | `shared/src/index.ts`                       | `{ start, end, candidates, exact, sig, shared }`. An empty `candidates` is a line nobody named           |
+| `lines`, `generics`                       | `PrescriptionParseResponseSchema`           | Both `nullish` for deploy skew. `sig`, `sigReadTo` and `candidates` stay for an older SPA                |
+| `readFrom`                                | `parseSigWithSpan`                          | Where the first sig field starts, so a clause opening on an unknown word can be told apart               |
+| `rowsFrom`, `lineKeys`, `toConfirm`       | `frontend/src/review/prescription-draft.ts` | Pure. The parse plus the doctor's edits make the table; ticked rows make the save                        |
+
+**How a clause is placed.** Clauses split on `, ; .`, a new line, and `and`, `dan`, `then`, `plus`, `also`, never inside a heard drug name. "Dosed" below means a dose `parseSig` reads, or a count of puffs, sprays, drops or lozenges, which it does not read as a dose but which still marks another product.
+
+| Clause                                                                                       | Goes to                                                                                                                                                                            |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Holds a drug name                                                                            | A new line for that drug. Text before the name joins it, unless it opens on another word with a sig ("Panadol 1 g amoxicillin"). Two names in one clause make both lines not exact |
+| The same exact name again, before any dose                                                   | The same line, as a self-correction. Never when either mention is a near-match                                                                                                     |
+| Opens on `all`, `both`, `semua`, `kesemua` or `kedua-dua`, with nothing named before its sig | Shared: route, frequency, duration and food fill every line missing them. If dosed, a new unnamed line instead                                                                     |
+| Dosed                                                                                        | The line before, if that is a drug line with no dose, nothing was named in between, and the clause opens on no unknown word. Otherwise a new unnamed line                          |
+| Any sig, straight after a clause naming a product with a form ("Strepsils lozenge")          | A new unnamed line, starting at the product                                                                                                                                        |
+| Says only fields the line before already has                                                 | A new unnamed line. A name-only clause just before it moves with it                                                                                                                |
+| Anything else                                                                                | The line before. Before any line, it is dropped when it says no sig                                                                                                                |
+
+**`exact`** is `score === 1` on the best candidate, with no other candidate reaching past it over a word the sig does not own, and no other name in the same clause. Reaching over a unit ("g amoxicillin") does not count.
+
+**On the client, a line that is not exact is undecided** until the doctor ticks it, picks another reading, types a name or leaves it out, and an undecided line holds Confirm like an unnamed one.
+
+**On the client**, the box is re-read 600 ms after the last edit, and a response for text since changed is dropped. Each line keeps its doctor's edits under a key built from its drug, or from its words when unnamed, so a correction earlier in the box does not move them. `dictated` is the line's own words, then `…` and the shared clause it used, falling back to the line alone past 2000 characters.
+
 **What this costs is stated in `docs/dpia.md` as a residual risk rather than closed here.** MMC 003/2023 cl.18 wants consent specific to the purpose before capture and the PDPA 2024 amendment makes voice biometric data requiring explicit consent. Neither is asked for on this path now. Ambient capture and the ILMU relay are untouched and keep both halves of the rule.
 
 #### Why The Provider Changed

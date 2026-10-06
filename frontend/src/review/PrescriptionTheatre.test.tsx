@@ -1,4 +1,4 @@
-import type { MedicationCandidateWire, Prescription } from '@shared/types'
+import type { MedicationCandidateWire, Prescription, PrescriptionLine } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,18 +6,16 @@ import { ApiError } from '../lib/api.js'
 import { PrescriptionTheatre } from './PrescriptionTheatre.js'
 
 /**
- * Where a prescription is dictated and assembled (#365).
+ * Where a prescription is dictated and assembled (#365, D-001 amended 06/10/26).
  *
  * Four claims carry this surface, and each is a property of the markup that a
  * pure test structurally cannot make.
  *
- * 1. The drug name is never pre-filled. `docs/decisions.md` D-001 puts
- *    automatic substitution outside the boundary, so a candidate is offered and
- *    the doctor accepts it.
- * 2. Accepting produces something visible. The old surface filled a field below
- *    the fold and read as a dead button.
- * 3. Two drugs accepted from one dictation never share a sig, which is the
- *    wrong-dose failure the segmentation exists to prevent.
+ * 1. Only an exact name starts ticked. A near-match waits for the doctor's own
+ *    tick, and a line with no recognised name proposes no drug at all.
+ * 2. A dosed line nobody named holds Confirm, so it cannot be dropped silently.
+ * 3. Every drug said is read in one parse, each with its own sig, and a field
+ *    the doctor typed survives the box being read again.
  * 4. No consent tick is asked for or claimed on this path any more, and the
  *    request that opens the socket says so.
  */
@@ -104,22 +102,6 @@ const NO_SIG = { dose: null, route: null, frequency: null, duration: null, food:
 
 const DICTATED = 'amoxycillin 500 mg, makan tiga kali sehari, lepas makan, selama lima hari'
 
-const TWO_DRUGS = 'paracetamol 500 mg three times a day. cetirizine 10 mg once daily.'
-const PARACETAMOL = candidate({
-  lexiconId: 'paracetamol',
-  generic: 'paracetamol',
-  heard: 'paracetamol',
-  start: 0,
-  end: 11,
-})
-const CETIRIZINE = candidate({
-  lexiconId: 'cetirizine',
-  generic: 'cetirizine',
-  heard: 'cetirizine',
-  start: 38,
-  end: 48,
-})
-
 const STORED: Prescription = {
   drug: 'ibuprofen',
   dose: '200 mg',
@@ -155,15 +137,94 @@ const renderTheatre = ({
   return { onSave, onClose }
 }
 
-/** Type a phrase and press Check, then wait for the parse to land. */
-const check = async (phrase: string) => {
+/** Type a phrase and wait for the box to be read, which happens once typing rests. */
+const type = async (phrase: string) => {
   fireEvent.change(screen.getByLabelText('What You Prescribed'), { target: { value: phrase } })
-  fireEvent.click(screen.getByRole('button', { name: 'Check' }))
-  await waitFor(() => expect(mocks.parsePrescription).toHaveBeenCalled())
+  await waitFor(() =>
+    expect(mocks.parsePrescription).toHaveBeenCalledWith('consultation-1', phrase.trim()),
+  )
 }
 
-/** The staged list only, so a query cannot match the dictated text behind it. */
-const confirming = () => screen.getByRole('list', { name: 'Prescriptions to confirm' })
+const table = () => screen.findByRole('list', { name: 'Prescription lines' })
+const fields = (name: string) =>
+  screen
+    .getAllByLabelText(new RegExp(`^${name}, line \\d+$`))
+    .map((field) => (field as HTMLInputElement).value)
+const drugs = () => fields('Drug')
+const doses = () => fields('Dose')
+const ticked = () =>
+  screen
+    .getAllByRole('checkbox', { name: /^Include line/ })
+    .map((box) => (box as HTMLInputElement).checked)
+const confirmButton = () => screen.getByRole('button', { name: /Confirm/ })
+
+const line = (over: Partial<PrescriptionLine> = {}): PrescriptionLine => ({
+  start: 0,
+  end: 0,
+  candidates: [],
+  exact: false,
+  sig: NO_SIG,
+  shared: [],
+  ...over,
+})
+
+const response = (lines: PrescriptionLine[]) => ({
+  sig: NO_SIG,
+  candidates: lines.flatMap(({ candidates }) => candidates),
+  lines,
+  generics: ['amoxicillin', 'azithromycin', 'paracetamol'],
+})
+
+/** Where `part` sits in `text`, as a line's bounds. */
+const at = (text: string, part: string) => ({
+  start: text.indexOf(part),
+  end: text.indexOf(part) + part.length,
+})
+
+/** The dictation reported on 06/10/26, which found two of its three drugs. */
+const REPORTED =
+  'Amoxicillin 500 mg, paracetamol 350 mg, antibiotic 200 mg, all of them 2 times a day.'
+const SHARED_CLAUSE = { field: 'frequency' as const, ...at(REPORTED, 'all of them 2 times a day') }
+const TWICE = { ...NO_SIG, frequency: 'twice-daily' as const }
+const REPORTED_LINES: PrescriptionLine[] = [
+  line({
+    ...at(REPORTED, 'Amoxicillin 500 mg'),
+    candidates: [candidate({ heard: 'Amoxicillin', ...at(REPORTED, 'Amoxicillin'), score: 1 })],
+    exact: true,
+    sig: { ...TWICE, dose: '500 mg' },
+    shared: [SHARED_CLAUSE],
+  }),
+  line({
+    ...at(REPORTED, 'paracetamol 350 mg'),
+    candidates: [
+      candidate({
+        lexiconId: 'paracetamol',
+        generic: 'paracetamol',
+        heard: 'paracetamol',
+        ...at(REPORTED, 'paracetamol'),
+        score: 1,
+      }),
+    ],
+    exact: true,
+    sig: { ...TWICE, dose: '350 mg' },
+    shared: [SHARED_CLAUSE],
+  }),
+  line({
+    ...at(REPORTED, 'antibiotic 200 mg'),
+    sig: { ...TWICE, dose: '200 mg' },
+    shared: [SHARED_CLAUSE],
+  }),
+]
+const REPORTED_RESPONSE = response(REPORTED_LINES)
+
+const NEAR = 'sefuroxeem 250 mg twice a day'
+const SEFUROXEEM = candidate({
+  lexiconId: 'cefuroxime',
+  generic: 'cefuroxime',
+  heard: 'sefuroxeem',
+  ...at(NEAR, 'sefuroxeem'),
+  score: 0.8,
+})
 
 /**
  * The pre-landing review on #365 found four failures that were silent: the
@@ -261,190 +322,96 @@ describe('the silent failures found in review', () => {
   /*
    * `dialog.close()` fires `close` and never `cancel`, so a guard wired to
    * `onCancel` caught Escape and let the header's X and the Discard button
-   * wipe the staged list without asking.
+   * wipe the table without asking.
    */
-  it('asks before the X button discards staged prescriptions', async () => {
-    mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [candidate()] })
+  it('asks before the X button discards ticked lines', async () => {
+    mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
     const { onClose } = renderTheatre()
-    await check(DICTATED)
-    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
+    await type(REPORTED)
+    await table()
 
     confirmSpy.mockReturnValue(false)
     fireEvent.click(screen.getByRole('button', { name: 'Close prescription dictation' }))
 
     expect(confirmSpy).toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
-    expect(within(confirming()).getByText('amoxicillin')).toBeTruthy()
+    expect(drugs()).toEqual(['amoxicillin', 'paracetamol', ''])
   })
 
-  it('asks before Discard wipes the staged list', async () => {
-    mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [candidate()] })
+  it('asks before Discard wipes the table', async () => {
+    mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
     renderTheatre()
-    await check(DICTATED)
-    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
+    await type(REPORTED)
+    await table()
 
     confirmSpy.mockReturnValue(false)
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }))
 
     expect(confirmSpy).toHaveBeenCalled()
-    expect(within(confirming()).getByText('amoxicillin')).toBeTruthy()
+    expect(drugs()).toEqual(['amoxicillin', 'paracetamol', ''])
   })
 
   /*
-   * Confirm counted only the rows that converted, so it read "Confirm 2
-   * Prescriptions" beside three rows, saved two, and reset the third away.
+   * A response for text the doctor has since changed must not be rendered: its
+   * offsets belong to words no longer in the box.
    */
-  it('refuses to confirm while a staged row has no drug name', async () => {
-    mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [candidate()] })
-    const { onSave } = renderTheatre()
-    await check(DICTATED)
-    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
-    await waitFor(() => expect(mocks.parsePrescription).toHaveBeenCalledTimes(2))
-
-    fireEvent.click(screen.getByRole('button', { name: 'Add By Hand' }))
-
-    const confirmButton = screen.getByRole('button', { name: /Confirm/ }) as HTMLButtonElement
-    expect(confirmButton.disabled).toBe(true)
-    expect(screen.getByRole('status').textContent).toMatch(/Name every drug before confirming/)
-    fireEvent.click(confirmButton)
-    expect(onSave).not.toHaveBeenCalled()
-  })
-
-  /*
-   * The row stays editable while its per-drug parse is in flight, and the merge
-   * replaced every field. A response arriving half a second later overwrote a
-   * dose the doctor had already typed, which on this field is the difference
-   * between a gap and a wrong number.
-   */
-  it('never overwrites a dose the doctor typed while the parse was in flight', async () => {
-    let releaseSegment: (value: unknown) => void = () => {}
-    mocks.parsePrescription.mockImplementation((_id: string, dictated: string) => {
-      if (dictated === DICTATED) {
-        return Promise.resolve({ sig: NO_SIG, candidates: [candidate()] })
-      }
-      return new Promise((resolve) => {
-        releaseSegment = resolve
-      })
-    })
-    renderTheatre()
-    await check(DICTATED)
-    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit prescription 1' }))
-    fireEvent.change(screen.getByLabelText('Dose'), { target: { value: '1 g' } })
-
-    releaseSegment({ sig: { ...NO_SIG, dose: '500 mg' }, candidates: [] })
-
-    await waitFor(() =>
-      expect((screen.getByLabelText('Dose') as HTMLInputElement).value).toBe('1 g'),
-    )
-  })
-
-  it('still fills a field the doctor left alone', async () => {
+  it('drops a read of text the doctor has since changed', async () => {
+    let releaseFirst: (value: unknown) => void = () => {}
     mocks.parsePrescription.mockImplementation((_id: string, dictated: string) =>
-      dictated === DICTATED
-        ? Promise.resolve({ sig: NO_SIG, candidates: [candidate()] })
-        : Promise.resolve({ sig: { ...NO_SIG, dose: '500 mg' }, candidates: [] }),
+      dictated === REPORTED
+        ? new Promise((resolve) => {
+            releaseFirst = resolve
+          })
+        : Promise.resolve(response([])),
     )
     renderTheatre()
-    await check(DICTATED)
-    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
+    await type(REPORTED)
+    await type('cetirizine at night')
+    await screen.findByText(/No drug name or dose was read/)
 
-    await waitFor(() => expect(within(confirming()).getByText(/500 mg/)).toBeTruthy())
+    releaseFirst(REPORTED_RESPONSE)
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.queryByRole('list', { name: 'Prescription lines' })).toBeNull()
   })
 
   /*
-   * The matcher offers a combination and the single agent inside it as separate
-   * candidates. Resolving only the exact candidate left the contained one on
-   * offer, so one phrase could become two prescriptions for two different
-   * antibiotics.
+   * A failed read left the doctor with nothing to work on before #365, and a
+   * table out of step with the box afterwards. Both are named, with a retry.
    */
-  it('stops offering a candidate contained in one already accepted', async () => {
-    const combination = candidate({
-      lexiconId: 'amoxicillin-clavulanate',
-      generic: 'amoxicillin-clavulanate',
-      heard: 'amoxicillin clavulanate',
-      start: 0,
-      end: 23,
-    })
-    const contained = candidate({ start: 0, end: 11 })
-    mocks.parsePrescription.mockResolvedValue({
-      sig: NO_SIG,
-      candidates: [combination, contained],
-    })
+  it('still offers somewhere to work when the read fails, and a retry', async () => {
+    mocks.parsePrescription.mockRejectedValueOnce(new Error('nope'))
+    mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
     renderTheatre()
-    await check('amoxicillin clavulanate 625 mg twice daily')
+    await type(REPORTED)
 
-    const offers = await screen.findAllByRole('button', { name: 'Accept' })
-    expect(offers).toHaveLength(2)
-    fireEvent.click(offers[0] as HTMLElement)
+    expect(await screen.findByRole('button', { name: 'Add Line' })).toBeTruthy()
+    fireEvent.click(await screen.findByRole('button', { name: 'Try Again' }))
 
-    expect(screen.queryByRole('button', { name: 'Accept' })).toBeNull()
+    expect(await table()).toBeTruthy()
   })
 
-  it('hands both back when the row claiming them is removed', async () => {
-    const combination = candidate({
-      lexiconId: 'amoxicillin-clavulanate',
-      generic: 'amoxicillin-clavulanate',
-      heard: 'amoxicillin clavulanate',
-      start: 0,
-      end: 23,
-    })
-    const contained = candidate({ start: 0, end: 11 })
-    mocks.parsePrescription.mockResolvedValue({
-      sig: NO_SIG,
-      candidates: [combination, contained],
-    })
+  it('takes the table away when the box is cleared, rather than leaving lines for no text', async () => {
+    mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
     renderTheatre()
-    await check('amoxicillin clavulanate 625 mg twice daily')
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Accept' }))[0] as HTMLElement)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Remove prescription 1' }))
-
-    expect(await screen.findAllByRole('button', { name: 'Accept' })).toHaveLength(2)
-  })
-
-  /*
-   * `parse.onError` set no state, so `parsedFrom` stayed null, so the entire
-   * right column never rendered and the toast promising the fields were the
-   * doctor's to fill in pointed at no fields.
-   */
-  it('still offers somewhere to work when the check fails', async () => {
-    mocks.parsePrescription.mockRejectedValue(new Error('nope'))
-    renderTheatre()
-    await check(DICTATED)
-
-    expect(await screen.findByRole('button', { name: 'Add By Hand' })).toBeTruthy()
-  })
-
-  /*
-   * The guard and the handler read two different sources: `disabled` fell back
-   * to `parsedFrom` while the handler read the live box, so clearing the
-   * textarea after a check left an enabled button that did nothing. That is the
-   * dead-button failure this whole surface was rebuilt to remove.
-   */
-  it('disables Add By Hand when the box is cleared after a check', async () => {
-    mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [] })
-    renderTheatre()
-    await check(DICTATED)
-    expect(
-      (screen.getByRole('button', { name: 'Add By Hand' }) as HTMLButtonElement).disabled,
-    ).toBe(false)
+    await type(REPORTED)
+    await table()
 
     fireEvent.change(screen.getByLabelText('What You Prescribed'), { target: { value: '' } })
 
-    expect(
-      (screen.getByRole('button', { name: 'Add By Hand' }) as HTMLButtonElement).disabled,
-    ).toBe(true)
+    await waitFor(() =>
+      expect(screen.queryByRole('list', { name: 'Prescription lines' })).toBeNull(),
+    )
+    expect(screen.queryByRole('button', { name: /Confirm/ })).toHaveProperty('disabled', true)
   })
 
-  it('does not claim nothing matched before anything was checked', () => {
+  it('does not claim nothing was read before anything was read', () => {
     renderTheatre()
     fireEvent.change(screen.getByLabelText('What You Prescribed'), {
       target: { value: 'amoxicillin' },
     })
 
-    expect(screen.queryByText(/No drug name in the list matched/)).toBeNull()
+    expect(screen.queryByText(/No drug name or dose was read/)).toBeNull()
   })
 })
 
@@ -475,379 +442,291 @@ describe('PrescriptionTheatre', () => {
     localStorage.clear()
   })
 
-  it('leaves the drug name unwritten after a parse that named a candidate', async () => {
-    /*
-     * The property the whole feature rests on. D-001 puts automatic
-     * substitution of a drug name outside the boundary: the candidate is
-     * offered, and the doctor accepts it. A row arriving pre-staged would be
-     * that substitution behind a different control.
-     */
-    mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [candidate()] })
-    renderTheatre()
-    await check(DICTATED)
-
-    expect(await screen.findByRole('button', { name: 'Accept' })).toBeTruthy()
-    expect(screen.getByText('Accept a drug name on the left, or add one by hand.')).toBeTruthy()
-  })
-
-  it('stages a visible row when the doctor accepts, carrying the generic', async () => {
-    /*
-     * The reported defect. Accept was wired and tested and did fill the Drug
-     * field, but the field was below the fold in a 620px column and the
-     * candidate row did not change, so the button read as dead.
-     */
-    mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [candidate()] })
-    renderTheatre()
-    await check(DICTATED)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
-
-    expect(within(confirming()).getByText('amoxicillin')).toBeTruthy()
-    // And it stops being offered, because it is now a decision already made.
-    expect(screen.queryByRole('button', { name: 'Accept' })).toBeNull()
-  })
-
-  it('shows the stretch of text a row was read from', async () => {
-    // The segmentation is a heuristic, so it shows its working: a wrong split
-    // is visible on the row rather than hidden in the numbers.
-    mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [candidate()] })
-    renderTheatre()
-    await check(DICTATED)
-    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
-
-    expect(await screen.findByText(new RegExp(`from .${DICTATED}`))).toBeTruthy()
-  })
-
-  it('gives each accepted drug its own sig, never the phrase-wide one', async () => {
-    /*
-     * The wrong-dose failure D-001 exists to prevent, end to end. The parse
-     * endpoint answers one sig per phrase, so without the per-drug re-parse
-     * paracetamol's 500 mg lands on cetirizine.
-     */
-    mocks.parsePrescription.mockImplementation((_id: string, dictated: string) => {
-      if (dictated === TWO_DRUGS) {
-        return Promise.resolve({
-          sig: { ...NO_SIG, dose: '500 mg', frequency: 'three-times-daily' },
-          candidates: [PARACETAMOL, CETIRIZINE],
-        })
-      }
-      if (dictated.startsWith('paracetamol')) {
-        return Promise.resolve({
-          sig: { ...NO_SIG, dose: '500 mg', frequency: 'three-times-daily' },
-          candidates: [],
-        })
-      }
-      return Promise.resolve({
-        sig: { ...NO_SIG, dose: '10 mg', frequency: 'once-daily' },
-        candidates: [],
-      })
-    })
-    renderTheatre()
-    await check(TWO_DRUGS)
-
-    const accepts = await screen.findAllByRole('button', { name: 'Accept' })
-    fireEvent.click(accepts[0] as HTMLElement)
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Accept' }))[0] as HTMLElement)
-
-    await waitFor(() => expect(within(confirming()).getAllByRole('listitem')).toHaveLength(2))
-    const staged = within(confirming()).getAllByRole('listitem')
-    const paracetamolRow = staged.find((row) => row.textContent?.includes('paracetamol'))
-    const cetirizineRow = staged.find((row) => row.textContent?.includes('cetirizine'))
-
-    await waitFor(() => expect(cetirizineRow?.textContent).toMatch(/10 mg/))
-    expect(paracetamolRow?.textContent).toMatch(/500 mg/)
-    expect(cetirizineRow?.textContent).not.toMatch(/500 mg/)
-  })
-
-  it('re-parses only the stretch belonging to the drug accepted', async () => {
-    mocks.parsePrescription.mockResolvedValue({
-      sig: NO_SIG,
-      candidates: [PARACETAMOL, CETIRIZINE],
-    })
-    renderTheatre()
-    await check(TWO_DRUGS)
-
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Accept' }))[0] as HTMLElement)
-
-    await waitFor(() => expect(mocks.parsePrescription).toHaveBeenCalledTimes(2))
-    expect(mocks.parsePrescription).toHaveBeenLastCalledWith(
-      'consultation-1',
-      'paracetamol 500 mg three times a day.',
-    )
-  })
-
-  it('rejecting a candidate stages nothing and just stops offering it', async () => {
-    mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [candidate()] })
-    const { onSave } = renderTheatre()
-    await check(DICTATED)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Reject' }))
-
-    expect(screen.queryByRole('button', { name: 'Accept' })).toBeNull()
-    expect(screen.getByText('Accept a drug name on the left, or add one by hand.')).toBeTruthy()
-    expect(onSave).not.toHaveBeenCalled()
-  })
-
-  it('puts a candidate back on offer when its row is removed', async () => {
-    mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [candidate()] })
-    renderTheatre()
-    await check(DICTATED)
-    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove prescription 1' }))
-
-    expect(await screen.findByRole('button', { name: 'Accept' })).toBeTruthy()
-  })
-
-  it('renders candidates in the order the API returned them', async () => {
-    // The #311 wrong-drug case: the combination is returned first despite the
-    // lower score, and must still be read first.
-    mocks.parsePrescription.mockResolvedValue({
-      sig: NO_SIG,
-      candidates: [
-        candidate({
-          lexiconId: 'amoxicillin-clavulanate',
-          generic: 'amoxicillin-clavulanate',
-          end: 23,
-          score: 0.88,
-        }),
-        candidate({ score: 0.96 }),
-      ],
-    })
-    renderTheatre()
-    await check(DICTATED)
-
-    const offered = within(
-      await screen.findByRole('list', { name: 'Drug names heard' }),
-    ).getAllByRole('listitem')
-    expect(within(offered[0] as HTMLElement).getByText('amoxicillin-clavulanate')).toBeTruthy()
-    expect(within(offered[1] as HTMLElement).getByText('amoxicillin')).toBeTruthy()
-  })
-
-  it('confirms the whole list rather than a delta, and closes', async () => {
-    mocks.parsePrescription.mockResolvedValue({
-      sig: { ...NO_SIG, dose: '500 mg', frequency: 'three-times-daily' },
-      candidates: [candidate()],
-    })
-    const { onSave, onClose } = renderTheatre({ stored: [STORED] })
-    await check(DICTATED)
-    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
-
-    await waitFor(() => expect(within(confirming()).getByText(/500 mg/)).toBeTruthy())
-    fireEvent.click(screen.getByRole('button', { name: /Confirm/ }))
-
-    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
-    const sent = onSave.mock.calls[0]?.[0] as Prescription[]
-    expect(sent).toHaveLength(2)
-    expect(sent[0]).toEqual(STORED)
-    expect(sent[1]).toMatchObject({
-      drug: 'amoxicillin',
-      lexiconId: 'amoxicillin',
-      dose: '500 mg',
-      route: null,
-      dictated: DICTATED,
-    })
-    await waitFor(() => expect(onClose).toHaveBeenCalled())
-  })
-
-  it('counts the prescriptions on the button, so one press is one commit', async () => {
-    mocks.parsePrescription.mockResolvedValue({
-      sig: NO_SIG,
-      candidates: [PARACETAMOL, CETIRIZINE],
-    })
-    renderTheatre()
-    await check(TWO_DRUGS)
-
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Accept' }))[0] as HTMLElement)
-    fireEvent.click((await screen.findAllByRole('button', { name: 'Accept' }))[0] as HTMLElement)
-
-    expect(await screen.findByRole('button', { name: /Confirm 2 Prescriptions/ })).toBeTruthy()
-  })
-
-  it('keeps every row when the save fails, and says nothing was lost', async () => {
-    mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [candidate()] })
-    const onSave = vi.fn().mockRejectedValue(new Error('nope'))
-    const onClose = vi.fn()
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <PrescriptionTheatre
-          consultationId="consultation-1"
-          stored={[]}
-          open
-          autoStart={false}
-          onSave={onSave}
-          onClose={onClose}
-        />
-      </QueryClientProvider>,
-    )
-    await check(DICTATED)
-    fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
-    // The per-drug parse has to settle first: Confirm refuses while one is in
-    // flight, or the row would save with the dose still unread.
-    await waitFor(() => expect(mocks.parsePrescription).toHaveBeenCalledTimes(2))
-    fireEvent.click(screen.getByRole('button', { name: /Confirm/ }))
-
-    expect(await screen.findByText(/Nothing was lost/)).toBeTruthy()
-    expect(within(confirming()).getByText('amoxicillin')).toBeTruthy()
-    expect(onClose).not.toHaveBeenCalled()
-  })
-
-  it('says so when nothing in the lexicon matched, rather than showing an empty space', async () => {
-    /*
-     * Brand names are outside the lexicon by D-001, so this is the common case
-     * rather than the rare one. Before #365 the block simply did not render and
-     * the doctor got silence.
-     */
-    mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [] })
-    renderTheatre()
-    await check('Strepsils lozenges one lozenge every four hours')
-
-    expect(await screen.findByText(/No drug name in the list matched/)).toBeTruthy()
-  })
-
-  it('takes a drug the lexicon never offered, by hand', async () => {
-    mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [] })
-    const { onSave } = renderTheatre()
-    await check('Strepsils lozenges one lozenge every four hours')
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Add By Hand' }))
-    fireEvent.change(screen.getByLabelText('Drug'), { target: { value: 'Strepsils' } })
-    fireEvent.click(screen.getByRole('button', { name: /Confirm/ }))
-
-    await waitFor(() => expect(onSave).toHaveBeenCalled())
-    const sent = onSave.mock.calls[0]?.[0] as Prescription[]
-    expect(sent[0]).toMatchObject({ drug: 'Strepsils' })
-    // Typed by hand, so it claims no lexicon match.
-    expect(sent[0]?.lexiconId).toBeUndefined()
-  })
-
-  /**
-   * The reported bug, verbatim (#369).
-   *
-   * Two drugs were dictated in one breath and one was recorded. Strepsils is a
-   * brand and brands are outside the lexicon by D-001, so the matcher offered a
-   * single candidate; with no second candidate to bound it, the dextromethorphan
-   * slice ran to the end of the text and its quote swallowed the second drug's
-   * whole sig. Nothing said so, because the "nothing matched" block renders only
-   * at a count of zero and the count here was one.
-   */
-  describe('a second drug the lexicon does not hold', () => {
-    const REPORTED =
-      'Dextromethorphan: dose 15 mg oral, wrote. 3 times daily when required for cough, ' +
-      'preferably after food for 5 days. Strepsils lozenge: dose 1 lozenge, oral, every 3 to 4 ' +
-      'days when required for sore throat, with or without food for 3 days. No antibiotics for now.'
-    /** Where the sig parse stops: the end of `for 5 days`, before `Strepsils`. */
-    const READ_TO = REPORTED.indexOf('for 5 days') + 'for 5 days'.length
-    const DEXTRO = candidate({
-      lexiconId: 'dextromethorphan',
-      generic: 'dextromethorphan',
-      heard: 'Dextromethorphan',
-      start: 0,
-      end: 16,
-    })
-    const DEXTRO_SIG = {
-      dose: '15 mg',
-      route: 'oral',
-      frequency: 'when-required',
-      duration: '5 days',
-      food: 'after',
-    }
-
-    /** Accept the one candidate offered and wait for its own sig to land. */
-    const acceptDextromethorphan = async () => {
-      mocks.parsePrescription.mockResolvedValue({
-        sig: DEXTRO_SIG,
-        sigReadTo: READ_TO,
-        candidates: [DEXTRO],
-      })
-      const handles = renderTheatre()
-      await check(REPORTED)
-      fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
-      await waitFor(() => expect(mocks.parsePrescription).toHaveBeenCalledTimes(2))
-      return handles
-    }
-
-    it('stops the first row quote where its own sig stopped being read', async () => {
-      await acceptDextromethorphan()
-
-      const row = within(confirming()).getByText(/Dextromethorphan: dose 15 mg/)
-      expect(row.textContent).toContain('for 5 days')
-      // The defect itself: this row used to quote the second drug and the two
-      // sentences after it, as evidence for fields none of that text supplied.
-      expect(row.textContent).not.toContain('Strepsils')
-      expect(row.textContent).not.toContain('No antibiotics')
-    })
-
-    it('offers the stretch no row claims, quoted and unnamed', async () => {
-      await acceptDextromethorphan()
-
-      const left = await screen.findByRole('list', { name: 'Not claimed by any row' })
-      expect(within(left).getByText(/Strepsils lozenge/)).toBeTruthy()
-      // Quoted, never read as a drug. Naming it would be the substitution D-001
-      // bans, and the reason it is unclaimed is that no name was recognised.
-      expect(within(left).queryByText('Strepsils', { exact: true })).toBeNull()
-    })
-
-    it('stages that stretch as its own row, with the sig read from it alone', async () => {
-      await acceptDextromethorphan()
-      fireEvent.click(await screen.findByRole('button', { name: 'Add As A Prescription' }))
-
-      await waitFor(() => expect(mocks.parsePrescription).toHaveBeenCalledTimes(3))
-      const sent = mocks.parsePrescription.mock.calls[2]?.[1] as string
-      expect(sent.startsWith('Strepsils lozenge')).toBe(true)
-      expect(sent).not.toContain('Dextromethorphan')
-      expect(within(confirming()).getAllByRole('listitem')).toHaveLength(2)
-    })
-
-    it('names no drug on the row it stages, so the doctor types it', async () => {
-      // The row opens on an empty Drug field. Reading a name out of unmatched
-      // text is exactly the look-alike substitution the lexicon refuses to do.
-      await acceptDextromethorphan()
-      fireEvent.click(await screen.findByRole('button', { name: 'Add As A Prescription' }))
-
-      expect((await screen.findByLabelText('Drug')).getAttribute('value')).toBe('')
-      expect(within(confirming()).getByText('Name this drug')).toBeTruthy()
-    })
-
-    it('sets a stretch aside on Dismiss, so the block does not become wallpaper', async () => {
-      // A dictation almost always ends on something that is not a drug, so a
-      // remainder that cannot be cleared would be on screen every time and
-      // would stop being read. Dismissing is the same act as rejecting.
-      await acceptDextromethorphan()
-      fireEvent.click(await screen.findByRole('button', { name: 'Dismiss' }))
-
-      await waitFor(() =>
-        expect(screen.queryByRole('list', { name: 'Not claimed by any row' })).toBeNull(),
-      )
-    })
-
-    it('hands the stretch back when the row claiming it is removed', async () => {
-      await acceptDextromethorphan()
-      expect(await screen.findByRole('list', { name: 'Not claimed by any row' })).toBeTruthy()
-
-      fireEvent.click(screen.getByRole('button', { name: 'Remove prescription 1' }))
-
-      // Releasing a source span mirrors how removing a row hands its candidates
-      // back, so nothing is stranded by a decision the doctor undid.
-      await waitFor(() =>
-        expect(screen.queryByRole('list', { name: 'Not claimed by any row' })).toBeNull(),
-      )
-    })
-
-    it('offers nothing while one row still accounts for every character', async () => {
-      // Why the quote has to narrow first. A parse reporting no offset leaves
-      // the claim as wide as it was, which is the state that had no remainder.
-      mocks.parsePrescription.mockResolvedValue({
-        sig: DEXTRO_SIG,
-        sigReadTo: null,
-        candidates: [DEXTRO],
-      })
+  describe('the prescription lines table', () => {
+    it('reads every drug said into its own line, in one read', async () => {
+      mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
       renderTheatre()
-      await check(REPORTED)
-      fireEvent.click(await screen.findByRole('button', { name: 'Accept' }))
+      await type(REPORTED)
+      await table()
+
+      expect(mocks.parsePrescription).toHaveBeenCalledTimes(1)
+      expect(drugs()).toEqual(['amoxicillin', 'paracetamol', ''])
+      expect(doses()).toEqual(['500 mg', '350 mg', '200 mg'])
+    })
+
+    it('ticks an exact name, and never a near-match', async () => {
+      mocks.parsePrescription.mockResolvedValue(
+        response([
+          line({ ...at(NEAR, 'sefuroxeem 250 mg'), candidates: [SEFUROXEEM], exact: false }),
+        ]),
+      )
+      renderTheatre()
+      await type(NEAR)
+      await table()
+
+      expect(ticked()).toEqual([false])
+      expect(screen.getByText(/Heard “sefuroxeem”, which is not an exact match/)).toBeTruthy()
+      expect((confirmButton() as HTMLButtonElement).disabled).toBe(true)
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Include line 1' }))
+
+      expect((confirmButton() as HTMLButtonElement).disabled).toBe(false)
+    })
+
+    it('holds Confirm on a near-match until it is taken or left out, never dropping it quietly', async () => {
+      // Clinical review, 06/10/26: "Paracetamol, Ponstan 500 mg" offered a
+      // near-match for Ponstan, unticked, and Confirm saved paracetamol alone.
+      mocks.parsePrescription.mockResolvedValue(
+        response([
+          ...REPORTED_LINES.slice(0, 1),
+          line({ ...at(NEAR, 'sefuroxeem 250 mg'), candidates: [SEFUROXEEM], exact: false }),
+        ]),
+      )
+      const { onSave } = renderTheatre()
+      await type(NEAR)
+      await table()
+
+      expect((confirmButton() as HTMLButtonElement).disabled).toBe(true)
+      expect(screen.getByRole('status').textContent).toMatch(/1 line was not an exact match/)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Leave line 2 out' }))
+      fireEvent.click(confirmButton())
+
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+      const sent = onSave.mock.calls[0]?.[0] as Prescription[]
+      expect(sent.map(({ drug }) => drug)).toEqual(['amoxicillin'])
+    })
+
+    it('holds Confirm until the line with no recognised name is named', async () => {
+      mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
+      const { onSave } = renderTheatre()
+      await type(REPORTED)
+      await table()
+
+      expect(ticked()).toEqual([true, true, true])
+      expect((confirmButton() as HTMLButtonElement).disabled).toBe(true)
+      expect(screen.getByRole('status').textContent).toMatch(/1 ticked line has no drug name/)
+      fireEvent.click(confirmButton())
+      expect(onSave).not.toHaveBeenCalled()
+
+      fireEvent.change(screen.getByLabelText('Drug, line 3'), {
+        target: { value: 'azithromycin' },
+      })
+      fireEvent.click(confirmButton())
+
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+      const sent = onSave.mock.calls[0]?.[0] as Prescription[]
+      expect(sent.map(({ drug }) => drug)).toEqual(['amoxicillin', 'paracetamol', 'azithromycin'])
+      // Typed by hand, so it claims no lexicon match.
+      expect(sent[2]?.lexiconId).toBeUndefined()
+      expect(sent[2]).toMatchObject({ dose: '200 mg', frequency: 'twice-daily' })
+    })
+
+    it('leaves an unticked line out, and lets Confirm go without it', async () => {
+      mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
+      const { onSave } = renderTheatre()
+      await type(REPORTED)
+      await table()
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Include line 3' }))
+      fireEvent.click(confirmButton())
+
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+      const sent = onSave.mock.calls[0]?.[0] as Prescription[]
+      expect(sent.map(({ drug }) => drug)).toEqual(['amoxicillin', 'paracetamol'])
+    })
+
+    it('proposes no drug for a line with no recognised name, only suggestions', async () => {
+      mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
+      renderTheatre()
+      await type(REPORTED)
+      await table()
+
+      const field = screen.getByLabelText('Drug, line 3') as HTMLInputElement
+      expect(field.value).toBe('')
+      const suggestions = document.getElementById(field.getAttribute('list') ?? '')
+      expect(suggestions?.querySelectorAll('option')).toHaveLength(3)
+      expect(screen.getByText(/Needs a drug name/)).toBeTruthy()
+      expect(field.getAttribute('aria-invalid')).toBe('true')
+      expect(
+        document.getElementById(field.getAttribute('aria-describedby') ?? '')?.textContent,
+      ).toMatch(/untick it to leave it out/)
+    })
+
+    it('shows the words each line was read from, and where a shared field came from', async () => {
+      mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
+      renderTheatre()
+      await type(REPORTED)
+      await table()
+
+      const first = within(await table()).getAllByRole('listitem')[0] as HTMLElement
+      expect(within(first).getByText('Amoxicillin').tagName).toBe('MARK')
+      expect(within(first).getByText(/Frequency from “all of them 2 times a day”/)).toBeTruthy()
+    })
+
+    it('saves the shared clause with the line as its evidence', async () => {
+      mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
+      const { onSave } = renderTheatre({ stored: [STORED] })
+      await type(REPORTED)
+      await table()
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Include line 3' }))
+      fireEvent.click(confirmButton())
+
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+      const sent = onSave.mock.calls[0]?.[0] as Prescription[]
+      // The whole list rather than a delta.
+      expect(sent[0]).toEqual(STORED)
+      expect(sent[1]).toMatchObject({
+        drug: 'amoxicillin',
+        lexiconId: 'amoxicillin',
+        dose: '500 mg',
+        frequency: 'twice-daily',
+        route: null,
+        dictated: 'Amoxicillin 500 mg … all of them 2 times a day',
+      })
+    })
+
+    it('counts the prescriptions on the button, so one press is one commit', async () => {
+      mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
+      renderTheatre()
+      await type(REPORTED)
+      await table()
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Include line 3' }))
+
+      expect(confirmButton().textContent).toMatch(/Confirm 2 Prescriptions/)
+    })
+
+    it('keeps a dose the doctor typed when the box is read again', async () => {
+      mocks.parsePrescription.mockImplementation((_id: string, dictated: string) =>
+        Promise.resolve(
+          dictated === REPORTED
+            ? REPORTED_RESPONSE
+            : response(
+                REPORTED_LINES.map((each) => ({
+                  ...each,
+                  start: each.start + 6,
+                  end: each.end + 6,
+                })),
+              ),
+        ),
+      )
+      renderTheatre()
+      await type(REPORTED)
+      await table()
+      fireEvent.change(screen.getByLabelText('Dose, line 1'), { target: { value: '1 g' } })
+
+      await type(`Okay. ${REPORTED}`)
       await waitFor(() => expect(mocks.parsePrescription).toHaveBeenCalledTimes(2))
 
-      expect(screen.queryByRole('list', { name: 'Not claimed by any row' })).toBeNull()
+      expect(doses()).toEqual(['1 g', '350 mg', '200 mg'])
+    })
+
+    it('holds Confirm while the box has changed and not been read yet', async () => {
+      mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
+      renderTheatre()
+      await type(REPORTED)
+      await table()
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Include line 3' }))
+      expect((confirmButton() as HTMLButtonElement).disabled).toBe(false)
+
+      fireEvent.change(screen.getByLabelText('What You Prescribed'), {
+        target: { value: `${REPORTED} Cetirizine 10 mg.` },
+      })
+
+      expect((confirmButton() as HTMLButtonElement).disabled).toBe(true)
+      expect(screen.getByRole('status').textContent).toBe('Reading the prescription.')
+    })
+
+    it('keeps the box editable while a read is in flight', async () => {
+      mocks.parsePrescription.mockReturnValue(new Promise(() => {}))
+      renderTheatre()
+      await type(REPORTED)
+
+      expect((screen.getByLabelText('What You Prescribed') as HTMLTextAreaElement).disabled).toBe(
+        false,
+      )
+    })
+
+    it("offers the matcher's other readings in its order, and takes one on the doctor's pick", async () => {
+      // The #311 wrong-drug case: the combination is returned first despite the
+      // lower score, and must still be read first.
+      const text = 'amoxicillin clavulanate 625 mg twice daily'
+      const combination = candidate({
+        lexiconId: 'amoxicillin-clavulanate',
+        generic: 'amoxicillin-clavulanate',
+        heard: 'amoxicillin clavulanate',
+        start: 0,
+        end: 23,
+        score: 0.88,
+      })
+      const single = candidate({ heard: 'amoxicillin', start: 0, end: 11, score: 0.96 })
+      mocks.parsePrescription.mockResolvedValue(
+        response([line({ start: 0, end: text.length, candidates: [combination, single] })]),
+      )
+      renderTheatre()
+      await type(text)
+      await table()
+
+      expect(drugs()).toEqual(['amoxicillin-clavulanate'])
+      fireEvent.click(screen.getByRole('button', { name: 'Read line 1 as amoxicillin' }))
+
+      expect(drugs()).toEqual(['amoxicillin'])
+      expect(ticked()).toEqual([true])
+      // The button left with the choice; focus went to the name it set.
+      expect(document.activeElement).toBe(screen.getByLabelText('Drug, line 1'))
+    })
+
+    it('keeps every line when the save fails, and says nothing was lost', async () => {
+      mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
+      const onSave = vi.fn().mockRejectedValue(new Error('nope'))
+      const onClose = vi.fn()
+      render(
+        <QueryClientProvider client={new QueryClient()}>
+          <PrescriptionTheatre
+            consultationId="consultation-1"
+            stored={[]}
+            open
+            autoStart={false}
+            onSave={onSave}
+            onClose={onClose}
+          />
+        </QueryClientProvider>,
+      )
+      await type(REPORTED)
+      await table()
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Include line 3' }))
+      fireEvent.click(confirmButton())
+
+      expect(await screen.findByText(/Nothing was lost/)).toBeTruthy()
+      expect(drugs()).toEqual(['amoxicillin', 'paracetamol', ''])
+      expect(onClose).not.toHaveBeenCalled()
+    })
+
+    it('says so when nothing was read, rather than showing an empty space', async () => {
+      mocks.parsePrescription.mockResolvedValue(response([]))
+      renderTheatre()
+      await type('advised rest and fluids')
+
+      expect(await screen.findByText(/No drug name or dose was read/)).toBeTruthy()
+    })
+
+    it('takes a drug by hand, quoting the box as its evidence', async () => {
+      const text = 'Strepsils one lozenge every four hours'
+      mocks.parsePrescription.mockResolvedValue(response([]))
+      const { onSave } = renderTheatre()
+      await type(text)
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Add Line' }))
+      await waitFor(() =>
+        expect(document.activeElement).toBe(screen.getByLabelText('Drug, line 1')),
+      )
+      fireEvent.change(screen.getByLabelText('Drug, line 1'), { target: { value: 'Strepsils' } })
+      fireEvent.click(confirmButton())
+
+      await waitFor(() => expect(onSave).toHaveBeenCalled())
+      const sent = onSave.mock.calls[0]?.[0] as Prescription[]
+      expect(sent[0]).toMatchObject({ drug: 'Strepsils', dictated: text })
+      expect(sent[0]?.lexiconId).toBeUndefined()
     })
   })
 
@@ -905,7 +784,6 @@ describe('PrescriptionTheatre', () => {
     expect(await screen.findByText(/not available on this deployment/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /^dictate$/i })).toBeNull()
     expect(screen.getByLabelText('What You Prescribed')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Check' })).toBeTruthy()
   })
 
   it('still offers Dictate below the hardware floor when streaming, because a socket loads no weights', async () => {
@@ -928,9 +806,9 @@ describe('PrescriptionTheatre', () => {
     })
 
     it('labels the second dictation in Title Case', async () => {
-      mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [] })
+      mocks.parsePrescription.mockResolvedValue(response([]))
       renderTheatre()
-      await check(DICTATED)
+      await type(DICTATED)
 
       expect(await screen.findByRole('button', { name: 'Dictate Again' })).toBeTruthy()
     })
