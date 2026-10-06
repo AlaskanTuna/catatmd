@@ -58,10 +58,17 @@ import type { RedFlagTrigger } from './types.js'
  * contracted "is", "was", "were", "does" and "did", but only before "able" or
  * "come out", which can only add fires. No transcript that fired under v12
  * stops firing under v13.
+ * **v14 changes how far a denial reaches, and no pattern, severity, label or
+ * citation.** A denied mention no longer ends the scan of its turn, so "I
+ * never passed out before. Today I passed out." fires (#394). A comma that
+ * opens an affirmative clause with its own subject ends a denial, so "No
+ * fever, I passed out." fires while "No, I don't have chest pain." stays
+ * silent (#398). Both only turn suppressions into fires: no transcript that
+ * fired under v13 stops firing under v14.
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v13',
-  effectiveDate: '2026-09-28',
+  id: 'redflag-list-v14',
+  effectiveDate: '2026-10-06',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -182,7 +189,44 @@ const TRAILING_NEGATOR = new RegExp(
 const isNegated = (text: string, matchIndex: number): boolean => {
   const before = text.slice(Math.max(0, matchIndex - 60), matchIndex)
   const inScope = before.split(NEGATION_SCOPE_END).pop() ?? ''
+  if (opensAffirmedClause(inScope)) return false
   return TRAILING_NEGATOR.test(inScope)
+}
+
+/**
+ * A comma that opens a clause with a subject of its own, in English or Malay
+ * ("I", "my", "there", "saya", "badan saya").
+ */
+const NEW_SUBJECT_CLAUSE =
+  /,\s*(?:(?:i|my|he|she|his|her|we|our|they|their|it|there|the\s+patient|saya|aku|dia|kami|kita)\b|\p{L}+\s+(?:saya|aku)\b)/giu
+
+/**
+ * Any negation at all, broader than `TRAILING_NEGATOR` on purpose: it includes
+ * "don't", "dont" as typed without the apostrophe, "deny", "zero", "free of"
+ * and the Malay spellings of "tiada" ("takdak", "xde", "tarak", "ndak"). It is
+ * used only to decide that a clause is *not* plainly affirmative, which keeps a
+ * denial in reach exactly as it was, so reading too much here can never
+ * silence anything.
+ */
+const CLAUSE_NEGATION =
+  /\b(?:no|not|never|none|nothing|nor|neither|without|cannot|deny|denies|denied|zero|free\s+of|(?:do|does|did|have|has|had|ca|wo|is|are|was|were|could|would)nt|tak|tidak|takde|takda|takdak|tadak|xde|xda|tarak|ndak|tiada|belum|bukan)\b|n['’]t\b/i
+
+/**
+ * Does the match sit in a new, affirmative clause after a denial (#398)? "No
+ * fever, I passed out." denies the fever and reports the faint, and a comma
+ * alone used to leave "passed out" inside the denial.
+ *
+ * Ending scope at every comma is wrong in the other direction: "No, I don't
+ * have chest pain." would fire, because "don't" is not a negator in
+ * `TRAILING_NEGATOR` and adding it there would silence "I don't feel well,
+ * chest pain since morning". So the clause ends the denial only when it
+ * carries no negation of its own. A clause that does is read as before, which
+ * is why this can only turn a suppression into a fire.
+ */
+const opensAffirmedClause = (scope: string): boolean => {
+  const opening = [...scope.matchAll(NEW_SUBJECT_CLAUSE)].at(-1)
+  if (opening === undefined) return false
+  return !CLAUSE_NEGATION.test(scope.slice(opening.index + 1))
 }
 
 /**
@@ -346,8 +390,11 @@ const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string |
 
           if (!isSafetyNetting(turn, at)) {
             if (SPAN_CARRIES_NEGATOR.test(match[0])) return span
-            if (asserts(transcript, index) && !isNegated(turn.text, at)) return span
-            break
+            if (!asserts(transcript, index)) break
+            if (!isNegated(turn.text, at)) return span
+            // A denied mention, unlike an unasserted turn, says nothing about
+            // the next one: "I never passed out before. Today I passed out."
+            // (#394), so the scan carries on as it does past safety-netting.
           }
           if (match[0].length === 0) scanner.lastIndex += 1
           match = scanner.exec(pass.text)
