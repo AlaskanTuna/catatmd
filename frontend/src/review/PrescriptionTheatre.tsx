@@ -8,11 +8,9 @@ import {
   type SigRoute,
 } from '@shared/types'
 import { useMutation } from '@tanstack/react-query'
-import { Check, Mic, Pencil, Plus, Settings2, Square, Trash2, X } from 'lucide-react'
+import { Check, Mic, Pencil, Plus, Square, Trash2, X } from 'lucide-react'
 import { type SyntheticEvent, useCallback, useEffect, useId, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { AudioSettingsDialog } from '../audio/AudioSettingsDialog.js'
-import { type AudioSettings, loadAudioSettings } from '../audio/audio-settings.js'
 import {
   belowHardwareFloor,
   DICTATION_AUDIO_CONSTRAINTS,
@@ -88,7 +86,7 @@ const CAPPED_NOTICE =
 
 const SAVE_FAILED = 'That could not be saved. Nothing was lost, try Confirm again.'
 
-const FIELD_LABEL = 'text-2xs font-semibold uppercase tracking-wide text-ink-muted'
+const FIELD_LABEL = 'text-2xs font-semibold text-ink-muted'
 const TEXT_INPUT =
   'h-11 rounded-control border border-line bg-surface px-3.5 text-sm transition-colors hover:border-accent focus:border-accent'
 const PANEL = 'rounded-card bg-surface p-4 shadow-card'
@@ -100,6 +98,24 @@ const DISCARD_PROMPT = 'Discard the prescriptions you have not confirmed?'
 
 const clock = (seconds: number): string =>
   `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+
+/** How much of the dictation is kept in front of a heard name. */
+const LEAD_IN = 48
+
+/**
+ * The text before a heard name, cut at a word boundary when it is long.
+ *
+ * Each candidate quotes the dictation clamped to three lines, so in a column
+ * this wide a name heard past roughly the second sentence was clipped out of
+ * its own quote. Trimming the front keeps the marked span on screen, and the
+ * ellipsis says text was left out rather than implying it starts there.
+ */
+const leadIn = (text: string, start: number): string => {
+  if (start <= LEAD_IN) return text.slice(0, start)
+  const space = text.indexOf(' ', start - LEAD_IN)
+  const from = space === -1 || space >= start ? start - LEAD_IN : space + 1
+  return `…${text.slice(from, start)}`
+}
 
 export function PrescriptionTheatre({
   consultationId,
@@ -123,14 +139,15 @@ export function PrescriptionTheatre({
   const titleId = useId()
   const boxId = useId()
 
-  const [audio, setAudio] = useState<AudioSettings>(loadAudioSettings)
-  const dictationEngine = audio.dictationEngine
-  const audioDialog = useRef<HTMLDialogElement>(null)
-  const [audioOpen, setAudioOpen] = useState(false)
-
+  /*
+   * Streaming is always preferred here, and on-device is only the fallback when
+   * the config says streaming is unavailable or does not answer. No stored
+   * preference is read: the owner settled the engine for this page, so a
+   * device left on the on-device choice by an older build still streams.
+   */
   const [liveConfig, setLiveConfig] = useState<LiveAsrConfig | null>(null)
   const [configFailure, setConfigFailure] = useState<'unavailable' | 'unreachable' | null>(null)
-  const streaming = dictationEngine === 'streaming' && liveConfig !== null
+  const streaming = liveConfig !== null
 
   /**
    * Whether the engine is a decision yet.
@@ -141,8 +158,7 @@ export function PrescriptionTheatre({
    * retry once the config landed. A doctor on the shipped streaming default got
    * the local model, silently, on every press of Dictate.
    */
-  const engineResolved =
-    dictationEngine !== 'streaming' || liveConfig !== null || configFailure !== null
+  const engineResolved = liveConfig !== null || configFailure !== null
 
   const [lowPower] = useState(belowHardwareFloor)
   /** A socket loads no weights, so the floor only bites when the worker runs. */
@@ -317,7 +333,7 @@ export function PrescriptionTheatre({
   }, [capturing])
 
   useEffect(() => {
-    if (!open || dictationEngine !== 'streaming') return
+    if (!open) return
     let live = true
     api
       .liveAsrConfig('dictation')
@@ -325,13 +341,12 @@ export function PrescriptionTheatre({
         if (!live) return
         setLiveConfig(config)
         /*
-         * Cleared on success, not only set on failure. Toggling the engine in
-         * the Audio dialog re-runs this effect, so a first attempt that failed
-         * and a retry that succeeded would otherwise leave the "transcribes on
-         * this device" sentence on screen while the socket was open. With the
-         * consent tick gone from this surface that sentence is the only thing
-         * left telling the doctor where the audio goes, so it must not be able
-         * to be false.
+         * Cleared on success, not only set on failure. Reopening the theatre
+         * re-runs this effect, so a first attempt that failed and a retry that
+         * succeeded would otherwise leave the "transcribes on this device"
+         * sentence on screen while the socket was open. With the consent tick
+         * gone from this surface that sentence is the only thing left telling
+         * the doctor where the audio goes, so it must not be able to be false.
          */
         setConfigFailure(null)
       })
@@ -344,7 +359,7 @@ export function PrescriptionTheatre({
     return () => {
       live = false
     }
-  }, [open, dictationEngine])
+  }, [open])
 
   const clearStall = useCallback(() => {
     if (stall.current !== null) {
@@ -589,16 +604,6 @@ export function PrescriptionTheatre({
     self.current?.querySelector<HTMLButtonElement>(`[aria-label="${STOP_LABEL}"]`)?.focus()
   }, [open, autoStart, capturing])
 
-  useEffect(() => {
-    const node = audioDialog.current
-    if (!audioOpen || !node) return
-    if (typeof node.showModal === 'function') node.showModal()
-    else node.setAttribute('open', '')
-    const close = () => setAudioOpen(false)
-    node.addEventListener('close', close)
-    return () => node.removeEventListener('close', close)
-  }, [audioOpen])
-
   const reset = useCallback(() => {
     setDictation('')
     setParsedFrom(null)
@@ -751,6 +756,18 @@ export function PrescriptionTheatre({
     return ''
   }
 
+  const status =
+    statusLine() !== ''
+      ? statusLine()
+      : incomplete > 0
+        ? `Name every drug before confirming. ${incomplete} still ${
+            incomplete === 1 ? 'needs' : 'need'
+          } a name.`
+        : reviewing
+          ? `${staged.length} to confirm, ${stored.length} already recorded`
+          : ''
+  const failure = error ?? stream.error
+
   /**
    * The one question, asked by every path that would drop staged rows.
    *
@@ -784,6 +801,17 @@ export function PrescriptionTheatre({
   }
 
   return (
+    /*
+     * Sized by what it holds rather than by the viewport. One column while
+     * there is only the box to show, at a width that keeps the dictated text
+     * near the measure the note uses; two once there are decisions to make,
+     * wide enough to keep the 440px decision column beside an evidence column
+     * of about the same width the box had. Height follows the content up to
+     * the ceiling `ChecklistPanel` and `CatatAI` use, and past it the body
+     * scrolls while the header and the Confirm footer stay put. `open:flex`
+     * rather than `flex`, for the reason `ChecklistPanel` gives: author display
+     * outranks the UA rule hiding a closed dialog.
+     */
     <dialog
       ref={self}
       onClose={() => {
@@ -793,10 +821,13 @@ export function PrescriptionTheatre({
       onCancel={cancel}
       aria-labelledby={titleId}
       data-print="hide"
-      className="glass-panel m-auto h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-none rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
+      className={cn(
+        'glass-panel m-auto max-h-[min(85vh,48rem)] max-w-none overflow-hidden rounded-float p-0 text-ink open:flex open:flex-col backdrop:bg-scrim backdrop:backdrop-blur-sm',
+        reviewing ? 'w-[min(64rem,calc(100vw-2rem))]' : 'w-[min(40rem,calc(100vw-2rem))]',
+      )}
     >
       {open && (
-        <div className="flex h-full flex-col">
+        <>
           <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-5 py-3.5">
             <div className="min-w-0">
               <p
@@ -805,7 +836,7 @@ export function PrescriptionTheatre({
               >
                 {patientName ?? 'Consultation'}
               </p>
-              <p className="text-2xs text-ink-muted">Prescription dictation</p>
+              <p className="text-2xs text-ink-muted">Prescription Dictation</p>
             </div>
 
             <div className="ml-auto flex flex-wrap items-center gap-2 sm:gap-3">
@@ -826,11 +857,9 @@ export function PrescriptionTheatre({
                     />
                     <span>{stream.phase === 'connecting' ? 'Connecting' : 'Listening'}</span>
                   </span>
+                  <InputMeter variant="wave" stream={liveStream ?? stream.micStream ?? undefined} />
                   <span className="hidden tabular-nums text-sm text-ink-muted sm:inline">
                     {clock(elapsed)}
-                  </span>
-                  <span className="hidden sm:inline">
-                    <InputMeter stream={liveStream ?? stream.micStream ?? undefined} />
                   </span>
                   <Button
                     variant="primary"
@@ -845,14 +874,6 @@ export function PrescriptionTheatre({
                 </>
               ) : (
                 <>
-                  <Button
-                    size="sm"
-                    variant="neutral"
-                    aria-label="Audio settings"
-                    title="Audio settings"
-                    icon={<Settings2 aria-hidden className="size-3.5" />}
-                    onClick={() => setAudioOpen(true)}
-                  />
                   {!thin && (
                     <Button
                       size="sm"
@@ -861,7 +882,7 @@ export function PrescriptionTheatre({
                       disabled={busy}
                       onClick={startDictation}
                     >
-                      {parsedFrom === null ? 'Dictate' : 'Dictate again'}
+                      {parsedFrom === null ? 'Dictate' : 'Dictate Again'}
                     </Button>
                   )}
                   <Button
@@ -886,21 +907,26 @@ export function PrescriptionTheatre({
             </div>
           </header>
 
+          {/* A flex column below `lg`, so the two halves stacked on a narrow
+            screen keep the same gap they have side by side. At `lg` the single
+            row is pinned to the body's height, which is what lets each column
+            scroll on its own instead of the taller one being clipped. */}
           <div
             className={cn(
-              'min-h-0 flex-1 gap-4 overflow-y-auto p-4 sm:p-5',
-              reviewing && 'lg:grid lg:grid-cols-[minmax(0,1fr)_440px] lg:overflow-hidden',
+              'flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto p-4 sm:p-5',
+              reviewing &&
+                'lg:grid lg:grid-cols-[minmax(0,1fr)_440px] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden',
             )}
           >
             <div
               className={cn(
                 'flex min-w-0 flex-col gap-4',
-                reviewing ? 'lg:min-h-0 lg:overflow-y-auto lg:pr-1' : 'mx-auto w-full max-w-3xl',
+                reviewing && 'lg:min-h-0 lg:overflow-y-auto lg:pr-1',
               )}
             >
-              <section className={cn(PANEL, !reviewing && 'flex min-h-0 flex-1 flex-col')}>
+              <section className={PANEL}>
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className={FIELD_LABEL} id={boxId}>
+                  <span className="text-xs font-semibold text-ink" id={boxId}>
                     What You Prescribed
                   </span>
                   <span aria-hidden className="tabular-nums text-2xs text-ink-muted">
@@ -908,13 +934,12 @@ export function PrescriptionTheatre({
                   </span>
                 </div>
 
+                {/* Grows with the words as they arrive, where the browser can
+                  size a field to its content, and scrolls past the ceiling. */}
                 <textarea
                   ref={box}
                   aria-labelledby={boxId}
-                  className={cn(
-                    'mt-2 w-full resize-y rounded-control border border-line bg-surface p-3 text-sm leading-relaxed transition-colors hover:border-accent focus:border-accent',
-                    reviewing ? 'h-40' : 'min-h-40 flex-1',
-                  )}
+                  className="mt-2 block max-h-72 min-h-36 w-full resize-y rounded-control border border-line bg-surface p-3 text-sm leading-relaxed transition-colors field-sizing-content hover:border-accent focus:border-accent"
                   placeholder="amoxicillin 500 mg, three times a day, after food, for five days"
                   maxLength={MAX_DICTATED_CHARACTERS}
                   value={dictation}
@@ -937,7 +962,7 @@ export function PrescriptionTheatre({
                   </p>
                 )}
 
-                {dictationEngine === 'streaming' && configFailure !== null && (
+                {configFailure !== null && (
                   <p className="mt-2 text-xs text-ink-muted">
                     {configFailure === 'unavailable'
                       ? 'Streaming recognition is not available on this deployment, so Dictate transcribes on this device.'
@@ -974,7 +999,7 @@ export function PrescriptionTheatre({
                             from the live box, so the marked span stays truthful
                             while the doctor is mid-edit. */}
                           <p className="line-clamp-3 font-mono leading-relaxed">
-                            {parsedFrom.slice(0, candidate.start)}
+                            {leadIn(parsedFrom, candidate.start)}
                             <mark className="bg-transparent font-semibold text-ink underline decoration-accent decoration-2 underline-offset-2">
                               {parsedFrom.slice(candidate.start, candidate.end)}
                             </mark>
@@ -1268,24 +1293,24 @@ export function PrescriptionTheatre({
             )}
           </div>
 
-          <footer className="flex shrink-0 flex-wrap items-center gap-3 border-t border-line px-5 py-3.5">
-            <div className="min-w-0 flex-1">
+          {/* Below `sm` the status takes a row of its own above the buttons
+            rather than truncating beside them, because it is what says why
+            Confirm is still disabled. */}
+          <footer className="flex shrink-0 flex-wrap items-center justify-end gap-3 border-t border-line px-5 py-3.5">
+            <div
+              className={cn(
+                'min-w-0 sm:flex-1 sm:basis-0',
+                (status !== '' || failure !== null) && 'basis-full',
+              )}
+            >
               {/* Always mounted, because a live region added to the DOM
                 alongside its first content is the shape screen readers miss. */}
-              <p role="status" className="truncate text-xs text-ink-muted">
-                {statusLine() !== ''
-                  ? statusLine()
-                  : incomplete > 0
-                    ? `Name every drug before confirming. ${incomplete} still ${
-                        incomplete === 1 ? 'needs' : 'need'
-                      } a name.`
-                    : reviewing
-                      ? `${staged.length} to confirm, ${stored.length} already recorded`
-                      : ''}
+              <p role="status" className="text-xs text-ink-muted sm:truncate">
+                {status}
               </p>
-              {(error ?? stream.error) !== null && (
+              {failure !== null && (
                 <p role="alert" className="mt-1 text-xs text-emergency">
-                  {error ?? stream.error}
+                  {failure}
                 </p>
               )}
             </div>
@@ -1334,19 +1359,7 @@ export function PrescriptionTheatre({
               {ready.length > 1 ? `Confirm ${ready.length} Prescriptions` : 'Confirm Prescription'}
             </Button>
           </footer>
-
-          {/* `ambient` is false rather than plumbed: this page has no live
-            ambient session, and the dialog reads that flag only to name an
-            engine that is actually running. */}
-          {audioOpen && (
-            <AudioSettingsDialog
-              ref={audioDialog}
-              settings={audio}
-              onApply={setAudio}
-              ambient={false}
-            />
-          )}
-        </div>
+        </>
       )}
     </dialog>
   )
