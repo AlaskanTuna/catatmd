@@ -314,8 +314,20 @@ surface.
 
 ### The Prescription Theatre
 
-Dictating a prescription opens a second full-viewport `<dialog>`, on the same
-reasoning as the capture theatre and with two deliberate differences (#365).
+Dictating a prescription opens a second `<dialog>`, on the same reasoning as
+the capture theatre and with two deliberate differences (#365).
+
+**Sized by its content, not the viewport (06/10/26).** A dictation is a few
+lines, so a full-viewport room left most of the screen empty.
+
+| State     | Width                         | Height                                |
+| --------- | ----------------------------- | ------------------------------------- |
+| Listening | One column, up to 40rem       | Grows with the text, up to the cap    |
+| Reviewing | Two columns, up to 64rem      | Grows with the rows, up to the cap    |
+| Cap       | `100vw - 2rem` on small views | `min(85vh, 48rem)`, then body scrolls |
+
+The cap is the one `ChecklistPanel` and CatatAI use. Past it the header and the
+Confirm footer stay put. The microphone shows as a small wave rather than words.
 
 **Why it is a theatre at all.** The compose surface lived in the review page's
 middle column: about 620px wide, itself an internal scroller, holding a
