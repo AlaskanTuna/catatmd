@@ -1,5 +1,6 @@
 export type { MedicationEntry } from './lexicon.js'
 export { lexiconFor, MEDICATION_LEXICON, MEDICATION_LEXICON_VERSION } from './lexicon.js'
+export { parsePrescriptionLines } from './lines.js'
 export type { MedicationCandidate, Normalised } from './match.js'
 export { matchMedication, normalise } from './match.js'
 export type { Sig } from './sig.js'

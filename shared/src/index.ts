@@ -1199,6 +1199,56 @@ export const MedicationCandidateSchema = z.object({
 })
 
 /**
+ * The sig fields one shared clause ("all of them twice a day", "semua lima
+ * hari") may fill on every line that left them unsaid.
+ *
+ * **`dose` is absent, and that is the rule.** A dose belongs to one drug, and
+ * spreading "500 mg" across a list is how paracetamol's dose lands on
+ * cetirizine. D-001 amended 06/10/26.
+ */
+export const SHAREABLE_SIG_FIELDS = ['route', 'frequency', 'duration', 'food'] as const
+
+/**
+ * One line of a dictated prescription: the stretch of the dictation it was
+ * read from, the drug names heard in it, and its sig.
+ *
+ * **An empty `candidates` is a line with a dose or sig but no drug name the
+ * lexicon knows**, such as "antibiotic 200 mg" or a brand name. It is returned
+ * rather than folded into its neighbour so the doctor sees a line nobody named,
+ * and the SPA holds Confirm until they name it or dismiss it. No drug is
+ * proposed for it.
+ *
+ * `exact` is true only when the first candidate is the name exactly as heard
+ * and no other candidate reaches past it. A near-match, or a single agent
+ * inside a combination that was also heard, is never exact.
+ *
+ * `shared` records each field filled from a shared clause and where that
+ * clause sits in the dictation, so the provenance is shown on the line.
+ */
+export const PrescriptionLineSchema = z.object({
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+  candidates: z.array(MedicationCandidateSchema).max(20),
+  exact: z.boolean(),
+  sig: PrescriptionSchema.pick({
+    dose: true,
+    route: true,
+    frequency: true,
+    duration: true,
+    food: true,
+  }),
+  shared: z
+    .array(
+      z.object({
+        field: z.enum(SHAREABLE_SIG_FIELDS),
+        start: z.number().int().nonnegative(),
+        end: z.number().int().nonnegative(),
+      }),
+    )
+    .max(SHAREABLE_SIG_FIELDS.length),
+})
+
+/**
  * What the parse endpoint returns: a draft, never a stored record.
  *
  * `candidates` is ordered by the matcher (score, then span length, then id) and
@@ -1231,6 +1281,21 @@ export const PrescriptionParseResponseSchema = z.object({
    */
   sigReadTo: z.number().int().nonnegative().nullish(),
   candidates: z.array(MedicationCandidateSchema).max(20),
+  /**
+   * The dictation cut into prescription lines, one per drug said (D-001,
+   * amended 06/10/26).
+   *
+   * `sig`, `sigReadTo` and `candidates` above stay for an SPA deployed before
+   * this field. `nullish` for the reverse case, an SPA reaching an API that
+   * predates it; `noteTemplate` is the precedent.
+   */
+  lines: z.array(PrescriptionLineSchema).nullish(),
+  /**
+   * The generic names in the profile's lexicon, offered as suggestions when
+   * the doctor types a drug the matcher did not recognise. A suggestion list,
+   * never a constraint: `drug` stays free text.
+   */
+  generics: z.array(z.string().max(80)).max(200).nullish(),
 })
 
 export const ConsultationSchema = z.object({
@@ -2152,6 +2217,8 @@ export type Speaker = z.infer<typeof SpeakerSchema>
 export type Prescription = z.infer<typeof PrescriptionSchema>
 export type MedicationCandidateWire = z.infer<typeof MedicationCandidateSchema>
 export type PrescriptionParseResponse = z.infer<typeof PrescriptionParseResponseSchema>
+export type PrescriptionLine = z.infer<typeof PrescriptionLineSchema>
+export type ShareableSigField = (typeof SHAREABLE_SIG_FIELDS)[number]
 export type MishearProposal = z.infer<typeof MishearProposalSchema>
 export type TranscriptCleanupStatus = z.infer<typeof TranscriptCleanupStatusSchema>
 export type TranscriptCorrectionsResponse = z.infer<typeof TranscriptCorrectionsResponseSchema>

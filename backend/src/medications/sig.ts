@@ -188,12 +188,18 @@ const firstUnclaimed = <T>(text: string, rules: readonly Rule<T>[], claims: Clai
  * rare one. The furthest claim is the last character this sig can honestly
  * account for, and the text beyond it belongs to nobody yet (#369).
  *
+ * `readFrom` is the other end: where the first field starts. A line that
+ * opens on a word the sig does not own before that offset may be naming a
+ * drug the lexicon does not know (`lines.ts`).
+ *
  * `null` when nothing was read, which is not the same as `0`. No field parsed
  * means the whole phrase is unaccounted for; an offset of `0` cannot arise,
  * since a claim that starts at `0` still ends past it.
  */
-export const parseSigWithSpan = (text: string): { sig: Sig; readTo: number | null } => {
-  if (text.trim() === '') return { sig: EMPTY, readTo: null }
+export const parseSigWithSpan = (
+  text: string,
+): { sig: Sig; readFrom: number | null; readTo: number | null } => {
+  if (text.trim() === '') return { sig: EMPTY, readFrom: null, readTo: null }
 
   const claims: Claim[] = []
 
@@ -207,6 +213,7 @@ export const parseSigWithSpan = (text: string): { sig: Sig; readTo: number | nul
 
   return {
     sig: { dose, route, frequency, duration, food },
+    readFrom: claims.length === 0 ? null : Math.min(...claims.map(({ start }) => start)),
     readTo: claims.length === 0 ? null : Math.max(...claims.map(({ end }) => end)),
   }
 }
