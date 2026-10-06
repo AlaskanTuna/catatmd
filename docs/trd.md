@@ -2755,6 +2755,15 @@ The grant above is scoped to ambient capture, and its "What it does not" row nam
 
 **Not a new surface and not a new egress.** Ambient capture opens the socket exactly as before. What changes is the recognition config in the first frame, selected by a closed enum, and the processor now translates as well as transcribes. That second half is what this row exists to name.
 
+#### Extended 06/10/26: Mandarin And Tamil
+
+| Question         | Answer                                                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Who              | @AlaskanTuna, on 06/10/26                                                                                                         |
+| What it covers   | The same two-way translation between English and Mandarin or Tamil, on the same socket, key type, region and minting route        |
+| What it does not | Cantonese as a pair of its own, any other language pair, and any claim about accuracy: neither language is measured (§20.12)      |
+| What prompted it | Mandarin- and Tamil-speaking patients a clinic client asked to serve, with the Urdu and Bengali mechanism already in place (#385) |
+
 #### Amended 10/09/26: Streaming Becomes The Default On That Page
 
 The sign-off above is unchanged and is not re-opened here: same vendor, socket, region and minting route, so no new egress and no new grant. What moved is `DEFAULT_AUDIO_SETTINGS.dictationEngine`, from `'local'` to `'streaming'` (@Andersonnn7788, 10/09/26, #363). The rationale is the measurement in §20.1 and the table above: an on-device default whose real-time factor sits above 1.0 on typical clinic hardware cannot deliver words as the doctor speaks, so it is a default most doctors would have to leave.
@@ -3078,7 +3087,7 @@ Each window repeats the previous window's last closed segment. `findDeniedAbilit
 
 ### 20.12 Two-Way Translation On Ambient Capture
 
-**Status: `Decided, building`.** Recorded 28/09/26. The grant is §20.10 "Extended 28/09/26". Work is split across #389 (measurement), #390 (engine phrasings), #391 (names), #392 (API) and #393 (UI).
+**Status: `Decided, building`.** Recorded 28/09/26. The grant is §20.10 "Extended 28/09/26". Work is split across #389 (measurement), #390 (engine phrasings), #391 (names), #392 (API) and #393 (UI). **Extended 06/10/26 to Mandarin and Tamil, unmeasured** (§20.10 "Extended 06/10/26", D-008's amendment, #385).
 
 A Pakistani or Bangladeshi patient speaks Urdu or Bengali, and the doctor answers in English. Each turn shows what was said with its translation beneath, in both directions, while the consultation is running.
 
@@ -3166,18 +3175,21 @@ One patient sentence per trigger, in each language, run through the real engine:
 - **What enforces it.** `backend/src/deid/no-stray-other-language.test.ts` pins it behaviourally, on `serialiseTranscript` and the copilot digest.
 - **Structurally, too.** The same test finds the field named nowhere in backend source. The API stores the transcript and never needs to read this field. That half matches the name only, so a spread or a stringified transcript would slip past it.
 - **At the gate, whatever a client sends.** The `SCRIPT` detector (#391) tokenises any run of Bengali, Arabic or Devanagari script, so script reaching model-bound text by any route becomes a token. `assertNoIdentifiers` re-runs it at egress.
-- **The gap that remains.** Chinese and Tamil script sit outside `SCRIPT` on purpose, because ambient capture hints both and tokenising them would blind the note. A name written in either still passes the gate, as it did before this section.
+- **The gap that remains.** Chinese and Tamil script sit outside `SCRIPT` on purpose, because ambient capture hints both and tokenising them would blind the note. A name written in either still passes the gate on the untranslated Auto-detect path, as it did before this section.
+- **Mandarin and Tamil on a translated session.** The original rides in `otherLanguage` like Urdu and Bengali, and the script guard in `frontend/src/audio/live/bilingual.ts`, an allowlist of Latin script, keeps Chinese, Tamil and any neighbouring script out of `turn.text`. It runs in the browser, so on these two pairs it and `no-stray-other-language.test.ts` are the protection, with no gate-side backstop: a client other than the SPA, or a doctor's edit to the transcript, bypasses it, exactly as on Auto-detect.
+- **Pinyin names.** Mandarin translation spells a Chinese name in Pinyin, which the Malaysian romanisations in the gazetteer never match, so thirty common Pinyin surnames were added with #385.
 - **Erasure.** `eraseConsultation` already nulls the whole transcript column, originals included.
 
 #### What Is Not Measured
 
-| Unmeasured                             | Why it matters                                                                                   |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Accuracy on real speech                | #389 used clean synthetic voices. It measures the wire and the pipeline, not recognition quality |
-| Translation quality                    | No vendor publishes BLEU or COMET for Urdu or Bengali, and nothing here scores it                |
-| Sylheti and Chittagonian               | Spoken by many Bangladeshi patients, never mentioned by the vendor, and likely to fare poorly    |
-| Pashto and Sindhi                      | Not supported by the vendor                                                                      |
-| Overlapping speech, load, clinic noise | None of these occur in synthetic audio                                                           |
+| Unmeasured                             | Why it matters                                                                                                          |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Accuracy on real speech                | #389 used clean synthetic voices. It measures the wire and the pipeline, not recognition quality                        |
+| Translation quality                    | No vendor publishes BLEU or COMET for Urdu or Bengali, and nothing here scores it                                       |
+| Mandarin and Tamil, at all             | Added without a #389-style run: pairing, latency, the Malay negation check and red-flag recall are all unknown for both |
+| Sylheti and Chittagonian               | Spoken by many Bangladeshi patients, never mentioned by the vendor, and likely to fare poorly                           |
+| Pashto and Sindhi                      | Not supported by the vendor                                                                                             |
+| Overlapping speech, load, clinic noise | None of these occur in synthetic audio                                                                                  |
 
 **Machine translation is a third fabrication surface**, after recognition and before the engine. §20.3 finding 1 has already measured a translation erasing the exact phrase the chest-pain trigger matches. Nothing here supports a claim to a client about translated accuracy.
 

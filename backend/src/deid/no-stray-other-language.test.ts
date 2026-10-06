@@ -95,6 +95,54 @@ describe('the other language never reaches model-bound text', () => {
   })
 })
 
+/*
+ * Mandarin and Tamil (#385). Their script is outside the gate's `SCRIPT`
+ * detector on purpose (docs/trd.md §20.12), so on a translated session this
+ * guarantee is the whole of the protection for the other half.
+ */
+const HAN_OR_TAMIL = /[\p{Script=Han}\p{Script=Tamil}]/u
+
+describe.each([
+  ['zh', '你叫什么名字？', '我叫陈伟。'],
+  ['ta', 'உங்கள் பெயர் என்ன?', 'என் பெயர் முருகன்.'],
+] as const)('the %s other half never reaches model-bound text', (language, asked, answered) => {
+  const transcript: Transcript = {
+    source: 'asr_live',
+    labelsReviewed: false,
+    machineTranslation: { languages: [language] },
+    turns: [
+      {
+        speaker: 'doctor',
+        text: 'What is your name, please?',
+        otherLanguage: { language, text: `${asked} ${MARKER}`, spoken: false },
+      },
+      {
+        speaker: 'patient',
+        text: 'My name is Chen Wei.',
+        otherLanguage: { language, text: `${answered} ${MARKER}`, spoken: true },
+      },
+    ],
+  }
+
+  it('is absent from the serialised and the de-identified transcript', () => {
+    for (const text of [serialiseTranscript(transcript), deidentifyTranscript(transcript).text]) {
+      expect(text).not.toContain(MARKER)
+      expect(text).not.toMatch(HAN_OR_TAMIL)
+    }
+  })
+
+  it('is absent from the copilot digest', () => {
+    const digest = renderDigest({
+      id: 'c1',
+      status: 'analysed',
+      transcript,
+      analysis: null,
+    } as unknown as ConsultationDetail)
+    expect(digest).not.toContain(MARKER)
+    expect(digest).not.toMatch(HAN_OR_TAMIL)
+  })
+})
+
 function sourceFiles(): string[] {
   const found: string[] = []
 

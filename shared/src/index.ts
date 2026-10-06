@@ -68,10 +68,11 @@ export const TextRangeSchema = z.object({
  *
  * A closed enum for the reason `LiveAsrModeSchema` is one: the value selects a
  * static recognition config that crosses the audio egress, so a caller chooses
- * which language and never what is sent for it. Urdu and Bengali only, the two
- * measured on this vendor (docs/trd.md §20.12).
+ * which language and never what is sent for it. Urdu and Bengali were measured
+ * on this vendor; Mandarin and Tamil were added unmeasured on the owner's
+ * grant (docs/decisions.md D-008, docs/trd.md §20.12).
  */
-export const InterpretedLanguageSchema = z.enum(['ur', 'bn'])
+export const InterpretedLanguageSchema = z.enum(['ur', 'bn', 'zh', 'ta'])
 
 export const TranscriptTurnSchema = z
   .object({
@@ -243,7 +244,12 @@ export const TranscriptSchema = z.object({
    * doctor would lose the transcript over a display fact.
    */
   machineTranslation: z
-    .object({ languages: z.array(InterpretedLanguageSchema).min(1).max(2) })
+    .object({
+      languages: z
+        .array(InterpretedLanguageSchema)
+        .min(1)
+        .max(InterpretedLanguageSchema.options.length),
+    })
     .optional(),
 })
 

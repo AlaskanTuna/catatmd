@@ -945,6 +945,35 @@ describe('sliceDeidentified', () => {
 })
 
 /*
+ * Mandarin translation spells a Chinese name in Pinyin (#385), which the
+ * Malaysian romanisations above never match: 陈伟 comes back "Chen Wei", not
+ * "Tan Wei". No sentence carries an introducer, for the reason given below.
+ */
+describe('Pinyin names with no cue in front of them (#385)', () => {
+  it.each([
+    { sentence: 'Chen Wei has had a cough for three days.', parts: ['Chen', 'Wei'] },
+    { sentence: 'Wang Fang came with her daughter.', parts: ['Wang', 'Fang'] },
+    { sentence: 'Zhang has had a fever since Monday.', parts: ['Zhang'] },
+    { sentence: 'Liu Yang has a sore throat but no fever.', parts: ['Liu', 'Yang'] },
+    { sentence: 'Please ask Huang to wait outside.', parts: ['Huang'] },
+  ])('tokenises the name in $sentence', ({ sentence, parts }) => {
+    const { text } = deidentify(sentence)
+    for (const part of parts) expect(text, part).not.toContain(part)
+    expect(text).toMatch(/\[PATIENT_\d+\]/)
+  })
+
+  it('does not tokenise a clinical word that only resembles a new entry', () => {
+    for (const sentence of [
+      'Linctus helped the cough at night.',
+      'Cheng-style breathing was not seen, and the chest was clear.',
+      'Zinc lozenges were taken for the sore throat.',
+    ]) {
+      expect(labelsIn(sentence), sentence).not.toContain('PATIENT')
+    }
+  })
+})
+
+/*
  * Urdu and Bengali translation puts Pakistani and Bangladeshi names,
  * transliterated, into English transcripts (#391). No sentence below carries an
  * introducer or an honorific, because a cue catches a name whether or not the
