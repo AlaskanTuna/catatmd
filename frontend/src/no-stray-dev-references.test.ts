@@ -146,6 +146,23 @@ function stripComments(source: string): string {
   return out
 }
 
+/**
+ * Blanks the path in an `import` or `export ... from`, static or dynamic.
+ *
+ * A module specifier is resolved by the bundler and never rendered, so a
+ * source path there is code rather than copy. The preview stub imports the
+ * backend's pure engines by relative path (`frontend/src/preview/engines.ts`),
+ * which is the case that needed it. Only the specifier is blanked: the same
+ * path in any other string is still reported.
+ */
+function stripModuleSpecifiers(code: string): string {
+  return code.replace(
+    /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])([^'"\n]*)\2/g,
+    (_match, lead: string, quote: string, path: string) =>
+      `${lead}${quote}${' '.repeat(path.length)}${quote}`,
+  )
+}
+
 describe('no internal document references ship to the browser', () => {
   /*
    * Test files are excluded, generalising the exclusion this file already
@@ -166,7 +183,7 @@ describe('no internal document references ship to the browser', () => {
     const found: string[] = []
 
     for (const file of files) {
-      const code = stripComments(readFileSync(file, 'utf8'))
+      const code = stripModuleSpecifiers(stripComments(readFileSync(file, 'utf8')))
       code.split('\n').forEach((line, offset) => {
         for (const { pattern, why } of FORBIDDEN) {
           if (pattern.test(line)) {
@@ -204,6 +221,16 @@ describe('no internal document references ship to the browser', () => {
     const stripped = stripComments(source)
     expect(stripped).not.toMatch(/trd\.md/)
     expect(stripped).toMatch(/const a = 1/)
+  })
+
+  it('skips a module specifier and still reports the same path in a string', () => {
+    const imported = stripModuleSpecifiers(
+      "import { a } from '../../backend/src/a.js'\nexport { b } from '../backend/src/b.js'\nconst c = import('../backend/src/c.js')\n",
+    )
+    expect(imported).not.toMatch(/backend\/src/)
+
+    const shipped = stripModuleSpecifiers("const label = 'see backend/src/a.ts'\n")
+    expect(shipped).toMatch(/backend\/src/)
   })
 
   it('keeps division working, so an expression is not eaten as a regex', () => {

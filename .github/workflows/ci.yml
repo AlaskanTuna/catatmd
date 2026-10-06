@@ -489,6 +489,18 @@ jobs:
           fi
           echo "Bundle calls /api on its own origin."
 
+      # The preview stub answers every /api call in the browser with synthetic
+      # data. It is built only when VITE_PREVIEW_STUB is set, and production must
+      # never carry it: a stub that answered here would show a doctor invented
+      # consultations while their real ones sat unread.
+      - name: Assert the production bundle carries no preview stub
+        run: |
+          if grep -rqF "catatmd-preview-stub" .vercel/output/static/assets; then
+            echo "::error::The production bundle contains the preview stub. VITE_PREVIEW_STUB must never be set for production builds."
+            exit 1
+          fi
+          echo "No preview stub in the production bundle."
+
       # `--meta commitSha` is set explicitly rather than relying on the CLI's git
       # auto-detection, because the identity check below reads it back and must
       # not depend on how the CLI happened to infer provenance.
@@ -702,3 +714,195 @@ jobs:
 
           echo "::error::https://$PRODUCTION_DOMAIN/api/health did not return the API health payload. The /api rewrite in vercel.json is not reaching Render, so every API call lands on the SPA and sign-in is broken."
           exit 1
+
+  # ── Pull request previews ───────────────────────────────────────────────────
+  # A preview URL for every pull request that changes the bundle, on a backend
+  # that does not exist. Three things keep a preview off the production API:
+  #
+  #   1. The `/api` rewrite to Render is removed from this build's vercel.json,
+  #      so the preview deployment has no route to the API at all.
+  #   2. The bundle is built with VITE_PREVIEW_STUB=true, which installs an
+  #      in-browser stub (frontend/src/preview/) that answers every `/api`
+  #      request with synthetic data before it reaches the network.
+  #   3. The CSP in vercel.json already limits `connect-src` to the page's own
+  #      origin and the recogniser hosts.
+  #
+  # Deterministic code (red flags, the prescription parser) runs for real in
+  # the stub; anything that needs a model, a database or a recogniser key gets a
+  # placeholder or its normal "unavailable" fallback. docs/trd.md §17, Pull
+  # Request Previews, has the detail and the manual Vercel setting this needs.
+  #
+  # Skipped for pull requests from forks, which get no secrets, and when
+  # VERCEL_TOKEN is absent. Every preview counts against the Hobby plan's daily
+  # deployment cap, so it shares the production job's deployable-paths filter.
+  preview:
+    name: Deploy preview to Vercel
+    needs: verify
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+
+    env:
+      VERCEL_ORG_ID: team_CwktsdBSB9TLrdwdCV3dZRbg
+      VERCEL_PROJECT_ID: prj_6QNJo1XWj70DACDO3F0ICVSJkQTF
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether this pull request can change the bundle
+        id: filter
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::notice::VERCEL_TOKEN is not available to this run; no preview."
+            echo "deployable=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The same paths the production job deploys on, plus the stub itself.
+          changed="$(git diff --name-only "$BASE_SHA...$HEAD_SHA")"
+          if echo "$changed" | grep -qE '^(frontend/|shared/|vercel\.json$|bun\.lock$|package\.json$|tsconfig\.json$|\.github/workflows/ci\.yml$)'; then
+            echo "deployable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deployable=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No deployable paths changed; no preview."
+          fi
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        if: steps.filter.outputs.deployable == 'true'
+        with:
+          bun-version: latest
+
+      - name: Install Vercel CLI
+        if: steps.filter.outputs.deployable == 'true'
+        run: npm install --global vercel@54.12.0
+
+      - name: Pull preview project settings
+        if: steps.filter.outputs.deployable == 'true'
+        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+
+      # Removed rather than repointed: with no rewrite, a request the stub
+      # somehow missed gets a 404 from Vercel instead of reaching Render. The
+      # SPA catch-all already excludes `api/`, so it cannot swallow it either.
+      - name: Cut the preview off from the production API
+        if: steps.filter.outputs.deployable == 'true'
+        run: |
+          set -euo pipefail
+          jq '.rewrites |= map(select(.source != "/api/(.*)"))' vercel.json > vercel.preview.json
+          mv vercel.preview.json vercel.json
+          if grep -qF "onrender.com" vercel.json; then
+            echo "::error::vercel.json still routes to Render after the API rewrite was removed."
+            exit 1
+          fi
+          echo "VITE_PREVIEW_STUB=true" >> frontend/.env.production.local
+
+      - name: Build against the in-browser stub
+        if: steps.filter.outputs.deployable == 'true'
+        run: vercel build --token="$VERCEL_TOKEN"
+        env:
+          VITE_PREVIEW_STUB: 'true'
+
+      - name: Assert the preview cannot reach the production API
+        if: steps.filter.outputs.deployable == 'true'
+        run: |
+          set -euo pipefail
+          if ! grep -rqF "catatmd-preview-stub" .vercel/output/static/assets; then
+            echo "::error::The preview bundle does not contain the stub, so its /api calls would have nowhere to go."
+            exit 1
+          fi
+          if grep -rqF "onrender.com" .vercel/output/config.json .vercel/output/static/assets; then
+            echo "::error::The preview build still references the production API."
+            exit 1
+          fi
+          echo "Preview is built against the stub and has no route to Render."
+
+      # Outside the repository for the reason the production job gives: the
+      # Hobby plan refuses a deployment whose git author is not the account
+      # owner, and a directory with no repository gives the CLI no author.
+      - name: Stage build output outside the repository
+        if: steps.filter.outputs.deployable == 'true'
+        id: stage
+        run: |
+          staging="$(mktemp -d)"
+          cp -R .vercel "$staging/.vercel"
+          if git -C "$staging" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            echo "::error::Staging directory $staging is inside a git repository."
+            exit 1
+          fi
+          echo "dir=$staging" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy the preview
+        if: steps.filter.outputs.deployable == 'true'
+        id: deploy
+        working-directory: ${{ steps.stage.outputs.dir }}
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          url="$(vercel deploy --prebuilt --no-wait \
+            --meta commitSha="$HEAD_SHA" \
+            --token="$VERCEL_TOKEN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Created: $url"
+
+      - name: Wait for the preview to be ready
+        if: steps.filter.outputs.deployable == 'true'
+        timeout-minutes: 10
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+
+          host="${DEPLOYMENT_URL#https://}"
+          url="https://api.vercel.com/v13/deployments/$host?teamId=$VERCEL_ORG_ID"
+
+          state=""
+          for _ in $(seq 1 54); do
+            state="$(curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" "$url" | jq -r '.readyState // empty')"
+            case "$state" in
+              READY) echo "Preview is ready."; exit 0 ;;
+              BLOCKED | ERROR | CANCELED)
+                echo "::error::The preview deployment ended in state $state."
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+
+          echo "::error::The preview never became READY (last state: ${state:-unknown})."
+          exit 1
+
+      # One comment per pull request, edited in place on each push, so the
+      # thread carries the latest URL rather than a list of stale ones.
+      - name: Post the preview URL on the pull request
+        if: steps.filter.outputs.deployable == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          marker='<!-- vercel-preview -->'
+          body="$(printf '%s\n**Preview:** %s\n\nBuilt from %s against the in-browser stub backend: synthetic data, no production API, no model. Sign-in is automatic. See docs/trd.md §17, Pull Request Previews.' \
+            "$marker" "$DEPLOYMENT_URL" "${HEAD_SHA:0:7}")"
+          echo "Preview: $DEPLOYMENT_URL" >> "$GITHUB_STEP_SUMMARY"
+
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq "map(select(.body | startswith(\"$marker\"))) | .[0].id // empty" | head -1)"
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -f body="$body" >/dev/null
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f body="$body" >/dev/null
+          fi
