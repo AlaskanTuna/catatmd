@@ -973,7 +973,7 @@ describe('translation', () => {
     createLiveSession.mockResolvedValue(translatedSession)
     const view = renderAmbient()
     await settle()
-    await choose('Bengali (translated)')
+    await choose('Bengali (Translated)')
     await act(async () => tick().click())
     await act(async () => startButton().click())
     await settle()
@@ -993,9 +993,9 @@ describe('translation', () => {
     await settle()
     await act(async () => screen.getByRole('button', { name: "Patient's language" }).click())
     expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-      'Auto-detect',
-      'Bengali (translated)',
-      'Urdu (translated)',
+      'Auto-Detect',
+      'Bengali (Translated)',
+      'Urdu (Translated)',
     ])
   })
 
@@ -1005,7 +1005,7 @@ describe('translation', () => {
     await settle()
     expect(screen.getByText(/detects english, malay, mandarin and tamil/i)).toBeTruthy()
 
-    await choose('Urdu (translated)')
+    await choose('Urdu (Translated)')
 
     expect(screen.queryByText(/detects english, malay, mandarin and tamil/i)).toBeNull()
     expect(screen.getByText(/translations are machine-generated/i)).toBeTruthy()
@@ -1018,7 +1018,7 @@ describe('translation', () => {
     await act(async () => tick().click())
     expect(tick().checked).toBe(true)
 
-    await choose('Bengali (translated)')
+    await choose('Bengali (Translated)')
 
     expect(tick().checked).toBe(false)
     expect(screen.getByRole('checkbox', { name: /machine-translated/i })).toBeTruthy()
@@ -1034,7 +1034,7 @@ describe('translation', () => {
     createLiveSession.mockResolvedValue(session)
     renderAmbient()
     await settle()
-    await choose('Bengali (translated)')
+    await choose('Bengali (Translated)')
     await act(async () => tick().click())
     await act(async () => startButton().click())
     await settle()

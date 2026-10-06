@@ -32,68 +32,33 @@ describe('loadAudioSettings', () => {
       suppressNoise: false,
       boostQuietSpeech: true,
       engine: 'local',
-      dictationEngine: 'streaming',
     }
     saveAudioSettings(settings)
 
     expect(loadAudioSettings()).toEqual(settings)
   })
 
-  /**
-   * **Absent and corrupt part company on this field, and nowhere else.** The
-   * dictation default moved to streaming on 10/09/26, so an absent field has
-   * to read as the current default or the decision reaches no device that
-   * already holds a `catatmd.audio` key. Every *present* value other than
-   * `'streaming'` is a value nobody meant and still falls to on-device: a
-   * privacy preference that fails open on corruption is the one failure mode
-   * this may not have, and #228 is what happens when one does.
-   *
-   * `JSON.stringify` drops an undefined key, so the `undefined` row is the
-   * absent case rather than a stored literal.
+  /*
+   * The review page's dictation-engine choice was removed on 06/10/26
+   * (`docs/decisions.md` D-001). A device that saved one keeps it in storage
+   * until its next save, and it must not reach anything: dictation always
+   * prefers streaming now, so a stored 'local' read back would pin a doctor to
+   * a choice no screen can show or change.
    */
-  it.each([
-    ['streaming', 'streaming'],
-    [undefined, 'streaming'],
-    ['local', 'local'],
-    ['hosted', 'local'],
-    ['STREAMING', 'local'],
-    ['', 'local'],
-    [null, 'local'],
-    [true, 'local'],
-  ])('reads a stored dictationEngine of %o as %s', (stored, expected) => {
+  it('drops a dictation-engine choice saved before it was removed', () => {
     localStorage.setItem(
       'catatmd.audio',
-      JSON.stringify({ ...DEFAULT_AUDIO_SETTINGS, dictationEngine: stored }),
+      JSON.stringify({ ...DEFAULT_AUDIO_SETTINGS, dictationEngine: 'local' }),
     )
 
-    expect(loadAudioSettings().dictationEngine).toBe(expected)
+    expect(loadAudioSettings()).toEqual(DEFAULT_AUDIO_SETTINGS)
+    expect(loadAudioSettings()).not.toHaveProperty('dictationEngine')
   })
 
-  it('defaults dictation to streaming, including on a device that stored settings before the field existed', () => {
-    expect(DEFAULT_AUDIO_SETTINGS.dictationEngine).toBe('streaming')
-    // A settings object written before this field existed. That device has
-    // never chosen a dictation engine, so it takes the current default rather
-    // than being pinned to the one that shipped when it last saved.
-    localStorage.setItem(
-      'catatmd.audio',
-      JSON.stringify({
-        deviceId: null,
-        suppressNoise: true,
-        boostQuietSpeech: false,
-        engine: 'hosted',
-      }),
-    )
-
-    expect(loadAudioSettings().dictationEngine).toBe('streaming')
-    // The relay's own default did not move with it.
-    expect(DEFAULT_AUDIO_SETTINGS.engine).toBe('local')
-  })
-
-  it('keeps both engines in the one permitted key, and adds no second one', () => {
-    saveAudioSettings({ ...DEFAULT_AUDIO_SETTINGS, dictationEngine: 'streaming' })
+  it('keeps every setting in the one permitted key, and adds no second one', () => {
+    saveAudioSettings(DEFAULT_AUDIO_SETTINGS)
 
     // `no-stray-audio-persistence.test.ts` allows this module exactly one key.
-    // A second one for the second engine would be a new persistence surface.
     expect(Object.keys(localStorage)).toEqual(['catatmd.audio'])
   })
 
@@ -137,7 +102,6 @@ describe('toConstraints', () => {
         suppressNoise: true,
         boostQuietSpeech: false,
         engine: 'local',
-        dictationEngine: 'local',
       }),
     ).toEqual({ noiseSuppression: true, autoGainControl: false, echoCancellation: true })
   })

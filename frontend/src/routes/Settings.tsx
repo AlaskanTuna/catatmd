@@ -16,6 +16,7 @@ import { ApiError, api } from '../lib/api.js'
 import { useTheme } from '../lib/theme.js'
 import { Button } from '../ui/Button.js'
 import { PageHeader } from '../ui/PageHeader.js'
+import { Select } from '../ui/Select.js'
 
 const GUEST_EMAIL = 'guest@catatmd.demo'
 
@@ -106,13 +107,15 @@ export function Settings() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader title="Settings" subtitle="Appearance and your data." art="/art/settings.webp" />
+      <PageHeader
+        title="Settings"
+        subtitle="Appearance, language and your data."
+        art="/art/settings.webp"
+      />
 
       <section className="mt-8 rounded-card border border-line bg-surface p-5">
         <h2 className="text-base font-semibold">Appearance</h2>
-        <p className="mt-1 text-sm text-ink-muted">
-          Stored in this browser only, and never sent to the server.
-        </p>
+        <p className="mt-1 text-sm text-ink-muted">Saved in this browser only.</p>
         <div className="mt-4 flex gap-2">
           <Button
             variant={resolved === 'light' ? 'primary' : 'secondary'}
@@ -131,23 +134,40 @@ export function Settings() {
         </div>
       </section>
 
+      {/*
+        A placeholder for sitewide i18n and the doctor's default translation
+        language. English is the only language the interface has, so the
+        control offers exactly that and stores nothing: a saved choice with
+        one possible value would be a preference that does nothing.
+      */}
+      <section className="mt-5 rounded-card border border-line bg-surface p-5">
+        <h2 className="text-base font-semibold">Default Language</h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          English only for now. Choosing the interface and translation language is planned.
+        </p>
+        <Select
+          label="Default language"
+          className="mt-4 w-56"
+          value="en"
+          options={[{ value: 'en', label: 'English' }]}
+          onChange={() => {}}
+        />
+      </section>
+
       <RetentionSection />
 
       <section className="mt-5 rounded-card border border-emergency/30 bg-surface p-5">
         <h2 className="text-base font-semibold">Delete My Data</h2>
-        <p className="mt-1 max-w-prose text-sm leading-relaxed text-ink-muted">
-          Permanently erases the clinical content of every consultation on this account, currently{' '}
-          {owned.length}. That is the transcript, the analysis, and any edits made to the note. It
-          cannot be undone.
-        </p>
-        <p className="mt-2 max-w-prose text-sm leading-relaxed text-ink-muted">
-          A record that each consultation existed and was erased is kept, and cannot be removed.
-          That record is what makes the erasure provable; it holds no clinical content.
+        <p className="mt-1 text-sm leading-relaxed text-ink-muted">
+          Permanently erases the transcript, analysis and note edits of{' '}
+          {owned.length === 1 ? 'the 1 consultation' : `all ${owned.length} consultations`} on this
+          account. A record that each was erased is kept, with no clinical content. This cannot be
+          undone.
         </p>
         {isGuest && (
-          <p className="mt-3 max-w-prose rounded-control border border-urgent/40 bg-urgent/8 px-3 py-2 text-sm">
-            This is the shared demo account, so it will be rebuilt afterwards from the bundled
-            synthetic cases. That runs the real analysis pipeline and takes a few minutes.
+          <p className="mt-3 rounded-control border border-urgent/40 bg-urgent/8 px-3 py-2 text-sm">
+            This is the shared demo account. It is rebuilt from synthetic cases afterwards, which
+            takes a few minutes.
           </p>
         )}
         <Button
@@ -260,8 +280,8 @@ function RetentionSection() {
           <span className="text-ink-muted">Loading the current period.</span>
         ) : adopted === null ? (
           <span className="text-ink-muted">
-            <span className="font-medium text-ink">Not yet adopted.</span> The default below is a
-            starting point awaiting review, not the current policy.
+            <span className="font-medium text-ink">Not yet adopted.</span> The default below is
+            awaiting review, not the current policy.
           </span>
         ) : (
           <span className="text-ink-muted">
@@ -271,19 +291,13 @@ function RetentionSection() {
         )}
       </p>
 
-      <p className="mt-3 max-w-prose text-sm leading-relaxed text-ink-muted">
-        How long clinical records are kept, in whole years. The default of {RETENTION_DEFAULT_YEARS}{' '}
-        years reflects the common clinical-records retention convention. It is a configurable
-        starting point, not a legal determination.
+      <p className="mt-3 text-sm leading-relaxed text-ink-muted">
+        How long clinical records are kept. The {RETENTION_DEFAULT_YEARS}-year default is a common
+        convention, not a legal determination, for your clinic's data controller to review.
       </p>
-      <p className="mt-2 max-w-prose text-sm leading-relaxed text-ink-muted">
-        The clinic data controller must review it against Malaysian legal and professional
-        recordkeeping advice, then adopt it or set a different period.
-      </p>
-      <p className="mt-2 max-w-prose text-sm leading-relaxed text-ink-muted">
-        Nothing enforces this yet. There is no retention job, no automatic expiry, and no deletion
-        sweep, so saving a period records the decision and changes nothing about what is stored.
-        Erasing data is still the manual action below.
+      <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+        Saving records the decision only. Nothing deletes records automatically yet; use Delete My
+        Data below.
       </p>
 
       <div className="mt-4 flex flex-wrap items-end gap-2">

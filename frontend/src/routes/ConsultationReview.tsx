@@ -1605,7 +1605,9 @@ export function ConsultationReview() {
       </dialog>
 
       {/*
-        The settled conversation on a surface worth reading it on (#287).
+        The settled conversation on a surface worth reading it on (#287), the
+        same size as the live one ambient capture opens, so the conversation
+        does not change shape between recording it and reading it back.
 
         Read only, deliberately. The transcript is the record the note was
         written from, and this is a way to go back to it, not a second place to
@@ -1616,7 +1618,7 @@ export function ConsultationReview() {
         data-print="hide"
         onClose={() => setShowConversation(false)}
         aria-labelledby="conversation-title"
-        className="glass-panel m-auto h-[min(85vh,48rem)] w-[min(56rem,calc(100vw-2rem))] max-w-none rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
+        className="glass-panel m-auto h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-none rounded-float p-0 text-ink backdrop:bg-scrim backdrop:backdrop-blur-sm"
       >
         {showConversation && (
           <div className="flex h-full flex-col">

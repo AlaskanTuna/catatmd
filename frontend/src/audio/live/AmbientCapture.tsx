@@ -88,7 +88,7 @@ const SHORT_TAIL_NOTICE =
  * the session is refused before any audio is sent.
  */
 const TRANSLATION_UNAVAILABLE_ERROR =
-  'Translation is not available right now, and nothing was sent. Choose Auto-detect, or try again shortly.'
+  'Translation is not available right now, and nothing was sent. Choose Auto-Detect, or try again shortly.'
 
 type Phase = 'idle' | 'starting' | 'listening' | 'finishing' | 'labelling'
 
@@ -797,10 +797,10 @@ export function AmbientCapture({
             label="Patient's language"
             value={translation ?? ''}
             options={[
-              { value: '', label: 'Auto-detect' },
+              { value: '', label: 'Auto-Detect' },
               ...offered.map((language) => ({
                 value: language,
-                label: `${INTERPRETED_LANGUAGE_NAMES[language]} (translated)`,
+                label: `${INTERPRETED_LANGUAGE_NAMES[language]} (Translated)`,
               })),
             ]}
             onChange={(value) => {

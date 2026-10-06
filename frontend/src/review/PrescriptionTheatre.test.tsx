@@ -53,8 +53,11 @@ const LIVE_CONFIG = {
   config: {},
 }
 
-/** The standing preference, written the way the Audio dialog writes it. */
-const writeEngine = (dictationEngine: 'local' | 'streaming') =>
+/**
+ * An on-device choice as earlier builds stored it, from the Audio dialog this
+ * theatre used to carry. Nothing reads it any more, which is the point.
+ */
+const storeLegacyOnDeviceChoice = () =>
   localStorage.setItem(
     'catatmd.audio',
     JSON.stringify({
@@ -62,9 +65,27 @@ const writeEngine = (dictationEngine: 'local' | 'streaming') =>
       suppressNoise: true,
       boostQuietSpeech: false,
       engine: 'local',
-      dictationEngine,
+      dictationEngine: 'local',
     }),
   )
+
+/** Just enough of `MediaRecorder` for the on-device path to reach Listening. */
+class FakeRecorder {
+  state: RecordingState = 'inactive'
+  mimeType = 'audio/webm'
+  stream: MediaStream
+  ondataavailable: ((event: BlobEvent) => void) | null = null
+  onstop: (() => void) | null = null
+  constructor(stream: MediaStream) {
+    this.stream = stream
+  }
+  start() {
+    this.state = 'recording'
+  }
+  stop() {
+    this.state = 'inactive'
+  }
+}
 
 const setCores = (cores: number) =>
   Object.defineProperty(navigator, 'hardwareConcurrency', { value: cores, configurable: true })
@@ -202,7 +223,6 @@ describe('the silent failures found in review', () => {
    * observable difference between the two engines from here.
    */
   it('waits for the engine before autoStart, rather than falling through to on-device', async () => {
-    writeEngine('streaming')
     renderTheatre({ autoStart: true })
 
     await waitFor(() =>
@@ -211,19 +231,31 @@ describe('the silent failures found in review', () => {
   })
 
   it('says it is getting ready rather than sitting blank while the engine resolves', () => {
-    writeEngine('streaming')
     renderTheatre({ autoStart: true })
 
     expect(screen.getByRole('status').textContent).toBe('Getting ready.')
   })
 
-  it('starts the on-device engine immediately when that is the stored choice', async () => {
-    // Nothing to wait for on this path, so the wait above must not delay it.
-    writeEngine('local')
+  it('falls back to on-device when streaming is unavailable, and opens no socket', async () => {
+    mocks.liveAsrConfig.mockRejectedValue(new ApiError(503, 'asr_unavailable', 'no key'))
     renderTheatre({ autoStart: true })
 
-    await waitFor(() => expect(mocks.liveAsrConfig).not.toHaveBeenCalled())
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled())
     expect(mocks.createLiveSession).not.toHaveBeenCalled()
+  })
+
+  /*
+   * The engine is no longer a preference on this page. A device an older build
+   * left on on-device would otherwise be the one place streaming was skipped,
+   * with nothing on screen saying why.
+   */
+  it('streams even where an older build stored an on-device choice', async () => {
+    storeLegacyOnDeviceChoice()
+    renderTheatre({ autoStart: true })
+
+    await waitFor(() =>
+      expect(mocks.createLiveSession).toHaveBeenCalledWith(expect.anything(), 'dictation'),
+    )
   })
 
   /*
@@ -232,7 +264,6 @@ describe('the silent failures found in review', () => {
    * wipe the staged list without asking.
    */
   it('asks before the X button discards staged prescriptions', async () => {
-    writeEngine('local')
     mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [candidate()] })
     const { onClose } = renderTheatre()
     await check(DICTATED)
@@ -247,7 +278,6 @@ describe('the silent failures found in review', () => {
   })
 
   it('asks before Discard wipes the staged list', async () => {
-    writeEngine('local')
     mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [candidate()] })
     renderTheatre()
     await check(DICTATED)
@@ -265,7 +295,6 @@ describe('the silent failures found in review', () => {
    * Prescriptions" beside three rows, saved two, and reset the third away.
    */
   it('refuses to confirm while a staged row has no drug name', async () => {
-    writeEngine('local')
     mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [candidate()] })
     const { onSave } = renderTheatre()
     await check(DICTATED)
@@ -288,7 +317,6 @@ describe('the silent failures found in review', () => {
    * between a gap and a wrong number.
    */
   it('never overwrites a dose the doctor typed while the parse was in flight', async () => {
-    writeEngine('local')
     let releaseSegment: (value: unknown) => void = () => {}
     mocks.parsePrescription.mockImplementation((_id: string, dictated: string) => {
       if (dictated === DICTATED) {
@@ -313,7 +341,6 @@ describe('the silent failures found in review', () => {
   })
 
   it('still fills a field the doctor left alone', async () => {
-    writeEngine('local')
     mocks.parsePrescription.mockImplementation((_id: string, dictated: string) =>
       dictated === DICTATED
         ? Promise.resolve({ sig: NO_SIG, candidates: [candidate()] })
@@ -333,7 +360,6 @@ describe('the silent failures found in review', () => {
    * antibiotics.
    */
   it('stops offering a candidate contained in one already accepted', async () => {
-    writeEngine('local')
     const combination = candidate({
       lexiconId: 'amoxicillin-clavulanate',
       generic: 'amoxicillin-clavulanate',
@@ -357,7 +383,6 @@ describe('the silent failures found in review', () => {
   })
 
   it('hands both back when the row claiming them is removed', async () => {
-    writeEngine('local')
     const combination = candidate({
       lexiconId: 'amoxicillin-clavulanate',
       generic: 'amoxicillin-clavulanate',
@@ -385,7 +410,6 @@ describe('the silent failures found in review', () => {
    * doctor's to fill in pointed at no fields.
    */
   it('still offers somewhere to work when the check fails', async () => {
-    writeEngine('local')
     mocks.parsePrescription.mockRejectedValue(new Error('nope'))
     renderTheatre()
     await check(DICTATED)
@@ -400,7 +424,6 @@ describe('the silent failures found in review', () => {
    * dead-button failure this whole surface was rebuilt to remove.
    */
   it('disables Add By Hand when the box is cleared after a check', async () => {
-    writeEngine('local')
     mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [] })
     renderTheatre()
     await check(DICTATED)
@@ -416,7 +439,6 @@ describe('the silent failures found in review', () => {
   })
 
   it('does not claim nothing matched before anything was checked', () => {
-    writeEngine('local')
     renderTheatre()
     fireEvent.change(screen.getByLabelText('What You Prescribed'), {
       target: { value: 'amoxicillin' },
@@ -445,7 +467,6 @@ describe('PrescriptionTheatre', () => {
     mocks.createLiveSession.mockReset()
     setCores(8)
     localStorage.clear()
-    writeEngine('local')
   })
 
   afterEach(() => {
@@ -847,7 +868,6 @@ describe('PrescriptionTheatre', () => {
      * collects, because the audit row records exactly what it claims.
      */
     it('asks for no tick and blocks nothing behind one', async () => {
-      writeEngine('streaming')
       renderTheatre()
 
       await waitFor(() => expect(mocks.liveAsrConfig).toHaveBeenCalledWith('dictation'))
@@ -857,17 +877,9 @@ describe('PrescriptionTheatre', () => {
         (screen.getByRole('button', { name: /^dictate$/i }) as HTMLButtonElement).disabled,
       ).toBe(false)
     })
-
-    it('asks the API for nothing once on-device is chosen', async () => {
-      writeEngine('local')
-      renderTheatre()
-
-      await waitFor(() => expect(mocks.liveAsrConfig).not.toHaveBeenCalled())
-    })
   })
 
   it('names the deployment when streaming is unavailable, and the network when it is not', async () => {
-    writeEngine('streaming')
     mocks.liveAsrConfig.mockRejectedValue(new ApiError(503, 'asr_unavailable', 'no key'))
     renderTheatre()
 
@@ -875,20 +887,22 @@ describe('PrescriptionTheatre', () => {
   })
 
   it('does not blame the deployment for a failure that is not the deployment', async () => {
-    writeEngine('streaming')
     mocks.liveAsrConfig.mockRejectedValue(new ApiError(500, 'oops', 'nope'))
     renderTheatre()
 
     expect(await screen.findByText(/could not be reached/)).toBeTruthy()
   })
 
-  it('offers no microphone below the hardware floor, and still takes typing', () => {
+  it('offers no microphone below the hardware floor, and still takes typing', async () => {
     // The degrade this feature promises: down to typing, never out to a hosted
-    // engine. Nothing here may offer the relay or the socket.
+    // engine. Nothing here may offer the relay or the socket. Below the floor
+    // with streaming unavailable, the on-device model is the only engine left
+    // and this machine cannot run it.
     setCores(2)
-    writeEngine('local')
+    mocks.liveAsrConfig.mockRejectedValue(new ApiError(503, 'asr_unavailable', 'no key'))
     renderTheatre()
 
+    expect(await screen.findByText(/not available on this deployment/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /^dictate$/i })).toBeNull()
     expect(screen.getByLabelText('What You Prescribed')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Check' })).toBeTruthy()
@@ -896,9 +910,49 @@ describe('PrescriptionTheatre', () => {
 
   it('still offers Dictate below the hardware floor when streaming, because a socket loads no weights', async () => {
     setCores(2)
-    writeEngine('streaming')
     renderTheatre()
 
     expect(await screen.findByRole('button', { name: /^dictate$/i })).toBeTruthy()
+  })
+
+  describe('the header', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('carries no audio settings of its own', async () => {
+      renderTheatre()
+
+      await waitFor(() => expect(mocks.liveAsrConfig).toHaveBeenCalledWith('dictation'))
+      expect(screen.queryByRole('button', { name: /audio settings/i })).toBeNull()
+    })
+
+    it('labels the second dictation in Title Case', async () => {
+      mocks.parsePrescription.mockResolvedValue({ sig: NO_SIG, candidates: [] })
+      renderTheatre()
+      await check(DICTATED)
+
+      expect(await screen.findByRole('button', { name: 'Dictate Again' })).toBeTruthy()
+    })
+
+    /*
+     * The words "Silent" and "No microphone access" became a wave. What they
+     * said moved into the wave's accessible name rather than being dropped.
+     */
+    it('shows the microphone as a named wave while listening, with no status words', async () => {
+      Object.defineProperty(navigator, 'mediaDevices', {
+        configurable: true,
+        value: {
+          getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }),
+        },
+      })
+      vi.stubGlobal('MediaRecorder', FakeRecorder)
+      mocks.liveAsrConfig.mockRejectedValue(new ApiError(503, 'asr_unavailable', 'no key'))
+      renderTheatre({ autoStart: true })
+
+      expect(await screen.findByRole('img', { name: /^Microphone level: / })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Stop dictation' })).toBeTruthy()
+      expect(screen.queryByText(/^(Silent|Hearing you now|No microphone access)$/)).toBeNull()
+    })
   })
 })

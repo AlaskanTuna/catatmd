@@ -1601,11 +1601,13 @@ describe('suggestions empty state', () => {
  * the thing that was wrong. `CapturePanel` is mocked out in this file, which is
  * exactly why the old mount site was invisible to every test here.
  *
- * **The switch moved again with #365** and now sits in the theatre, beside the
- * microphone rather than beside the record of what was prescribed. The property
- * this test defends is unchanged and is the reason it walks the whole path: a
- * doctor on the review page can reach the engine switch from the surface it
- * governs, without leaving the page.
+ * **The switch moved again with #365** and sat in the theatre, beside the
+ * microphone rather than beside the record of what was prescribed.
+ *
+ * **Then it went.** The owner settled the engine for this page: streaming is
+ * always preferred, and on-device is only the fallback when streaming is
+ * unavailable or unreachable. With nothing left to choose there is no switch
+ * to reach, so this now walks the same path to pin that none is offered.
  */
 describe('the audio engine switch on the review page', () => {
   beforeEach(() => {
@@ -1618,12 +1620,14 @@ describe('the audio engine switch on the review page', () => {
     vi.mocked(api.guidelineDocuments).mockResolvedValue([])
   })
 
-  it('is reachable from the Prescriptions card, which is the surface it governs', async () => {
+  it('is not offered in the Prescriptions theatre, because the engine is not a choice there', async () => {
     setup()
 
     fireEvent.click(await screen.findByRole('button', { name: /prescriptions/i }))
     fireEvent.click(screen.getByRole('button', { name: 'Add' }))
 
-    expect(screen.getByRole('button', { name: /audio settings/i })).toBeTruthy()
+    // The theatre is open, so the absence below is not just an unopened dialog.
+    expect(screen.getByLabelText('What You Prescribed')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /audio settings/i })).toBeNull()
   })
 })
