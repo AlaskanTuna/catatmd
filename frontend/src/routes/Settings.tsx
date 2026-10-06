@@ -143,7 +143,7 @@ export function Settings() {
       <section className="mt-5 rounded-card border border-line bg-surface p-5">
         <h2 className="text-base font-semibold">Default Language</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          The language for the interface and for translation. English only for now.
+          English only for now. Choosing the interface and translation language is planned.
         </p>
         <Select
           label="Default language"
@@ -159,9 +159,10 @@ export function Settings() {
       <section className="mt-5 rounded-card border border-emergency/30 bg-surface p-5">
         <h2 className="text-base font-semibold">Delete My Data</h2>
         <p className="mt-1 text-sm leading-relaxed text-ink-muted">
-          Permanently erases the transcript, analysis and note edits of all {owned.length}{' '}
-          consultations on this account. A record that each was erased is kept, with no clinical
-          content. This cannot be undone.
+          Permanently erases the transcript, analysis and note edits of{' '}
+          {owned.length === 1 ? 'the 1 consultation' : `all ${owned.length} consultations`} on this
+          account. A record that each was erased is kept, with no clinical content. This cannot be
+          undone.
         </p>
         {isGuest && (
           <p className="mt-3 rounded-control border border-urgent/40 bg-urgent/8 px-3 py-2 text-sm">
