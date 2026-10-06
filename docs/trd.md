@@ -1442,18 +1442,53 @@ It still applies nothing. The manual step remains the design; this only makes fo
 
 **Status: `Built`** — `.github/workflows/ci.yml`, reinstated 13/08/26 (issue #13), extended to deployment 13/08/26 (issue #52). It answers §19 row 12 in practice: CI runs on every push to `main` and every pull request. The register row is left open pending the dependency-scan half of the question (§16), which is still not built.
 
-Two jobs, the second gated on the first:
+Three jobs, the second and third gated on the first:
 
-| Job      | Runs on               | Does                                                                                                                                                                    |
-| -------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verify` | every push and PR     | `bun install --frozen-lockfile`, `prisma generate` + `migrate deploy` against a throwaway Postgres service container, `lint`, `typecheck`, `test`, confidentiality grep |
-| `deploy` | pushes to `main` only | `vercel pull` / `build` / `deploy --prebuilt`, then asserts what production actually serves                                                                             |
+| Job       | Runs on                            | Does                                                                                                                                                                    |
+| --------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verify`  | every push and PR                  | `bun install --frozen-lockfile`, `prisma generate` + `migrate deploy` against a throwaway Postgres service container, `lint`, `typecheck`, `test`, confidentiality grep |
+| `deploy`  | pushes to `main` only              | `vercel pull` / `build` / `deploy --prebuilt`, then asserts what production actually serves                                                                             |
+| `preview` | pull requests from this repository | Builds the bundle against the in-browser stub, deploys it as a Vercel preview, and posts the URL on the pull request. See Pull Request Previews below                   |
 
 Two properties of `verify` are deliberate. It uses a **throwaway Postgres**, never the shared Supabase instance, because the route and auth suites exercise real ownership scoping and audit writes rather than mocking the database. It carries **no LLM provider key**, because LLM-dependent tests stub at the `LLMClient` port, the same boundary that makes the provider swappable.
 
 `deploy` asserts rather than trusts, because each of these has shipped at least once: a deployment Vercel refused to build, a production alias left pointing at an older build, and a bundle built without `VITE_API_URL` so every API call landed on the static origin. Exit code 0 from `vercel deploy` establishes none of that, so the job checks the deployment's ready state, the domain's resolved deployment id, and the served bundle.
 
 **Concurrency:** superseded runs are cancelled on pull requests but never on `main`, because a run on `main` deploys, and cancelling between the deploy and its assertions is precisely how an unverified build is left live.
+
+### Pull Request Previews
+
+**Status: `Built`, 06/10/26.** A pull request that changes the bundle gets a Vercel preview URL, posted as one comment on the pull request and edited on each push. **A preview never talks to the production API.** It runs on a stub that lives in the browser.
+
+| Layer    | What it does                                                                                                                                                                                           |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| No route | The `preview` job removes the `/api` → Render rewrite from `vercel.json` before building, so the deployment has no path to the API                                                                     |
+| Stub     | The bundle is built with `VITE_PREVIEW_STUB=true`. `frontend/src/preview/` then answers every request whose path starts with `/api/`, on any origin, with synthetic data before it reaches the network |
+| CSP      | `connect-src` already allows only the page's own origin and the recogniser hosts                                                                                                                       |
+| Checks   | CI fails a preview build that lacks the stub or still references Render, and fails a production build that contains the stub                                                                           |
+
+**What a preview can and cannot show:**
+
+- **Runs for real:** the deterministic red-flag engine and the prescription parser, imported from `backend/src/` into the stub.
+- **Synthetic:** sign-in (automatic, as a synthetic doctor), patients, and consultations seeded from `backend/src/fixtures/`. State lives in memory; a reload resets it.
+- **Placeholder:** any analysis. No model runs, so the note says it is a placeholder.
+- **Unavailable:** live and hosted recognition, which need the API to issue a key. The UI shows its normal fallbacks.
+
+**Costs and limits:**
+
+- Each preview is one deployment against the Hobby plan's daily cap, so the job uses the production job's deployable-paths filter.
+- Pull requests from forks get no secrets and no preview.
+- A new API route needs a stub handler, or the preview answers it with a 501 `not_in_preview` error.
+
+**Manual setting, outside the repository: Vercel Deployment Protection.** Vercel protects preview deployments with Vercel Authentication by default, so only the account owner can open a preview. To let teammates in, turn it off for previews under Project Settings → Deployment Protection, or with the API:
+
+```bash
+curl -X PATCH "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_ID?teamId=$VERCEL_ORG_ID" \
+  -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" \
+  -d '{"ssoProtection": null}'
+```
+
+Turning it off is safe only because a preview holds no real data and cannot reach the API. Keep it on if either ever changes.
 
 ### Free-Tier Auto-Pause Mitigation
 
