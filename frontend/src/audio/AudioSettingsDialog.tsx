@@ -1,5 +1,5 @@
 import { Cpu, Radio, Server } from 'lucide-react'
-import { type Ref, useEffect, useRef, useState } from 'react'
+import { type Ref, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '../lib/cn.js'
 import { Button } from '../ui/Button.js'
 import { InfoTip } from '../ui/InfoTip.js'
@@ -164,6 +164,9 @@ export function AudioSettingsDialog({
   const [draft, setDraft] = useState(settings)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
   const self = useRef<HTMLDialogElement>(null)
+  // Held stable because the meter reopens the microphone whenever this object
+  // changes, and a fresh one per render reopened it when the device list landed.
+  const constraints = useMemo(() => toConstraints(draft), [draft])
 
   useEffect(() => setDraft(settings), [settings])
 
@@ -352,7 +355,7 @@ export function AudioSettingsDialog({
             ]}
             onChange={(value) => setDraft({ ...draft, deviceId: value || null })}
           />
-          <InputMeter className="mt-2" constraints={toConstraints(draft)} />
+          <InputMeter className="mt-2" constraints={constraints} />
         </div>
 
         <fieldset className="mt-4">

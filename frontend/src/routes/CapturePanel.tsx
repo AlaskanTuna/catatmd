@@ -8,7 +8,7 @@ import type {
   TranscriptTurn,
 } from '@shared/types'
 import { FileUp, Mic, Settings2, Type } from 'lucide-react'
-import { type ChangeEvent, type ReactNode, useRef, useState } from 'react'
+import { type ChangeEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 import { AudioCapture } from '../audio/AudioCapture.js'
 import { AudioSettingsDialog } from '../audio/AudioSettingsDialog.js'
 import { type AudioSettings, loadAudioSettings } from '../audio/audio-settings.js'
@@ -158,6 +158,7 @@ export function CapturePanel({
   const showAmbient = (captureMode === 'ambient' && !ambientUnavailable) || ambientLive
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>(TABS[0].id)
   const audioDialog = useRef<HTMLDialogElement>(null)
+  const [audioOpen, setAudioOpen] = useState(false)
   const [text, setText] = useState('')
   const [source, setSource] = useState<TranscriptSource>('paste')
   const turns = parseTranscript(text)
@@ -225,6 +226,16 @@ export function CapturePanel({
   }
 
   const submit = () => submitText(text, source)
+
+  useEffect(() => {
+    const node = audioDialog.current
+    if (!audioOpen || !node) return
+    if (typeof node.showModal === 'function') node.showModal()
+    else node.setAttribute('open', '')
+    const close = () => setAudioOpen(false)
+    node.addEventListener('close', close)
+    return () => node.removeEventListener('close', close)
+  }, [audioOpen])
 
   const onUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -473,7 +484,7 @@ export function CapturePanel({
 
         <button
           type="button"
-          onClick={() => audioDialog.current?.showModal()}
+          onClick={() => setAudioOpen(true)}
           aria-label="Audio settings"
           title="Audio settings"
           className="inline-flex size-10 shrink-0 items-center justify-center rounded-control text-ink-muted transition-colors hover:bg-sunken hover:text-ink"
@@ -485,13 +496,18 @@ export function CapturePanel({
       {/* `showAmbient`, not `captureMode`, so the dialog names the engine
           behind the panel actually on screen: the latch keeps a running
           session mounted through a record update, and the two must not
-          disagree while audio is leaving the device. */}
-      <AudioSettingsDialog
-        ref={audioDialog}
-        settings={audio}
-        onApply={setAudio}
-        ambient={showAmbient}
-      />
+          disagree while audio is leaving the device.
+
+          Mounted only while open (#365). A closed `<dialog>` still mounts its
+          children, and its input meter opens the microphone on mount. */}
+      {audioOpen && (
+        <AudioSettingsDialog
+          ref={audioDialog}
+          settings={audio}
+          onApply={setAudio}
+          ambient={showAmbient}
+        />
+      )}
 
       {/* Centred in the leftover room rather than pinned under the tabs: the
           card grows to the column's floor, and capture is the one thing on
