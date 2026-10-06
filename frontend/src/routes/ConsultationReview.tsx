@@ -471,6 +471,15 @@ export function ConsultationReview() {
    */
   const tour = useDemoTour()
   const isEphemeral = id === DEMO_CONSULTATION_ID
+  /*
+   * The tour's Transcript step shows what it points at (#338). Below `lg` the
+   * column sits behind the toggle, a hidden column measures zero, and the step
+   * spotlit nothing. Held for that step only, so the doctor's own toggle state
+   * is what they find once the tour moves on.
+   */
+  const tourOnTranscript =
+    tour.active && tour.steps[tour.currentStep]?.target === '[data-tour="transcript"]'
+  const transcriptShown = showTranscript || tourOnTranscript
 
   const consultation = useQuery({
     queryKey: ['consultation', id],
@@ -1069,9 +1078,9 @@ export function ConsultationReview() {
             <Button
               className="lg:hidden"
               onClick={() => setShowTranscript((value) => !value)}
-              aria-expanded={showTranscript}
+              aria-expanded={transcriptShown}
             >
-              {showTranscript ? 'Hide Transcript' : 'Transcript'}
+              {transcriptShown ? 'Hide Transcript' : 'Transcript'}
             </Button>
             {approved && note && (
               <Button size="lg" icon={<Copy aria-hidden className="size-4" />} onClick={copyNote}>
@@ -1208,7 +1217,7 @@ export function ConsultationReview() {
             // The mobile show/hide belongs to a transcript that already
             // exists. Capture is the one thing on this screen a doctor has
             // come here to do, so it is never behind a toggle.
-            detail.transcript && !showTranscript ? 'hidden lg:block' : 'block',
+            detail.transcript && !transcriptShown ? 'hidden lg:block' : 'block',
           )}
           aria-labelledby="transcript-heading"
           data-tour="transcript"

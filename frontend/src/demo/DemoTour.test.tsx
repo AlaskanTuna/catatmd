@@ -9,7 +9,8 @@ import type {
 } from '@shared/types'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { type ReactNode, useEffect, useState } from 'react'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../lib/api.js'
 import { ConsultationList } from '../routes/ConsultationList.js'
@@ -32,6 +33,10 @@ import { Spotlight } from './Spotlight.js'
  */
 
 const catatai = TOUR_STEPS.find((step) => step.target === '[data-tour="catatai"]')
+
+// Captured before any suite stubs it, so the suite that needs the real one can
+// put it back.
+const NativeMutationObserver = globalThis.MutationObserver
 
 afterEach(() => {
   cleanup()
@@ -588,5 +593,245 @@ describe('tour anchors', () => {
     await waitFor(() => {
       expect(document.querySelector(requireTarget(step))).not.toBeNull()
     })
+  })
+})
+
+/**
+ * The tour on the screens it drives, with the real provider, router and
+ * spotlight together. Each of these bugs lived in the timing between those
+ * three rather than in any one of them (#346, #338, #347).
+ */
+describe('the walkthrough in motion', () => {
+  const scrollIntoView = vi.fn()
+
+  beforeAll(() => {
+    global.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    // The fallback suite stubs this out and never restores it, and a target
+    // that mounts late is only ever seen through it.
+    global.MutationObserver = NativeMutationObserver
+    global.requestAnimationFrame = (cb: FrameRequestCallback) => setTimeout(cb, 0)
+    Element.prototype.scrollIntoView = scrollIntoView
+
+    const native = {
+      showModal: HTMLDialogElement.prototype.showModal,
+      close: HTMLDialogElement.prototype.close,
+    }
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true
+    }
+    HTMLDialogElement.prototype.close = function () {
+      this.open = false
+    }
+    return () => {
+      Object.assign(HTMLDialogElement.prototype, native)
+    }
+  })
+
+  beforeEach(() => {
+    scrollIntoView.mockClear()
+  })
+
+  const fixture = {
+    id: 'urti-hard-red-flag',
+    label: 'Hard red flag',
+    transcript: { source: 'fixture', turns: [{ speaker: 'doctor', text: 'test' }] },
+  } as unknown as Fixture
+
+  const listItem = {
+    id: 'seeded-2',
+    status: 'awaiting_review',
+    title: 'Seeded consultation',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  } as unknown as ConsultationListItem
+
+  const transcribed = {
+    id: 'seeded-2',
+    status: 'awaiting_review',
+    noteTemplate: 'soap',
+    captureMode: 'manual',
+    title: 'Seeded consultation',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    transcript: {
+      source: 'fixture',
+      turns: [
+        { speaker: 'doctor', text: 'Any noisy breathing?' },
+        { speaker: 'patient', text: 'Since this morning, yes.' },
+      ],
+    },
+    analysis: null,
+    editedNote: null,
+    editedMedicalRecordNote: null,
+    prescriptions: null,
+    approvedAt: null,
+    approvedBy: null,
+    patient: null,
+    acknowledgedRedFlagIds: [],
+    reviewedGapIds: [],
+    redFlagDispositions: [],
+    gapDispositions: [],
+  } as unknown as ConsultationDetail
+
+  function mockTourApi() {
+    vi.spyOn(api, 'fixtures').mockResolvedValue([fixture])
+    vi.spyOn(api, 'analyzeEphemeral').mockRejectedValue(new Error('analysis unavailable'))
+    vi.spyOn(api, 'listConsultations').mockResolvedValue([listItem])
+    vi.spyOn(api, 'getConsultation').mockResolvedValue(transcribed)
+    vi.spyOn(api, 'guidelineDocuments').mockResolvedValue([])
+    vi.spyOn(api, 'getConsultationAudio').mockResolvedValue(null)
+  }
+
+  function box(top: number, height: number, width = 358): DOMRect {
+    return {
+      x: 16,
+      y: top,
+      top,
+      left: 16,
+      right: 16 + width,
+      bottom: top + height,
+      width,
+      height,
+      toJSON: () => ({}),
+    } as DOMRect
+  }
+
+  function CurrentPath() {
+    return <output data-testid="path">{useLocation().pathname}</output>
+  }
+
+  /** A navigation the tour did not ask for, as a sidebar link would make. */
+  function Wander() {
+    const navigate = useNavigate()
+    return (
+      <button type="button" onClick={() => navigate('/guidelines')}>
+        Wander off
+      </button>
+    )
+  }
+
+  function renderTour(from: string, page: ReactNode = null) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[from]}>
+          <DemoTourProvider>
+            <Routes>
+              <Route path="/consultations/:id" element={page} />
+              <Route path="*" element={null} />
+            </Routes>
+            <CurrentPath />
+            <Wander />
+            <DemoStepBar />
+            <Spotlight />
+            <HelpButton />
+          </DemoTourProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+  }
+
+  async function startTour() {
+    fireEvent.click(screen.getByRole('button', { name: /Take the guided tour/i }))
+    fireEvent.click(await screen.findByText('Start Tour'))
+  }
+
+  function jumpTo(label: string) {
+    const bar = screen.getByRole('navigation', { name: 'Walkthrough progress' })
+    fireEvent.click(within(bar).getByRole('button', { name: label }))
+  }
+
+  it.each(['/consultations', '/consultations/new', '/guidelines'])(
+    'reaches its first step on /patients when started from %s',
+    async (from) => {
+      mockTourApi()
+      renderTour(from)
+      await startTour()
+
+      await waitFor(() => {
+        expect(screen.getByTestId('path').textContent).toBe('/patients')
+      })
+      expect(within(screen.getByRole('alert')).getByText('Patients')).toBeTruthy()
+    },
+  )
+
+  it('still ends when something other than the tour moves the page', async () => {
+    mockTourApi()
+    renderTour('/consultations')
+    await startTour()
+    await waitFor(() => {
+      expect(within(screen.getByRole('alert')).getByText('Patients')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wander off' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('path').textContent).toBe('/guidelines')
+    })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows the transcript its Transcript step spotlights below lg', async () => {
+    mockTourApi()
+    // jsdom does no layout, so this stands in for a 390px viewport: below `sm`
+    // the unprefixed `hidden` is the only display class in force, so anything
+    // inside one measures zero and everything else gets a box.
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      return this.closest('.hidden') ? box(0, 0, 0) : box(400, 300)
+    })
+    renderTour('/patients', <ConsultationReview />)
+    await startTour()
+    await screen.findByRole('alert')
+
+    jumpTo('Transcript')
+
+    await waitFor(() => {
+      expect(within(screen.getByRole('alert')).getByText('Transcript')).toBeTruthy()
+      expect(document.querySelector('[data-tour="transcript"]')).not.toBeNull()
+    })
+    await waitFor(() => {
+      expect(document.querySelector('.tour-ring')).not.toBeNull()
+    })
+  })
+
+  it('scrolls a target that mounts after the route settles into view, once', async () => {
+    mockTourApi()
+    // Where the live Citations anchor measured: 1507px down a 900px viewport.
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(box(1507, 180))
+
+    function LateSuggestion() {
+      const [ready, setReady] = useState(false)
+      useEffect(() => {
+        const timer = setTimeout(() => setReady(true), 300)
+        return () => clearTimeout(timer)
+      }, [])
+      return ready ? <div data-tour="suggestion">Cited suggestion</div> : null
+    }
+
+    renderTour('/patients', <LateSuggestion />)
+    await startTour()
+    await screen.findByRole('alert')
+
+    jumpTo('Citations')
+
+    await waitFor(
+      () => {
+        expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      },
+      { timeout: 2000 },
+    )
+    expect(scrollIntoView.mock.contexts[0]).toBe(document.querySelector('[data-tour="suggestion"]'))
+
+    // The viewer's own scrolling afterwards is theirs; the spotlight follows it
+    // rather than dragging the page back.
+    fireEvent.scroll(window)
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
   })
 })
