@@ -503,8 +503,9 @@ function detectMrn(text: string): Match[] {
 
 // Each word ends on a letter. Ending on `[a-z'-]` let a word like `A-` fail
 // the trailing boundary and backtrack across the whole unbounded run, which is
-// quadratic in its length.
-const CAPITALISED_RUN = /\b[A-Z][a-z'-]*[a-z](?:\s+[A-Z][a-z'-]*[a-z])*\b/g
+// quadratic in its length. A trailing hyphen or apostrophe goes in the
+// separator instead, so `Firdaus' Qaseh` stays one run.
+const CAPITALISED_RUN = /\b[A-Z][a-z'-]*[a-z](?:['-]?\s+[A-Z][a-z'-]*[a-z])*\b/g
 /** How many capitalised neighbours a known given name takes on each side (#416). */
 const NAME_REACH = 3
 const HONORIFIC_PATTERN = new RegExp(
@@ -598,7 +599,11 @@ const HONORIFIC_PHRASES = HONORIFICS.filter((h) => h.includes(' ')).map((h) =>
  * recall loss on the PHI boundary outranks a precision gain.
  */
 function trimNameSpan(value: string, start: number): { value: string; start: number } | null {
-  const words = value.split(/\s+/)
+  // Offsets come from the words themselves. Rejoining them with single spaces
+  // and searching for the result missed any span split by a line break or two
+  // spaces, and the token then landed on the dropped words instead (#416).
+  const spans = [...value.matchAll(/\S+/g)]
+  const words = spans.map((span) => span[0])
 
   let lead = 0
   let tail = words.length
@@ -621,9 +626,10 @@ function trimNameSpan(value: string, start: number): { value: string; start: num
   while (tail > lead && NAME_STOPWORDS.has(normalise(words[tail - 1] ?? ''))) tail--
   if (lead >= tail) return null
 
-  const trimmed = words.slice(lead, tail).join(' ')
-  const offset = value.indexOf(trimmed)
-  return { value: trimmed, start: start + (offset < 0 ? 0 : offset) }
+  const from = spans[lead]?.index ?? 0
+  const last = spans[tail - 1]
+  const to = (last?.index ?? 0) + (last?.[0].length ?? 0)
+  return { value: value.slice(from, to), start: start + from }
 }
 
 function detectNames(text: string): Match[] {

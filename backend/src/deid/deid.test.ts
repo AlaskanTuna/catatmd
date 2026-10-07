@@ -536,6 +536,24 @@ describe('a name is not cut where a long capitalised run splits (#416)', () => {
     expect(deidentify(sentence).text).not.toMatch(name)
   })
 
+  it.each([
+    ['Seen By Nurse\nSiti Qaseh came.', /Siti|Qaseh/],
+    ['Seen By Nurse\r\nSiti Qaseh came.', /Siti|Qaseh/],
+    ['Seen By Nurse\n\nSiti Qaseh came.', /Siti|Qaseh/],
+    ['Siti  Qaseh came.', /Siti|Qaseh|h came/],
+  ])('places the token on the name however %j spaces its words', (sentence, name) => {
+    // The span was rejoined with single spaces and found again by `indexOf`,
+    // which missed wherever the words were not one space apart.
+    expect(deidentify(sentence).text).not.toMatch(name)
+  })
+
+  it.each([
+    ['Siti Qa- Qaseh came.', /Qa-|Qaseh/],
+    ["Siti Firdaus' Qaseh came.", /Firdaus|Qaseh/],
+  ])('carries a run past a word ending in a hyphen or apostrophe in %j', (sentence, name) => {
+    expect(deidentify(sentence).text).not.toMatch(name)
+  })
+
   it("anchors on a known name with a possessive on it, as in Siti's", () => {
     expect(deidentify("Siti's cough is worse.").text).not.toMatch(/Siti/)
   })
