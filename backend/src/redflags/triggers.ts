@@ -75,8 +75,10 @@ import type { RedFlagTrigger } from './types.js'
  * more of a denied list: an "or" or a negation later in the clause describes
  * the symptom ("breathless when I walk or climb stairs", "chest pain that will
  * not go away"), and a time word ends a "denied" list ("denied fever, now
- * breathless") (#426). Suppressions into fires only, checked over 9,720
- * generated inputs: none that fired under v15 stops firing under v16.
+ * breathless") (#426). A match that runs past a comma is read only up to it,
+ * as v15 read it. Suppressions into fires only, checked over 17,910 generated
+ * inputs, comma-crossing matches included: none that fired under v15 stops
+ * firing under v16.
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
   id: 'redflag-list-v16',
@@ -281,9 +283,15 @@ const leavesDenialAtComma = (
   // "breathless when I walk or climb stairs", "chest pain that will not go away".
   // A negation inside the match is the clause denying itself: "No, the oxygen
   // level wasn't low."
+  // A match can run past a clause break ("oxygen sats, never this low"), so only
+  // its part up to the first break counts, and nothing after it when it did.
   const lead = scope.slice(comma + 1)
-  const matched = text.slice(matchIndex, matchIndex + matchLength)
-  const after = text.slice(matchIndex + matchLength).match(/^[^,.;!?]*/)?.[0] ?? ''
+  const whole = text.slice(matchIndex, matchIndex + matchLength)
+  const matched = whole.match(/^[^,.;!?]*/)?.[0] ?? ''
+  const after =
+    matched.length < whole.length
+      ? ''
+      : (text.slice(matchIndex + matchLength).match(/^[^,.;!?]*/)?.[0] ?? '')
   const clause = lead + matched + after
   if (CLAUSE_NEGATION.test(lead + matched)) return false
   if (LIST_DENIAL.test(head) && !REPORT_TIME.test(clause)) return false

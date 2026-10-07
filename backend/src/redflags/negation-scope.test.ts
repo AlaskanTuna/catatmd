@@ -115,6 +115,10 @@ describe('a report after a comma is not a list just because it says "or" or "not
     ['chest-pain', 'Tiada demam, sakit dada tak hilang.'],
     ['significant-dyspnoea', 'Denied fever, now breathless.'],
     ['haemoptysis', 'He denied fever, coughing up blood today.'],
+    // A match that runs past a comma reads only up to it, as v15 did.
+    ['vital-signs-concern', 'No fever, oxygen sats, never this low before.'],
+    ['vital-signs-concern', 'No cough, oxygen saturation, wasnt sure, low.'],
+    ['vital-signs-concern', 'No fever, oxygen sats, low or so.'],
   ])('%s fires on "%s"', (trigger, text) => {
     expect(ruleIds(text)).toContain(trigger)
   })
