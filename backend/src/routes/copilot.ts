@@ -66,6 +66,7 @@ copilotRouter.post('/', copilotRateLimit, async (req, res) => {
       consultation,
       message: parsed.data.message,
       history: parsed.data.history,
+      propose: parsed.data.propose === true,
       signal: abort.signal,
     })) {
       if (res.writableEnded) break

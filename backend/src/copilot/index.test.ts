@@ -384,3 +384,73 @@ describe('pointing at a card that was never rendered', () => {
     expect(hasPhantomClickInstruction(text, proposals)).toBe(false)
   })
 })
+
+/*
+ * "Propose as Edit" (#185). Prompt and tool-description revisions could not
+ * make the model reach for the tool reliably without breaking something else,
+ * so the doctor can ask for the card instead, and that one turn forces a call.
+ */
+describe('a turn the doctor asked to be a proposal', () => {
+  async function propose(detail = consultation()) {
+    const out = []
+    for await (const chunk of runCopilotTurn({
+      consultation: detail,
+      message: 'Propose that as an edit to the note.',
+      history: [
+        { role: 'doctor', content: 'add a safety net to the plan' },
+        { role: 'copilot', content: 'You could add: "Return if the fever lasts beyond 3 days."' },
+      ],
+      propose: true,
+    })) {
+      out.push(chunk)
+    }
+    return out
+  }
+
+  it('forces a tool call on that turn and on no other', async () => {
+    chunks = [{ type: 'text', text: 'ok' }]
+    await drain('add a safety net to the plan')
+    expect(captured?.toolChoice).toBeUndefined()
+
+    chunks = [
+      {
+        type: 'tool',
+        name: 'edit_note_section',
+        args: {
+          section: 'plan',
+          text: 'Return if the fever lasts beyond 3 days.',
+          rationale: 'Asked.',
+        },
+      },
+    ]
+    const out = await propose()
+
+    expect(captured?.toolChoice).toBe('required')
+    expect(out.map((chunk) => chunk.type)).toEqual(['tool', 'proposal'])
+  })
+
+  it('forces nothing on a signed note, which has no tools to force', async () => {
+    chunks = [{ type: 'text', text: 'ok' }]
+
+    await propose({
+      ...consultation(),
+      status: 'approved',
+      approvedAt: new Date('2026-08-15T02:00:00Z'),
+      approvedBy: 'Dr Tan',
+    } as unknown as ConsultationDetail)
+
+    expect(captured?.tools).toEqual([])
+    expect(captured?.toolChoice).toBeUndefined()
+  })
+
+  it('says so when no usable card came back, rather than ending in silence', async () => {
+    chunks = [{ type: 'tool', name: 'edit_note_section', args: { section: 'nowhere' } }]
+
+    const out = await propose()
+
+    expect(out.some((chunk) => chunk.type === 'proposal')).toBe(false)
+    const said = out.flatMap((chunk) => (chunk.type === 'token' ? [chunk.text] : [])).join('')
+    expect(said).toMatch(/could not turn that into an edit/i)
+    expect(hasPhantomClickInstruction(said, 0)).toBe(false)
+  })
+})

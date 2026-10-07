@@ -84,6 +84,11 @@ export interface StreamRequest {
   system: Deidentified
   turns: readonly StreamTurn[]
   tools: readonly StreamTool[]
+  /**
+   * `required` makes the model call one of `tools` this turn. Used only when the
+   * doctor has asked for a proposal (#185); omitted, the model chooses.
+   */
+  toolChoice?: 'required'
   temperature?: number
   maxTokens?: number
   /** Aborts the provider call when the doctor closes the panel mid-answer. */

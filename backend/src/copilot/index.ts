@@ -32,9 +32,11 @@ export async function* runCopilotTurn(options: {
   consultation: ConsultationDetail
   message: string
   history: readonly CopilotTurn[]
+  /** The doctor asked for this turn to end in a proposal card (#185). */
+  propose?: boolean
   signal?: AbortSignal
 }): AsyncGenerator<CopilotChunk> {
-  const { consultation, message, history, signal } = options
+  const { consultation, message, history, propose = false, signal } = options
 
   /*
    * One vault for the whole turn, request-scoped like every other (§9). It is
@@ -84,6 +86,13 @@ export async function* runCopilotTurn(options: {
     system,
     turns,
     tools: signed ? [] : COPILOT_TOOLS,
+    /*
+     * Forced only when the doctor asked (#185). Four prompt and tool-description
+     * revisions each traded one prose failure for another (docs/trd.md §25), so
+     * the model is not asked to judge this better; the doctor's press decides
+     * that a card is wanted, and the card is still only a proposal.
+     */
+    ...(propose && !signed && { toolChoice: 'required' as const }),
     signal,
   })
 
@@ -124,6 +133,15 @@ export async function* runCopilotTurn(options: {
 
   const tail = visible.flush()
   if (tail) yield { type: 'token', text: vault.rehydrate(tail) }
+
+  // A forced turn that produced no usable card says so, rather than leaving the
+  // doctor an empty answer to wonder about.
+  if (propose && !signed && emitted.size === 0) {
+    yield {
+      type: 'token',
+      text: 'I could not turn that into an edit. Ask for the change directly, for example "add a safety net to the plan".',
+    }
+  }
 }
 
 /**

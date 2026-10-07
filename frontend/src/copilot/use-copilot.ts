@@ -84,7 +84,8 @@ export function useCopilot(consultationId: string) {
   }, [])
 
   const send = useCallback(
-    async (text: string) => {
+    /** `propose` asks for this turn to end in a card rather than prose (#185). */
+    async (text: string, options: { propose?: boolean } = {}) => {
       const message = text.trim()
       if (!message || abort.current) return
 
@@ -130,7 +131,7 @@ export function useCopilot(consultationId: string) {
           method: 'POST',
           credentials: 'include',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ message, history }),
+          body: JSON.stringify({ message, history, ...(options.propose && { propose: true }) }),
           signal: controller.signal,
         })
 

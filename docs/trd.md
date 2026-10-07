@@ -3721,10 +3721,32 @@ An evaluation that spends real model calls must treat its **raw per-turn outputs
 
 ### 25.7 What Stays Open
 
-- The defect is real but small, about 4 in 36, and neither the three prompt revisions nor the tool-description revision beat it without introducing something worse. Both levers are now spent; what remains untried is a different tier, for example a post-hoc check that a turn composing replacement wording actually called the tool.
+- ~~The defect is real but small, about 4 in 36, and neither lever beat it.~~ **Answered at a different tier by Propose as Edit (#185, §25.8).**
 - One turn in 36 truncated mid-answer, emitting four characters. Cause unknown, not reproduced, not investigated.
 - One statement prompt, "her temperature was 38.2 when the nurse checked", reliably exceeds the provider bound and is the cause of most errored turns in v3 and v4. **This is slow, not hung, and the cause is known:** `openai-compatible.ts` set `REQUEST_TIMEOUT_MS = 60_000` with `MAX_RETRIES = 1` on the one shared client, the SDK retries timeouts, and `stream()` uses that client, so a request that exceeded 60 s was attempted twice and the turn ended at roughly 120 s. That was the §94 bound behaving as specified. **Issue #340 has since changed that shape to one 90 s attempt**, so a turn of this kind now ends at roughly 90 s instead, and a prompt needing 60 to 90 s completes rather than failing twice. The open question is not why it hangs but why this prompt exceeds 60 s when its neighbours return in seconds, and the likely answer is the model working on a sentence that is genuinely ambiguous between dictation and context, which is the ambiguity the statement arm exists to measure.
 - The bare-statement arm sits near 78% and is unexplained: the model proposes readily on "she is allergic to penicillin" while declining on explicit imperatives. Whether that is correct is undecided, so it has no target.
+
+### 25.8 Propose As Edit: The Doctor Asks For The Card (#185)
+
+Both model-side levers were spent (§25.4), so the fix moved tier: when an answer comes back as prose, the panel offers **Propose as Edit** under it. Pressing it sends one more turn with `propose: true`, and that turn alone forces a tool call (`tool_choice: 'required'`).
+
+| Rule                                                           | Why                                                                                             |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Offered only under the latest answer, only when it ran no tool | An answer that already produced a card needs nothing more                                       |
+| Never on a signed note                                         | The signed path has no tools to force, and nothing may change                                   |
+| Never forced unless the doctor presses                         | Forcing every turn is the regression §25.3 measured against: unsolicited proposals on questions |
+| A forced turn with no usable card says so                      | An empty answer after a press reads as a hang                                                   |
+
+**Measured 08/10/26** on `qwen3.7-flash` through `runCopilotTurn`, on a synthetic sore-throat consultation, with the twelve edit requests from `evals/copilot-proposals.ts`, three repetitions each:
+
+| Metric                                       | Result                                                                           |
+| -------------------------------------------- | -------------------------------------------------------------------------------- |
+| First answer is a card                       | 23/36 (64%), in line with §25.4's shipped arm                                    |
+| First answer is prose                        | 13/36, every one replacement wording without a card ("Proposed for the plan: …") |
+| Propose as Edit turns that prose into a card | **13/13**                                                                        |
+| Phantom click instructions                   | 0/36                                                                             |
+
+The question and statement arms are not re-run because their path is unchanged: a turn the doctor did not press for sends exactly the request it sent before, with no `toolChoice`. The forced card is still a proposal the doctor applies or discards.
 
 ---
 
