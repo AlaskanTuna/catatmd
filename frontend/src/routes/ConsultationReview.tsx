@@ -52,6 +52,7 @@ import {
 import { NoteEditor } from '../review/NoteEditor.js'
 import { PrescriptionBlock } from '../review/PrescriptionBlock.js'
 import { GapCard, RedFlagCard, SuggestionCard } from '../review/SafetyCards.js'
+import { ScoreCard } from '../review/ScoreCard.js'
 import { TranscriptCorrections } from '../review/TranscriptCorrections.js'
 import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
@@ -1566,6 +1567,22 @@ export function ConsultationReview() {
                 }))}
                 onShowAll={setOverflow}
               />
+
+              {/* Offered only where the presentation has one (#221). Absent on
+                  a consultation analysed before scores shipped, which is not
+                  the same as none applying, so nothing is said then. Kept off
+                  paper: the answers are not saved, and a printed total would
+                  read as part of the record. Keyed on the scores, pre-fills
+                  included, so a fresh analysis starts from its own. */}
+              {analysis.scores !== undefined && analysis.scores.length > 0 && (
+                <Panel title="Scores" count={analysis.scores.length} printHidden>
+                  <ScoreCard
+                    key={JSON.stringify(analysis.scores)}
+                    scores={analysis.scores}
+                    guidelines={citableGuidelines}
+                  />
+                </Panel>
+              )}
             </>
           )}
         </aside>
@@ -1821,15 +1838,17 @@ function LivePanel({ title, live }: { title: string; live: LivePanes }) {
 function Panel({
   title,
   count,
+  printHidden = false,
   children,
 }: {
   title: string
   /** Absent while there is nothing counted yet, which is not the same as none. */
   count?: number
+  printHidden?: boolean
   children: React.ReactNode
 }) {
   return (
-    <section className="flex flex-col">
+    <section className="flex flex-col" data-print={printHidden ? 'hide' : undefined}>
       <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold">
         {title}
         {count !== undefined && (

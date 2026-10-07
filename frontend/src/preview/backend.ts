@@ -45,6 +45,7 @@ import {
   matchMedication,
   parseSigWithSpan,
   proposeMishearCorrections,
+  scoresFor,
 } from './engines.js'
 
 /**
@@ -123,6 +124,7 @@ function previewAnalysis(transcript: Transcript): ConsultationAnalysis {
     gaps: [],
     redFlags: evaluateRedFlags(transcript, URTI_TRIGGERS),
     suggestions: [],
+    scores: scoresFor(transcript, PROFILE_ID),
   })
 }
 

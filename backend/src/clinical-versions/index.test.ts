@@ -7,7 +7,7 @@ import { ACTIVE_CLINICAL_VERSIONS, ACTIVE_PROFILE_VERSIONS } from './index.js'
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 describe('clinical content versions (issue #16)', () => {
-  it('covers the five versioned artefacts and the default clinical profile', () => {
+  it('covers the six versioned artefacts and the default clinical profile', () => {
     expect(Object.keys(ACTIVE_CLINICAL_VERSIONS).sort()).toEqual([
       'clinicalProfile',
       'gapChecklist',
@@ -15,6 +15,7 @@ describe('clinical content versions (issue #16)', () => {
       'medicalRecordTemplate',
       'medicationLexicon',
       'redFlagList',
+      'soreThroatScore',
     ])
   })
 
