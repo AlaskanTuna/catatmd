@@ -469,6 +469,31 @@ describe('name spans must not drop what the gazetteer does not recognise (#149)'
   })
 })
 
+describe('an unmarked name is caught wherever it sits in its run (#413)', () => {
+  it.each([
+    ['Today Siti Aminah came in.', 'Today'],
+    ['Okay Siti Aminah, any fever?', 'Okay'],
+    ['Paracetamol Siti Aminah 500 mg', 'Paracetamol'],
+    ['Clinic Tan Wei Ming review.', 'Clinic'],
+    ['Cough Ahmad Faizal since Monday.', 'Cough'],
+  ])('tokenises the name in %j and keeps the word before it', (sentence, kept) => {
+    // The run's first word used to be read before trimming, so any capitalised
+    // word in front of a name sent the whole name to the model in cleartext.
+    const { text } = deidentify(sentence)
+    expect(text).toContain(kept)
+    expect(text).toMatch(/\[PATIENT_\d+\]/)
+    expect(text).not.toMatch(/Siti|Aminah|Ahmad|Faizal|Wei Ming/)
+  })
+
+  it('takes an unrecognised word in front of a name into the token rather than leak it', () => {
+    // Recall over precision, as #149 rules: the word may be a name element the
+    // gazetteer does not know.
+    for (const sentence of ['Zarul Siti Aminah came in.', 'Fever Siti Aminah came in today.']) {
+      expect(deidentify(sentence).text).not.toMatch(/Zarul|Siti|Aminah/)
+    }
+  })
+})
+
 describe('context cues match words, not substrings (#159)', () => {
   it.each(['invoice', 'notice', 'receipt'])(
     'does not boost an invalid twelve-digit number near %s',
