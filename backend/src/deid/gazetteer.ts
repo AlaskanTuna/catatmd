@@ -384,6 +384,14 @@ export const NAME_STOPWORDS = new Set(
     'chills',
     'dizzy',
     'nausea',
+    // Brands, which the medication lexicon deliberately leaves out (D-001), so
+    // the derived drug words above cannot cover them (#413).
+    'panadol',
+    'strepsils',
+    'augmentin',
+    'ventolin',
+    'piriton',
+    'difflam',
     'mc',
     'ic',
     'nric',
@@ -443,6 +451,13 @@ export const NAME_STOPWORDS = new Set(
     // 'see' is deliberately absent although it fits the pattern, because See is
     // an attested Chinese Malaysian surname and a false stopword truncates a
     // real name, which is the failure mode that outranks this one.
+    'also',
+    'then',
+    'did',
+    'mother',
+    'father',
+    'auntie',
+    'uncle',
     'tell',
     'call',
     'ask',

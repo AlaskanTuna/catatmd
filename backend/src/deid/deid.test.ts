@@ -485,6 +485,16 @@ describe('an unmarked name is caught wherever it sits in its run (#413)', () => 
     expect(text).not.toMatch(/Siti|Aminah|Ahmad|Faizal|Wei Ming/)
   })
 
+  it('keeps one token for one person, and mints none for a word in front of a name', () => {
+    const repeated = deidentify('Okay Siti came. Also Siti came.').text
+    expect(new Set(repeated.match(/\[PATIENT_\d+\]/g)).size).toBe(1)
+    expect(deidentify('Then Nur Aina Sofea binti Zulkifli came in.').text).toMatch(
+      /^Then \[PATIENT_\d+\] came in\.$/,
+    )
+    // A brand is outside the medication lexicon, so it is listed itself.
+    expect(deidentify('Panadol Siti Aminah takes it.').text).toMatch(/^Panadol \[PATIENT_\d+\]/)
+  })
+
   it('takes an unrecognised word in front of a name into the token rather than leak it', () => {
     // Recall over precision, as #149 rules: the word may be a name element the
     // gazetteer does not know.
