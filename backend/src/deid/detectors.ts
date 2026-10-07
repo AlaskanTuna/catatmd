@@ -1,10 +1,11 @@
 import {
   GIVEN_NAMES,
+  HAN_BEFORE_SURNAME,
   HAN_COMPOUND_SURNAMES,
   HAN_NAME_INTRODUCERS,
-  HAN_NOT_BEFORE_SURNAME,
   HAN_SURNAME_INTRODUCERS,
   HAN_SURNAMES,
+  HAN_THIRD_PERSON_INTRODUCERS,
   HAN_TITLES,
   HONORIFICS,
   NAME_INTRODUCERS,
@@ -761,41 +762,66 @@ function nameSegments(run: string, start: number): { value: string; start: numbe
 const HAN = '\\p{Script=Han}'
 const SURNAME = `(?:${HAN_COMPOUND_SURNAMES.join('|')}|[${HAN_SURNAMES}])`
 /** A Chinese name opens on a listed surname: 陈美玲, 欧阳娜娜. */
-const HAN_NAME = `(${SURNAME}${HAN}{1,2})`
+const HAN_NAME = `${SURNAME}${HAN}{1,2}`
+/** Where a clause ends: punctuation, a space, or the end of the text. */
+const CLAUSE_END = '(?=[\\p{P}\\p{S}\\s]|$)'
+const CUE_GAP = '[\\s:：「『"“]*'
+// A pronoun, a question word or a completed action after "我叫" is "I told
+// you", "what is your name" or "I called", not a name.
+const NOT_A_NAME = '(?![你他她它我您們们什甚啥谁誰乜了咗過过])'
 const TAMIL = '[\\u0B80-\\u0BFF]'
 const TAMIL_WORD = `${TAMIL}+`
-/** One Tamil word, with an initial before it if there is one: ஆர். லட்சுமி. */
-const TAMIL_ONE = `((?:${TAMIL}{1,3}\\.\\s*)?${TAMIL_WORD})`
+// An initial: one letter, as ஆர். or கே. or R., never a whole short word such
+// as மணி, which a sentence-ending full stop would otherwise turn into one.
+const INITIAL =
+  '(?:(?:[\\u0B85-\\u0B94]?[\\u0B95-\\u0BB9]\\u0BCD|[\\u0B95-\\u0BB9][\\u0BBE-\\u0BCC]?|[A-Z])\\.\\s*)?'
+/** One Tamil name word, with its initial. */
+const TAMIL_ONE = `${INITIAL}${TAMIL_WORD}`
 /** Up to two, after an explicit "my name is". */
-const TAMIL_FULL = `((?:${TAMIL}{1,3}\\.\\s*)?${TAMIL_WORD}(?:[ \\t]+${TAMIL_WORD})?)`
+const TAMIL_FULL = `${INITIAL}${TAMIL_WORD}(?:[ \\t]+${TAMIL_WORD})?`
 // "என் பெயர் என்ன" is "what is my name", and "சொல்ல" opens "shall I say it".
 const NOT_A_TAMIL_NAME = '(?!என்ன|சொல்ல)'
-const CUE_GAP = '[\\s:：「『"“]*'
 // Only the Latin introducers that say "name": "saya" or "I am" before Chinese
-// or Tamil is ordinary code-switched speech ("saya 咳嗽三天").
+// or Tamil is ordinary code-switched speech ("saya 咳嗽三天"). Each is a whole
+// word, so "symptoms" does not read as "Ms".
 const LATIN_NAME_INTRODUCERS = NAME_INTRODUCERS.filter((intro) => /name|nama/.test(intro))
-const LATIN_CUES = [...LATIN_NAME_INTRODUCERS, ...HONORIFICS].map(caseInsensitiveLiteral)
+const latin = (cues: readonly string[]) => `\\b(?:${cues.map(caseInsensitiveLiteral).join('|')})`
 
-const NATIVE_NAME_PATTERNS = [
-  new RegExp(`(?:${HAN_NAME_INTRODUCERS.join('|')})${CUE_GAP}${HAN_NAME}`, 'gu'),
+/**
+ * Each cue, and whether what it captures is an ordinary word if the guess is
+ * wrong. A surname alone before a title is not carried to other mentions,
+ * because one character also opens ordinary words.
+ */
+const NATIVE_NAME_PATTERNS: RegExp[] = [
+  new RegExp(`(?:${HAN_NAME_INTRODUCERS.join('|')})${CUE_GAP}${NOT_A_NAME}(${HAN_NAME})`, 'gu'),
+  // A given name with no surname, "我叫美玲", only where the clause then ends.
+  new RegExp(
+    `(?:${HAN_NAME_INTRODUCERS.join('|')})${CUE_GAP}${NOT_A_NAME}(${HAN}{2,3})${CLAUSE_END}`,
+    'gu',
+  ),
+  new RegExp(
+    `(?:${HAN_THIRD_PERSON_INTRODUCERS.join('|')})${CUE_GAP}(${HAN_NAME})${CLAUSE_END}`,
+    'gu',
+  ),
   // "我姓陈，叫美玲" gives the given name as a second capture.
   new RegExp(
-    `(?:${HAN_SURNAME_INTRODUCERS.join('|')})${CUE_GAP}(${SURNAME})(?:[，,、\\s]*(?:名叫|叫|名)(${HAN}{1,2}))?`,
+    `(?:${HAN_SURNAME_INTRODUCERS.join('|')})${CUE_GAP}${NOT_A_NAME}(${SURNAME})(?:[，,、\\s]*(?:名叫|叫做|叫|名)(?![我你他她])(${HAN}{1,4})${CLAUSE_END})?`,
     'gu',
   ),
-  // The surname alone, directly before a title, unless the character before it
-  // makes it part of a word (谢谢医生, 上周医生).
+  // The surname alone, directly before a title, and only where it starts a
+  // word: after punctuation, a space, or a verb that takes a person.
   new RegExp(
-    `(?<![${HAN_NOT_BEFORE_SURNAME}])(${SURNAME})[ \\t]?(?=${HAN_TITLES.join('|')})`,
+    `(?:(?<!${HAN})|(?<=[${HAN_BEFORE_SURNAME}]))(${SURNAME})[ \\t]?(?=${HAN_TITLES.join('|')})`,
     'gu',
   ),
   new RegExp(
-    `(?:${TAMIL_NAME_INTRODUCERS.join('|')})[:：]?\\s+${NOT_A_TAMIL_NAME}${TAMIL_FULL}`,
+    `(?:${TAMIL_NAME_INTRODUCERS.join('|')})[:：]?\\s+${NOT_A_TAMIL_NAME}(${TAMIL_FULL})`,
     'gu',
   ),
-  new RegExp(`(?<!${TAMIL})(?:${TAMIL_TITLES.join('|')})(?:\\.\\s*|\\s+)${TAMIL_ONE}`, 'gu'),
+  new RegExp(`(?<!${TAMIL})(?:${TAMIL_TITLES.join('|')})(?:\\.\\s*|\\s+)(${TAMIL_ONE})`, 'gu'),
+  new RegExp(`${latin(LATIN_NAME_INTRODUCERS)}\\s+(${HAN_NAME}|${TAMIL_FULL})${CLAUSE_END}`, 'gu'),
   new RegExp(
-    `(?:${LATIN_CUES.join('|')})\\.?\\s+(${SURNAME}${HAN}{0,2}|${TAMIL_WORD}(?:[ \\t]+${TAMIL_WORD})?)`,
+    `${latin(HONORIFICS)}\\.?\\s+(${SURNAME}(?:${HAN}{1,2})?|${TAMIL_ONE})${CLAUSE_END}`,
     'gu',
   ),
 ]
@@ -814,28 +840,44 @@ const NATIVE_NAME_PATTERNS = [
  * A one-character surname is not carried, because 陈 also opens 陈皮.
  */
 function detectNativeScriptNames(text: string): Match[] {
-  const cued = NATIVE_NAME_PATTERNS.flatMap((pattern) =>
-    [...text.matchAll(pattern)].flatMap((m): Match[] => {
+  const cued: Match[] = []
+  for (const pattern of NATIVE_NAME_PATTERNS) {
+    for (const m of text.matchAll(pattern)) {
       let from = m.index + m[0].length
-      const found: Match[] = []
       for (const name of m.slice(1).reverse()) {
         if (!name) continue
         const start = m.index + m[0].lastIndexOf(name, from - m.index)
         from = start
-        found.push({ label: 'PATIENT', start, end: start + name.length, value: name, score: 0.85 })
+        // 谢谢医生: a surname right after the same character is a doubled word.
+        if (text[start - 1] === name[0]) continue
+        cued.push({ label: 'PATIENT', start, end: start + name.length, value: name, score: 0.85 })
       }
-      return found
-    }),
+    }
+  }
+  // Carried only from a capture that ends a clause, so a wrong guess cut from
+  // the middle of a phrase is never spread across the transcript.
+  const carried = new Set(
+    cued
+      .filter(
+        (m) =>
+          [...m.value].length >= 2 && new RegExp(`^${CLAUSE_END}`, 'u').test(text.slice(m.end)),
+      )
+      .map((m) => m.value),
   )
-  const repeated = [...new Set(cued.map((m) => m.value))]
-    .filter((value) => [...value].length >= 2)
-    .flatMap((value) => {
-      const out: Match[] = []
-      for (let at = text.indexOf(value); at !== -1; at = text.indexOf(value, at + value.length)) {
-        out.push({ label: 'PATIENT', start: at, end: at + value.length, value, score: 0.85 })
+  const repeated: Match[] = []
+  for (const value of carried) {
+    const tamil = new RegExp(`^${TAMIL}`, 'u').test(value)
+    for (let at = text.indexOf(value); at !== -1; at = text.indexOf(value, at + value.length)) {
+      // A Tamil name is a whole word; மணி inside மணிக்கு is not the name.
+      if (
+        tamil &&
+        new RegExp(`${TAMIL}`, 'u').test(`${text[at - 1] ?? ''}${text[at + value.length] ?? ''}`)
+      ) {
+        continue
       }
-      return out
-    })
+      repeated.push({ label: 'PATIENT', start: at, end: at + value.length, value, score: 0.85 })
+    }
+  }
   return [...cued, ...repeated]
 }
 

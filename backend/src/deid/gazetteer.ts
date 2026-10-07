@@ -63,8 +63,12 @@ export const HAN_NAME_INTRODUCERS = [
   '我嘅名係',
   '我個名叫',
   '我名叫',
+  '我叫做',
   '我叫',
 ] as const
+
+/** "He is called", "she is called": read only when a surname opens what follows. */
+export const HAN_THIRD_PERSON_INTRODUCERS = ['他叫', '她叫', '佢叫'] as const
 
 /** "My surname is", after which the surname, and sometimes the given name, follow. */
 export const HAN_SURNAME_INTRODUCERS = ['我姓', '他姓', '她姓', '佢姓'] as const
@@ -95,11 +99,13 @@ export const HAN_COMPOUND_SURNAMES = [
 ] as const
 
 /**
- * Characters that, directly before a surname, make it part of an ordinary word
- * rather than a name: 谢谢医生 ("thank you, doctor"), 上周医生 ("last week the
- * doctor"), 关于医生 ("about the doctor"), 任何医生 ("any doctor").
+ * The Chinese characters a surname may follow when it is read before a title:
+ * verbs and particles that take a person (给陈医生, 找王先生, 是林太太). Any
+ * other Chinese character before it usually makes the surname the end of a word
+ * instead, as in 体温医生 ("temperature, the doctor") or 主任医生 ("the
+ * consultant"). After punctuation, a space or the start of a line it is read.
  */
-export const HAN_NOT_BEFORE_SURNAME = '谢謝多这這那下上每本其关關由对對至有任'
+export const HAN_BEFORE_SURNAME = '给給找问問叫是请請跟同和谢謝见見让讓帮幫陪向'
 
 /** "My name is", in Tamil, written and spoken. */
 export const TAMIL_NAME_INTRODUCERS = [

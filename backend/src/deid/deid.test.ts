@@ -1311,6 +1311,15 @@ describe('names in Chinese and Tamil script are found by their cues (#418)', () 
     ['என் பேர் முருகன்.', 'முருகன்'],
     ['Mr 陈 is here.', '陈'],
     ['Encik ராமசாமி came.', 'ராமசாமி'],
+    ['我叫美玲。', '美玲'],
+    ['我叫阿玲，发烧三天。', '阿玲'],
+    ['我叫做陈美玲。', '陈美玲'],
+    ['我姓陈，叫做美玲。', '美玲'],
+    ['我姓陈，叫陈美玲。', '陈美玲'],
+    ['我姓欧阳，叫欧阳娜娜。', '娜娜'],
+    ['他叫陈伟。', '陈伟'],
+    ['谢谢陈医生。', '陈'],
+    ['என் பெயர் R. லட்சுமி.', 'லட்சுமி'],
     ['我姓陈。', '陈'],
     ['我的名字是王小明。', '王小明'],
     ['திரு ராமசாமி வந்தார்.', 'ராமசாமி'],
@@ -1328,6 +1337,15 @@ describe('names in Chinese and Tamil script are found by their cues (#418)', () 
     const { text } = deidentify('我叫陈美玲。陈美玲今年三十岁。')
     expect(text).not.toContain('陈美玲')
     expect(new Set(text.match(/\[PATIENT_\d+\]/g)).size).toBe(1)
+  })
+
+  it('never carries a wrong guess cut from the middle of a phrase', () => {
+    const { text } = deidentify('我姓陈，叫我小陈就好。我小便有点痛。')
+    expect(text).toContain('小便有点痛')
+  })
+
+  it('carries a Tamil name only as a whole word', () => {
+    expect(deidentify('என் பெயர் மணி. மணிக்கு ஒரு முறை மருந்து.').text).toContain('மணிக்கு ஒரு')
   })
 
   it('reads one name per title, so two people in a row are both found', () => {
@@ -1459,6 +1477,19 @@ describe('names in Chinese and Tamil script are found by their cues (#418)', () 
     'saya 咳嗽三天',
     'I am 很累 already doctor',
     'my name is 什么 you ask?',
+    '体温医生量过了。',
+    '主任医生说要住院。',
+    '胆结石医生说要开刀。',
+    '病史医生都看了。',
+    '明白医生。',
+    '也许医生会打电话。',
+    '终于医生来了。',
+    '几分钟医生就来。',
+    '我很紧张医生。',
+    'symptoms 高烧三天',
+    'Dr 高烧三天了',
+    'terms 马上去急诊',
+    'Cik 黄痰很多',
   ])('leaves clinical speech with no name in it alone: %j', (sentence) => {
     expect(deidentify(sentence).text).toBe(sentence)
   })
