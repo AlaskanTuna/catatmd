@@ -340,7 +340,8 @@ const DECISIVE_MARGIN = 0.25
  * pattern fallback reads little Malay, so a doctor speaking Malay was drafted
  * doctor on only 40 to 47 percent of their words, against 8 to 9 for the
  * patient: no majority, and an unmistakable ranking. Every other voice is on
- * the patient's side, as a companion is.
+ * the patient's side, as a companion is, and so is a second clinician, which
+ * is the case this cannot tell apart.
  *
  * **Nothing changes unless that ranking is decisive.** The leader must be ahead
  * by `DECISIVE_MARGIN`, and only a voice holding `MIN_VOICE_SHARE` of the words
@@ -373,6 +374,8 @@ export function voteRolesBySpeaker(
     for (let i = 0; i < text.length; i += 1) owner.push(index)
   }
   const hay = haystack.toLowerCase()
+  // A character whose lowercase is longer ("İ") would shift every cut after it.
+  if (hay.length !== haystack.length) return [...lines]
   const voiceAt = (at: number) => segments[owner[at] ?? -1]?.speaker ?? null
 
   let cursor = 0
@@ -405,7 +408,6 @@ export function voteRolesBySpeaker(
   if (top === undefined || next === undefined || top.share - next.share < DECISIVE_MARGIN) {
     return [...lines]
   }
-  // A voice too brief to rank keeps whatever its own lines were drafted as.
   const roleOf = new Map<string, Speaker>(
     ranked.map(({ voice }) => [voice, voice === top.voice ? 'doctor' : 'patient']),
   )
@@ -413,10 +415,18 @@ export function voteRolesBySpeaker(
   return lines.flatMap((line, i): DraftLine[] => {
     const span = found[i]
     if (span === null || span === undefined) return [line]
-    const runs: { speaker: Speaker; start: number; end: number }[] = []
+    // A voice too brief to rank, or none at all, takes the role around it,
+    // so a stray word never cuts a line in three.
+    const known: (Speaker | undefined)[] = []
     for (let at = span.start; at < span.end; at += 1) {
       const voice = voiceAt(at)
-      const speaker = (voice === null ? undefined : roleOf.get(voice)) ?? line.speaker
+      known.push(voice === null ? undefined : roleOf.get(voice))
+    }
+    const fallback = known.find((role) => role !== undefined) ?? line.speaker
+    const runs: { speaker: Speaker; start: number; end: number }[] = []
+    for (const [offset, role] of known.entries()) {
+      const at = span.start + offset
+      const speaker = role ?? runs.at(-1)?.speaker ?? fallback
       const last = runs.at(-1)
       if (last && last.speaker === speaker) last.end = at + 1
       else runs.push({ speaker, start: at, end: at + 1 })
