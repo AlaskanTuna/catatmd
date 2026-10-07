@@ -2929,7 +2929,7 @@ Two properties of that flow are load-bearing rather than incidental. The microph
 | Word error rate, every language   | There is no number for Malay, Chinese, English or Tamil on this provider. A harness arm is a follow-up |
 | Latency through the deployed path | §20.9's 3.5 s threshold was about a relay this design does not use, so it does not transfer            |
 | Code-switching                    | The reason the provider was chosen, and still unquantified here, as §20.8 records it is industry-wide  |
-| Diarisation quality               | Speaker labels come from the labelling pass, not from the provider's, so a bad answer is contained     |
+| Diarisation quality               | Measured on synthetic audio only, below. Real consulting-room audio is still unmeasured                |
 | Tamil                             | Listed by the vendor and unverified. §20.7's honest-limitation position stands until measured          |
 | Safari and iOS                    | `MediaRecorder` emits `audio/mp4` there, untested over a chunked stream                                |
 | Behaviour on silence-heavy audio  | §20.8 records that ASR hallucination tracks silence. Any invention would be disqualifying              |
@@ -3084,11 +3084,26 @@ Run against the real endpoint with the production credential, on a mint and two 
 
 Vendor statements, read 06/09/26 and **unverified by us**: real-time audio and transcripts are not stored, customer content is not used to train or improve their models, SOC 2 Type 2 and ISO 27001. The residency posture is recorded in `docs/dpia.md` with the PDPA 2010 s.129 basis open, not solved. No legal position is stated here or anywhere in this repo.
 
+#### Measured 07/10/26: Roles Now Follow The Voice (#388)
+
+**The mix-up was two problems, and only one was the provider's.** Two synthetic voices read scripted URTI consultations in English and Malay. The audio was joined at known turn boundaries and streamed through a production-minted ambient session exactly as the SPA streams it. Each segment's speaker and drafted role were then scored against the script.
+
+| Condition, 5 voice pairs           | Diarisation                                          | Labelling pass      | Pattern fallback | Either, after the vote |
+| ---------------------------------- | ---------------------------------------------------- | ------------------- | ---------------- | ---------------------- |
+| Clean turns, 600 ms apart, English | 100% of segments                                     | 79 to 100% of words | 98% of words     | 100%                   |
+| Clean turns, Malay                 | 100%                                                 | 94 to 100%          | 59 to 63%        | 100%                   |
+| Room echo and noise, 150 ms apart  | 100%                                                 | 94 to 100%          | 60 to 98%        | 100%                   |
+| Turns overlapping by 300 ms        | 91%, and one Malay pair merged into a single speaker | not scored          | not scored       | unchanged, by design   |
+
+- **Stored roles ignored the diariser.** Both the labelling pass and its fallback draft roles from text alone. Text cannot place a bare "Okay", and the fallback's patterns do not read Malay. `voteRolesBySpeaker` now gives each line the role its voice was drafted most often, and cuts a drafted line where the voice changes.
+- **The vote stands down when diarisation cannot be trusted.** It acts only with two voices that each hold enough of the words and a decisive lead for one of them. The merged Malay run therefore kept its drafted roles rather than flipping wholesale.
+- **What the doctor saw on screen is the provider's.** The live chips show the provider's speaker numbers, and overlapping speech is what moved them in these runs. Nothing here changes those numbers. The thresholds are set from synthetic runs, and real consulting-room audio is unmeasured.
+
 #### Follow-Ups This Section Creates
 
 - A Soniox arm for `evals/asr-ab.ts`, so the unmeasured table above gets numbers on synthetic audio.
 - The `context` field, measured before adoption. It is layer 1 of §20.7's accuracy chain and the one lever ILMU could not offer.
-- The provider's own speaker turns as input to the labelling pass, instead of flat prose.
+- The provider's own speaker turns as input to the labelling pass, instead of flat prose. Partly done: since #388 the voices vote the drafted roles afterwards (below).
 - Safari and iOS verification of `MediaRecorder` output over `audio_format: 'auto'`.
 - A spend cap. The per-session bound does not substitute for one, because a key opens several sessions, and this is the follow-up worth doing before real audio.
 - Session resumption remains #256 and remains unbuilt. A dropped socket keeps everything already settled and stops; the transcript still lives only in component state.

@@ -20,6 +20,7 @@ import {
   proseToDraft,
   segmentsToDraft,
   timeDraftLines,
+  voteRolesBySpeaker,
 } from '../audio/draft-turns.js'
 import { AmbientCapture } from '../audio/live/AmbientCapture.js'
 import type { OtherLanguage } from '../audio/live/bilingual.js'
@@ -347,7 +348,14 @@ export function CapturePanel({
         text: turn.text,
       }),
     )
-    const timedLines = segmentsToDraft(segments, transcribed, { withOffsets })
+    /*
+     * Roles follow the voice the recogniser heard, voted by the draft (#388).
+     * Not on a translated recording, whose roles come from the language spoken
+     * and whose pairs line up with these lines index for index.
+     */
+    const voted = (drafted: DraftLine[]) =>
+      translation === undefined ? voteRolesBySpeaker(drafted, segments) : drafted
+    const timedLines = voted(segmentsToDraft(segments, transcribed, { withOffsets }))
     /*
      * Ambient carries both halves, so it no longer has to choose (#293). The
      * labelling pass gives the better speakers and the live capture gives real
@@ -358,7 +366,9 @@ export function CapturePanel({
      * segments, so there is nothing to align against and the lines come back
      * exactly as they went in.
      */
-    const labelledLines = withOffsets ? timeDraftLines(hostedLines, segments) : hostedLines
+    const labelledLines = withOffsets
+      ? timeDraftLines(voted(hostedLines), segments)
+      : voted(hostedLines)
     const lines =
       labelledLines.length > 0
         ? labelledLines

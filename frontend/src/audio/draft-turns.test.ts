@@ -7,6 +7,7 @@ import {
   proseToDraft,
   segmentsToDraft,
   timeDraftLines,
+  voteRolesBySpeaker,
 } from './draft-turns.js'
 import type { TranscriptSegment } from './protocol.js'
 
@@ -436,5 +437,124 @@ describe('carryUncertain', () => {
   it('carries the ranges onto the turn, so they survive draftToTurns', () => {
     const turns = draftToTurns(carryUncertain([line('a', 'Saya teman dua hari')], segments))
     expect(turns[0]?.uncertain).toEqual([{ start: 5, end: 10 }])
+  })
+})
+
+describe('voteRolesBySpeaker', () => {
+  const said = (speaker: string | null, text: string): MarkedSegment => ({
+    text,
+    start: 0,
+    end: 1,
+    speaker,
+  })
+  const line = (id: string, speaker: 'doctor' | 'patient', text: string): DraftLine => ({
+    id,
+    speaker,
+    text,
+  })
+  const segments = [
+    said('1', 'Any fever?'),
+    said('2', 'Yes, at night.'),
+    said('1', 'Okay.'),
+    said('2', 'Okay.'),
+    said('1', 'Come back if it gets worse.'),
+  ]
+
+  it("gives every line the role its speaker's other lines were drafted as (#388)", () => {
+    // Text alone cannot tell whose "Okay." is whose; the voice can.
+    const drafted = [
+      line('a', 'doctor', 'Any fever?'),
+      line('b', 'patient', 'Yes, at night.'),
+      line('c', 'patient', 'Okay.'),
+      line('d', 'doctor', 'Okay.'),
+      line('e', 'doctor', 'Come back if it gets worse.'),
+    ]
+    expect(voteRolesBySpeaker(drafted, segments).map((l) => l.speaker)).toEqual([
+      'doctor',
+      'patient',
+      'doctor',
+      'patient',
+      'doctor',
+    ])
+  })
+
+  it('cuts a drafted line where the speaker changes', () => {
+    // The patient's own lines carry the vote; the merged ones are then cut.
+    const drafted = [
+      line('a', 'doctor', 'Any fever? Yes, at night.'),
+      line('b', 'doctor', 'Okay. Okay.'),
+      line('c', 'doctor', 'Come back if it gets worse.'),
+      line('d', 'patient', 'Thank you, my throat still hurts at night.'),
+    ]
+    const heard = [...segments, said('2', 'Thank you, my throat still hurts at night.')]
+    expect(voteRolesBySpeaker(drafted, heard).map((l) => [l.id, l.speaker, l.text])).toEqual([
+      ['a', 'doctor', 'Any fever?'],
+      ['a-voice-1', 'patient', 'Yes, at night.'],
+      ['b', 'doctor', 'Okay.'],
+      ['b-voice-1', 'patient', 'Okay.'],
+      ['c', 'doctor', 'Come back if it gets worse.'],
+      ['d', 'patient', 'Thank you, my throat still hurts at night.'],
+    ])
+  })
+
+  it('names the doctor by who was drafted doctor most, when no voice has a majority', () => {
+    // The pattern fallback reads little Malay, so neither voice is mostly
+    // drafted doctor; the doctor's voice is still drafted doctor far more often.
+    const drafted = [
+      line('a', 'doctor', 'Any fever?'),
+      line('b', 'patient', 'Yes, at night.'),
+      line('c', 'doctor', 'Okay.'),
+      line('d', 'patient', 'Okay.'),
+      line('e', 'patient', 'Come back if it gets worse.'),
+    ]
+    expect(voteRolesBySpeaker(drafted, segments).map((l) => l.speaker)).toEqual([
+      'doctor',
+      'patient',
+      'doctor',
+      'patient',
+      'doctor',
+    ])
+  })
+
+  it('never lets a voice heard for a word or two take the doctor role', () => {
+    const drafted = [
+      line('a', 'doctor', 'Any fever?'),
+      line('b', 'patient', 'Yes, at night.'),
+      line('c', 'doctor', 'Okay.'),
+      line('e', 'patient', 'Come back if it gets worse.'),
+    ]
+    const stray = [
+      said('1', 'Any fever?'),
+      said('2', 'Yes, at night.'),
+      said('3', 'Okay.'),
+      said('1', 'Come back if it gets worse.'),
+    ]
+    // Voice 3 is all doctor but holds one word: it does not outrank voice 1.
+    expect(voteRolesBySpeaker(drafted, stray).map((l) => l.speaker)).toEqual([
+      'doctor',
+      'patient',
+      'doctor',
+      'doctor',
+    ])
+  })
+
+  it('changes nothing without two speakers voting different roles', () => {
+    const drafted = [line('a', 'doctor', 'Any fever?'), line('b', 'patient', 'Yes, at night.')]
+    const undiarised = [said(null, 'Any fever?'), said(null, 'Yes, at night.')]
+    const oneVoice = [said('1', 'Any fever?'), said('1', 'Yes, at night.')]
+    expect(voteRolesBySpeaker(drafted, undiarised)).toEqual(drafted)
+    expect(voteRolesBySpeaker(drafted, oneVoice)).toEqual(drafted)
+    // Both voices drafted as the doctor: the vote cannot say who the patient is.
+    const allDoctor = [line('a', 'doctor', 'Any fever?'), line('b', 'doctor', 'Yes, at night.')]
+    expect(voteRolesBySpeaker(allDoctor, segments.slice(0, 2))).toEqual(allDoctor)
+  })
+
+  it('leaves a line it cannot find in the segments as drafted', () => {
+    const drafted = [
+      line('a', 'doctor', 'Any fever?'),
+      line('b', 'patient', 'Yes, at night.'),
+      line('x', 'patient', 'Not in the audio.'),
+    ]
+    expect(voteRolesBySpeaker(drafted, segments.slice(0, 2))[2]).toEqual(drafted[2])
   })
 })
