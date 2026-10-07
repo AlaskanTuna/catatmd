@@ -1,3 +1,4 @@
+import { SORE_THROAT_SCORE_VERSION } from '../calculators/sore-throat-score.js'
 import {
   CLINICAL_PROFILES,
   type ClinicalProfile,
@@ -41,6 +42,7 @@ export const ACTIVE_CLINICAL_VERSIONS = {
   guidelineCorpus: GUIDELINE_CORPUS_VERSION,
   medicalRecordTemplate: MEDICAL_RECORD_TEMPLATE_VERSION,
   medicationLexicon: MEDICATION_LEXICON_VERSION,
+  soreThroatScore: SORE_THROAT_SCORE_VERSION,
   clinicalProfile: CLINICAL_PROFILES[DEFAULT_PROFILE_ID].version,
 } as const satisfies Record<string, ClinicalArtefactVersion>
 

@@ -65,10 +65,16 @@ import type { RedFlagTrigger } from './types.js'
  * fever, I passed out." fires while "No, I don't have chest pain." stays
  * silent (#398). Both only turn suppressions into fires: no transcript that
  * fired under v13 stops firing under v14.
+ * **v15 ends a denial at a comma whatever the next clause opens with,** unless
+ * that clause carries its own negation, the denial is "denies" or "denied", or
+ * the clause joins a list with "or", "nor" or "atau". So "No fever, breathless
+ * since morning." fires while "No fever, cough or chest pain." stays silent
+ * (#423). It only turns suppressions into fires: no transcript that fired
+ * under v14 stops firing under v15.
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v14',
-  effectiveDate: '2026-10-06',
+  id: 'redflag-list-v15',
+  effectiveDate: '2026-10-08',
 }
 
 const URTI_PROFILES: readonly ProfileId[] = ['adult-acute-urti']
@@ -190,6 +196,7 @@ const isNegated = (text: string, matchIndex: number): boolean => {
   const before = text.slice(Math.max(0, matchIndex - 60), matchIndex)
   const inScope = before.split(NEGATION_SCOPE_END).pop() ?? ''
   if (opensAffirmedClause(inScope)) return false
+  if (leavesDenialAtComma(text, matchIndex, inScope)) return false
   return TRAILING_NEGATOR.test(inScope)
 }
 
@@ -227,6 +234,35 @@ const opensAffirmedClause = (scope: string): boolean => {
   const opening = [...scope.matchAll(NEW_SUBJECT_CLAUSE)].at(-1)
   if (opening === undefined) return false
   return !CLAUSE_NEGATION.test(scope.slice(opening.index + 1))
+}
+
+/** A verb that takes a whole list as its object: "denies fever, chest pain, cough". */
+const LIST_DENIAL = /\b(?:deny|denies|denied)\b/i
+
+/** How a list under one denial joins its last item: "no fever, cough or chest pain". */
+const LIST_JOIN = /\b(?:or|nor|atau)\b/i
+
+/**
+ * Does a comma end the denial before the match (#423)? "No fever, breathless
+ * since morning." denies the fever and reports the breathlessness, and #398
+ * ended the reach only where the clause after the comma had a subject.
+ *
+ * The clause after the last comma leaves the denial unless it reads as more of
+ * the denied list: it carries a negation of its own ("no fever, no chest
+ * pain"), the denial is a verb that takes a list ("denies fever, chest pain"),
+ * or the clause joins its items with "or" ("no fever, cough or chest pain").
+ * Every other case used to be suppressed and now fires, so this can only turn
+ * a suppression into a fire.
+ */
+const leavesDenialAtComma = (text: string, matchIndex: number, scope: string): boolean => {
+  const comma = scope.lastIndexOf(',')
+  if (comma === -1) return false
+  const head = scope.slice(0, comma)
+  const rest = text.slice(matchIndex).match(/^[^,.;!?]*/)?.[0] ?? ''
+  const clause = scope.slice(comma + 1) + rest
+  if (CLAUSE_NEGATION.test(clause)) return false
+  if (LIST_DENIAL.test(head)) return false
+  return !LIST_JOIN.test(clause)
 }
 
 /**

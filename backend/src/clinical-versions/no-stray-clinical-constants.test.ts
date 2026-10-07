@@ -41,6 +41,10 @@ const VERSIONED_DATA_FILES = [
   // Recogniser priming, stamped as its own artefact (`ASR_VOCABULARY_VERSION`).
   // Its drug words are spoken forms to listen for, never a rule anything reads.
   'backend/src/lib/asr/vocabulary.ts',
+  // The sore-throat score's items and points, stamped `SORE_THROAT_SCORE_VERSION`
+  // (#221). It carries no threshold, so it names the score without taking a
+  // side where the two sources disagree.
+  'backend/src/calculators/sore-throat-score.ts',
 ]
 
 const SCANNED_TREES = [

@@ -47,6 +47,7 @@ import {
   recordAuditEvent,
   type TranscriptCleanupFailureReason,
 } from '../audit/index.js'
+import { scoresFor } from '../calculators/index.js'
 import {
   type ClinicalProfile,
   DEFAULT_PROFILE_ID,
@@ -468,6 +469,10 @@ async function runAnalysis(
     evaluateRedFlags(transcript, profile.redFlagTriggers),
   )
 
+  // Like the rules, read from the raw transcript in-process and never sent
+  // anywhere (#221). The doctor completes and scores it; nothing reads it back.
+  const scores = scoresFor(transcript, profile.id)
+
   const [noteResult, { retrieved, result: suggestionResult }] = await Promise.all([
     // Not wrapped in a stage of its own: `analyseNote` times its two concurrent
     // calls separately, as `extraction` and `note_generation` (#340). One timer
@@ -592,6 +597,7 @@ async function runAnalysis(
     // is the conflation this flag exists to prevent (docs/trd.md §19 row 7).
     outOfScope: suggestionResult.outOfScope,
     ...(retrieved.length === 0 ? {} : { retrievedGuidelines: retrieved }),
+    ...(scores.length === 0 ? {} : { scores }),
     // Built from the post-evidence-check facts, so every link is a span that
     // survived §21.4 rather than one the model asserted. Checklist fields only:
     // the note is independent prose and has no traceable provenance (#10).

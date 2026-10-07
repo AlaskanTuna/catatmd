@@ -353,7 +353,7 @@ function AttributionSource({ chunk }: { chunk: GuidelineChunk }) {
   )
 }
 
-function SourcesPanel({
+export function SourcesPanel({
   guidelineIds,
   guidelines,
   gapSource,

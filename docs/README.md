@@ -94,6 +94,7 @@ Five pressures follow, each measured rather than asserted:
 | **Deterministic red-flag detection** the model can never suppress or downgrade                                                                                                | Nothing systematically checking danger signs         |
 | **Clinical suggestions carrying real, inspectable citations**                                                                                                                 | Justifying decisions on a record that gets audited   |
 | **A review copilot that answers about the record** and proposes edits as cards it cannot apply itself                                                                         | Reviewing 32 notes a day without moving the decision |
+| **A sore-throat score the doctor completes**, with what the transcript plainly said offered but never selected, cited to MOH's guideline and never interpreted                | Justifying decisions on a record that gets audited   |
 | **Review, edit, and explicit approval** before anything is final                                                                                                              | The doctor stays the author, and stays responsible   |
 
 Every field above is **extraction, not generation**: each carries a verbatim span from the transcript, and anything the consultation never raised resolves to `NOT_ASSESSED` rather than being quietly filled in. Acceptance criteria for each capability live in `docs/prd.md` §9.
