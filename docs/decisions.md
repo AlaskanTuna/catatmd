@@ -476,3 +476,40 @@ The same two-way translation now pairs English with Mandarin (`zh`) or Tamil (`t
 | **Names**                              | Mandarin translation spells a name in Pinyin ("Chen", not "Tan"), so thirty common Pinyin surnames join the gazetteer, leaving out any that are also an English or Malay word                                                                                                                                                                                                                           |
 | **Cantonese**                          | Not a pair of its own. Chinese-script speech the recogniser tags as anything but `zh` is still kept out of `turn.text`: its English is used if a translation arrives, and otherwise the turn reads as untranslated                                                                                                                                                                                      |
 | **Who authorised it**                  | @AlaskanTuna, 2026-10-06, for these two languages on ambient capture and nothing else                                                                                                                                                                                                                                                                                                                   |
+
+---
+
+## D-009: Which Language Takes Which Capture Path, And What Is Not Supported
+
+|            |                                                                         |
+| ---------- | ----------------------------------------------------------------------- |
+| **Date**   | 2026-10-07                                                              |
+| **Status** | Adopted                                                                 |
+| **Issues** | #218, #418                                                              |
+| **Builds** | §20.10 "Measured 07/10/26" in `docs/trd.md`, which supplies the numbers |
+
+### Decision
+
+Each language goes to the path below, and Cantonese is stated as not supported on the Record tab rather than left to fail quietly.
+
+| Language               | Path                                                    | Measured on that path (synthetic voices, `docs/trd.md` §20.10)            |
+| ---------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------- |
+| English, Manglish      | Ambient Auto-Detect, or on-device press-to-record       | English measured elsewhere (§20.1); not re-run here                       |
+| Malay                  | Ambient Auto-Detect, or the ILMU relay                  | 9.4% WER                                                                  |
+| Mandarin               | Ambient Auto-Detect, or translated with English (D-008) | 6.5% CER                                                                  |
+| Tamil                  | Ambient Auto-Detect, or translated with English (D-008) | 8.2% WER                                                                  |
+| Urdu, Bengali          | Translated with English only (D-008)                    | Wire and red flags only (#389)                                            |
+| **Cantonese**          | **Not supported.** The Record tab says so               | 62.5% CER, recognised as Mandarin; the real-time API refuses a `yue` hint |
+| Other Chinese dialects | Not supported, unmeasured                               | None                                                                      |
+
+### Why
+
+- **Tamil changed sides.** #218's 05/09/26 run found Tamil unusable (71.8% WER) on `qwen3-asr-flash`, which does not list it. Ambient capture moved to Soniox on 06/09/26 (§20.10), and Tamil on the production config now reads at 8.2%. The vendor fork #218 asked for is answered by the provider already in place, so no second vendor is needed for it.
+- **Cantonese did not.** Synthetic Cantonese came back as Mandarin-script text with the clinical content wrong ("我可做生意了" for "我咳咗三日喇"). Part of the 62.5% is the traditional-to-simplified script swap, but not most of it. The vendor's dialect support is not reachable from the real-time endpoint without the hint it refuses.
+
+### What This Decision Does Not License
+
+- **No accuracy claim to a client.** Every number above is synthetic text-to-speech, two voices, six read lines per language. Real consulting-room speech, Malaysian varieties of Tamil and Mandarin, and code-switching remain unmeasured.
+- **No new egress, surface or language pair.** This records where existing paths already send each language. Translation pairs stay governed by D-008.
+- **No claim that Mandarin or Tamil is de-identified.** On Auto-Detect, a name spoken in either reaches the model in its own script. That gap is #418, pinned as known-bad in `deid.test.ts`, and stays open until it is decided.
+- **Who recorded it:** @AlaskanTuna's issue triage of 2026-10-07, stating routing already in production plus one sentence of on-screen copy.

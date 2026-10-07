@@ -1,6 +1,6 @@
 import type { Transcript } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { FIXTURES } from '../fixtures/index.js'
+import { FIXTURES, LANGUAGE_SAMPLES } from '../fixtures/index.js'
 import { MEDICATION_LEXICON } from '../medications/lexicon.js'
 import { detect } from './detectors.js'
 import { GIVEN_NAMES, HONORIFICS, NAME_STOPWORDS } from './gazetteer.js'
@@ -1196,4 +1196,25 @@ describe('SCRIPT, the detector for script the gate cannot otherwise read', () =>
     expect(deidentify('IC ৯০০১০১-১৪-৫৬৭৮ on file.').text).toBe('IC [SCRIPT_1] on file.')
     expect(deidentify('SpO2 was ۹۵%').text).toBe('SpO2 was [SCRIPT_1]%')
   })
+})
+
+describe('Mandarin, Tamil and Cantonese speech at the gate (#218)', () => {
+  it.each(LANGUAGE_SAMPLES.map((sample) => [sample.language, sample] as const))(
+    'carries %s clinical speech to the model unchanged',
+    (_language, sample) => {
+      for (const line of sample.lines) expect(deidentify(line).text).toBe(line)
+    },
+  )
+
+  /*
+   * KNOWN BAD, pinned deliberately (#418). No detector reads Chinese or Tamil
+   * script, and SCRIPT leaves both alone so the note can read them, so a name
+   * spoken in either reaches the model as said. Flip this when #418 lands.
+   */
+  it.each(LANGUAGE_SAMPLES.map((sample) => [sample.language, sample] as const))(
+    'still passes a %s name written in its own script',
+    (_language, sample) => {
+      expect(deidentify(sample.introduction.text).text).toContain(sample.introduction.name)
+    },
+  )
 })

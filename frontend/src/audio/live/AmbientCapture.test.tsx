@@ -1004,6 +1004,7 @@ describe('translation', () => {
     renderAmbient()
     await settle()
     expect(screen.getByText(/detects english, malay, mandarin and tamil/i)).toBeTruthy()
+    expect(screen.getByText(/cantonese is not supported/i)).toBeTruthy()
 
     await choose('Urdu (Translated)')
 

@@ -813,7 +813,7 @@ export function AmbientCapture({
           />
           <p className="text-ink-muted text-xs">
             {translation === null
-              ? 'Detects English, Malay, Mandarin and Tamil, even when mixed in one sentence. No translation.'
+              ? 'Detects English, Malay, Mandarin and Tamil, even when mixed in one sentence. Cantonese is not supported. No translation.'
               : 'Both of you see each line with its translation. Translations are machine-generated. Check anything important with the patient.'}
           </p>
         </div>
