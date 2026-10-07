@@ -1,5 +1,6 @@
 import type { PrescriptionLine } from '@shared/types'
 import { describe, expect, it } from 'vitest'
+import { lexiconFor } from './lexicon.js'
 import { parsePrescriptionLines } from './lines.js'
 
 /**
@@ -97,6 +98,113 @@ describe('parsePrescriptionLines', () => {
       'paracetamol 350 mg',
       'antibiotic 200 mg',
     ])
+  })
+
+  it('cuts where a look-alike reading reaches back over the boundary', () => {
+    // The matcher also reads "day. Amoxicillin" as a far look-alike of
+    // doxycycline. Treated as a name, that window hid the full stop, and
+    // paracetamol's frequency went to amoxicillin, ticked.
+    for (const stop of ['.', ',']) {
+      const lines = read(`Paracetamol 1 g, 4 times a day${stop} Amoxicillin 500 mg, 3 times a day.`)
+
+      expect(lines).toMatchObject([
+        { drug: 'paracetamol', sig: { dose: '1 g', frequency: 'four-times-daily' } },
+        { drug: 'amoxicillin', sig: { dose: '500 mg', frequency: 'three-times-daily' } },
+      ])
+      expect(lines).toHaveLength(2)
+    }
+  })
+
+  it("keeps each drug's own sig whichever two drugs sit side by side", () => {
+    // A look-alike reading depends on which names are adjacent, so every pair
+    // is read: "day. Amoxicillin" was the one that reached back, 28 times.
+    const generics = lexiconFor(URTI)
+      .map(({ generic }) => generic)
+      .filter((generic) => !generic.includes('-'))
+    const wrong: string[] = []
+    for (const first of generics) {
+      for (const second of generics) {
+        if (first === second) continue
+        const text = `${first}, 500 mg, once a day. ${second}, 20 mg, at night.`
+        const lines = read(text)
+        const right =
+          lines.length === 2 &&
+          lines[0]?.drug === first &&
+          lines[0].sig.dose === '500 mg' &&
+          lines[0].sig.frequency === 'once-daily' &&
+          lines[1]?.drug === second &&
+          lines[1].sig.dose === '20 mg' &&
+          lines[1].sig.frequency === 'at-night'
+        if (!right) wrong.push(text)
+      }
+    }
+    expect(wrong).toEqual([])
+  }, 30_000)
+
+  it('reads no name from a look-alike heard over the sig words before a boundary', () => {
+    // "a day, Brufen" also reads as ibuprofen. As a name it took "a day" from
+    // amoxicillin, which was left with "three times" and no frequency.
+    expect(read('Amoxicillin three times a day, Brufen 400 mg')).toMatchObject([
+      { text: 'Amoxicillin three times a day', drug: 'amoxicillin', exact: true },
+      { text: 'Brufen 400 mg', drug: null, sig: { dose: '400 mg' } },
+    ])
+  })
+
+  it('reads no name from a window of sig words alone', () => {
+    // "10 mg sekali" also reads as a far look-alike of amoxicillin-clavulanate,
+    // which made it a drug line and left cetirizine with no sig.
+    expect(read('cetirizine 10 mg sekali sehari waktu malam')).toMatchObject([
+      { drug: 'cetirizine', exact: true, sig: { dose: '10 mg', frequency: 'once-daily' } },
+    ])
+  })
+
+  it('keeps a name heard in short fragments', () => {
+    // Each fragment is shorter than a name, but together they read as ibuprofen.
+    expect(read('Paracetamol prn, ibu pro fen 400 mg')).toMatchObject([
+      { drug: 'paracetamol', sig: { dose: null } },
+      { drug: 'ibuprofen', sig: { dose: '400 mg' } },
+    ])
+  })
+
+  it('never gives a dose to the drug before when a name sits beside it', () => {
+    // Brufen is a brand, outside the lexicon, so only the words around the dose
+    // show that it is not paracetamol's.
+    for (const text of [
+      'Paracetamol, plus 400 mg Brufen tds',
+      'Paracetamol, then 400 mg of Brufen tds',
+      'Paracetamol three times a day, for 7 days Brufen 400 mg',
+      'Paracetamol, after food Brufen 400 mg',
+    ]) {
+      const lines = read(text)
+
+      expect(lines[0]).toMatchObject({ drug: 'paracetamol', sig: { dose: null } })
+      // Unticked: unnamed, or "of Brufen" heard as a near-match of ibuprofen.
+      expect(lines[1]).toMatchObject({ exact: false, sig: { dose: '400 mg' } })
+    }
+    // What follows the dose further on is not a name: an indication stays.
+    expect(read('Paracetamol, 1 g as needed for fever')).toMatchObject([
+      { drug: 'paracetamol', sig: { dose: '1 g' } },
+    ])
+    // Nor is a word the sig reads, beside the dose or before it.
+    for (const text of [
+      'Cetirizine, 10 mg nocte',
+      'Cetirizine, 10 mg waktu malam',
+      'Cetirizine, nocte 10 mg',
+      'Paracetamol, 1 g bersama makanan',
+      'Paracetamol, 1 g secara oral',
+    ]) {
+      expect(read(text)).toMatchObject([{ exact: true, sig: { dose: expect.any(String) } }])
+      expect(read(text)).toHaveLength(1)
+    }
+  })
+
+  it('holds a dose said after a joining word with no name', () => {
+    for (const text of ['Paracetamol, plus 400 mg', 'Paracetamol, also 400 mg']) {
+      expect(read(text)).toMatchObject([
+        { drug: 'paracetamol', sig: { dose: null } },
+        { drug: null, sig: { dose: '400 mg' } },
+      ])
+    }
   })
 
   it('never gives a dose to a drug that a different name was said before', () => {

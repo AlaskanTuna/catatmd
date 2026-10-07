@@ -127,6 +127,32 @@ function clustersOf(candidates: readonly MedicationCandidate[]): Cluster[] {
   return clusters.sort((a, b) => a.start - b.start)
 }
 
+/**
+ * Whether a reading is a name heard. A window of the sig's words alone is not
+ * one: "10 mg sekali" also reads as amoxicillin-clavulanate. Nor is a window
+ * reaching back over a boundary from the sig's words before it: "day.
+ * Amoxicillin" also reads as doxycycline, and "a day, Brufen" as ibuprofen.
+ * Kept, each took a sig from the drug it belonged to. A name a boundary falls
+ * inside, as "amoxicillin and clavulanic" is, has a name before it.
+ */
+function heardAsName(text: string, reading: Span): boolean {
+  const part = slice(text, reading)
+  if (!hearsFragment(part)) return false
+  for (const match of part.matchAll(BOUNDARY)) {
+    if (!hearsFragment(part.slice(0, match.index))) return false
+  }
+  return true
+}
+
+/**
+ * `namesWord` at the length of a fragment rather than a name, because the
+ * recogniser can split one: "ibu pro fen" is ibuprofen in three short words.
+ */
+function hearsFragment(part: string): boolean {
+  const words = part.toLowerCase().match(/\p{L}+/gu) ?? []
+  return words.some((word) => word.length >= 3 && !SIG_STOPWORDS.has(word) && !FILLER.has(word))
+}
+
 function clausesOf(text: string, clusters: readonly Cluster[]): Span[] {
   const clauses: Span[] = []
   let cursor = 0
@@ -168,6 +194,27 @@ function namesWord(part: string): boolean {
 }
 
 const namesSomething = (text: string, span: Span) => namesWord(slice(text, span))
+
+/**
+ * Whether a dosed clause names something beside its dose: a word the sig did
+ * not read before it, or straight after it, as Brufen is in "for 7 days Brufen
+ * 400 mg" and "plus 400 mg Brufen". Further on is left alone, so "1 g as
+ * needed for fever" names nothing, and so is a dosage form. A count in puffs
+ * has no dose to stand beside, so only its opening is read.
+ */
+function namesBesideDose(text: string, span: Span): boolean {
+  const part = slice(text, span)
+  const { doseAt, claims } = parseSigWithSpan(part)
+  if (doseAt === null) return opensOnAnotherName(text, span)
+  // Blanked rather than cut, so the dose's offsets still hold: "nocte" and
+  // "secara oral" are the sig's even where no stopword lists them.
+  const unread = claims.reduce(
+    (out, { start, end }) => out.slice(0, start) + ' '.repeat(end - start) + out.slice(end),
+    part,
+  )
+  const next = /^\s*(?:of\s+)?(\p{L}+)/iu.exec(unread.slice(doseAt.end))?.[1] ?? ''
+  return namesWord(unread.slice(0, doseAt.start)) || (namesWord(next) && !FORM.test(next))
+}
 
 /**
  * Whether a clause opening on a shared word speaks for every line. Only when
@@ -258,14 +305,15 @@ function cut(text: string, clusters: readonly Cluster[]): Item[] {
     if (dosed(text, clause)) {
       /*
        * A dose joins a drug still waiting for one, unless something else was
-       * named in between: in "Paracetamol, Brufen, 400 mg" the 400 mg is
-       * Brufen's, and paracetamol's dose stays empty rather than inherited.
+       * named in between or beside it: in "Paracetamol, Brufen, 400 mg" the
+       * 400 mg is Brufen's, and paracetamol's dose stays empty rather than
+       * inherited.
        */
       if (
         current?.kind === 'drug' &&
         before === null &&
         !dosed(text, current) &&
-        !opensOnAnotherName(text, clause)
+        !namesBesideDose(text, clause)
       ) {
         return extend(current, clause)
       }
@@ -385,7 +433,10 @@ export function parsePrescriptionLines(
   profileId?: ProfileId,
   candidates: readonly MedicationCandidate[] = matchMedication(text, profileId),
 ): PrescriptionLine[] {
-  const items = cut(text, clustersOf(candidates))
+  const items = cut(
+    text,
+    clustersOf(candidates.filter((candidate) => heardAsName(text, candidate))),
+  )
 
   const shared = items
     .filter(({ kind }) => kind === 'shared')

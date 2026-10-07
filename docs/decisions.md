@@ -131,6 +131,14 @@ Section 11's intended-purpose statement already describes exactly this, and is *
 | "Cefuroxime, cefixime 200 mg twice a day"       | Merged as one cefuroxime line with 200 mg | Two lines; the look-alike is a near-match that needs a decision     |
 | "amoxicillin three times a day 1 g paracetamol" | Both ticked, 1 g on amoxicillin           | Neither ticked, because whose dose it is is a guess                 |
 
+**A dictation benchmark on 2026-10-07 found three more,** running accented synthetic speech through the production recogniser. Each is fixed and pinned by a test:
+
+| Dictation, as the recogniser wrote it                                | Was                                                                                    | Now                                                                                                                          |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| "Paracetamol 1 g, 4 times a day. Amoxicillin 500 mg, 3 times a day." | Paracetamol's frequency on amoxicillin, ticked; amoxicillin's an unnamed line          | Each frequency on its own drug. "day. Amoxicillin" also reads as doxycycline, and that reading no longer hides the full stop |
+| "cetirizine 10 mg sekali sehari waktu malam"                         | Cetirizine empty and unticked, beside an amoxicillin-clavulanate line holding its dose | One cetirizine line, ticked. A reading of sig words alone is not a name                                                      |
+| "Paracetamol three times a day, for 7 days Brufen 400 mg"            | 400 mg on paracetamol, ticked, and Brufen gone                                         | An unnamed line for "for 7 days Brufen 400 mg"; paracetamol's dose left empty                                                |
+
 **One known gap stays.** A brand with no dose and no repeated field, as in "amoxicillin 500 mg, Panadol four times a day", still joins the line before it. That line's quote shows it.
 
 **The box is read again about 0.6 s after the doctor stops editing it**, and the Check button is gone. Fields the doctor changed are kept across reads, keyed by drug rather than by offset. Confirm is held while the table is behind the text.
