@@ -75,3 +75,32 @@ describe('a comma followed by a new subject ends a denial (#398)', () => {
     expect(ruleIds(text)).not.toContain(trigger)
   })
 })
+
+describe('a comma ends a denial before a clause that does not deny (#423)', () => {
+  it.each([
+    ['significant-dyspnoea', 'No fever, breathless since morning.'],
+    ['significant-dyspnoea', 'No fever, very short of breath since this morning.'],
+    ['haemoptysis', 'No cough, coughing up blood since yesterday.'],
+    ['chest-pain', 'No fever, chest pain when I walk.'],
+    ['chest-pain', 'No fever, no cough, chest pain since morning.'],
+    ['chest-pain', 'Tiada demam, sakit dada sejak pagi.'],
+  ])('%s fires on "%s"', (trigger, text) => {
+    expect(ruleIds(text)).toContain(trigger)
+  })
+
+  it.each([
+    // A list under one denial joins its last item with "or", "nor" or "atau".
+    ['chest-pain', 'No fever, cough or chest pain.'],
+    ['chest-pain', 'No fever, chest pain or cough.'],
+    ['significant-dyspnoea', 'No fever, chest pain, nor shortness of breath.'],
+    ['chest-pain', 'Tiada demam, batuk atau sakit dada.'],
+    // A denying verb takes a whole list.
+    ['chest-pain', 'Denies fever, chest pain, shortness of breath.'],
+    ['significant-dyspnoea', 'Denies fever, chest pain, shortness of breath.'],
+    ['chest-pain', 'Patient denied fever, chest pain.'],
+    // Each item denied on its own.
+    ['chest-pain', 'No fever, no chest pain, no cough.'],
+  ])('%s stays silent on "%s"', (trigger, text) => {
+    expect(ruleIds(text)).not.toContain(trigger)
+  })
+})
