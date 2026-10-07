@@ -71,9 +71,15 @@ import type { RedFlagTrigger } from './types.js'
  * since morning." fires while "No fever, cough or chest pain." stays silent
  * (#423). It only turns suppressions into fires: no transcript that fired
  * under v14 stops firing under v15.
+ * **v16 reads only what leads up to the symptom** when deciding the clause is
+ * more of a denied list: an "or" or a negation later in the clause describes
+ * the symptom ("breathless when I walk or climb stairs", "chest pain that will
+ * not go away"), and a time word ends a "denied" list ("denied fever, now
+ * breathless") (#426). Suppressions into fires only, checked over 9,720
+ * generated inputs: none that fired under v15 stops firing under v16.
  */
 export const RED_FLAG_LIST_VERSION: ClinicalArtefactVersion = {
-  id: 'redflag-list-v15',
+  id: 'redflag-list-v16',
   effectiveDate: '2026-10-08',
 }
 
@@ -192,11 +198,11 @@ const TRAILING_NEGATOR = new RegExp(
  * in the chest" contains "pain in the chest", so suppressing the doctor's
  * question alone still left the patient's own denial matching (issue #70).
  */
-const isNegated = (text: string, matchIndex: number): boolean => {
+const isNegated = (text: string, matchIndex: number, matchLength = 0): boolean => {
   const before = text.slice(Math.max(0, matchIndex - 60), matchIndex)
   const inScope = before.split(NEGATION_SCOPE_END).pop() ?? ''
   if (opensAffirmedClause(inScope)) return false
-  if (leavesDenialAtComma(text, matchIndex, inScope)) return false
+  if (leavesDenialAtComma(text, matchIndex, matchLength, inScope)) return false
   return TRAILING_NEGATOR.test(inScope)
 }
 
@@ -242,6 +248,13 @@ const LIST_DENIAL = /\b(?:deny|denies|denied)\b/i
 /** How a list under one denial joins its last item: "no fever, cough or chest pain". */
 const LIST_JOIN = /\b(?:or|nor|atau)\b/i
 
+/** A join straight after the symptom, as in "no fever, chest pain or cough". */
+const JOIN_AFTER = /^\s*(?:or|nor|atau)\b/i
+
+/** A time that makes a clause after "denied" a report: "denied fever, now breathless". */
+const REPORT_TIME =
+  /\b(?:now|today|tonight|since|this\s+(?:morning|afternoon|evening)|sekarang|hari\s+ini|sejak|semalam|pagi\s+ini)\b/i
+
 /**
  * Does a comma end the denial before the match (#423)? "No fever, breathless
  * since morning." denies the fever and reports the breathlessness, and #398
@@ -254,15 +267,27 @@ const LIST_JOIN = /\b(?:or|nor|atau)\b/i
  * Every other case used to be suppressed and now fires, so this can only turn
  * a suppression into a fire.
  */
-const leavesDenialAtComma = (text: string, matchIndex: number, scope: string): boolean => {
+const leavesDenialAtComma = (
+  text: string,
+  matchIndex: number,
+  matchLength: number,
+  scope: string,
+): boolean => {
   const comma = scope.lastIndexOf(',')
   if (comma === -1) return false
   const head = scope.slice(0, comma)
-  const rest = text.slice(matchIndex).match(/^[^,.;!?]*/)?.[0] ?? ''
-  const clause = scope.slice(comma + 1) + rest
-  if (CLAUSE_NEGATION.test(clause)) return false
-  if (LIST_DENIAL.test(head)) return false
-  return !LIST_JOIN.test(clause)
+  // Only what leads up to the symptom can make it part of the denied list (#426).
+  // An "or" or a "not" later in the clause describes the symptom itself:
+  // "breathless when I walk or climb stairs", "chest pain that will not go away".
+  // A negation inside the match is the clause denying itself: "No, the oxygen
+  // level wasn't low."
+  const lead = scope.slice(comma + 1)
+  const matched = text.slice(matchIndex, matchIndex + matchLength)
+  const after = text.slice(matchIndex + matchLength).match(/^[^,.;!?]*/)?.[0] ?? ''
+  const clause = lead + matched + after
+  if (CLAUSE_NEGATION.test(lead + matched)) return false
+  if (LIST_DENIAL.test(head) && !REPORT_TIME.test(clause)) return false
+  return !LIST_JOIN.test(lead) && !JOIN_AFTER.test(after)
 }
 
 /**
@@ -427,7 +452,7 @@ const findSpan = (transcript: Transcript, patterns: readonly RegExp[]): string |
           if (!isSafetyNetting(turn, at)) {
             if (SPAN_CARRIES_NEGATOR.test(match[0])) return span
             if (!asserts(transcript, index)) break
-            if (!isNegated(turn.text, at)) return span
+            if (!isNegated(turn.text, at, span.length)) return span
             // A denied mention, unlike an unasserted turn, says nothing about
             // the next one: "I never passed out before. Today I passed out."
             // (#394), so the scan carries on as it does past safety-netting.

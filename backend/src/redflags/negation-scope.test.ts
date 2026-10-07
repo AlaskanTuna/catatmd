@@ -104,3 +104,30 @@ describe('a comma ends a denial before a clause that does not deny (#423)', () =
     expect(ruleIds(text)).not.toContain(trigger)
   })
 })
+
+describe('a report after a comma is not a list just because it says "or" or "not" (#426)', () => {
+  it.each([
+    ['significant-dyspnoea', 'No fever, breathless when I walk or climb stairs.'],
+    ['chest-pain', 'No fever, chest pain whether I sit or stand.'],
+    ['haemoptysis', 'No fever, coughed up blood once or twice.'],
+    ['significant-dyspnoea', 'Tiada demam, sesak nafas sejak pagi atau petang.'],
+    ['chest-pain', 'No fever, chest pain that will not go away.'],
+    ['chest-pain', 'Tiada demam, sakit dada tak hilang.'],
+    ['significant-dyspnoea', 'Denied fever, now breathless.'],
+    ['haemoptysis', 'He denied fever, coughing up blood today.'],
+  ])('%s fires on "%s"', (trigger, text) => {
+    expect(ruleIds(text)).toContain(trigger)
+  })
+
+  it.each([
+    // Still lists under the one denial.
+    ['chest-pain', 'No fever, cough or chest pain.'],
+    ['chest-pain', 'No fever, chest pain or cough.'],
+    ['chest-pain', 'Tiada demam, batuk atau sakit dada.'],
+    ['chest-pain', 'Denies fever, chest pain, shortness of breath.'],
+    ['chest-pain', 'No fever, no chest pain.'],
+    ['chest-pain', "No, I don't have chest pain."],
+  ])('%s stays silent on "%s"', (trigger, text) => {
+    expect(ruleIds(text)).not.toContain(trigger)
+  })
+})
