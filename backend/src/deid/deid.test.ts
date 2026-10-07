@@ -526,6 +526,35 @@ describe('a name is not cut where a long capitalised run splits (#416)', () => {
     expect(text.match(/\[PATIENT_\d+\]/g)).toHaveLength(1)
   })
 
+  it.each([
+    ['Seen By Nurse Siti Encik Zarul Damia Qaseh today.', /Siti|Zarul|Damia|Qaseh/],
+    ['Kopi Teh Nasi Siti Dr Zarul Damia Qaseh came.', /Siti|Zarul|Damia|Qaseh/],
+    ['Siti Kopi Dr Zarul Damia came.', /Siti|Zarul|Damia/],
+  ])('keeps what a longer span leaves uncovered at the end of %j', (sentence, name) => {
+    // A shorter span losing to a longer one kept only its uncovered prefix
+    // (#183). Its uncovered end is a name element just as often.
+    expect(deidentify(sentence).text).not.toMatch(name)
+  })
+
+  it("anchors on a known name with a possessive on it, as in Siti's", () => {
+    expect(deidentify("Siti's cough is worse.").text).not.toMatch(/Siti/)
+  })
+
+  it('scans a long run of hyphen-ended words in linear time', () => {
+    const started = performance.now()
+    detect('A- '.repeat(40_000))
+    expect(performance.now() - started).toBeLessThan(1_000)
+  })
+
+  it('takes up to three words a side into the token, which costs a Title-Cased header', () => {
+    // The price of covering a four-word name wherever its run starts. Main lost
+    // the four words sharing a fixed window with the known name; this loses up
+    // to three each side of it. `Low` is a surname, so headers meet it.
+    expect(
+      deidentify('Assessment Acute Upper Respiratory Tract Infection Low Risk Features').text,
+    ).toBe('Assessment Acute Upper [PATIENT_1]')
+  })
+
   it('reaches no further than three words from the known name', () => {
     expect(deidentify('Kopi Teh Nasi Roti Siti came.').text).toMatch(
       /^Kopi \[PATIENT_\d+\] came\.$/,
