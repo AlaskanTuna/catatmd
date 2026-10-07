@@ -3321,6 +3321,7 @@ One patient sentence per trigger, in each language, run through the real engine:
 - `context.translation_terms` for clinical terms, measured before adoption.
 - ~~#394, a denied first mention silencing a later genuine one in the same turn, found in review of #390.~~ Fixed in `redflag-list-v14`, with #398, the comma that never ended a denial.
 - ~~#423, a denial reaching past a comma into a clause with no subject ("No fever, breathless since morning"), found in review of #221.~~ Fixed in `redflag-list-v15`.
+- ~~#426, an "or", a negation or "denied" keeping a report after a comma inside the denial, found in review of #424.~~ Fixed in `redflag-list-v16`.
 
 #### Provenance Of The Sources In This Section
 
