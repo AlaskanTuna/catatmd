@@ -1172,3 +1172,37 @@ describe('translated pairs across the textarea', () => {
     expect(turns[3]?.otherLanguage?.text).toBe('হ্যাঁ, অনেক।')
   })
 })
+
+/*
+ * Nothing on the Record tab is saved until the doctor submits, and no clinical
+ * text may go to web storage, so the browser's leave-page prompt is what stands
+ * between a stray reload and a lost consultation (#256, D-010).
+ */
+describe('leaving the page with an unsaved transcript', () => {
+  const leave = () => {
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  }
+
+  it('asks the browser to confirm while a transcript is unsaved', () => {
+    setup()
+    expect(leave()).toBe(true)
+  })
+
+  it('lets the page go when there is nothing to lose', () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <CapturePanel
+            {...consultationCaptureProps()}
+            onCapture={vi.fn()}
+            saving={false}
+            error={null}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    expect(leave()).toBe(false)
+  })
+})

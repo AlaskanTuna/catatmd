@@ -3121,7 +3121,7 @@ Vendor statements, read 06/09/26 and **unverified by us**: real-time audio and t
 - The provider's own speaker turns as input to the labelling pass, instead of flat prose. Partly done: since #388 the voices vote the drafted roles afterwards (below).
 - Safari and iOS verification of `MediaRecorder` output over `audio_format: 'auto'`.
 - A spend cap. The per-session bound does not substitute for one, because a key opens several sessions, and this is the follow-up worth doing before real audio.
-- Session resumption remains #256 and remains unbuilt. A dropped socket keeps everything already settled and stops; the transcript still lives only in component state.
+- **Session resumption, built for a drop and not for a reload (#256, D-010).** A dropped socket is reopened on a fresh key while a second recorder queues the audio, at once and then after one and three seconds, bounded by 60 seconds held and by the minted `maxSessionSeconds` for the whole capture. The reopened socket's clock and speaker numbers restart, so its tokens are moved to where they fell (`fromConnection`) and its speakers are kept apart from the first socket's: the role vote picks a doctor within each connection, and the chip reads "Speaker 1 (reconnected)". The dropped socket's last utterance is closed with a boundary token, so a turn or a translation never spans the drop. The first recorder keeps running throughout, so the playback copy (#293) stays one container. A reload is guarded by the leave-page prompt only, and the transcript still lives only in component state until submitted.
 
 ---
 
@@ -3180,7 +3180,7 @@ Each window repeats the previous window's last closed segment. `findDeniedAbilit
 #### What This Does Not Do
 
 - **No spend cap**, per-actor or global. The two limiters bound a caller, not a bill. Same open gap as `hostedAsrRateLimit`.
-- **Nothing is persisted**, so a reload loses the live panes exactly as it loses the transcript. Session resumption is still #256.
+- **Nothing is persisted**, so a reload loses the live panes exactly as it loses the transcript. A dropped socket now reconnects; a reload is only guarded by the leave-page prompt (#256, D-010).
 - **The live pass is additive and advisory.** It can surface a flag earlier than Finish would; it can never remove one. `evaluateRedFlags` over the whole stored transcript at Finish stays the authoritative, persisted, audited run.
 
 ---

@@ -228,6 +228,21 @@ export function CapturePanel({
 
   const submit = () => submitText(text, source)
 
+  /*
+   * Nothing on this tab is saved until the doctor submits, and no clinical
+   * text may go to web storage, so a reload here loses the consultation (#256,
+   * `docs/decisions.md` D-010). The browser's own leave-page prompt is the
+   * whole of the protection, and it is raised only while there is something to
+   * lose: a live capture, or a transcript not yet submitted.
+   */
+  const unsaved = ambientLive || text.trim() !== ''
+  useEffect(() => {
+    if (!unsaved) return
+    const hold = (event: BeforeUnloadEvent) => event.preventDefault()
+    window.addEventListener('beforeunload', hold)
+    return () => window.removeEventListener('beforeunload', hold)
+  }, [unsaved])
+
   useEffect(() => {
     const node = audioDialog.current
     if (!audioOpen || !node) return

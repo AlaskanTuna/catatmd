@@ -2,7 +2,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { cn } from '../../lib/cn.js'
 import { UncertainLegend, UncertainText } from '../../ui/UncertainText.js'
 import { INTERPRETED_LANGUAGE_NAMES } from './bilingual.js'
-import type { LiveSegment } from './live-tokens.js'
+import { type LiveSegment, speakerNumber } from './live-tokens.js'
 
 /**
  * What a turn's chip names: a diarised speaker, or on a translated session
@@ -30,7 +30,9 @@ const directionOf = (code: string | null | undefined): 'rtl' | undefined =>
  * give. A line in no known language stays left, with no chip.
  */
 const onRight = (mode: ConversationMode, speaker: string | null): boolean =>
-  mode === 'languages' ? speaker !== null && speaker !== 'en' : speaker === '2'
+  mode === 'languages'
+    ? speaker !== null && speaker !== 'en'
+    : speaker !== null && speakerNumber(speaker) === '2'
 
 /**
  * The consultation as it is spoken, turn by turn (#219).
@@ -70,12 +72,16 @@ function SpeakerChip({ speaker, mode }: { speaker: string; mode: ConversationMod
       className={cn(
         'rounded-pill px-2 py-0.5 text-2xs font-medium',
         // Colour is redundant reinforcement; the word carries the meaning.
-        (mode === 'languages' ? onRight(mode, speaker) : speaker !== '1')
+        (mode === 'languages' ? onRight(mode, speaker) : speakerNumber(speaker) !== '1')
           ? 'bg-accent-soft text-accent'
           : 'bg-sunken text-ink-muted',
       )}
     >
-      {mode === 'languages' ? languageName(speaker) : `Speaker ${speaker}`}
+      {mode === 'languages'
+        ? languageName(speaker)
+        : // A reopened socket numbers voices afresh (#256), so its "Speaker 1"
+          // may be someone else, and says so.
+          `Speaker ${speakerNumber(speaker)}${speakerNumber(speaker) === speaker ? '' : ' (reconnected)'}`}
     </span>
   )
 }

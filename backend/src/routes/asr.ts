@@ -335,6 +335,7 @@ asrRouter.post('/live-sessions', requireSonioxConfigured, async (req, res) => {
       config,
       apiKey: session.apiKey,
       expiresAt: session.expiresAt,
+      maxSessionSeconds: MAX_SESSION_DURATION_SECONDS[mode],
     })
     if (!body.success) {
       throw new SonioxMintError('Minted session failed schema validation', 'unavailable')
