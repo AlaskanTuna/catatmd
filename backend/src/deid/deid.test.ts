@@ -504,6 +504,82 @@ describe('an unmarked name is caught wherever it sits in its run (#413)', () => 
   })
 })
 
+describe('a name is not cut where a long capitalised run splits (#416)', () => {
+  it.each([
+    ['Kopi Teh Nasi Zarul Ahmad came.', /Zarul|Ahmad/],
+    ['Said Wrote Asked Zarul Ahmad came.', /Zarul|Ahmad/],
+    ['Kopi Teh Nasi Siti Zarul came.', /Siti|Zarul/],
+    ['Kopi Teh Nasi Zarul Qaseh Ahmad came.', /Zarul|Qaseh|Ahmad/],
+  ])('tokenises every element of the name in %j', (sentence, name) => {
+    expect(deidentify(sentence).text).not.toMatch(name)
+  })
+
+  it('covers a four-word name whole wherever its run happens to start', () => {
+    const name = 'Zarul Qaseh Ahmad Damia'
+    for (const lead of ['', 'Kopi ', 'Kopi Teh ', 'Kopi Teh Nasi ', 'Kopi Teh Nasi Roti ']) {
+      expect(deidentify(`${lead}${name} came.`).text).not.toMatch(/Zarul|Qaseh|Ahmad|Damia/)
+    }
+  })
+
+  it('gives one person one token across the old run boundary', () => {
+    const { text } = deidentify('Kopi Teh Nasi Siti Aminah came.')
+    expect(text.match(/\[PATIENT_\d+\]/g)).toHaveLength(1)
+  })
+
+  it.each([
+    ['Seen By Nurse Siti Encik Zarul Damia Qaseh today.', /Siti|Zarul|Damia|Qaseh/],
+    ['Kopi Teh Nasi Siti Dr Zarul Damia Qaseh came.', /Siti|Zarul|Damia|Qaseh/],
+    ['Siti Kopi Dr Zarul Damia came.', /Siti|Zarul|Damia/],
+  ])('keeps what a longer span leaves uncovered at the end of %j', (sentence, name) => {
+    // A shorter span losing to a longer one kept only its uncovered prefix
+    // (#183). Its uncovered end is a name element just as often.
+    expect(deidentify(sentence).text).not.toMatch(name)
+  })
+
+  it.each([
+    ['Seen By Nurse\nSiti Qaseh came.', /Siti|Qaseh/],
+    ['Seen By Nurse\r\nSiti Qaseh came.', /Siti|Qaseh/],
+    ['Seen By Nurse\n\nSiti Qaseh came.', /Siti|Qaseh/],
+    ['Siti  Qaseh came.', /Siti|Qaseh|h came/],
+  ])('places the token on the name however %j spaces its words', (sentence, name) => {
+    // The span was rejoined with single spaces and found again by `indexOf`,
+    // which missed wherever the words were not one space apart.
+    expect(deidentify(sentence).text).not.toMatch(name)
+  })
+
+  it.each([
+    ['Siti Qa- Qaseh came.', /Qa-|Qaseh/],
+    ["Siti Firdaus' Qaseh came.", /Firdaus|Qaseh/],
+  ])('carries a run past a word ending in a hyphen or apostrophe in %j', (sentence, name) => {
+    expect(deidentify(sentence).text).not.toMatch(name)
+  })
+
+  it("anchors on a known name with a possessive on it, as in Siti's", () => {
+    expect(deidentify("Siti's cough is worse.").text).not.toMatch(/Siti/)
+  })
+
+  it('scans a long run of hyphen-ended words in linear time', () => {
+    const started = performance.now()
+    detect('A- '.repeat(40_000))
+    expect(performance.now() - started).toBeLessThan(1_000)
+  })
+
+  it('takes up to three words a side into the token, which costs a Title-Cased header', () => {
+    // The price of covering a four-word name wherever its run starts. Main lost
+    // the four words sharing a fixed window with the known name; this loses up
+    // to three each side of it. `Low` is a surname, so headers meet it.
+    expect(
+      deidentify('Assessment Acute Upper Respiratory Tract Infection Low Risk Features').text,
+    ).toBe('Assessment Acute Upper [PATIENT_1]')
+  })
+
+  it('reaches no further than three words from the known name', () => {
+    expect(deidentify('Kopi Teh Nasi Roti Siti came.').text).toMatch(
+      /^Kopi \[PATIENT_\d+\] came\.$/,
+    )
+  })
+})
+
 describe('context cues match words, not substrings (#159)', () => {
   it.each(['invoice', 'notice', 'receipt'])(
     'does not boost an invalid twelve-digit number near %s',

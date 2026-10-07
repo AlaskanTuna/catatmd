@@ -501,7 +501,13 @@ function detectMrn(text: string): Match[] {
 
 // ─── Person name ─────────────────────────────────────────────────────────────
 
-const CAPITALISED_RUN = /\b[A-Z][a-z'-]{1,}(?:\s+[A-Z][a-z'-]{1,}){0,3}\b/g
+// Each word ends on a letter. Ending on `[a-z'-]` let a word like `A-` fail
+// the trailing boundary and backtrack across the whole unbounded run, which is
+// quadratic in its length. A trailing hyphen or apostrophe goes in the
+// separator instead, so `Firdaus' Qaseh` stays one run.
+const CAPITALISED_RUN = /\b[A-Z][a-z'-]*[a-z](?:['-]?\s+[A-Z][a-z'-]*[a-z])*\b/g
+/** How many capitalised neighbours a known given name takes on each side (#416). */
+const NAME_REACH = 3
 const HONORIFIC_PATTERN = new RegExp(
   `\\b(?:${HONORIFICS.join('|')})\\.?\\s+([A-Z][A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+){0,3})`,
   'g',
@@ -593,7 +599,11 @@ const HONORIFIC_PHRASES = HONORIFICS.filter((h) => h.includes(' ')).map((h) =>
  * recall loss on the PHI boundary outranks a precision gain.
  */
 function trimNameSpan(value: string, start: number): { value: string; start: number } | null {
-  const words = value.split(/\s+/)
+  // Offsets come from the words themselves. Rejoining them with single spaces
+  // and searching for the result missed any span split by a line break or two
+  // spaces, and the token then landed on the dropped words instead (#416).
+  const spans = [...value.matchAll(/\S+/g)]
+  const words = spans.map((span) => span[0])
 
   let lead = 0
   let tail = words.length
@@ -616,9 +626,10 @@ function trimNameSpan(value: string, start: number): { value: string; start: num
   while (tail > lead && NAME_STOPWORDS.has(normalise(words[tail - 1] ?? ''))) tail--
   if (lead >= tail) return null
 
-  const trimmed = words.slice(lead, tail).join(' ')
-  const offset = value.indexOf(trimmed)
-  return { value: trimmed, start: start + (offset < 0 ? 0 : offset) }
+  const from = spans[lead]?.index ?? 0
+  const last = spans[tail - 1]
+  const to = (last?.index ?? 0) + (last?.[0].length ?? 0)
+  return { value: value.slice(from, to), start: start + from }
 }
 
 function detectNames(text: string): Match[] {
@@ -677,23 +688,64 @@ function detectNames(text: string): Match[] {
   //    of a name, "Today Siti Aminah", sent the whole name in cleartext. A word
   //    in front that is not a stopword stays inside the token, as #149 rules: it
   //    may be a name element the gazetteer does not know.
+  //
+  //    The run is read whole and the span centred on the known name (#416).
+  //    Cutting runs into fixed four-word pieces split a name wherever a piece
+  //    happened to end, sending the half without a known name in cleartext.
+  //    Three words a side is the least reach that covers any four-word name
+  //    wherever it sits, and it is bounded because a span taking the whole run
+  //    swallows a Title-Cased symptom header (#178). It still costs up to seven
+  //    words of a header where the fixed pieces cost four.
   for (const m of text.matchAll(CAPITALISED_RUN)) {
-    const run = m[0]
-    if (isStopword(run)) continue
-    const trimmed = trimNameSpan(run, m.index)
-    if (!trimmed) continue
-    const words = trimmed.value.split(/\s+/).map((word) => word.toLowerCase())
-    if (!words.some((word) => GIVEN_NAMES.has(word))) continue
-    out.push({
-      label: 'PATIENT',
-      start: trimmed.start,
-      end: trimmed.start + trimmed.value.length,
-      value: trimmed.value,
-      score: 0.6,
-    })
+    if (isStopword(m[0])) continue
+    for (const segment of nameSegments(m[0], m.index)) {
+      const trimmed = trimNameSpan(segment.value, segment.start)
+      if (!trimmed) continue
+      if (!trimmed.value.split(/\s+/).some(isGivenName)) continue
+      out.push({
+        label: 'PATIENT',
+        start: trimmed.start,
+        end: trimmed.start + trimmed.value.length,
+        value: trimmed.value,
+        score: 0.6,
+      })
+    }
   }
 
   return out.map(stripPossessive)
+}
+
+/** `Siti's` anchors as `Siti` does: the run takes the possessive into the word. */
+const isGivenName = (word: string) => GIVEN_NAMES.has(word.toLowerCase().replace(/'s?$/, ''))
+
+/**
+ * The stretches of a capitalised run within `NAME_REACH` words of a known given
+ * name, with overlapping stretches joined, so one person stays one span.
+ */
+function nameSegments(run: string, start: number): { value: string; start: number }[] {
+  const words = [...run.matchAll(/\S+/g)]
+  const covered = words.map(() => false)
+  words.forEach((word, i) => {
+    if (!isGivenName(word[0])) return
+    const to = Math.min(words.length, i + NAME_REACH + 1)
+    for (let j = Math.max(0, i - NAME_REACH); j < to; j++) covered[j] = true
+  })
+  const segments: { value: string; start: number }[] = []
+  let i = 0
+  while (i < words.length) {
+    if (!covered[i]) {
+      i++
+      continue
+    }
+    let j = i
+    while (j + 1 < words.length && covered[j + 1]) j++
+    const from = words[i]?.index ?? 0
+    const last = words[j]
+    const to = (last?.index ?? 0) + (last?.[0].length ?? 0)
+    segments.push({ value: run.slice(from, to), start: start + from })
+    i = j + 1
+  }
+  return segments
 }
 
 /**
@@ -757,7 +809,13 @@ const DETECTORS = [
  * is the trade this module states in `trimNameSpan`: a recall loss on the PHI
  * boundary outranks a precision gain.
  *
- * Full containment is unchanged: no uncovered prefix means the loser is
+ * **The uncovered end is kept the same way** (#416). An honorific span losing
+ * to a longer gazetteer span in `Nurse Siti Encik Zarul Damia Qaseh` kept
+ * nothing past the winner, so `Qaseh` reached the model. Any stretch of the
+ * loser outside every winner, at its start, between winners or at its end, now
+ * stays a match of its own.
+ *
+ * Full containment is unchanged: nothing uncovered means the loser is
  * dropped, which is what keeps the docstring reason above true.
  */
 function resolveOverlaps(matches: Match[]): Match[] {
@@ -772,14 +830,22 @@ function resolveOverlaps(matches: Match[]): Match[] {
       continue
     }
 
-    const firstStart = Math.min(...overlapping.map((k) => k.start))
-    if (firstStart <= m.start) continue
-
-    const prefix = m.value.slice(0, firstStart - m.start).replace(/[\s,]+$/, '')
-    if (prefix.length === 0) continue
-    kept.push({ ...m, value: prefix, end: m.start + prefix.length })
+    let cursor = m.start
+    for (const k of overlapping.sort((a, b) => a.start - b.start)) {
+      if (k.start > cursor) kept.push(...uncovered(m, cursor, k.start))
+      cursor = Math.max(cursor, k.end)
+    }
+    if (cursor < m.end) kept.push(...uncovered(m, cursor, m.end))
   }
   return kept.sort((a, b) => a.start - b.start)
+}
+
+function uncovered(m: Match, from: number, to: number): Match[] {
+  const raw = m.value.slice(from - m.start, to - m.start)
+  const value = raw.replace(/^[\s,]+/, '').replace(/[\s,]+$/, '')
+  if (value.length === 0) return []
+  const start = from + raw.indexOf(value)
+  return [{ ...m, value, start, end: start + value.length }]
 }
 
 export function detect(text: string): Match[] {
