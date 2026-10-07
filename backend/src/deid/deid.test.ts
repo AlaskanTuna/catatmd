@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { FIXTURES } from '../fixtures/index.js'
 import { MEDICATION_LEXICON } from '../medications/lexicon.js'
 import { detect } from './detectors.js'
-import { NAME_STOPWORDS } from './gazetteer.js'
+import { GIVEN_NAMES, HONORIFICS, NAME_STOPWORDS } from './gazetteer.js'
 import {
   assertNoIdentifiers,
   deidentify,
@@ -127,6 +127,17 @@ describe('precision — clinical content must survive', () => {
     }
     // Before #317 only three drugs were listed, and the rest went into the token.
     expect(deidentify('Nitrofurantoin Siti binti Ahmad').text).toBe('Nitrofurantoin [PATIENT_1]')
+  })
+
+  it('derives no drug stopword that is also a name or an honorific (#317)', () => {
+    // A lexicon change now edits the deny-list, so a synonym shaped like a name
+    // would quietly stop that name being tokenised.
+    const drugWords = MEDICATION_LEXICON.flatMap(({ generic, synonyms }) => [generic, ...synonyms])
+      .flatMap((term) => term.split(/\s+/))
+      .flatMap((word) => [word, ...word.split('-')])
+      .map((word) => word.toLowerCase().replace(/[^a-z]/g, ''))
+    const nameLike = new Set([...GIVEN_NAMES, ...HONORIFICS.map((title) => title.toLowerCase())])
+    expect(drugWords.filter((word) => nameLike.has(word))).toEqual([])
   })
 
   it('does not tokenise an arbitrary twelve-digit reference number', () => {
