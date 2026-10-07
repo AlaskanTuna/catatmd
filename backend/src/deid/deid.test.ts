@@ -1282,15 +1282,253 @@ describe('Mandarin, Tamil and Cantonese speech at the gate (#218)', () => {
     },
   )
 
-  /*
-   * KNOWN BAD, pinned deliberately (#418). No detector reads Chinese or Tamil
-   * script, and SCRIPT leaves both alone so the note can read them, so a name
-   * spoken in either reaches the model as said. Flip this when #418 lands.
-   */
   it.each(LANGUAGE_SAMPLES.map((sample) => [sample.language, sample] as const))(
-    'still passes a %s name written in its own script',
+    'tokenises a %s name a speaker introduces in its own script (#418)',
     (_language, sample) => {
-      expect(deidentify(sample.introduction.text).text).toContain(sample.introduction.name)
+      const { text } = deidentify(sample.introduction.text)
+      expect(text).not.toContain(sample.introduction.name)
+      expect(text).toMatch(/\[PATIENT_\d+\]/)
     },
   )
+})
+
+describe('names in Chinese and Tamil script are found by their cues (#418)', () => {
+  it.each([
+    ['陈先生，你咳嗽多久了？', '陈'],
+    ['黃小姐今日發燒。', '黃'],
+    ['林医生说要多喝水。', '林'],
+    ['陈小姐来了。', '陈'],
+    ['我姓陈，叫美玲。', '美玲'],
+    ['我姓陈名美玲。', '美玲'],
+    ['我叫：陈美玲。', '陈美玲'],
+    ['我叫「陈美玲」。', '陈美玲'],
+    ['我叫欧阳娜娜。', '欧阳娜娜'],
+    ['司徒先生，请坐。', '司徒'],
+    ['赵先生发烧了。', '赵'],
+    ['陈 先生，请坐。', '陈'],
+    ['என் பெயர் ஆர். லட்சுமி.', 'லட்சுமி'],
+    ['திரு.ராமசாமி வந்தார்.', 'ராமசாமி'],
+    ['என் பேர் முருகன்.', 'முருகன்'],
+    ['Mr 陈 is here.', '陈'],
+    ['Encik ராமசாமி came.', 'ராமசாமி'],
+    ['我的名字是美玲。', '美玲'],
+    ['我名叫阿玲，发烧三天。', '阿玲'],
+    ['我女儿叫陈小美。', '陈小美'],
+    ['我老公姓林。', '林'],
+    ['你好陈小姐，咳嗽多久了？', '陈'],
+    ['您好林先生。', '林'],
+    ['早上好黄太太。', '黄'],
+    ['我先生叫林志明。', '林志明'],
+    ['我妈叫陈美华。', '陈美华'],
+    ['என் மனைவி பெயர் கவிதா.', 'கவிதா'],
+    ['என் மகள் பெயர் கவிதா.', 'கவிதா'],
+    ['我叫做陈美玲。', '陈美玲'],
+    ['我姓陈，叫做美玲。', '美玲'],
+    ['我姓陈，叫陈美玲。', '陈美玲'],
+    ['我姓欧阳，叫欧阳娜娜。', '娜娜'],
+    ['他叫陈伟。', '陈伟'],
+    ['谢谢陈医生。', '陈'],
+    ['என் பெயர் R. லட்சுமி.', 'லட்சுமி'],
+    ['我姓陈。', '陈'],
+    ['我的名字是王小明。', '王小明'],
+    ['திரு ராமசாமி வந்தார்.', 'ராமசாமி'],
+    ['திருமதி லட்சுமி காய்ச்சல்.', 'லட்சுமி'],
+    ['எனது பெயர் முருகன்.', 'முருகன்'],
+    ['Nama saya 陈美玲.', '陈美玲'],
+    ['My name is கலைச்செல்வி.', 'கலைச்செல்வி'],
+  ])('tokenises the name in %j', (sentence, name) => {
+    const { text } = deidentify(sentence)
+    expect(text).not.toContain(name)
+    expect(text).toMatch(/\[PATIENT_\d+\]/)
+  })
+
+  it('finds a name again where it is said without its cue', () => {
+    const { text } = deidentify('我叫陈美玲。陈美玲今年三十岁。')
+    expect(text).not.toContain('陈美玲')
+    expect(new Set(text.match(/\[PATIENT_\d+\]/g)).size).toBe(1)
+  })
+
+  it('never carries a wrong guess cut from the middle of a phrase', () => {
+    const { text } = deidentify('我姓陈，叫我小陈就好。我小便有点痛。')
+    expect(text).toContain('小便有点痛')
+  })
+
+  it('carries a Tamil name only as a whole word', () => {
+    expect(deidentify('என் பெயர் மணி. மணிக்கு ஒரு முறை மருந்து.').text).toContain('மணிக்கு ஒரு')
+  })
+
+  it('reads one name per title, so two people in a row are both found', () => {
+    expect(deidentify('திரு ராமசாமி திருமதி லட்சுமி வந்தனர்.').text).not.toMatch(/ராமசாமி|லட்சுமி/)
+  })
+
+  it('takes one name word after a Tamil title, so a symptom after it survives', () => {
+    expect(deidentify('செல்வி கவிதா இருமல் உள்ளது.').text).toContain('இருமல்')
+  })
+
+  /*
+   * KNOWN GAP, pinned deliberately (#418, D-011). The title rule reads the
+   * surname alone, directly before the title: reading further back is how
+   * 白天医生 ("daytime, the doctor") and 高血压医生 ("blood pressure, the doctor")
+   * became names. A full name before a title, with no other cue, still passes.
+   */
+  it('still passes a full name said only before a title', () => {
+    expect(deidentify('陈美玲小姐来了。').text).toContain('陈美玲')
+  })
+
+  /*
+   * KNOWN GAP, pinned deliberately (#418, D-011). Bare 我叫 is as often "I
+   * called" as "my name is", so a given name with no surname after it is not
+   * read. A surname-led name after 我叫, or a given name after 我的名字是, is.
+   */
+  it('still passes a given name alone after a bare 我叫', () => {
+    expect(deidentify('我叫美玲。').text).toContain('美玲')
+  })
+
+  it.each([
+    '去看医生了。',
+    '这位先生咳嗽。',
+    '老太太发烧三天。',
+    '喉咙痛，要看医生吗？',
+    '谢谢医生。',
+    '谢谢医生，我会按时吃药。',
+    '謝謝醫生！',
+    '多谢医生。',
+    '唔该医生。',
+    '如果发高烧要马上看医生。',
+    '需要马上看医生吗？',
+    '你要马上去看医生。',
+    '马上叫医生来。',
+    '发高烧看医生了吗？',
+    '我曾经看医生，吃了抗生素。',
+    '之前曾看医生吗？',
+    '何时看医生比较好？',
+    '任何医生都会这样说。',
+    '白天看医生，晚上咳得更厉害。',
+    '白天医生不在。',
+    '夏天医生建议多喝水。',
+    '方便看医生的时候再来。',
+    '咳出黄痰看医生吧。',
+    '黄痰医生说是细菌感染。',
+    '这周医生会打电话给你。',
+    '下周医生再检查。',
+    '上周医生开了药。',
+    '每周医生都来。',
+    '周日医生休息。',
+    '其余医生都同意。',
+    '关于医生的建议，我会照做。',
+    '有关医生开的药。',
+    '由于医生不在，护士先看。',
+    '对于医生来说很正常。',
+    '至于医生说的，我明白。',
+    '我叫救护车来的。',
+    '我叫了医生。',
+    '我叫医生来看。',
+    '我叫老婆带我来。',
+    '我叫妈妈煮粥。',
+    '我叫同事帮我请假。',
+    '我叫咗医生。',
+    '病人叫痛。',
+    '病人叫醒了。',
+    '这个药名字叫阿莫西林。',
+    '药的名字是必理痛。',
+    '这种病名字叫流感。',
+    '名字是什么药？',
+    '老师说我发烧要回家。',
+    '我是老师，每天讲话喉咙痛。',
+    '学校老师让我看医生。',
+    '石头先生。',
+    '金银花茶对喉咙好吗？',
+    '用温水漱口。',
+    '姜茶可以喝吗？',
+    '喝点姜汤。',
+    '毛病很多。',
+    '关节痛。',
+    '先生，请坐。',
+    '小姐，你哪里不舒服？',
+    '太太，你发烧几天了？',
+    '医生，我咳嗽三天了。',
+    '这位小姐咳嗽。',
+    '那位太太发烧。',
+    '喉咙痛三天了，吃了何首乌。',
+    '咳嗽有痰，痰是黄色的。',
+    '没有胸痛，没有呼吸困难。',
+    '每天三次，每次一粒，饭后吃。',
+    '你叫什么名字？',
+    '你的名字是？',
+    '请问你的名字是什么？',
+    '我叫你明天再来。',
+    '我叫他早点睡。',
+    '他叫我来的。',
+    '他姓什么？',
+    '我姓什么不重要。',
+    '喉咙好痛，医生。',
+    '我女儿发烧，老师叫她回家。',
+    '有冇发烧？',
+    '食咗必理痛。',
+    '周身骨痛。',
+    '高血压医生说要控制。',
+    '发高烧医生说要验血。',
+    '石膏医生说不用。',
+    '马来西亚医生建议打疫苗。',
+    '马来医生。',
+    '周末先生陪我来。',
+    '任何先生小姐都可以来。',
+    '于是医生给我开药。',
+    '甘草片可以吃吗？',
+    '段时间医生再看。',
+    '向医生报告。',
+    '跟医生说清楚。',
+    '给医生看。',
+    '请医生开药。',
+    '叫醫生嚟。',
+    'உங்கள் பெயர் என்ன?',
+    'காய்ச்சல் மூன்று நாட்கள்.',
+    'இருமல் இருக்கிறது.',
+    'திருமணம் ஆனவரா?',
+    'திருச்சி போனேன்.',
+    'மருந்தின் பெயர் பாராசிட்டமால்.',
+    'என் பெயர் என்ன என்று கேட்டார்.',
+    'என் பெயர் சொல்லவா?',
+    'டாக்டர் சொன்னார்.',
+    'டாக்டர், எனக்கு காய்ச்சல்.',
+    'The medicine name is 必理痛.',
+    'saya 咳嗽三天',
+    'I am 很累 already doctor',
+    'my name is 什么 you ask?',
+    '体温医生量过了。',
+    '主任医生说要住院。',
+    '胆结石医生说要开刀。',
+    '病史医生都看了。',
+    '明白医生。',
+    '也许医生会打电话。',
+    '终于医生来了。',
+    '几分钟医生就来。',
+    '我很紧张医生。',
+    'symptoms 高烧三天',
+    'Dr 高烧三天了',
+    'terms 马上去急诊',
+    'Cik 黄痰很多',
+    '我叫救护车。',
+    '我叫医生。',
+    '我叫醫生。',
+    '我叫護士嚟。',
+    '我叫白車。',
+    '我叫老公。',
+    '我叫媽媽。',
+    '我叫儿子。',
+    '我叫外卖。',
+    '我叫的士。',
+    '我叫醒他。',
+    '我叫佢食藥。',
+    '我叫做检查。',
+    '我叫醫生嚟。',
+    'Puan 高血压 ada ke?',
+    'Dr 马上 come?',
+  ])('leaves clinical speech with no name in it alone: %j', (sentence) => {
+    expect(deidentify(sentence).text).toBe(sentence)
+  })
+
+  it('lets the egress guard refuse a payload that kept a cued name', () => {
+    expect(() => assertNoIdentifiers('我叫陈美玲' as never, 'note_and_gaps')).toThrow(/PATIENT/)
+  })
 })

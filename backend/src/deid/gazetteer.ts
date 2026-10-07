@@ -49,6 +49,149 @@ export const NAME_INTRODUCERS = [
 ] as const
 
 /**
+ * Cues for a name said in Chinese or Tamil script (#418).
+ *
+ * `SCRIPT` leaves both scripts alone so the note can read Mandarin and Tamil
+ * speech, so a name in either is found only where something says a name comes
+ * next: a self-introduction, or a title. A Chinese name must also open on a
+ * listed surname, because "我叫" is as often "I called" (我叫救护车, an
+ * ambulance) as "my name is", and a surname is what tells the two apart.
+ */
+export const HAN_NAME_INTRODUCERS = [
+  '我的名字是',
+  '我的名字叫',
+  '我嘅名係',
+  '我個名叫',
+  '我名叫',
+  '我叫做',
+  '我叫',
+] as const
+
+/**
+ * "My name is" with nothing else it could mean, so a given name alone after it
+ * is read too (我的名字是美玲). Bare 我叫 is left out: it is as often "I called"
+ * (我叫救护车, an ambulance; 我叫老公, my husband).
+ */
+export const HAN_UNAMBIGUOUS_INTRODUCERS = [
+  '我的名字是',
+  '我的名字叫',
+  '我嘅名係',
+  '我個名叫',
+  '我名叫',
+] as const
+
+/** "He is called", "she is called": read only when a surname opens what follows. */
+export const HAN_THIRD_PERSON_INTRODUCERS = ['他叫', '她叫', '佢叫'] as const
+
+/**
+ * Relatives a patient introduces, as in 我女儿叫陈小美 or 我老公姓林. A GP
+ * consultation often has one in the room, and their name is an identifier too.
+ */
+export const HAN_RELATIVES = [
+  '女儿',
+  '女兒',
+  '儿子',
+  '兒子',
+  '老公',
+  '老婆',
+  '太太',
+  '丈夫',
+  '先生',
+  '妈妈',
+  '媽媽',
+  '爸爸',
+  '妈',
+  '媽',
+  '爸',
+  '孩子',
+  '朋友',
+] as const
+
+/** Surname-led words that are not names after 我叫: 白车 is an ambulance. */
+export const HAN_NOT_NAMES = ['白车', '白車'] as const
+
+/** "My surname is", after which the surname, and sometimes the given name, follow. */
+export const HAN_SURNAME_INTRODUCERS = ['我姓', '他姓', '她姓', '佢姓'] as const
+
+/** Titles that follow a surname, as in 陈先生 or 林医生. */
+export const HAN_TITLES = ['先生', '小姐', '女士', '太太', '医生', '醫生', '老师', '老師'] as const
+
+/**
+ * Common Chinese surnames in Malaysia, simplified and traditional. Several are
+ * ordinary words too (黄 "yellow", 白 "white", 高 "tall"), which is why the list
+ * is only ever read after a cue or directly before a title.
+ */
+export const HAN_SURNAMES =
+  '陈陳林李黄黃张張王吴吳刘劉蔡杨楊郑鄭梁谢謝许許何郭罗羅黎胡曾邱丘叶葉周赖賴苏蘇洪朱孙孫马馬高徐钟鍾邓鄧冯馮彭潘卢盧温溫江方沈余傅宋萧蕭庄莊卓颜顏石施侯邝鄺麦麥伍姚汤湯简簡范魏廖骆駱欧歐戴唐袁董程韩韓曹夏于蒋蔣田杜姜崔谭譚陆陸汪任金邵贺賀龚龔熊孟秦薛雷尹段白毛甘尤柯翁游涂关關辜赵趙孔鲁魯倪史钱錢严嚴陶包华華祝邢龙龍万萬顾顧阮杭池宁寧'
+
+/** Two-character surnames, read wherever a single-character one is. */
+export const HAN_COMPOUND_SURNAMES = [
+  '欧阳',
+  '歐陽',
+  '司徒',
+  '上官',
+  '诸葛',
+  '諸葛',
+  '司马',
+  '司馬',
+  '东方',
+  '東方',
+] as const
+
+/**
+ * The Chinese characters a surname may follow when it is read before a title:
+ * verbs and particles that take a person (给陈医生, 找王先生, 是林太太). Any
+ * other Chinese character before it usually makes the surname the end of a word
+ * instead, as in 体温医生 ("temperature, the doctor") or 主任医生 ("the
+ * consultant"). After punctuation, a space or the start of a line it is read.
+ */
+export const HAN_BEFORE_SURNAME = '给給找问問叫是请請跟同和谢謝见見让讓帮幫陪向'
+
+/** Greetings a doctor opens with, after which a surname and a title are a name: 你好陈小姐. */
+export const HAN_GREETINGS = [
+  '你好',
+  '您好',
+  '早上好',
+  '下午好',
+  '晚上好',
+  '早晨',
+  '早安',
+  '请坐',
+  '請坐',
+  '欢迎',
+  '歡迎',
+  '不好意思',
+  '下一位',
+] as const
+
+/** Relatives in "my wife's name is", as in என் மனைவி பெயர் கவிதா. */
+export const TAMIL_RELATIVES = [
+  'மனைவி',
+  'கணவர்',
+  'மகள்',
+  'மகன்',
+  'அம்மா',
+  'அப்பா',
+  'அண்ணா',
+  'அக்கா',
+  'தம்பி',
+  'தங்கை',
+] as const
+
+/** "My name is", in Tamil, written and spoken. */
+export const TAMIL_NAME_INTRODUCERS = [
+  'என்னுடைய பெயர்',
+  'எனது பெயர்',
+  'என் பெயர்',
+  'என்னோட பேரு',
+  'என் பேரு',
+  'என் பேர்',
+] as const
+
+/** Mrs, Miss and Mr, written before the name. Longest first, as `திரு` opens `திருமதி`. */
+export const TAMIL_TITLES = ['திருமதி', 'செல்வி', 'திரு'] as const
+
+/**
  * Given names common in Malaysia across the three main communities, and among
  * its Pakistani and Bangladeshi patients. Deliberately a *given*-name list:
  * surnames and second elements are picked up by the adjacency rules, and a

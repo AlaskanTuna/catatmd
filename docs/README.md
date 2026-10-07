@@ -347,7 +347,7 @@ The hosted adapter is **built and live**, and reaching it takes two separate act
 | Malay     | 9.4% word error rate                                   |
 | Cantonese | 62.5% character error rate, heard as Mandarin          |
 
-Six read lines per language, so these are indicative, not a benchmark. A name spoken in Mandarin or Tamil still reaches the model in its own script (#418). See [`trd.md`](./trd.md) §20.10.
+Six read lines per language, so these are indicative, not a benchmark. A Mandarin or Tamil name is tokenised where a self-introduction or a title marks it (#418); one said with neither still reaches the model in its own script. See [`trd.md`](./trd.md) §20.10.
 
 **One request does leave the browser on the on-device path**, and it is named here rather than left to be discovered. The speech model's weights are fetched from a public CDN the first time they are needed, then cached.
 
