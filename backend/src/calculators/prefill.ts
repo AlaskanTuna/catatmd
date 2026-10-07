@@ -212,8 +212,12 @@ export function scoresFor(transcript: Transcript, profileId: ProfileId): Clinica
         SORE_THROAT_SCORE.presentation.some((patterns) =>
           patterns.every((pattern) => {
             const match = clause.text.match(pattern)
-            // A negator after the complaint ("sore since monday no fever") is about something else.
-            return match?.index !== undefined && !NEGATOR.test(clause.text.slice(0, match.index))
+            // A negator after the complaint ("sore since monday no fever") is about something
+            // else; one before or inside it ("tekak tak sakit") denies it.
+            return (
+              match?.index !== undefined &&
+              !NEGATOR.test(clause.text.slice(0, match.index + match[0].length))
+            )
           }),
         ),
     ),
