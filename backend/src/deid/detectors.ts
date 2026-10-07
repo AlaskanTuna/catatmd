@@ -2,6 +2,7 @@ import {
   GIVEN_NAMES,
   HAN_BEFORE_SURNAME,
   HAN_COMPOUND_SURNAMES,
+  HAN_GREETINGS,
   HAN_NAME_INTRODUCERS,
   HAN_NOT_NAMES,
   HAN_RELATIVES,
@@ -15,6 +16,7 @@ import {
   NAME_STOPWORDS,
   PATRONYMICS,
   TAMIL_NAME_INTRODUCERS,
+  TAMIL_RELATIVES,
   TAMIL_TITLES,
 } from './gazetteer.js'
 import { isStructurallyValidNric, NRIC_PATTERN, NRIC_UNHYPHENATED_PATTERN } from './nric.js'
@@ -816,11 +818,11 @@ const NATIVE_NAME_PATTERNS: RegExp[] = [
   // The surname alone, directly before a title, and only where it starts a
   // word: after punctuation, a space, or a verb that takes a person.
   new RegExp(
-    `(?:(?<!${HAN})|(?<=[${HAN_BEFORE_SURNAME}]))(${SURNAME})[ \\t]?(?=${HAN_TITLES.join('|')})`,
+    `(?:(?<!${HAN})|(?<=[${HAN_BEFORE_SURNAME}])|(?<=${HAN_GREETINGS.join('|')}))(${SURNAME})[ \\t]?(?=${HAN_TITLES.join('|')})`,
     'gu',
   ),
   new RegExp(
-    `(?:${TAMIL_NAME_INTRODUCERS.join('|')})[:：]?\\s+${NOT_A_TAMIL_NAME}(${TAMIL_FULL})`,
+    `(?:${TAMIL_NAME_INTRODUCERS.join('|')}|என்\\s+(?:${TAMIL_RELATIVES.join('|')})\\s+(?:பெயர்|பேர்|பேரு))[:：]?\\s+${NOT_A_TAMIL_NAME}(${TAMIL_FULL})`,
     'gu',
   ),
   new RegExp(`(?<!${TAMIL})(?:${TAMIL_TITLES.join('|')})(?:\\.\\s*|\\s+)(${TAMIL_ONE})`, 'gu'),

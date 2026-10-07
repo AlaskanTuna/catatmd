@@ -96,9 +96,13 @@ export const HAN_RELATIVES = [
   '老婆',
   '太太',
   '丈夫',
+  '先生',
   '妈妈',
   '媽媽',
   '爸爸',
+  '妈',
+  '媽',
+  '爸',
   '孩子',
   '朋友',
 ] as const
@@ -142,6 +146,37 @@ export const HAN_COMPOUND_SURNAMES = [
  * consultant"). After punctuation, a space or the start of a line it is read.
  */
 export const HAN_BEFORE_SURNAME = '给給找问問叫是请請跟同和谢謝见見让讓帮幫陪向'
+
+/** Greetings a doctor opens with, after which a surname and a title are a name: 你好陈小姐. */
+export const HAN_GREETINGS = [
+  '你好',
+  '您好',
+  '早上好',
+  '下午好',
+  '晚上好',
+  '早晨',
+  '早安',
+  '请坐',
+  '請坐',
+  '欢迎',
+  '歡迎',
+  '不好意思',
+  '下一位',
+] as const
+
+/** Relatives in "my wife's name is", as in என் மனைவி பெயர் கவிதா. */
+export const TAMIL_RELATIVES = [
+  'மனைவி',
+  'கணவர்',
+  'மகள்',
+  'மகன்',
+  'அம்மா',
+  'அப்பா',
+  'அண்ணா',
+  'அக்கா',
+  'தம்பி',
+  'தங்கை',
+] as const
 
 /** "My name is", in Tamil, written and spoken. */
 export const TAMIL_NAME_INTRODUCERS = [
