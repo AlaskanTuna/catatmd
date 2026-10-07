@@ -63,7 +63,12 @@ import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor, LLMResponseError } from '../lib/llm/index.js'
 import { logger, timeStage } from '../lib/logger.js'
 import { prisma } from '../lib/prisma.js'
-import { matchMedication, parseSigWithSpan } from '../medications/index.js'
+import {
+  lexiconFor,
+  matchMedication,
+  parsePrescriptionLines,
+  parseSigWithSpan,
+} from '../medications/index.js'
 import { inFlightGate, parseAudioBody } from '../middleware/audio-body.js'
 import { evaluateRedFlags, mergeRedFlags, proposeMishearCorrections } from '../redflags/index.js'
 import { retrieveGuidelines } from '../retrieval/index.js'
@@ -901,6 +906,10 @@ const PrescriptionParseBodySchema = z.object({
  * distance against a static versioned lexicon. Nothing is de-identified because
  * nothing egresses, and nothing is proposed that the doctor did not say.
  *
+ * **`lines` is the whole dictation cut into one line per drug** (D-001,
+ * amended 06/10/26), so the SPA needs one call however many drugs were said.
+ * `sig`, `sigReadTo` and `candidates` stay for an SPA deployed before it.
+ *
  * **`sigReadTo` reports how far the sig parse got**, so a caller slicing one
  * drug's stretch out of a several-drug dictation can tell where its fields stop
  * being accounted for. It is an offset and nothing else: no claim about what
@@ -927,12 +936,17 @@ consultationsRouter.post('/:id/prescriptions/parse', async (req, res) => {
 
   const profile = getClinicalProfile(body.data.profileId ?? DEFAULT_PROFILE_ID)
   const { sig, readTo } = parseSigWithSpan(body.data.dictated)
+  const candidates = matchMedication(body.data.dictated, profile.id)
 
   res.json(
     PrescriptionParseResponseSchema.parse({
       sig,
       sigReadTo: readTo,
-      candidates: matchMedication(body.data.dictated, profile.id),
+      // Cut rather than re-sorted: the matcher's order is the #311 fix, and a
+      // whole dictation can raise more than the schema's bound.
+      candidates: candidates.slice(0, 20),
+      lines: parsePrescriptionLines(body.data.dictated, profile.id, candidates),
+      generics: lexiconFor(profile.id).map(({ generic }) => generic),
     }),
   )
 })

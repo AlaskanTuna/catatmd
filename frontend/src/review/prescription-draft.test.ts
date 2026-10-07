@@ -1,20 +1,18 @@
-import type { MedicationCandidateWire, Prescription } from '@shared/types'
+import type { MedicationCandidateWire, Prescription, PrescriptionLine } from '@shared/types'
 import { PrescriptionSchema } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import {
   acceptCandidate,
-  candidateKey,
   capDictation,
   EMPTY_DRAFT,
-  narrowToSig,
+  lineKeys,
+  manualRow,
   type PrescriptionDraft,
+  rowsFrom,
   setDrugByHand,
-  sliceForCandidate,
-  spanForCandidate,
   summarise,
+  toConfirm,
   toPrescription,
-  unclaimedStretches,
-  visibleCandidates,
 } from './prescription-draft.js'
 
 /**
@@ -151,58 +149,6 @@ describe('toPrescription', () => {
   })
 })
 
-describe('visibleCandidates', () => {
-  it('preserves the order the matcher returned, and never re-sorts by score', () => {
-    /*
-     * The clinical-safety finding on #311 in one case: a contained single agent
-     * scores higher on a shorter span than the combination actually dictated.
-     * The matcher's own order is the fix, so a component that sorted by score
-     * would reintroduce the wrong-drug proposal at position one.
-     */
-    const combination = candidate({
-      lexiconId: 'amoxicillin-clavulanate',
-      generic: 'amoxicillin-clavulanate',
-      heard: 'amoxicillin clavulanate',
-      end: 23,
-      score: 0.88,
-    })
-    const single = candidate({ score: 0.96 })
-
-    const order = visibleCandidates([combination, single], new Set())
-
-    expect(order.map(({ lexiconId }) => lexiconId)).toEqual([
-      'amoxicillin-clavulanate',
-      'amoxicillin',
-    ])
-  })
-
-  it('drops only what was rejected', () => {
-    const first = candidate()
-    const second = candidate({ lexiconId: 'amoxapine', generic: 'amoxapine', score: 0.71 })
-
-    const open = visibleCandidates([first, second], new Set([candidateKey(second)]))
-
-    expect(open).toEqual([first])
-  })
-
-  it('keeps two proposals on one span apart', () => {
-    // Up to three candidates share a span, so identity cannot be the offsets
-    // alone or rejecting one would dismiss its neighbours.
-    const first = candidate()
-    const second = candidate({ lexiconId: 'amoxapine', generic: 'amoxapine' })
-
-    expect(candidateKey(first)).not.toBe(candidateKey(second))
-  })
-})
-
-/**
- * The character cap, tested pure because it is the thing that stops a session.
- *
- * `PrescriptionSchema.dictated` is `max(2000)`, and `dictated` is the evidence
- * field the doctor reads back to check the parse. Both halves matter: the text
- * has to stay whole words, and the caller has to be told, because the caller is
- * what ends the stream rather than letting it bill for words it discards.
- */
 describe('capDictation', () => {
   it('joins what was typed to what was streamed, with one space', () => {
     expect(capDictation('amoxicillin', '500 mg three times a day', 400)).toEqual({
@@ -263,222 +209,6 @@ describe('capDictation', () => {
  * paracetamol's 500 mg to cetirizine, which is the wrong-dose failure D-001
  * exists to prevent, so this is the function that has to be right.
  */
-describe('sliceForCandidate', () => {
-  const FOUR =
-    'paracetamol 500 mg three times a day. cetirizine 10 mg once daily. dextromethorphan 10 ml when needed.'
-  const paracetamol = candidate({
-    lexiconId: 'paracetamol',
-    generic: 'paracetamol',
-    heard: 'paracetamol',
-    start: 0,
-    end: 11,
-  })
-  const cetirizine = candidate({
-    lexiconId: 'cetirizine',
-    generic: 'cetirizine',
-    heard: 'cetirizine',
-    start: 38,
-    end: 48,
-  })
-  const dextromethorphan = candidate({
-    lexiconId: 'dextromethorphan',
-    generic: 'dextromethorphan',
-    heard: 'dextromethorphan',
-    start: 66,
-    end: 82,
-  })
-  const all = [paracetamol, cetirizine, dextromethorphan]
-
-  it('stops at the next drug name, so one drug never carries the next drug dose', () => {
-    const slice = sliceForCandidate(FOUR, all, paracetamol)
-
-    expect(slice).toBe('paracetamol 500 mg three times a day.')
-    expect(slice).not.toContain('10 mg')
-  })
-
-  /*
-   * The cost of starting at the name rather than at the previous drug's end,
-   * stated as a test so it is a decision rather than a surprise. A dose spoken
-   * before the name is lost and the field stays empty, which asks the doctor a
-   * question. The alternative fills it with the previous drug's dose, which
-   * answers one they never asked.
-   */
-  it('loses a dose stated before the name, and leaves the field empty rather than wrong', () => {
-    const text = '500 mg of amoxicillin, then cetirizine'
-    const amoxicillin = candidate({ start: 10, end: 21 })
-    const second = candidate({
-      lexiconId: 'cetirizine',
-      generic: 'cetirizine',
-      heard: 'cetirizine',
-      start: 28,
-      end: 38,
-    })
-
-    expect(sliceForCandidate(text, [amoxicillin, second], amoxicillin)).toBe('amoxicillin, then')
-  })
-
-  it('never opens with the previous drug trailing sig', () => {
-    const slice = sliceForCandidate(FOUR, all, cetirizine)
-
-    expect(slice.startsWith('cetirizine')).toBe(true)
-    expect(slice).not.toContain('500 mg')
-  })
-
-  it('runs to the end for the last drug named', () => {
-    expect(sliceForCandidate(FOUR, all, dextromethorphan)).toBe(
-      'dextromethorphan 10 ml when needed.',
-    )
-  })
-
-  it('is bounded on both sides for a drug in the middle', () => {
-    expect(sliceForCandidate(FOUR, all, cetirizine)).toBe('cetirizine 10 mg once daily.')
-  })
-
-  /*
-   * The matcher offers up to three candidates per span, and a combination
-   * contains the single agent it is built from. An overlapping candidate must
-   * bound neither side, or `amoxicillin-clavulanate` would be cut short by the
-   * `amoxicillin` found inside it and lose its own dose.
-   */
-  it('is not cut short by a candidate overlapping its own span', () => {
-    const text = 'amoxicillin-clavulanate 625 mg twice daily, then loratadine'
-    const combination = candidate({
-      lexiconId: 'amoxicillin-clavulanate',
-      generic: 'amoxicillin-clavulanate',
-      heard: 'amoxicillin clavulanate',
-      start: 0,
-      end: 23,
-    })
-    const contained = candidate({ start: 0, end: 11 })
-    const later = candidate({
-      lexiconId: 'loratadine',
-      generic: 'loratadine',
-      heard: 'loratadine',
-      start: 48,
-      end: 58,
-    })
-
-    expect(sliceForCandidate(text, [combination, contained, later], combination)).toBe(
-      'amoxicillin-clavulanate 625 mg twice daily, then',
-    )
-  })
-
-  it('returns the whole phrase when only one drug was heard', () => {
-    const only = candidate()
-    expect(sliceForCandidate(DICTATED, [only], only)).toBe(DICTATED)
-  })
-
-  it('reports the span it cut from, so a caller can tell what is left over', () => {
-    // The two must not drift: `unclaimedStretches` subtracts these bounds from
-    // the dictation, and a span disagreeing with its own quote would hand the
-    // doctor a stretch a row is already showing (#369).
-    for (const one of all) {
-      const span = spanForCandidate(FOUR, all, one)
-
-      expect(FOUR.slice(span.start, span.end).trim()).toBe(sliceForCandidate(FOUR, all, one))
-    }
-  })
-
-  it('runs a last drug span to the end of the text, which is what leaves no gap', () => {
-    // Today's reported bug in one line: with no later candidate to bound it,
-    // the claim covers every remaining character, so a second drug the lexicon
-    // never offered has no remainder to be found in.
-    expect(spanForCandidate(FOUR, [paracetamol], paracetamol)).toEqual({
-      start: 0,
-      end: FOUR.length,
-    })
-  })
-})
-
-/**
- * The three functions that make a dropped drug visible instead of silent
- * (#369).
- *
- * A drug the lexicon does not hold raises no candidate, so nothing bounds the
- * previous drug's slice and nothing announces the second drug either: the
- * reported dictation named two and recorded one, with the first row's quote
- * swallowing the second. Narrowing the claim to what the sig actually read is
- * what leaves a gap; showing the gap is the fix.
- */
-describe('narrowToSig', () => {
-  const span = { start: 10, end: 60 }
-
-  it('cuts the claim back to where the sig stopped reading', () => {
-    expect(narrowToSig(span, 20)).toEqual({ start: 10, end: 30 })
-  })
-
-  it('leaves a span alone when nothing was read, rather than guessing a boundary', () => {
-    // No field parsed is no evidence about where this drug's text stops, and a
-    // quote cut on nothing is worse than a quote that is too wide.
-    expect(narrowToSig(span, null)).toBe(span)
-    expect(narrowToSig(span, undefined)).toBe(span)
-  })
-
-  it('only ever shrinks, so a sig read past the span cannot widen the claim', () => {
-    expect(narrowToSig(span, 999)).toBe(span)
-    expect(narrowToSig(span, 50)).toBe(span)
-  })
-})
-
-describe('unclaimedStretches', () => {
-  const TWO =
-    'dextromethorphan 15 mg three times a day for 5 days. strepsils lozenge 1 lozenge for 3 days.'
-
-  it('offers the stretch a narrowed claim left behind', () => {
-    // The reported bug, reduced: one candidate, one row, and the second drug
-    // sitting in the tail with nothing to announce it.
-    const stretches = unclaimedStretches(TWO, [{ start: 0, end: 51 }])
-
-    expect(stretches).toHaveLength(1)
-    expect(stretches[0]?.text).toBe('strepsils lozenge 1 lozenge for 3 days.')
-  })
-
-  it('returns nothing while a row still claims every character', () => {
-    // Why the claim has to narrow first. This is today's behaviour: the slice
-    // runs to the end of the text, so there is no remainder to show.
-    expect(unclaimedStretches(TWO, [{ start: 0, end: TWO.length }])).toEqual([])
-  })
-
-  it('drops a gap holding no letter, so punctuation is never offered as a drug', () => {
-    expect(
-      unclaimedStretches(TWO, [
-        { start: 0, end: 51 },
-        { start: 53, end: TWO.length },
-      ]),
-    ).toEqual([])
-  })
-
-  it('opens the offer on a word, not on the previous drug full stop', () => {
-    const [stretch] = unclaimedStretches(TWO, [{ start: 0, end: 51 }])
-
-    expect(stretch?.text.startsWith('strepsils')).toBe(true)
-    // The span moves with the text, so the bounds still name what is quoted.
-    expect(TWO.slice(stretch?.start ?? 0, stretch?.end ?? 0)).toBe(stretch?.text)
-  })
-
-  it('reads gaps in text order however the claims arrive', () => {
-    const stretches = unclaimedStretches('aaa. bbb. ccc.', [
-      { start: 10, end: 14 },
-      { start: 0, end: 4 },
-    ])
-
-    expect(stretches.map(({ text }) => text)).toEqual(['bbb.'])
-  })
-
-  it('offers the whole dictation when no row claims any of it', () => {
-    expect(unclaimedStretches(TWO, [])).toEqual([{ start: 0, end: TWO.length, text: TWO }])
-  })
-
-  it('does not double count characters two overlapping claims share', () => {
-    expect(
-      unclaimedStretches(TWO, [
-        { start: 0, end: 60 },
-        { start: 40, end: 70 },
-      ]),
-    ).toEqual([{ start: 71, end: TWO.length, text: '1 lozenge for 3 days.' }])
-  })
-})
-
 describe('summarise', () => {
   it('reads a draft and a stored prescription the same way', () => {
     const stored: Prescription = {
@@ -497,5 +227,168 @@ describe('summarise', () => {
   it('names nothing the parser could not read, rather than guessing', () => {
     expect(summarise({ ...EMPTY_DRAFT, dose: '10 ml' })).toBe('10 ml')
     expect(summarise(EMPTY_DRAFT)).toBe('')
+  })
+})
+
+const DICTATION =
+  'Amoxicillin 500 mg, sefuroxeem 250 mg, antibiotic 200 mg, all of them 2 times a day.'
+
+const sig = (over: Partial<PrescriptionLine['sig']> = {}): PrescriptionLine['sig'] => ({
+  dose: null,
+  route: null,
+  frequency: null,
+  duration: null,
+  food: null,
+  ...over,
+})
+
+const SHARED = { field: 'frequency' as const, start: 58, end: 83 }
+
+const LINES: PrescriptionLine[] = [
+  {
+    start: 0,
+    end: 18,
+    candidates: [candidate({ heard: 'Amoxicillin', score: 1 })],
+    exact: true,
+    sig: sig({ dose: '500 mg', frequency: 'twice-daily' }),
+    shared: [SHARED],
+  },
+  {
+    start: 20,
+    end: 37,
+    candidates: [
+      candidate({
+        lexiconId: 'cefuroxime',
+        generic: 'cefuroxime',
+        heard: 'sefuroxeem',
+        start: 20,
+        end: 30,
+        score: 0.8,
+      }),
+    ],
+    exact: false,
+    sig: sig({ dose: '250 mg', frequency: 'twice-daily' }),
+    shared: [SHARED],
+  },
+  {
+    start: 39,
+    end: 56,
+    candidates: [],
+    exact: false,
+    sig: sig({ dose: '200 mg', frequency: 'twice-daily' }),
+    shared: [SHARED],
+  },
+]
+
+describe('rowsFrom', () => {
+  it('ticks an exact name and leaves a near-match for the doctor', () => {
+    const rows = rowsFrom(DICTATION, LINES, new Map())
+
+    expect(rows.map(({ kind, ticked }) => [kind, ticked])).toEqual([
+      ['heard', true],
+      ['heard', false],
+      ['unnamed', true],
+    ])
+    // The near-match is offered on its row, never accepted for the doctor, and
+    // it is undecided until the doctor takes it or leaves it out.
+    expect(rows[1]?.draft).toMatchObject({ drug: 'cefuroxime', lexiconId: 'cefuroxime' })
+    expect(rows.map(({ undecided }) => undecided)).toEqual([false, true, false])
+  })
+
+  it('proposes no drug for a line with no recognised name', () => {
+    const unnamed = rowsFrom(DICTATION, LINES, new Map())[2]
+
+    expect(unnamed?.draft.drug).toBe('')
+    expect(unnamed?.draft.lexiconId).toBeUndefined()
+    expect(unnamed?.draft.dose).toBe('200 mg')
+  })
+
+  it("quotes the line's own words and the shared clause it used", () => {
+    expect(rowsFrom(DICTATION, LINES, new Map())[0]?.evidence).toBe(
+      'Amoxicillin 500 mg … all of them 2 times a day',
+    )
+  })
+
+  it("lets the doctor's edits win over the parse, and drops the shared quote they replaced", () => {
+    const key = lineKeys(DICTATION, LINES)[0] as string
+    const [row] = rowsFrom(
+      DICTATION,
+      LINES,
+      new Map([[key, { fields: { frequency: 'three-times-daily' as const } }]]),
+    )
+
+    expect(row?.draft.frequency).toBe('three-times-daily')
+    expect(row?.shared).toEqual([])
+    expect(row?.evidence).toBe('Amoxicillin 500 mg')
+  })
+
+  it('drops the lexicon provenance when a name is typed by hand', () => {
+    const key = lineKeys(DICTATION, LINES)[1] as string
+    const row = rowsFrom(DICTATION, LINES, new Map([[key, { drug: 'cefalexin' }]]))[1]
+
+    expect(row?.draft.drug).toBe('cefalexin')
+    expect(row?.draft.lexiconId).toBeUndefined()
+  })
+})
+
+describe('lineKeys', () => {
+  it('survives a correction earlier in the text moving every offset', () => {
+    const before = lineKeys(DICTATION, LINES)
+    const shifted = LINES.map((line) => ({ ...line, start: line.start + 6, end: line.end + 6 }))
+
+    expect(lineKeys(`Okay. ${DICTATION}`, shifted)).toEqual(before)
+  })
+
+  it('keeps two keys for a drug said twice', () => {
+    const twice = [LINES[0], LINES[0]] as PrescriptionLine[]
+    expect(new Set(lineKeys(DICTATION, twice)).size).toBe(2)
+  })
+})
+
+describe('toConfirm', () => {
+  it('saves ticked rows only, and counts what still holds Confirm', () => {
+    const rows = rowsFrom(DICTATION, LINES, new Map())
+    const { ready, unnamed, undecided } = toConfirm(rows)
+
+    expect(ready.map(({ drug }) => drug)).toEqual(['amoxicillin'])
+    expect(unnamed).toBe(1)
+    expect(undecided).toBe(1)
+  })
+
+  it('decides a near-match by a tick, a typed name or leaving it out', () => {
+    const key = lineKeys(DICTATION, LINES)[1] as string
+    for (const edit of [{ ticked: true }, { ticked: false }, { drug: 'cefalexin' }]) {
+      expect(toConfirm(rowsFrom(DICTATION, LINES, new Map([[key, edit]]))).undecided).toBe(0)
+    }
+  })
+
+  it('releases Confirm once the unnamed line is named or unticked', () => {
+    const keys = lineKeys(DICTATION, LINES)
+    const named = toConfirm(
+      rowsFrom(DICTATION, LINES, new Map([[keys[2] as string, { drug: 'azithromycin' }]])),
+    )
+    const unticked = toConfirm(
+      rowsFrom(DICTATION, LINES, new Map([[keys[2] as string, { ticked: false }]])),
+    )
+
+    expect(named.unnamed).toBe(0)
+    expect(named.ready.map(({ drug }) => drug)).toEqual(['amoxicillin', 'azithromycin'])
+    expect(unticked).toMatchObject({ unnamed: 0 })
+  })
+
+  it('never shares a dose through a shared clause', () => {
+    const rows = rowsFrom(DICTATION, LINES, new Map())
+    expect(rows.flatMap(({ shared }) => shared.map(({ field }) => field))).not.toContain('dose')
+  })
+
+  it('counts a manual row with no name yet', () => {
+    expect(toConfirm([manualRow('manual-1', DICTATION)])).toMatchObject({ ready: [], unnamed: 1 })
+  })
+
+  it('produces prescriptions the wire schema accepts', () => {
+    const { ready } = toConfirm(rowsFrom(DICTATION, LINES, new Map()))
+    for (const prescription of ready) {
+      expect(PrescriptionSchema.safeParse(prescription).success).toBe(true)
+    }
   })
 })

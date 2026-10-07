@@ -198,6 +198,26 @@ describe('POST /api/consultations/:id/prescriptions/parse', () => {
     })
   })
 
+  it('returns every drug said as its own line, in one call', async () => {
+    // D-001 amended 06/10/26: one parse for the whole dictation, so a dose stays
+    // beside its drug and a dosed line with no recognised name is not dropped.
+    const response = await parse({
+      dictated:
+        'Amoxicillin 500 mg, paracetamol 350 mg, antibiotic 200 mg, all of them 2 times a day.',
+    })
+    const parsed = PrescriptionParseResponseSchema.safeParse(await response.json())
+
+    expect(parsed.success).toBe(true)
+    const lines = parsed.success ? (parsed.data.lines ?? []) : []
+    expect(lines.map(({ candidates }) => candidates[0]?.lexiconId ?? null)).toEqual([
+      'amoxicillin',
+      'paracetamol',
+      null,
+    ])
+    expect(lines.map(({ sig }) => sig.dose)).toEqual(['500 mg', '350 mg', '200 mg'])
+    expect(parsed.success && parsed.data.generics).toContain('amoxicillin')
+  })
+
   it('parses the rojak form to the same values', async () => {
     // docs/trd.md section 20.1: Malaysian consultations are Malay-dominant with
     // English switches, and "medical vocabulary is English". The dosing is the

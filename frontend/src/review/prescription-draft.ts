@@ -1,7 +1,9 @@
 import {
   type MedicationCandidateWire,
   type Prescription,
+  type PrescriptionLine,
   type PrescriptionParseResponse,
+  type ShareableSigField,
   SIG_FOOD_TIMINGS,
   SIG_FREQUENCIES,
   SIG_ROUTES,
@@ -50,55 +52,13 @@ export const EMPTY_DRAFT: PrescriptionDraft = {
   food: '',
 }
 
-/** A half-open range of `parsedFrom`, in characters. */
-export type Span = { readonly start: number; readonly end: number }
-
 /**
- * One prescription assembled in the theatre and not yet saved.
+ * Take a lexicon candidate as the drug name on a line's draft.
  *
- * **`source` is the stretch of the dictation these fields were read from**, not
- * the whole phrase. One dictation can name four drugs, and a row that quoted all
- * four would say nothing about where its own dose came from. It is rendered on
- * the row so a wrong split is visible rather than silent, and it is what travels
- * as `dictated`.
- *
- * `key` survives edits so React keys and focus targets do not move under the
- * doctor while they are typing in the row.
- */
-export type StagedPrescription = {
-  readonly key: string
-  readonly draft: PrescriptionDraft
-  readonly source: string
-  /**
-   * The span of the dictation this row claims, set when it came from accepting
-   * a candidate and absent on a row added by hand.
-   *
-   * **A span rather than a candidate id, because the matcher offers a
-   * combination and the single agent inside it as separate candidates.**
-   * Resolving only the exact candidate left `amoxicillin` on offer after
-   * `amoxicillin-clavulanate` was accepted, so one phrase could become two
-   * prescriptions for two different antibiotics. Anything overlapping a claimed
-   * span is a decision already made. Removing the row releases the span, which
-   * is what puts every one of them back on offer.
-   */
-  readonly span?: Span
-  /**
-   * Where `source` was cut from, which is a wider range than `span`.
-   *
-   * **`span` is the drug's name; this is the stretch its fields were read
-   * from.** They are kept apart because they answer different questions: `span`
-   * decides which candidates are still on offer, and a candidate contained in
-   * an accepted one must be suppressed, while this decides which characters no
-   * row can account for. Widening `span` to do both would suppress a candidate
-   * merely because it sits downstream of an accepted drug.
-   *
-   * Absent on a row typed with no dictation behind it, which claims nothing.
-   */
-  readonly sourceSpan?: Span
-}
-
-/**
- * Take a lexicon candidate as the drug name, on the doctor's explicit act.
+ * **The draft is an offer until the line is ticked**, and only a ticked line is
+ * saved. Since D-001's 06/10/26 amendment an exact name starts ticked, so
+ * Confirm accepts it; a near-match never does, and waits for the doctor's own
+ * tick.
  *
  * **This is the only writer of `drug` from a candidate, and the only writer of
  * `lexiconId` at all.** `MedicationCandidate` carries `generic` alongside
@@ -159,154 +119,174 @@ export function toPrescription(draft: PrescriptionDraft, dictated: string): Pres
   }
 }
 
-/** A stable identity for a candidate, so rejecting one does not dismiss another. */
-export const candidateKey = (candidate: MedicationCandidateWire) =>
-  `${candidate.start}:${candidate.end}:${candidate.lexiconId}`
+/** A half-open range of the parsed text, in characters. */
+export type Span = { readonly start: number; readonly end: number }
 
 /**
- * The same, for an unclaimed stretch.
+ * What the doctor has done to one line, kept apart from what the parse read.
  *
- * Keyed on its bounds, so a stretch whose bounds move is a new stretch and is
- * offered again. That is the honest reading: the bounds moved because a row was
- * added or removed, which is a different question from the one dismissed.
+ * **Kept apart so a re-parse cannot overwrite it.** The box re-parses as the
+ * doctor edits it, and a dose they typed must survive the text being read
+ * again. Each key is set only by the doctor's own act.
  */
-export const stretchKey = (stretch: Span) => `${stretch.start}:${stretch.end}`
-
-/**
- * The candidates still on offer, in the order the matcher returned them.
- *
- * **Filtered only, never sorted, grouped or deduped.** The order is score, then
- * span length, then id, and it is a fix rather than a presentation choice: a
- * clinical-safety review on #311 found a contained single agent outranking the
- * combination the doctor actually dictated, because it scored higher on a
- * shorter span. Re-ordering here would reintroduce exactly that.
- */
-export function visibleCandidates(
-  candidates: readonly MedicationCandidateWire[],
-  resolved: ReadonlySet<string>,
-): MedicationCandidateWire[] {
-  return candidates.filter((candidate) => !resolved.has(candidateKey(candidate)))
+export type LineEdit = {
+  readonly ticked?: boolean
+  /** Typed by hand, which drops the lexicon provenance with it. */
+  readonly drug?: string
+  /** Another of the line's own candidates, picked over the first. */
+  readonly chosen?: string
+  readonly fields?: Partial<Omit<PrescriptionDraft, 'drug' | 'lexiconId'>>
 }
 
 /**
- * The stretch of the dictation that belongs to one accepted drug.
+ * One row of the Prescription Lines table.
  *
- * **The parse endpoint returns one sig for the whole phrase**, so accepting four
- * drugs cannot take four sigs from one response. Re-parsing this slice is what
- * gives each drug the dose that was actually said beside it, and the alternative
- * of reusing the whole-phrase sig is how paracetamol's 500 mg lands on
- * cetirizine. D-001 exists to prevent exactly that.
- *
- * **It starts at the drug's own name and ends at the next drug name heard.** A
- * rejected or still-open candidate is still evidence that a different drug
- * starts there, so every candidate bounds the end regardless of what the doctor
- * did with it.
- *
- * **Starting at the previous drug's end instead was tried and is wrong.** It
- * would catch a dose stated before the name, as in "500 mg of amoxicillin", but
- * dictation almost always states the sig after the name, so the slice for drug
- * two would open with drug one's trailing "500 mg three times a day" and the
- * parser would read it. Losing a leading dose costs an empty field, which asks
- * the doctor a question; inheriting the previous drug's dose fills the field
- * with an answer nobody gave. The asymmetry is the whole reason this function
- * exists, so it fails toward the empty field.
- *
- * The `> candidate.end` test rather than `> candidate.start` is what keeps a
- * combination such as `amoxicillin-clavulanate` from being cut short by the
- * `amoxicillin` the matcher also finds inside it.
- *
- * It reads from the text the offsets belong to, never from the live box, so a
- * doctor mid-edit cannot move the slice under the row.
+ * `heard` came from a drug name the matcher recognised; `unnamed` is a line
+ * with a sig but no recognised name, which must be named or unticked before
+ * Confirm; `manual` was added by hand.
  */
-export function spanForCandidate(
+export type LineRow = {
+  readonly key: string
+  readonly kind: 'heard' | 'unnamed' | 'manual'
+  /** Where the line sits in the parsed text. Absent on a manual row. */
+  readonly span?: Span
+  readonly candidates: readonly MedicationCandidateWire[]
+  readonly exact: boolean
+  readonly draft: PrescriptionDraft
+  /** Fields still filled from a shared clause, with where that clause sits. */
+  readonly shared: readonly { field: ShareableSigField; start: number; end: number }[]
+  readonly ticked: boolean
+  /**
+   * A reading the matcher had to guess at, which the doctor has neither taken
+   * nor left out yet. It holds Confirm: a drug said and then dropped because
+   * nobody ticked it is the #369 failure by another door.
+   */
+  readonly undecided: boolean
+  /** What travels as `dictated`: this line's own words, and any shared clause it used. */
+  readonly evidence: string
+}
+
+const normalised = (text: string) => text.toLowerCase().replace(/\s+/g, ' ').trim()
+
+/**
+ * A key per line that survives the text being parsed again.
+ *
+ * By drug for a heard line and by its words for an unnamed one, counted in
+ * order so a drug said twice keeps two keys. Offsets would not do: correcting
+ * one word early in the box moves every line after it.
+ */
+export function lineKeys(parsedFrom: string, lines: readonly PrescriptionLine[]): string[] {
+  const seen = new Map<string, number>()
+  return lines.map((line) => {
+    const base =
+      line.candidates[0] === undefined
+        ? `unnamed:${normalised(parsedFrom.slice(line.start, line.end))}`
+        : `heard:${line.candidates[0].lexiconId}`
+    const count = seen.get(base) ?? 0
+    seen.set(base, count + 1)
+    return `${base}:${count}`
+  })
+}
+
+/**
+ * The table, from the parse and the doctor's edits.
+ *
+ * **A near-match is never ticked for the doctor** (`docs/decisions.md` D-001,
+ * amended 06/10/26). Only an exact name starts ticked, so pressing Confirm
+ * accepts it; a reading the matcher had to guess at is undecided until the
+ * doctor ticks it, picks another reading, types a name or leaves it out. An
+ * unnamed line starts ticked, so Confirm stays held until the doctor names it
+ * or unticks it.
+ */
+export function rowsFrom(
   parsedFrom: string,
-  candidates: readonly MedicationCandidateWire[],
-  candidate: MedicationCandidateWire,
-): Span {
-  let to: number | null = null
-  for (const other of candidates) {
-    /*
-     * A later mention of the same drug does not bound it. Self-correction is
-     * ordinary speech, and "amoxicillin, sorry, amoxicillin 500 mg" offers two
-     * candidates for one drug: bounding the first at the second cut its slice
-     * to "amoxicillin, sorry," and recorded the dose as unread.
-     */
-    if (other.lexiconId === candidate.lexiconId) continue
-    if (other.start > candidate.end && (to === null || other.start < to)) to = other.start
-  }
-  return { start: candidate.start, end: to ?? parsedFrom.length }
-}
+  lines: readonly PrescriptionLine[],
+  edits: ReadonlyMap<string, LineEdit>,
+): LineRow[] {
+  const keys = lineKeys(parsedFrom, lines)
+  return lines.map((line, index) => {
+    const key = keys[index] as string
+    const edit = edits.get(key) ?? {}
+    const pick =
+      line.candidates.find(({ lexiconId }) => lexiconId === edit.chosen) ?? line.candidates[0]
 
-/** The text of {@link spanForCandidate}, which is what the row quotes. */
-export function sliceForCandidate(
-  parsedFrom: string,
-  candidates: readonly MedicationCandidateWire[],
-  candidate: MedicationCandidateWire,
-): string {
-  const { start, end } = spanForCandidate(parsedFrom, candidates, candidate)
-  return parsedFrom.slice(start, end).trim()
-}
+    let draft: PrescriptionDraft = { ...EMPTY_DRAFT, ...fromSig(line.sig) }
+    if (pick !== undefined) draft = acceptCandidate(draft, pick)
+    if (edit.drug !== undefined) draft = setDrugByHand(draft, edit.drug)
+    draft = { ...draft, ...edit.fields }
 
-/**
- * Narrow a claimed span to the last character its sig parse could account for.
- *
- * **This is what leaves a remainder to show.** A slice bounded only by the next
- * drug name runs to the end of the dictation whenever the matcher offered no
- * next name, and a brand name is outside the lexicon by D-001, so that is the
- * ordinary case rather than the rare one. Without narrowing, one row claims
- * every character and `unclaimedStretches` can never return anything (#369).
- *
- * **It only ever shrinks.** `readTo` is an offset into the slice, not into the
- * dictation, so it is measured from `span.start`; a `readTo` reaching past the
- * span means the parse read nothing this span does not already hold, and the
- * span stands. `null` likewise leaves it alone: no field was read, so there is
- * no evidence about where the drug's own text stops, and guessing a boundary
- * would cut a quote on nothing.
- */
-export function narrowToSig(span: Span, readTo: number | null | undefined): Span {
-  if (readTo === null || readTo === undefined) return span
-  const end = span.start + readTo
-  return end < span.end ? { start: span.start, end } : span
-}
+    const shared = line.shared.filter(({ field }) => edit.fields?.[field] === undefined)
+    const quotes = [
+      parsedFrom.slice(line.start, line.end),
+      ...new Set(shared.map(({ start, end }) => parsedFrom.slice(start, end))),
+    ]
 
-/**
- * The stretches of the dictation that no row claims.
- *
- * **A gap is evidence, never a proposal.** It says these characters belong to
- * no prescription, and nothing more: no drug name is read out of it, and none
- * is guessed. That distinction is what keeps this the visible-drop fix rather
- * than a second route to a drug name the doctor did not choose (D-001).
- *
- * A gap holding no letter is dropped, because the tail between one drug's sig
- * and the next drug's name is usually `. ` and offering it would be noise.
- */
-export function unclaimedStretches(
-  parsedFrom: string,
-  claims: readonly Span[],
-): { start: number; end: number; text: string }[] {
-  const ordered = [...claims].sort((a, b) => a.start - b.start)
-  const stretches: { start: number; end: number; text: string }[] = []
-  let cursor = 0
-
-  for (const claim of [...ordered, { start: parsedFrom.length, end: parsedFrom.length }]) {
-    if (claim.start > cursor) {
-      const gap = parsedFrom.slice(cursor, claim.start)
-      /*
-       * Leading punctuation is the previous drug's full stop rather than this
-       * stretch's own text, so the offer opens on a word. The span moves with
-       * it, which keeps `text` exactly what `parsedFrom` holds between the
-       * bounds reported.
-       */
-      const lead = gap.length - gap.replace(/^[\s.,;:]+/, '').length
-      const text = gap.slice(lead).trimEnd()
-      if (/\p{L}/u.test(text)) {
-        stretches.push({ start: cursor + lead, end: cursor + lead + text.length, text })
-      }
+    return {
+      key,
+      kind: pick === undefined ? 'unnamed' : 'heard',
+      span: { start: line.start, end: line.end },
+      candidates: line.candidates,
+      exact: line.exact,
+      draft,
+      shared,
+      ticked: edit.ticked ?? (pick === undefined || line.exact || edit.drug !== undefined),
+      undecided:
+        pick !== undefined &&
+        !line.exact &&
+        edit.ticked === undefined &&
+        edit.chosen === undefined &&
+        edit.drug === undefined,
+      evidence: evidenceOf(quotes),
     }
-    cursor = Math.max(cursor, claim.end)
-  }
+  })
+}
 
-  return stretches
+/**
+ * The line's own words, then the shared clause it used, within the field's
+ * limit. Past it the shared quote goes rather than half a word.
+ */
+const evidenceOf = (quotes: readonly string[]) => {
+  const joined = quotes.join(' … ')
+  return joined.length <= MAX_DICTATED_CHARACTERS ? joined : (quotes[0] ?? '')
+}
+
+/** A row added by hand, quoting the whole box as its evidence. */
+export function manualRow(key: string, phrase: string, edit: LineEdit = {}): LineRow {
+  return {
+    key,
+    kind: 'manual',
+    candidates: [],
+    exact: false,
+    draft: { ...EMPTY_DRAFT, drug: edit.drug ?? '', ...edit.fields },
+    shared: [],
+    ticked: edit.ticked ?? true,
+    undecided: false,
+    evidence: phrase,
+  }
+}
+
+/**
+ * What Confirm would save, and what still holds it.
+ *
+ * Unticked rows the doctor left out are left out entirely. Nothing else is
+ * left out quietly: a ticked row with no drug and a near-match nobody decided
+ * on are both counted, and either count holds Confirm.
+ */
+export function toConfirm(rows: readonly LineRow[]): {
+  ready: Prescription[]
+  unnamed: number
+  undecided: number
+} {
+  const ticked = rows.filter(({ ticked }) => ticked)
+  const ready = ticked.flatMap((row) => {
+    const prescription = toPrescription(row.draft, row.evidence)
+    return prescription === null ? [] : [prescription]
+  })
+  return {
+    ready,
+    unnamed: ticked.length - ready.length,
+    undecided: rows.filter(({ undecided }) => undecided).length,
+  }
 }
 
 /**

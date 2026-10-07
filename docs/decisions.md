@@ -10,12 +10,12 @@ Scope decisions that change what this product does, recorded rather than silentl
 
 ## D-001: Dictated Medication Capture
 
-|                |                                                         |
-| -------------- | ------------------------------------------------------- |
-| **Date**       | 2026-09-09                                              |
-| **Status**     | Adopted. Amended 2026-09-10 three times, and 2026-10-06 |
-| **Issues**     | #310, #311, #312, #313, #355, #356, #357, #363          |
-| **Supersedes** | Nothing. Clarifies `docs/prd.md` Section 6              |
+|                |                                                               |
+| -------------- | ------------------------------------------------------------- |
+| **Date**       | 2026-09-09                                                    |
+| **Status**     | Adopted. Amended 2026-09-10 three times, and 2026-10-06 twice |
+| **Issues**     | #310, #311, #312, #313, #355, #356, #357, #363                |
+| **Supersedes** | Nothing. Clarifies `docs/prd.md` Section 6                    |
 
 ### Decision
 
@@ -111,7 +111,43 @@ Section 11's intended-purpose statement already describes exactly this, and is *
 | **What still holds**  | Every failure lands on this device or on typing, never silently on the cloud: key unset, config unreachable, mint refused, socket dropped. The audit row still records `consentAsserted: false` |
 | **Who authorised it** | @AlaskanTuna, 2026-10-06, scoped to prescription dictation on the review page                                                                                                                   |
 
+### Amended 2026-10-06: One Read, One Table Of Lines
+
+**A doctor dictated three drugs and the theatre found two.** "Amoxicillin 500 mg, paracetamol 350 mg, antibiotic 200 mg, all of them 2 times a day" offered amoxicillin and paracetamol, folded "antibiotic 200 mg" into paracetamol's quote, and gave "2 times a day" to paracetamol alone. Every drug also needed its own Accept, even when it was heard exactly.
+
+**The parse now reads the whole dictation into lines, one per drug, and the theatre shows them as one table.** Still deterministic, still no model, and still nothing stored before Confirm. Three decisions came with it, each authorised by @AlaskanTuna on 2026-10-06.
+
+| Decision                                                 | What it means                                                                                                                                                                                                                                                                                                                    | Why it stays inside this decision                                                                                                                                                                      |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **1. An exact name starts ticked**                       | A name heard exactly as the lexicon spells it is ticked, so Confirm accepts it. Never ticked for the doctor: a near-match, a single agent inside a combination also heard, or a drug said in one breath with another. A near-match holds Confirm until the doctor ticks it, picks another reading, types a name or leaves it out | Nothing is substituted: the name on the line is the name said. Confirm is still the act that records it, and a reading the matcher had to guess at can be neither saved nor dropped without the doctor |
+| **2. A shared clause fills every line, except the dose** | "All of them", "both" or "semua", followed by a frequency, duration, route or food timing, fills that field on every line that left it unsaid. Each filled field names the clause it came from, and the clause travels in `dictated`                                                                                             | A dose belongs to one drug. A shared clause that carries a dose becomes a line of its own instead, so it is neither spread nor dropped                                                                 |
+| **3. A line nobody named holds Confirm**                 | A line with a sig but no recognised name, such as "antibiotic 200 mg" or a brand, is shown with a dashed outline and an empty drug field. Confirm stays held until the doctor names it or unticks it                                                                                                                             | No drug is proposed for it. Generic names are offered as typing suggestions only, and a typed name carries no `lexiconId`                                                                              |
+
+**Where a line ends is a heuristic, and it shows its working.** Each line quotes the words it was read from, and the TRD lists the rules. The clinical review on 2026-10-06 reproduced three ways a dose reached the wrong drug, each fixed and pinned by a test:
+
+| Dictation                                       | Was                                       | Now                                                                 |
+| ----------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------- |
+| "Paracetamol, Brufen, 400 mg three times a day" | 400 mg on paracetamol, ticked             | A line for "Brufen, 400 mg", unnamed; paracetamol's dose left empty |
+| "Cefuroxime, cefixime 200 mg twice a day"       | Merged as one cefuroxime line with 200 mg | Two lines; the look-alike is a near-match that needs a decision     |
+| "amoxicillin three times a day 1 g paracetamol" | Both ticked, 1 g on amoxicillin           | Neither ticked, because whose dose it is is a guess                 |
+
+**A dictation benchmark on 2026-10-07 found three more,** running accented synthetic speech through the production recogniser. Each is fixed and pinned by a test:
+
+| Dictation, as the recogniser wrote it                                | Was                                                                                    | Now                                                                                                                          |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| "Paracetamol 1 g, 4 times a day. Amoxicillin 500 mg, 3 times a day." | Paracetamol's frequency on amoxicillin, ticked; amoxicillin's an unnamed line          | Each frequency on its own drug. "day. Amoxicillin" also reads as doxycycline, and that reading no longer hides the full stop |
+| "cetirizine 10 mg sekali sehari waktu malam"                         | Cetirizine empty and unticked, beside an amoxicillin-clavulanate line holding its dose | One cetirizine line, ticked. A reading of sig words alone is not a name                                                      |
+| "Paracetamol three times a day, for 7 days Brufen 400 mg"            | 400 mg on paracetamol, ticked, and Brufen gone                                         | An unnamed line for "for 7 days Brufen 400 mg"; paracetamol's dose left empty                                                |
+
+**One known gap stays.** A brand with no dose and no repeated field, as in "amoxicillin 500 mg, Panadol four times a day", still joins the line before it. That line's quote shows it.
+
+**The box is read again about 0.6 s after the doctor stops editing it**, and the Check button is gone. Fields the doctor changed are kept across reads, keyed by drug rather than by offset. Confirm is held while the table is behind the text.
+
+The two sections below describe the mechanism this replaces. They stay as the history of why a line has the boundaries it has.
+
 ### The Per-Drug Sig, And Why It Is Not The Whole Phrase
+
+_Superseded 2026-10-06 by One Read, One Table Of Lines above._
 
 One dictation naming four drugs gets one sig back from the parse endpoint, because `parseSig` reads a phrase and not a list. Attaching that sig to every accepted drug would put paracetamol's 500 mg on cetirizine, which is the wrong-dose failure the Not Built table below exists to prevent.
 
@@ -124,6 +160,8 @@ The theatre instead re-sends each accepted drug's own stretch of text to the sam
 It stays a client-side heuristic against an unchanged endpoint. The endpoint is deterministic, stores nothing, writes no audit row and allows thirty calls a minute, so the extra calls buy correctness at no boundary cost.
 
 ### The Stretch No Row Claims
+
+_Superseded 2026-10-06 by One Read, One Table Of Lines above. The #369 dictation now reads as two lines, the brand left unnamed for the doctor._
 
 **Bounding a slice at the next drug name is only half a boundary, and the missing half lost a drug.** Reported 2026-09-10 (#369): a dictation naming Dextromethorphan and then Strepsils recorded one prescription. Strepsils is a brand, brands are outside the lexicon by the Not Built table below, so the matcher offered a single candidate. With no second name to bound it, the first slice ran to the end of the utterance, and the row's quote presented the second drug's entire sig as evidence for fields none of that text supplied.
 
