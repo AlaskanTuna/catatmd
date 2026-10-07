@@ -777,7 +777,7 @@ describe('a dropped connection', () => {
     expect(recorders[1]?.state).toBe('recording')
   })
 
-  it('names the reconnected speaker by number alone', async () => {
+  it('names the reconnected speaker by number, marked as reconnected', async () => {
     await startSession()
     await act(async () => socket().drop())
     await settle()
@@ -786,7 +786,7 @@ describe('a dropped connection', () => {
     await act(async () => reopened.open())
     await act(async () => reopened.message({ tokens: [said('Any fever?', 0, 900, 1)] }))
 
-    expect(screen.getByText('Speaker 1')).toBeTruthy()
+    expect(screen.getByText('Speaker 1 (reconnected)')).toBeTruthy()
   })
 
   it('gives up, keeps what was transcribed and says capture stopped when it cannot reconnect', async () => {
@@ -829,6 +829,30 @@ describe('a dropped connection', () => {
     expect(screen.getByRole('alert').textContent).toMatch(/not transcribed/i)
     expect(sockets.every((s) => s.readyState === FakeWebSocket.CLOSED)).toBe(true)
     expect(tracks[0]?.stop).toHaveBeenCalled()
+  })
+
+  it('never revives a reconnect the doctor stopped, inside the next consultation', async () => {
+    createLiveSession
+      .mockResolvedValueOnce(session)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(session)
+    await startSession()
+    await act(async () => socket().drop())
+    await settle()
+    // The first retry failed, so the loop is waiting out its next delay.
+    await stopAndFinish(undefined)
+    if (!tick().checked) await act(async () => tick().click())
+    await act(async () => startButton().click())
+    await settle()
+    expect(sockets).toHaveLength(2)
+    const minted = createLiveSession.mock.calls.length
+
+    for (let i = 0; i < 3; i += 1) {
+      await act(async () => vi.advanceTimersByTime(5_000))
+      await settle()
+    }
+
+    expect(createLiveSession.mock.calls.length).toBe(minted)
   })
 
   it('does not reconnect past the session cap', async () => {
@@ -1202,6 +1226,56 @@ describe('translation', () => {
     expect(screen.getByText('না।').closest('[lang]')?.getAttribute('lang')).toBe('bn')
     expect(screen.getByText('Bengali')).toBeTruthy()
     expect(screen.getByText(/translations are machine-generated/i)).toBeTruthy()
+  })
+
+  it('never lets a turn run across a reconnect (#256)', async () => {
+    const { onTranscript } = await startTranslated()
+    // The doctor's words settle, then the socket drops before their translation.
+    await act(async () => socket().message({ tokens: [doctorAsks[0]] }))
+    await act(async () => socket().drop())
+    await settle()
+    const reopened = sockets[1]
+    if (!reopened) throw new Error('no second socket')
+    await act(async () => reopened.open())
+    await settle()
+    await act(async () =>
+      reopened.message({
+        tokens: [
+          {
+            text: 'Does it hurt?',
+            start_ms: 0,
+            end_ms: 900,
+            is_final: true,
+            language: 'en',
+            translation_status: 'original',
+          },
+          {
+            text: 'ব্যথা হয়?',
+            is_final: true,
+            language: 'bn',
+            translation_status: 'translation',
+            source_language: 'en',
+          },
+          { text: '<end>', is_final: true },
+        ],
+      }),
+    )
+
+    const stopped = act(async () => {
+      screen.getByRole('button', { name: /stop and finish/i }).click()
+    })
+    await settle()
+    await act(async () => reopened.message({ tokens: [], finished: true }))
+    await stopped
+    await settle()
+
+    const delivered = onTranscript.mock.calls[0]?.[0]
+    expect(delivered.draftTurns.map((turn: { text: string }) => turn.text)).toEqual([
+      'Can you swallow?',
+      'Does it hurt?',
+    ])
+    expect(delivered.otherLanguages[1]).toMatchObject({ text: 'ব্যথা হয়?' })
+    expect(delivered.otherLanguages[0]?.text).not.toBe('ব্যথা হয়?')
   })
 
   it('delivers the pairs with the roles its languages settled, and no labelling pass', async () => {

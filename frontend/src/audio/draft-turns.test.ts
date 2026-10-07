@@ -478,6 +478,44 @@ describe('voteRolesBySpeaker', () => {
     ])
   })
 
+  it('chooses the doctor within each connection, never across a reconnect (#256)', () => {
+    // A reopened socket numbers voices afresh, so `1/1` is not `1`. Pooled, the
+    // pre-drop doctor out-ranks everyone and the post-drop doctor, `2/1` here,
+    // would be voted the patient.
+    const reconnected = [
+      ...segments,
+      said('2/1', 'Is the cough worse at night?'),
+      said('1/1', 'Yes, every night.'),
+      said('2/1', 'Okay.'),
+      said('1/1', 'Okay.'),
+      said('2/1', 'Take this for five days.'),
+    ]
+    const drafted = [
+      line('a', 'doctor', 'Any fever?'),
+      line('b', 'patient', 'Yes, at night.'),
+      line('c', 'patient', 'Okay.'),
+      line('d', 'doctor', 'Okay.'),
+      line('e', 'doctor', 'Come back if it gets worse.'),
+      line('f', 'doctor', 'Is the cough worse at night?'),
+      line('g', 'patient', 'Yes, every night.'),
+      line('h', 'patient', 'Okay.'),
+      line('i', 'doctor', 'Okay.'),
+      line('j', 'doctor', 'Take this for five days.'),
+    ]
+    expect(voteRolesBySpeaker(drafted, reconnected).map((l) => l.speaker)).toEqual([
+      'doctor',
+      'patient',
+      'doctor',
+      'patient',
+      'doctor',
+      'doctor',
+      'patient',
+      'doctor',
+      'patient',
+      'doctor',
+    ])
+  })
+
   it('cuts a drafted line where the speaker changes', () => {
     // The patient's own lines carry the vote; the merged ones are then cut.
     const drafted = [

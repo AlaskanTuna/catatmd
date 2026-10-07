@@ -77,7 +77,11 @@ function SpeakerChip({ speaker, mode }: { speaker: string; mode: ConversationMod
           : 'bg-sunken text-ink-muted',
       )}
     >
-      {mode === 'languages' ? languageName(speaker) : `Speaker ${speakerNumber(speaker)}`}
+      {mode === 'languages'
+        ? languageName(speaker)
+        : // A reopened socket numbers voices afresh (#256), so its "Speaker 1"
+          // may be someone else, and says so.
+          `Speaker ${speakerNumber(speaker)}${speakerNumber(speaker) === speaker ? '' : ' (reconnected)'}`}
     </span>
   )
 }
