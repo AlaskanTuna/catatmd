@@ -44,14 +44,18 @@ const DENIAL_TAIL =
 const SCOPE_BREAK = /^\s*(?:but|tapi|however)\b/i
 // A short answer opening the next turn marks the turn before it as a question,
 // punctuated or not ("Got cough" / "No.").
-const SHORT_ANSWER = /^\s*(?:no|nope|nah|yes|yeah|yup|ya|tak|takde|tiada|tidak|belum|ada)\b/i
+const SHORT_ANSWER =
+  /^\s*(?:no|nope|nah|neither|not\s+really|yes|yeah|yup|ya|tak|takde|tiada|tidak|belum|ada|(?:i\s+)?don'?t)\b/i
+// The doctor saying what they will do, or a remark about illness in general.
+const NOT_A_FINDING =
+  /^\s*(?:let\s+me|lemme|i'?ll|i\s+will|i'?m\s+going\s+to|going\s+to|check)\b|\b(?:common|usually|typically|vaccines?|vaccinat\w*)\b/i
 // A number that is a threshold, advice or a guess, never a reading.
 const NOT_A_READING =
   /\b(?:above|over|more\s+than|below|under|less\s+than|exceed\w*|at\s+least|up\s+to|reach\w*|goes|gets|hits|when|felt\s+like|around|about|approximately|roughly|did\s+not\s+check|didn'?t\s+check|not\s+checked)\b|[<>~]/i
 // A unit or measure after the number that makes it something other than a temperature.
 const OTHER_MEASURE = /^\s*(?:years?|yrs?|y\/o|hours?|hrs?|days?|minutes?|mins?|bpm|\/min|mmhg|%)/i
 // Sites that are not the anterior neck, which the node criterion names.
-const EXCLUDED = /\b(?:posterior|occipital|axillary|inguinal)\b/i
+const EXCLUDED = /\b(?:posterior|occipital|axillary|axilla|armpits?|inguinal|groin|chain)\b/i
 const FEVER_STATED = /\b(?:fever(?:ish)?|febrile|demam|panas\s+badan)\b/i
 
 interface Sentence {
@@ -79,8 +83,12 @@ function readableSentences(transcript: Transcript): Sentence[] {
   const sentences: Sentence[] = []
   for (const [index, turn] of transcript.turns.entries()) {
     const next = transcript.turns[index + 1]
+    // A short reply only: a long next turn that opens "No exudate..." is not an answer.
     const answered =
-      next !== undefined && next.speaker !== turn.speaker && SHORT_ANSWER.test(next.text)
+      next !== undefined &&
+      next.speaker !== turn.speaker &&
+      SHORT_ANSWER.test(next.text) &&
+      next.text.trim().split(/\s+/).length <= 4
     // Split after a full stop and a space, so "38.4" stays one number.
     const parts = turn.text.split(/(?<=[.?!;])\s+/)
     for (const [position, raw] of parts.entries()) {
@@ -90,6 +98,7 @@ function readableSentences(transcript: Transcript): Sentence[] {
       if (text.endsWith('?') || QUESTION_OPENER.test(text)) continue
       if (SAFETY_NETTING.test(text) || ANOTHER_PERSON.test(text) || ANOTHER_TIME.test(text))
         continue
+      if (NOT_A_FINDING.test(text) || EXCLUDED.test(text)) continue
       sentences.push({ text, clauses: clausesOf(text) })
     }
   }
@@ -108,7 +117,6 @@ function states(sentence: Sentence, stated: ScoreReading['stated']): boolean {
     (clause) =>
       !clause.underDenial &&
       !NEGATOR.test(clause.text) &&
-      !EXCLUDED.test(clause.text) &&
       stated.some((patterns) => allIn(clause.text, patterns)),
   )
 }

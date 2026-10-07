@@ -52,6 +52,7 @@ export function ScoreCard({
           const suggestion = item.suggestion
           const suggested = item.options.find(({ id }) => id === suggestion?.optionId)
           const labelId = `${uid}-${item.id}`
+          const heardId = `${labelId}-heard`
           return (
             <div key={item.id}>
               <p id={labelId} className="text-xs font-medium text-ink">
@@ -60,6 +61,7 @@ export function ScoreCard({
               <div
                 role="radiogroup"
                 aria-labelledby={labelId}
+                aria-describedby={suggested !== undefined ? heardId : undefined}
                 className="mt-1 flex gap-1 rounded-control bg-sunken-soft p-1"
               >
                 {item.options.map((option) => {
@@ -68,6 +70,7 @@ export function ScoreCard({
                     <label key={option.id} className="flex-1 cursor-pointer">
                       <input
                         type="radio"
+                        id={`${labelId}-${option.id}`}
                         name={labelId}
                         value={option.id}
                         checked={selected}
@@ -76,7 +79,7 @@ export function ScoreCard({
                       />
                       <span
                         className={cn(
-                          'flex min-h-8 items-center justify-center gap-1 rounded-control px-2 text-center text-xs transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2',
+                          'flex min-h-8 items-center justify-center gap-1 rounded-control px-2 text-center text-xs transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-sunken-soft',
                           selected
                             ? 'bg-surface font-semibold text-accent shadow-raised'
                             : 'font-medium text-ink-muted hover:bg-sunken hover:text-ink',
@@ -98,15 +101,19 @@ export function ScoreCard({
               </div>
               {suggestion !== null && suggested !== undefined && (
                 <div className="mt-1 flex items-start justify-between gap-2">
-                  <p className="min-w-0 text-xs text-ink-muted">
+                  <p id={heardId} className="min-w-0 text-xs text-ink-muted">
                     <span className="font-medium text-ink">Heard:</span> &ldquo;
                     {suggestion.evidence}&rdquo;
                   </p>
                   {chosen !== suggested.id && (
                     <button
                       type="button"
-                      onClick={() => setAnswers((prev) => ({ ...prev, [item.id]: suggested.id }))}
-                      className="shrink-0 rounded-control px-1.5 py-0.5 text-xs font-medium text-accent hover:bg-sunken focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
+                      onClick={() => {
+                        setAnswers((prev) => ({ ...prev, [item.id]: suggested.id }))
+                        // The button leaves with the click, so focus goes to the answer it chose.
+                        document.getElementById(`${labelId}-${suggested.id}`)?.focus()
+                      }}
+                      className="min-h-6 shrink-0 rounded-control px-1.5 py-0.5 text-xs font-medium text-accent hover:bg-sunken"
                     >
                       Use &ldquo;{suggested.label}&rdquo;{' '}
                       <span className="sr-only">for {item.label}</span>
@@ -165,8 +172,8 @@ export function ScoreCard({
         })}
       </div>
       <p className="mt-3 text-2xs text-ink-muted">
-        Each total sums its own source&rsquo;s items and is not saved with the note. Read what it
-        means in that source.
+        A total sums only the answers chosen above and is not saved with the note. Read what it
+        means in its source.
       </p>
     </Card>
   )

@@ -1572,8 +1572,8 @@ export function ConsultationReview() {
                   a consultation analysed before scores shipped, which is not
                   the same as none applying, so nothing is said then. Kept off
                   paper: the answers are not saved, and a printed total would
-                  read as part of the record. Keyed on the scores, pre-fills
-                  included, so a fresh analysis starts from its own. */}
+                  read as part of the record. Keyed on the scores, suggestions
+                  included, so a fresh analysis starts empty again. */}
               {analysis.scores !== undefined && analysis.scores.length > 0 && (
                 <Panel title="Scores" count={analysis.scores.length} printHidden>
                   <ScoreCard

@@ -119,6 +119,20 @@ describe('what the pre-fill leaves empty', () => {
     expect(filled(patient(text)).temperature).toBeNull()
   })
 
+  it.each([
+    [[doctor('Cough or fever'), patient('Neither.')], 'cough'],
+    [[doctor('Cough'), patient('Not really.')], 'cough'],
+    [[doctor('Got cough'), patient("I don't have.")], 'cough'],
+    [[doctor('Let me look for exudate.')], 'tonsils'],
+    [[doctor("I'm going to check your tonsils for pus.")], 'tonsils'],
+    [[doctor('Cough is common with viral infections.')], 'cough'],
+    [[patient('I had my whooping cough vaccine.')], 'cough'],
+    [[doctor('Tender swollen nodes in the groin.')], 'neck-nodes'],
+    [[doctor('Tender swollen nodes, posterior chain.')], 'neck-nodes'],
+  ])('offers nothing for %j', (turns, itemId) => {
+    expect(filled(...turns)[itemId]).toBeNull()
+  })
+
   it('leaves a low reading empty when a fever was reported', () => {
     expect(
       filled(patient('I had a high fever last night.'), doctor('Temperature today 37.2.'))
@@ -211,8 +225,13 @@ describe('when the score is offered', () => {
   it('offers it where a sore throat was reported, in English or Malay', () => {
     expect(offered(patient('I have had a sore throat since Monday.'))).toBe(true)
     expect(offered(patient('Sakit tekak dah tiga hari.'))).toBe(true)
+    expect(offered(patient('Batuk sudah 3 hari lah, and my throat also quite sakit.'))).toBe(true)
+    expect(offered(patient('Throat also a bit sakit lah.'))).toBe(true)
     expect(offered(patient('Sore throat, but no fever.'))).toBe(true)
     expect(offered(patient('throat is sore since monday no fever no cough'))).toBe(true)
+    expect(offered(patient('I have a sore throat.'), doctor('No exudate but tender nodes.'))).toBe(
+      true,
+    )
   })
 
   it.each([

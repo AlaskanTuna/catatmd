@@ -77,7 +77,8 @@ export const SORE_THROAT_SCORE = {
   profiles: ['adult-acute-urti'] as readonly ProfileId[],
   presentation: [
     [/\b(?:sore|painful|scratchy)\s+throat\b/i],
-    [/\bthroat\s+(?:is\s+)?(?:sore|pain|hurts?|hurting)\b/i],
+    // Manglish puts the Malay word after: "my throat also quite sakit".
+    [/\bthroat\b[^.,;]{0,25}?\b(?:sore|pain(?:ful)?|hurts?|hurting|sakit|pedih)\b/i],
     [/\bpharyngitis\b|\btonsill?itis\b/i],
     [/\bsakit\s+tekak\b/i],
   ] as readonly (readonly RegExp[])[],

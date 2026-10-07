@@ -95,6 +95,14 @@ describe('ScoreCard (#221)', () => {
     expect(checked('Fever', /yes/i)).toBe(true)
     expect(total('first')).toBe('1')
     expect(screen.queryByRole('button', { name: /use .yes. for fever/i })).toBeNull()
+    expect(document.activeElement).toBe(within(group('Fever')).getByRole('radio', { name: /yes/i }))
+  })
+
+  it('ties what was heard to the item it is about', () => {
+    render(<ScoreCard scores={SCORES} guidelines={GUIDES} />)
+    const describedBy = group('Fever').getAttribute('aria-describedby')
+    expect(describedBy && document.getElementById(describedBy)?.textContent).toMatch(/38\.6/)
+    expect(group('Tender nodes').getAttribute('aria-describedby')).toBeNull()
   })
 
   it('sums each score from its own items, negative points included', () => {
