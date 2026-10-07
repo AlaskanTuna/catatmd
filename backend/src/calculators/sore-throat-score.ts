@@ -77,10 +77,15 @@ export const SORE_THROAT_SCORE = {
   profiles: ['adult-acute-urti'] as readonly ProfileId[],
   presentation: [
     [/\b(?:sore|painful|scratchy)\s+throat\b/i],
-    // Manglish puts the Malay word after: "my throat also quite sakit".
-    [/\bthroat\b[^.,;]{0,25}?\b(?:sore|pain(?:ful)?|hurts?|hurting|sakit|pedih)\b/i],
+    // Manglish puts the Malay word after, often with a particle joined on:
+    // "my throat also quite sakit", "My throat, very sakitlah".
+    [/\bthroat\b[^.,;]{0,25}?\b(?:sore|pain(?:ful)?|hurts?|hurting|sakit(?:lah|la|nya)?|pedih)\b/i],
     [/\bpharyngitis\b|\btonsill?itis\b/i],
     [/\bsakit\s+tekak\b/i],
+    [/\btekak\b[^.,;]{0,25}?\b(?:sakit|pedih|perit)/i],
+    // Painful swallowing is how a sore throat is often first described.
+    [/\bpain(?:ful)?\s+(?:to|when|on|while)\s+swallow/i],
+    [/\bsakit\s+(?:nak|bila|masa|untuk)\s+telan\b/i],
   ] as readonly (readonly RegExp[])[],
   score: {
     id: 'modified-centor',

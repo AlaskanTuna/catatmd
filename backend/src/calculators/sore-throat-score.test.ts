@@ -227,6 +227,13 @@ describe('when the score is offered', () => {
     expect(offered(patient('Sakit tekak dah tiga hari.'))).toBe(true)
     expect(offered(patient('Batuk sudah 3 hari lah, and my throat also quite sakit.'))).toBe(true)
     expect(offered(patient('Throat also a bit sakit lah.'))).toBe(true)
+    // As Soniox wrote it in the prod e2e run, 08/10.
+    expect(
+      offered(patient('My throat\u2014very sakitlah, already 3 days, very painful to swallow.')),
+    ).toBe(true)
+    expect(offered(patient('Tekak saya sakit sejak semalam.'))).toBe(true)
+    expect(offered(patient('Very painful to swallow since Monday.'))).toBe(true)
+    expect(offered(patient('Sakit nak telan, doktor.'))).toBe(true)
     expect(offered(patient('Sore throat, but no fever.'))).toBe(true)
     expect(offered(patient('throat is sore since monday no fever no cough'))).toBe(true)
     expect(offered(patient('I have a sore throat.'), doctor('No exudate but tender nodes.'))).toBe(
@@ -240,6 +247,8 @@ describe('when the score is offered', () => {
     ['asked about', [doctor('Any sore throat?'), patient('No.')]],
     ['someone else', [patient('My wife has a sore throat.')]],
     ['no throat pain', [patient('No throat pain.')]],
+    ['not painful to swallow', [patient('Not painful to swallow.')]],
+    ['tekak tak sakit', [patient('Tekak tak sakit.')]],
   ])('does not offer it when the sore throat was %s', (_case, turns) => {
     expect(offered(...turns)).toBe(false)
   })
