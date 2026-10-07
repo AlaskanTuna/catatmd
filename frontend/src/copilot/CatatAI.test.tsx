@@ -303,6 +303,28 @@ describe('Propose as Edit', () => {
     expect(screen.queryByRole('button', { name: /propose as edit/i })).toBeNull()
   })
 
+  it('does not offer it again under the answer to a press', async () => {
+    await ask('analysed', prose)
+    fetchSpy.mockImplementation(async () =>
+      sse({ type: 'token', text: 'I could not turn that into an edit.' }, { type: 'done' }),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /propose as edit/i }))
+    await screen.findByText(/could not turn that into an edit/i)
+
+    expect(screen.queryByRole('button', { name: /propose as edit/i })).toBeNull()
+  })
+
+  it('does not offer it under an answer an error cut short', async () => {
+    await ask('analysed', () =>
+      sse(
+        { type: 'token', text: 'You could add: "Return if the fever' },
+        { type: 'error', message: 'CatatAI could not complete that answer.' },
+      ),
+    )
+    expect(screen.queryByRole('button', { name: /propose as edit/i })).toBeNull()
+  })
+
   it('does not offer it on a signed note, which nothing may change', async () => {
     await ask('approved', prose)
     expect(screen.queryByRole('button', { name: /propose as edit/i })).toBeNull()

@@ -130,10 +130,15 @@ export function CatatAI({
    */
   const signed = consultation.status === 'approved'
   const last = messages.at(-1)
+  // Not under an answer that was itself a press (its fallback line would
+  // invite the same retry), nor under one an error cut short.
+  const pressed = messages.at(-2)?.content === PROPOSE_MESSAGE
   const proposable =
     !streaming &&
     !demo &&
     !signed &&
+    !error &&
+    !pressed &&
     last?.role === 'copilot' &&
     last.tools.length === 0 &&
     last.content.trim() !== ''
