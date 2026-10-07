@@ -1,3 +1,5 @@
 export { FIXTURES } from './corpus.js'
+export type { LanguageSample } from './languages.js'
+export { LANGUAGE_SAMPLES } from './languages.js'
 export type { FixtureRubric } from './rubrics.js'
 export { FIXTURE_RUBRICS } from './rubrics.js'
