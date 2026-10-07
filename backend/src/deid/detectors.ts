@@ -501,7 +501,9 @@ function detectMrn(text: string): Match[] {
 
 // ─── Person name ─────────────────────────────────────────────────────────────
 
-const CAPITALISED_RUN = /\b[A-Z][a-z'-]{1,}(?:\s+[A-Z][a-z'-]{1,}){0,3}\b/g
+const CAPITALISED_RUN = /\b[A-Z][a-z'-]{1,}(?:\s+[A-Z][a-z'-]{1,})*\b/g
+/** How many capitalised neighbours a known given name takes on each side (#416). */
+const NAME_REACH = 3
 const HONORIFIC_PATTERN = new RegExp(
   `\\b(?:${HONORIFICS.join('|')})\\.?\\s+([A-Z][A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+){0,3})`,
   'g',
@@ -677,23 +679,60 @@ function detectNames(text: string): Match[] {
   //    of a name, "Today Siti Aminah", sent the whole name in cleartext. A word
   //    in front that is not a stopword stays inside the token, as #149 rules: it
   //    may be a name element the gazetteer does not know.
+  //
+  //    The run is read whole and the span centred on the known name (#416).
+  //    Cutting runs into fixed four-word pieces split a name wherever a piece
+  //    happened to end, sending the half without a known name in cleartext.
+  //    The reach stays at three words a side, because a span taking the whole
+  //    run swallows a Title-Cased symptom header (#178).
   for (const m of text.matchAll(CAPITALISED_RUN)) {
-    const run = m[0]
-    if (isStopword(run)) continue
-    const trimmed = trimNameSpan(run, m.index)
-    if (!trimmed) continue
-    const words = trimmed.value.split(/\s+/).map((word) => word.toLowerCase())
-    if (!words.some((word) => GIVEN_NAMES.has(word))) continue
-    out.push({
-      label: 'PATIENT',
-      start: trimmed.start,
-      end: trimmed.start + trimmed.value.length,
-      value: trimmed.value,
-      score: 0.6,
-    })
+    if (isStopword(m[0])) continue
+    for (const segment of nameSegments(m[0], m.index)) {
+      const trimmed = trimNameSpan(segment.value, segment.start)
+      if (!trimmed) continue
+      const words = trimmed.value.split(/\s+/).map((word) => word.toLowerCase())
+      if (!words.some((word) => GIVEN_NAMES.has(word))) continue
+      out.push({
+        label: 'PATIENT',
+        start: trimmed.start,
+        end: trimmed.start + trimmed.value.length,
+        value: trimmed.value,
+        score: 0.6,
+      })
+    }
   }
 
   return out.map(stripPossessive)
+}
+
+/**
+ * The stretches of a capitalised run within `NAME_REACH` words of a known given
+ * name, with overlapping stretches joined, so one person stays one span.
+ */
+function nameSegments(run: string, start: number): { value: string; start: number }[] {
+  const words = [...run.matchAll(/\S+/g)]
+  const covered = words.map(() => false)
+  words.forEach((word, i) => {
+    if (!GIVEN_NAMES.has(word[0].toLowerCase())) return
+    const to = Math.min(words.length, i + NAME_REACH + 1)
+    for (let j = Math.max(0, i - NAME_REACH); j < to; j++) covered[j] = true
+  })
+  const segments: { value: string; start: number }[] = []
+  let i = 0
+  while (i < words.length) {
+    if (!covered[i]) {
+      i++
+      continue
+    }
+    let j = i
+    while (j + 1 < words.length && covered[j + 1]) j++
+    const from = words[i]?.index ?? 0
+    const last = words[j]
+    const to = (last?.index ?? 0) + (last?.[0].length ?? 0)
+    segments.push({ value: run.slice(from, to), start: start + from })
+    i = j + 1
+  }
+  return segments
 }
 
 /**

@@ -504,6 +504,35 @@ describe('an unmarked name is caught wherever it sits in its run (#413)', () => 
   })
 })
 
+describe('a name is not cut where a long capitalised run splits (#416)', () => {
+  it.each([
+    ['Kopi Teh Nasi Zarul Ahmad came.', /Zarul|Ahmad/],
+    ['Said Wrote Asked Zarul Ahmad came.', /Zarul|Ahmad/],
+    ['Kopi Teh Nasi Siti Zarul came.', /Siti|Zarul/],
+    ['Kopi Teh Nasi Zarul Qaseh Ahmad came.', /Zarul|Qaseh|Ahmad/],
+  ])('tokenises every element of the name in %j', (sentence, name) => {
+    expect(deidentify(sentence).text).not.toMatch(name)
+  })
+
+  it('covers a four-word name whole wherever its run happens to start', () => {
+    const name = 'Zarul Qaseh Ahmad Damia'
+    for (const lead of ['', 'Kopi ', 'Kopi Teh ', 'Kopi Teh Nasi ', 'Kopi Teh Nasi Roti ']) {
+      expect(deidentify(`${lead}${name} came.`).text).not.toMatch(/Zarul|Qaseh|Ahmad|Damia/)
+    }
+  })
+
+  it('gives one person one token across the old run boundary', () => {
+    const { text } = deidentify('Kopi Teh Nasi Siti Aminah came.')
+    expect(text.match(/\[PATIENT_\d+\]/g)).toHaveLength(1)
+  })
+
+  it('reaches no further than three words from the known name', () => {
+    expect(deidentify('Kopi Teh Nasi Roti Siti came.').text).toMatch(
+      /^Kopi \[PATIENT_\d+\] came\.$/,
+    )
+  })
+})
+
 describe('context cues match words, not substrings (#159)', () => {
   it.each(['invoice', 'notice', 'receipt'])(
     'does not boost an invalid twelve-digit number near %s',
