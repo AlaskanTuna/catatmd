@@ -49,6 +49,46 @@ export const NAME_INTRODUCERS = [
 ] as const
 
 /**
+ * Cues for a name said in Chinese or Tamil script (#418).
+ *
+ * `SCRIPT` leaves both scripts alone so the note can read Mandarin and Tamil
+ * speech, so a name in either is found only where something says a name comes
+ * next: a self-introduction, or a title. A list of surnames on its own would
+ * tokenise ordinary words, because 黄, 白 and 高 are also "yellow", "white" and
+ * "tall"; here it is used only in front of a title.
+ */
+export const HAN_NAME_INTRODUCERS = [
+  '我的名字是',
+  '我的名字叫',
+  '我嘅名係',
+  '我個名叫',
+  '名字是',
+  '名字叫',
+  '我名叫',
+  '病人叫',
+  '我叫',
+] as const
+
+/** "My surname is", after which one or two characters are the surname. */
+export const HAN_SURNAME_INTRODUCERS = ['我姓', '他姓', '她姓', '佢姓'] as const
+
+/** Titles that follow a surname, as in 陈先生 or 林医生. */
+export const HAN_TITLES = ['先生', '小姐', '女士', '太太', '医生', '醫生', '老师', '老師'] as const
+
+/**
+ * Common Chinese surnames in Malaysia, simplified and traditional, read only in
+ * front of a `HAN_TITLES` entry.
+ */
+export const HAN_SURNAMES =
+  '陈陳林李黄黃张張王吴吳刘劉蔡杨楊郑鄭梁谢謝许許何郭罗羅黎胡曾邱丘叶葉周赖賴苏蘇洪朱孙孫马馬高徐钟鍾邓鄧冯馮彭潘卢盧温溫江方沈余傅宋萧蕭庄莊卓颜顏石施侯邝鄺麦麥伍姚汤湯简簡范魏廖骆駱欧歐戴唐袁董程韩韓曹夏于蒋蔣田杜姜崔谭譚陆陸汪任金邵贺賀龚龔熊孟秦薛雷尹段白毛甘尤柯翁游涂关關辜'
+
+/** "My name is", in Tamil. */
+export const TAMIL_NAME_INTRODUCERS = ['என்னுடைய பெயர்', 'எனது பெயர்', 'என் பெயர்'] as const
+
+/** Mrs, Miss and Mr, written before the name. Longest first, as `திரு` opens `திருமதி`. */
+export const TAMIL_TITLES = ['திருமதி', 'செல்வி', 'திரு'] as const
+
+/**
  * Given names common in Malaysia across the three main communities, and among
  * its Pakistani and Bangladeshi patients. Deliberately a *given*-name list:
  * surnames and second elements are picked up by the adjacency rules, and a

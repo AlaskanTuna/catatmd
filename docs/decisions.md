@@ -513,3 +513,40 @@ Each language goes to the path below, and Cantonese is stated as not supported o
 - **No new egress, surface or language pair.** This records where existing paths already send each language. Translation pairs stay governed by D-008.
 - **No claim that Mandarin or Tamil is de-identified.** On Auto-Detect, a name spoken in either reaches the model in its own script. That gap is #418, pinned as known-bad in `deid.test.ts`, and stays open until it is decided.
 - **Who recorded it:** @AlaskanTuna's issue triage of 2026-10-07, stating routing already in production plus one sentence of on-screen copy.
+
+---
+
+## D-011: A Name In Chinese Or Tamil Script Is Found By Its Cue
+
+|                |                                                                                        |
+| -------------- | -------------------------------------------------------------------------------------- |
+| **Date**       | 2026-10-08                                                                             |
+| **Status**     | Adopted                                                                                |
+| **Issues**     | #418                                                                                   |
+| **Supersedes** | D-009's "No claim that Mandarin or Tamil is de-identified" bullet, for cued names only |
+
+### Decision
+
+`detectNativeScriptNames` tokenises a name in Chinese or Tamil script where a cue says a name is there, and nothing else. The note keeps reading Mandarin and Tamil speech, which is why `SCRIPT` still leaves both scripts alone.
+
+| Cue                          | Examples                                                                                                  |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Self-introduction            | 我叫, 我的名字是, 我姓, 我嘅名係; என் பெயர், எனது பெயர்; "my name is" or "nama saya" before either script |
+| Title after a listed surname | 陈先生, 黃小姐, 林医生, 王老师                                                                            |
+| Title before the name        | திரு, திருமதி, செல்வி                                                                                     |
+
+### Why Cues And Not A List
+
+- **A surname list alone tokenises ordinary words.** 黄, 白, 高 and 金 are also "yellow", "white", "tall" and "gold". The list is read only in front of a title.
+- **A pronoun or a question word is not a name.** "我叫你吃药" ("I told you to take the medicine") and "你的名字是什么" ("what is your name") are excluded.
+- **`saya` and "I am" are not used as cues here.** Before Chinese or Tamil they are ordinary code-switched speech ("saya 咳嗽三天").
+
+### What Still Passes
+
+- **A name said with no cue.** "陈美玲今天咳嗽" reaches the model as said on the Auto-Detect path. Translated sessions are unaffected: the script never reaches `turn.text` there.
+- **An address or an ID written in either script.** Spoken digits arrive as ASCII numerals, which the existing detectors read; a native-script address does not.
+
+### What This Decision Does Not License
+
+- **No claim that Mandarin or Tamil is de-identified.** Cued names are; the rest is the residual risk recorded in `docs/dpia.md`.
+- **No bare surname or given-name list for either script.** That needs a precision measurement on clinical Mandarin and Tamil first.

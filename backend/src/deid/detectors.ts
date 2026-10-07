@@ -1,9 +1,15 @@
 import {
   GIVEN_NAMES,
+  HAN_NAME_INTRODUCERS,
+  HAN_SURNAME_INTRODUCERS,
+  HAN_SURNAMES,
+  HAN_TITLES,
   HONORIFICS,
   NAME_INTRODUCERS,
   NAME_STOPWORDS,
   PATRONYMICS,
+  TAMIL_NAME_INTRODUCERS,
+  TAMIL_TITLES,
 } from './gazetteer.js'
 import { isStructurallyValidNric, NRIC_PATTERN, NRIC_UNHYPHENATED_PATTERN } from './nric.js'
 
@@ -748,6 +754,50 @@ function nameSegments(run: string, start: number): { value: string; start: numbe
   return segments
 }
 
+// ─── Names in Chinese and Tamil script (#418) ───────────────────────────────
+
+const HAN = '\\p{Script=Han}'
+const TAMIL_WORD = '[\\u0B80-\\u0BFF]+'
+const TAMIL_NAME = `(${TAMIL_WORD}(?:[ \\t]+${TAMIL_WORD})?)`
+// A pronoun or a question word after "我叫" or "名字是" is "I told you to" or
+// "what is your name", not a name.
+const NOT_A_NAME = '(?![你他她它我您們们什甚啥谁誰乜])'
+// Only the Latin introducers that say "name": "saya" or "I am" before Chinese
+// or Tamil is ordinary code-switched speech ("saya 咳嗽三天").
+const LATIN_NAME_INTRODUCERS = NAME_INTRODUCERS.filter((intro) => /name|nama/.test(intro))
+
+const NATIVE_NAME_PATTERNS = [
+  new RegExp(`(?:${HAN_NAME_INTRODUCERS.join('|')})\\s*${NOT_A_NAME}(${HAN}{2,4})`, 'gu'),
+  new RegExp(`(?:${HAN_SURNAME_INTRODUCERS.join('|')})\\s*(${HAN}{1,2})`, 'gu'),
+  new RegExp(`([${HAN_SURNAMES}]${HAN}{0,2})(?=${HAN_TITLES.join('|')})`, 'gu'),
+  new RegExp(`(?:${TAMIL_NAME_INTRODUCERS.join('|')})\\s+${TAMIL_NAME}`, 'gu'),
+  new RegExp(`(?<![\\u0B80-\\u0BFF])(?:${TAMIL_TITLES.join('|')})\\.?\\s+${TAMIL_NAME}`, 'gu'),
+  new RegExp(
+    `(?:${LATIN_NAME_INTRODUCERS.map(caseInsensitiveLiteral).join('|')})\\s+(${HAN}{2,4}|${TAMIL_WORD}(?:[ \\t]+${TAMIL_WORD})?)`,
+    'gu',
+  ),
+]
+
+/**
+ * A name said in Chinese or Tamil script, where a cue says one comes next.
+ *
+ * Neither script is read by `SCRIPT`, so the note can read Mandarin and Tamil
+ * speech, and no Latin detector reads them either. A cue is the only footing
+ * that does not tokenise ordinary speech: "我叫" or "என் பெயர்" before the
+ * name, or a title such as 先生 or திரு beside it. A name said with no cue still
+ * reaches the model, which `docs/decisions.md` records.
+ */
+function detectNativeScriptNames(text: string): Match[] {
+  return NATIVE_NAME_PATTERNS.flatMap((pattern) =>
+    [...text.matchAll(pattern)].flatMap((m): Match[] => {
+      const name = m[1]
+      if (!name) return []
+      const start = m.index + m[0].lastIndexOf(name)
+      return [{ label: 'PATIENT', start, end: start + name.length, value: name, score: 0.85 }]
+    }),
+  )
+}
+
 /**
  * `Siti Nurhaliza` and `Siti Nurhaliza's` are one person (#167).
  *
@@ -779,6 +829,7 @@ const DETECTORS = [
   detectDob,
   detectMrn,
   detectNames,
+  detectNativeScriptNames,
   detectScript,
 ] as const
 

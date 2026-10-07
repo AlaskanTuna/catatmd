@@ -1282,15 +1282,48 @@ describe('Mandarin, Tamil and Cantonese speech at the gate (#218)', () => {
     },
   )
 
-  /*
-   * KNOWN BAD, pinned deliberately (#418). No detector reads Chinese or Tamil
-   * script, and SCRIPT leaves both alone so the note can read them, so a name
-   * spoken in either reaches the model as said. Flip this when #418 lands.
-   */
   it.each(LANGUAGE_SAMPLES.map((sample) => [sample.language, sample] as const))(
-    'still passes a %s name written in its own script',
+    'tokenises a %s name a speaker introduces in its own script (#418)',
     (_language, sample) => {
-      expect(deidentify(sample.introduction.text).text).toContain(sample.introduction.name)
+      const { text } = deidentify(sample.introduction.text)
+      expect(text).not.toContain(sample.introduction.name)
+      expect(text).toMatch(/\[PATIENT_\d+\]/)
     },
   )
+})
+
+describe('names in Chinese and Tamil script are found by their cues (#418)', () => {
+  it.each([
+    ['陈先生，你咳嗽多久了？', '陈'],
+    ['黃小姐今日發燒。', '黃'],
+    ['林医生说要多喝水。', '林'],
+    ['陈美玲小姐来了。', '陈美玲'],
+    ['我姓陈。', '陈'],
+    ['我的名字是王小明。', '王小明'],
+    ['திரு ராமசாமி வந்தார்.', 'ராமசாமி'],
+    ['திருமதி லட்சுமி காய்ச்சல்.', 'லட்சுமி'],
+    ['எனது பெயர் முருகன்.', 'முருகன்'],
+    ['Nama saya 陈美玲.', '陈美玲'],
+    ['My name is கலைச்செல்வி.', 'கலைச்செல்வி'],
+  ])('tokenises the name in %j', (sentence, name) => {
+    const { text } = deidentify(sentence)
+    expect(text).not.toContain(name)
+    expect(text).toMatch(/\[PATIENT_\d+\]/)
+  })
+
+  it.each([
+    '去看医生了。',
+    '这位先生咳嗽。',
+    '老太太发烧三天。',
+    '喉咙痛，要看医生吗？',
+    'டாக்டர் சொன்னார்.',
+    'உங்கள் பெயர் என்ன?',
+    'காய்ச்சல் மூன்று நாட்கள்.',
+  ])('leaves clinical speech with no name in it alone: %j', (sentence) => {
+    expect(deidentify(sentence).text).toBe(sentence)
+  })
+
+  it('lets the egress guard refuse a payload that kept a cued name', () => {
+    expect(() => assertNoIdentifiers('我叫陈美玲' as never, 'note_and_gaps')).toThrow(/PATIENT/)
+  })
 })
