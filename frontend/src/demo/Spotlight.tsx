@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, Loader2, X } from 'lucide-react'
-import { type CSSProperties, useEffect, useState } from 'react'
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cn } from '../lib/cn.js'
 import { useDemoTour } from './DemoTour.js'
 
@@ -18,12 +18,43 @@ const ROUTE_RENDER_DELAY_MS = 90
 /** Half the tooltip's max width plus a margin, so it never runs off an edge. */
 const TOOLTIP_HALF = 184
 const EDGE = 16
+const GAP = 14
+/** Until the card has rendered once, assume a tall one rather than a short one. */
+const FALLBACK_CARD_HEIGHT = 240
+
+/**
+ * Where the card's top edge goes: below the target if it fits, above it if
+ * that fits, and otherwise pinned inside the viewport over the target. A
+ * target taller than the screen used to push the card above the top edge,
+ * taking its Next button with it.
+ */
+export function tooltipTop(
+  target: { top: number; bottom: number },
+  cardHeight: number,
+  viewportHeight: number,
+): number {
+  const highest = EDGE
+  const lowest = Math.max(EDGE, viewportHeight - cardHeight - EDGE)
+  if (target.bottom + GAP + cardHeight + EDGE <= viewportHeight) {
+    return Math.max(highest, target.bottom + GAP)
+  }
+  if (target.top - GAP - cardHeight >= EDGE) return target.top - GAP - cardHeight
+  return Math.min(Math.max(highest, target.top + GAP), lowest)
+}
 
 export function Spotlight() {
   const { active, currentStep, steps, next, back, stop, preparing } = useDemoTour()
   const step = active && currentStep >= 0 ? steps[currentStep] : undefined
   const [rect, setRect] = useState<DOMRect | null>(null)
   const [radius, setRadius] = useState<string | null>(null)
+  const card = useRef<HTMLDivElement>(null)
+  const [cardHeight, setCardHeight] = useState(FALLBACK_CARD_HEIGHT)
+
+  // The card's height varies with its copy, so it is measured, not assumed.
+  useLayoutEffect(() => {
+    const measured = card.current?.offsetHeight
+    if (measured && measured !== cardHeight) setCardHeight(measured)
+  })
 
   /*
    * Keyed on the step object, not on its `target` string. Steps come from a
@@ -131,15 +162,14 @@ export function Spotlight() {
 
   if (!active || !step) return null
 
-  const below = rect ? rect.bottom + 150 < window.innerHeight : false
   const tooltipStyle: CSSProperties = rect
     ? {
-        top: below ? rect.bottom + 14 : Math.max(EDGE, rect.top - 14),
+        top: tooltipTop(rect, cardHeight, window.innerHeight),
         left: Math.min(
           Math.max(rect.left + rect.width / 2, TOOLTIP_HALF + EDGE),
           window.innerWidth - TOOLTIP_HALF - EDGE,
         ),
-        transform: below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+        transform: 'translate(-50%, 0)',
       }
     : { bottom: '6rem', left: '50%', transform: 'translateX(-50%)' }
 
@@ -165,6 +195,7 @@ export function Spotlight() {
       {/* `alert` rather than `status`: the tooltip is the tour's whole voice, and
           a polite live region would be read after whatever else is speaking. */}
       <div
+        ref={card}
         role="alert"
         style={{ ...tooltipStyle, zIndex: 'var(--z-tooltip)', position: 'fixed' }}
         // `glass` rather than a solid surface: the card sits over the screen it
