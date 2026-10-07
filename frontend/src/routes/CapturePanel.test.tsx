@@ -51,6 +51,7 @@ function MockAmbientCapture({
       start: number
       end: number | null
       uncertain?: readonly TextRange[]
+      speaker?: string | null
     }[]
     source: 'asr_live'
     draftTurns?: readonly DraftTurn[]
@@ -123,6 +124,34 @@ function MockAmbientCapture({
         }}
       >
         mock transcribe live
+      </button>
+      {/* Two diarised voices, with the labelling pass wrong about whose "Okay."
+          is whose (#388). */}
+      <button
+        type="button"
+        onClick={() => {
+          onLiveChange(false)
+          onTranscript({
+            text: 'Any fever? Yes, at night. Okay. Okay. Come back if worse.',
+            segments: [
+              { text: 'Any fever?', start: 0, end: 1, speaker: '1' },
+              { text: 'Yes, at night.', start: 1, end: 2, speaker: '2' },
+              { text: 'Okay.', start: 2, end: 3, speaker: '1' },
+              { text: 'Okay.', start: 3, end: 4, speaker: '2' },
+              { text: 'Come back if worse.', start: 4, end: 5, speaker: '1' },
+            ],
+            source: 'asr_live',
+            draftTurns: [
+              { speaker: 'doctor', text: 'Any fever?' },
+              { speaker: 'patient', text: 'Yes, at night.' },
+              { speaker: 'patient', text: 'Okay.' },
+              { speaker: 'doctor', text: 'Okay.' },
+              { speaker: 'doctor', text: 'Come back if worse.' },
+            ],
+          })
+        }}
+      >
+        mock transcribe diarised
       </button>
       {/* An ambient capture where the recogniser doubted one word (#309). The
           segment text is already whitespace-normalised, as everything
@@ -1042,6 +1071,36 @@ describe('uncertain spans across the textarea', () => {
  * and on the right turn: the two "Yes." answers below were translated from
  * different Bengali.
  */
+describe('ambient roles follow the diarised voice (#388)', () => {
+  it("gives each line the role its voice holds, over the labelling pass's guess", () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <CapturePanel
+            captureMode="ambient"
+            onCaptureModeChange={vi.fn()}
+            onCaptureBusyChange={vi.fn()}
+            onCapture={vi.fn()}
+            saving={false}
+            error={null}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(screen.getByRole('tab', { name: /record/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe diarised' }))
+    fireEvent.click(screen.getByRole('tab', { name: /paste/i }))
+    const lines = (screen.getByRole('textbox') as HTMLTextAreaElement).value.split('\n')
+    expect(lines.map((line) => line.split(' ')[0])).toEqual([
+      'Doctor',
+      'Patient',
+      'Doctor',
+      'Patient',
+      'Doctor',
+    ])
+  })
+})
+
 describe('translated pairs across the textarea', () => {
   const captured = vi.fn()
 

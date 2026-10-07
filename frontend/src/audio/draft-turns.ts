@@ -34,7 +34,11 @@ import type { TranscriptSegment } from './protocol.js'
  * capture's `LiveSegment` satisfies this, a worker segment satisfies it by
  * carrying nothing, and both reach `applyRecording` through the same argument.
  */
-export type MarkedSegment = TranscriptSegment & { uncertain?: readonly TextRange[] }
+export type MarkedSegment = TranscriptSegment & {
+  uncertain?: readonly TextRange[]
+  /** The diarised voice, on ambient capture only. `voteRolesBySpeaker` reads it. */
+  speaker?: string | null
+}
 
 export type DraftLine = {
   id: string
@@ -309,6 +313,133 @@ export function timeDraftLines(
     const timed: DraftLine = { ...line, offsetSeconds: first.start }
     if (last.end !== null) timed.endSeconds = last.end
     return timed
+  })
+}
+
+/** Below this share of the voiced words, a voice is too brief to rank (#388). */
+const MIN_VOICE_SHARE = 0.15
+
+/** How far the doctor's voice must lead the next in drafted-doctor share. */
+const DECISIVE_MARGIN = 0.25
+
+/**
+ * Gives every line the role its diarised speaker holds overall, rather than the
+ * role drafted for that line alone (#388).
+ *
+ * The labelling pass reads text; the recogniser hears voices. On synthetic
+ * two-voice consultations streamed through the production ambient config,
+ * diarisation put every segment on the right speaker, same-gender and Malay
+ * included, while the drafted roles were wrong on 1 to 7 percent of words from
+ * the model pass and 9 to 20 percent of lines from the pattern fallback. The
+ * misses were short replies ("Okay"), which text cannot attribute, and Malay,
+ * which the patterns do not read. So the draft votes and the voice decides:
+ * each speaker takes the role most of their words were drafted as, and a line
+ * that runs across a change of voice is cut there.
+ *
+ * **The doctor is the voice drafted doctor most often, not by majority.** The
+ * pattern fallback reads little Malay, so a doctor speaking Malay was drafted
+ * doctor on only 40 to 47 percent of their words, against 8 to 9 for the
+ * patient: no majority, and an unmistakable ranking. Every other voice is on
+ * the patient's side, as a companion is, and so is a second clinician, which
+ * is the case this cannot tell apart.
+ *
+ * **Nothing changes unless that ranking is decisive.** The leader must be ahead
+ * by `DECISIVE_MARGIN`, and only a voice holding `MIN_VOICE_SHARE` of the words
+ * takes part, so a one-word diarisation glitch drafted doctor cannot take the
+ * role from the real doctor. Both thresholds are set from the synthetic runs
+ * above, where every decisive gap was 0.3 or more, and nothing measured on
+ * real consultations backs them. A line that cannot be found in the segments
+ * keeps its drafted role. Cut lines carry no timing, which `timeDraftLines`
+ * restores afterwards from the same segments.
+ */
+export function voteRolesBySpeaker(
+  lines: readonly DraftLine[],
+  segments: readonly MarkedSegment[],
+): DraftLine[] {
+  const voices = new Set(segments.flatMap(({ speaker }) => (speaker ? [speaker] : [])))
+  if (voices.size < 2) return [...lines]
+
+  // The same haystack `timeDraftLines` builds: the joining space belongs to
+  // the segment after it, so a cut never leaves a line opening on a space.
+  let haystack = ''
+  const owner: number[] = []
+  for (const [index, segment] of segments.entries()) {
+    const text = normalise(segment.text)
+    if (text === '') continue
+    if (haystack !== '') {
+      haystack += ' '
+      owner.push(index)
+    }
+    haystack += text
+    for (let i = 0; i < text.length; i += 1) owner.push(index)
+  }
+  const hay = haystack.toLowerCase()
+  // A character whose lowercase is longer ("İ") would shift every cut after it.
+  if (hay.length !== haystack.length) return [...lines]
+  const voiceAt = (at: number) => segments[owner[at] ?? -1]?.speaker ?? null
+
+  let cursor = 0
+  const found = lines.map((line) => {
+    const needle = normalise(line.text).toLowerCase()
+    const at = needle === '' ? -1 : hay.indexOf(needle, cursor)
+    if (at === -1) return null
+    cursor = at + needle.length
+    return { start: at, end: cursor }
+  })
+
+  const votes = new Map<string, { doctor: number; patient: number }>()
+  for (const [i, span] of found.entries()) {
+    const drafted = lines[i]?.speaker
+    if (span === null || drafted === undefined) continue
+    for (let at = span.start; at < span.end; at += 1) {
+      const voice = voiceAt(at)
+      if (voice === null) continue
+      const tally = votes.get(voice) ?? { doctor: 0, patient: 0 }
+      tally[drafted] += 1
+      votes.set(voice, tally)
+    }
+  }
+  const heard = [...votes.values()].reduce((sum, { doctor, patient }) => sum + doctor + patient, 0)
+  const ranked = [...votes]
+    .filter(([, { doctor, patient }]) => doctor + patient >= MIN_VOICE_SHARE * heard)
+    .map(([voice, { doctor, patient }]) => ({ voice, share: doctor / (doctor + patient) }))
+    .sort((a, b) => b.share - a.share)
+  const [top, next] = ranked
+  if (top === undefined || next === undefined || top.share - next.share < DECISIVE_MARGIN) {
+    return [...lines]
+  }
+  const roleOf = new Map<string, Speaker>(
+    ranked.map(({ voice }) => [voice, voice === top.voice ? 'doctor' : 'patient']),
+  )
+
+  return lines.flatMap((line, i): DraftLine[] => {
+    const span = found[i]
+    if (span === null || span === undefined) return [line]
+    // A voice too brief to rank, or none at all, takes the role around it,
+    // so a stray word never cuts a line in three.
+    const known: (Speaker | undefined)[] = []
+    for (let at = span.start; at < span.end; at += 1) {
+      const voice = voiceAt(at)
+      known.push(voice === null ? undefined : roleOf.get(voice))
+    }
+    const fallback = known.find((role) => role !== undefined) ?? line.speaker
+    const runs: { speaker: Speaker; start: number; end: number }[] = []
+    for (const [offset, role] of known.entries()) {
+      const at = span.start + offset
+      const speaker = role ?? runs.at(-1)?.speaker ?? fallback
+      const last = runs.at(-1)
+      if (last && last.speaker === speaker) last.end = at + 1
+      else runs.push({ speaker, start: at, end: at + 1 })
+    }
+    const [only] = runs
+    if (runs.length === 1 && only) return [{ ...line, speaker: only.speaker }]
+    return runs
+      .map((run, part) => ({
+        id: part === 0 ? line.id : `${line.id}-voice-${part}`,
+        speaker: run.speaker,
+        text: haystack.slice(run.start, run.end).trim(),
+      }))
+      .filter(({ text }) => text !== '')
   })
 }
 
