@@ -17,6 +17,7 @@ describe('ConsultationRow', () => {
             title: 'Draft visit',
             createdAt: new Date('2026-08-27T06:00:00.000Z'),
             updatedAt: new Date('2026-08-27T06:00:00.000Z'),
+            patientName: null,
           }}
         />
       </MemoryRouter>,

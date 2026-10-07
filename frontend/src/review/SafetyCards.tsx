@@ -48,6 +48,24 @@ const STATE_LABEL = {
 const sourceChipClass =
   'inline-flex min-h-6 items-center rounded-full border border-line bg-sunken px-2.5 py-1 font-mono text-2xs text-ink'
 
+/** A source's kind in words, where `sourceChipClass` carries an id. */
+const kindChipClass =
+  'inline-flex min-h-6 items-center self-start rounded-full border border-line bg-sunken px-2.5 py-1 text-2xs font-medium text-ink'
+
+/** Opens in a new tab, like every source link here, so the review is not left. */
+function CorpusLink() {
+  return (
+    <a
+      href="/guidelines"
+      target="_blank"
+      rel="noreferrer noopener"
+      className="mt-2 inline-block text-xs font-medium text-accent underline underline-offset-2"
+    >
+      Browse the Guideline Corpus
+    </a>
+  )
+}
+
 /**
  * The three-way decision on a finding (issue #10, AC4).
  *
@@ -344,11 +362,23 @@ export function SourcesPanel({
   guidelines: GuidelineChunk[]
   gapSource?: GapSource
 }) {
+  /*
+   * Named for what it is. The chip read "record checklist", which told a doctor
+   * neither where the prompt came from nor where to check it. The prompt comes
+   * from CatatMD's own missing-information checklist, and the corpus was
+   * searched and holds nothing for it, so the card says both and links to the
+   * corpus rather than pointing at a guideline that does not say it.
+   */
   if (gapSource?.kind === 'unsourced') {
     return (
-      <div className="flex flex-col gap-2">
-        <span className={sourceChipClass}>record checklist</span>
-        <p className="text-sm text-ink-muted">{gapSource.reason}</p>
+      <div className="flex flex-col rounded-control border border-line bg-surface p-3">
+        <span className={kindChipClass}>Not in the Guideline Corpus</span>
+        <p className="mt-2 text-xs font-medium text-ink">CatatMD Missing-Information Checklist</p>
+        <p className="mt-0.5 text-2xs text-ink-muted">
+          No document in CatatMD's guideline corpus covers this item.
+        </p>
+        <p className="mt-2 text-xs text-ink-muted">{gapSource.reason}</p>
+        <CorpusLink />
       </div>
     )
   }
@@ -368,12 +398,20 @@ export function SourcesPanel({
   if (resolved.length === 0) {
     if (gapSource?.kind === 'guideline') {
       return (
-        <div className="flex flex-wrap gap-1.5">
-          {ids.map((id) => (
-            <span key={id} className={sourceChipClass}>
-              {id}
-            </span>
-          ))}
+        <div className="flex flex-col rounded-control border border-line bg-surface p-3">
+          <span className={kindChipClass}>Guideline Not Loaded</span>
+          <p className="mt-2 text-xs text-ink-muted">
+            The checklist cites {ids.length === 1 ? 'a document' : 'documents'} in the corpus that
+            this consultation did not load:
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {ids.map((id) => (
+              <span key={id} className={sourceChipClass}>
+                {id}
+              </span>
+            ))}
+          </div>
+          <CorpusLink />
         </div>
       )
     }

@@ -122,7 +122,7 @@ reads as editorial, and this is an instrument.
 
 This is where the Apple influence lives, and it is deliberately confined.
 
-**Glass is chrome only.** Translucency plus backdrop blur applies to: the sidebar island, the top bar, the floating action dock, modals, and the demo-tour spotlight. It never applies to the note, a red flag, a gap, a suggestion, or any surface carrying text a doctor acts on. The NHS rule holds: solid panels for content.
+**Glass is chrome only.** Translucency plus backdrop blur applies to: the sidebar island, the top bar, the floating action dock, modals, the demo-tour spotlight, and the bulk-action island on lists (labels and counts only). It never applies to the note, a red flag, a gap, a suggestion, or any surface carrying text a doctor acts on. The NHS rule holds: solid panels for content.
 
 The reasoning is not aesthetic. A translucent surface has a contrast ratio that depends on whatever scrolls behind it, so it cannot be verified once. Chrome carries icons and short labels at large sizes; content carries the clinical record.
 
@@ -320,14 +320,21 @@ the capture theatre and with two deliberate differences (#365).
 **Sized by its content, not the viewport (06/10/26).** A dictation is a few
 lines, so a full-viewport room left most of the screen empty.
 
-| State     | Width                                                  | Height                                |
-| --------- | ------------------------------------------------------ | ------------------------------------- |
-| Listening | One column, up to 40rem                                | Grows with the text, up to the cap    |
-| Reviewing | One column, up to 64rem: the box, then the lines table | Grows with the rows, up to the cap    |
-| Cap       | `100vw - 2rem` on small views                          | `min(85vh, 48rem)`, then body scrolls |
+| State     | Width                                                  | Height                                  |
+| --------- | ------------------------------------------------------ | --------------------------------------- |
+| Listening | One column, up to 48rem                                | Grows with the text, up to the cap      |
+| Reviewing | One column, up to 77rem: the box, then the lines table | Grows with the rows, up to the cap      |
+| Cap       | `100vw - 2rem` on small views                          | `min(92vh, 57.5rem)`, then body scrolls |
 
-The cap is the one `ChecklistPanel` and CatatAI use. Past it the header and the
-Confirm footer stay put. The microphone shows as a small wave rather than words.
+Every bound is a fifth larger than it first shipped (08/10/26): six columns of
+sig controls left the drug field too narrow for a long generic name. Past the
+cap the header and the Confirm footer stay put. The microphone shows as a small
+wave rather than words.
+
+**The chrome is `.glass`, not `.glass-panel` (08/10/26).** At the heavier fill
+the header read as a flat grey band. The lighter one frosts the page through the
+header, footer and gutters, while every panel carrying clinical text stays
+opaque. Muted text on it measures 4.93:1.
 
 **Why it is a theatre at all.** The compose surface lived in the review page's
 middle column: about 620px wide, itself an internal scroller, holding a
@@ -356,6 +363,12 @@ editable in place (06/10/26).
 | Nobody named  | Dashed outline, the gap grammar rather than a severity colour. Empty drug field; holds Confirm until named or unticked |
 | Shared fields | Name the clause they came from, as in "Frequency from “all of them”"                                                   |
 
+| Control    | Rule                                                                                                                               |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Drug field | Free text. Lexicon generics are offered only once typing matches one, and the list says any name is accepted                       |
+| Remove     | One trash button beside Add Line, counting the ticked lines it takes. Asks before it takes a named drug; Restore brings lines back |
+| Sig lists  | Open in the top layer, so the dialog's edge never cuts them off                                                                    |
+
 **Escape stops rather than docks, and that is the second difference.** Ambient
 docks because a consultation must keep recording while the doctor uses the page
 behind it. A dictated phrase has nothing to keep running for, and stopping loses
@@ -372,6 +385,28 @@ While the theatre is open the rail sits behind the scrim, which is in tension
 with "the flags go where the words go" above. The capture theatre answers that
 by carrying `LivePrompter` inside it; this one does not carry anything
 equivalent yet.
+
+### Lists And Their Bulk Actions
+
+Every list a doctor can act on in bulk works the same way: the consultation
+in-tray, a patient's consultation history, and the patient directory (08/10/26).
+
+| Behaviour   | Rule                                                                                                 |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| Paging      | Fifteen rows a page, with the bottom-right control, on all three                                     |
+| Selecting   | A tick per row. No select-all row above the list                                                     |
+| Bulk island | Fades in at the bottom centre once a row is ticked: count, Select All, Clear, Erase                  |
+| Material    | `.glass`, blurred at 12px rather than 20px, so rows visibly frost through it instead of reading flat |
+| Phones      | Lifted above the mobile dock and the help button                                                     |
+| Renaming    | A pencil on hover, always visible on touch. A patient's name cannot be emptied                       |
+
+A row names the patient a visit belongs to, never an id fragment. On a
+patient's own profile that name is left off, since every row would repeat it.
+
+**Dropdowns open in the top layer.** `ui/Select.tsx` and the drug field use the
+Popover API (`ui/use-anchored-popover.ts`). An absolutely positioned list is
+clipped by any scrolling container, and a portal to the body renders behind a
+modal `<dialog>`, which is already in the top layer.
 
 ### The Transcript Has Two Sides
 

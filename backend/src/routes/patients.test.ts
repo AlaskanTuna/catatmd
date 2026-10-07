@@ -440,12 +440,13 @@ describe('GET /api/patients/:id', () => {
 
     const res = await fetch(`${origin}/api/patients/${p.id}`)
     const body = (await res.json()) as {
-      patient: { nric: string; consultations: { id: string }[] }
+      patient: { name: string; nric: string; consultations: { id: string; patientName: string }[] }
     }
 
     expect(res.status).toBe(200)
     expect(body.patient.nric).toBe('850312-14-5678')
     expect(body.patient.consultations.map((c) => c.id)).toEqual(['c1'])
+    expect(body.patient.consultations[0]?.patientName).toBe(body.patient.name)
   })
 
   it('is 404 for another doctor s patient, never 403', async () => {

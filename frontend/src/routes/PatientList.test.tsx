@@ -13,6 +13,7 @@ vi.mock('../lib/api.js', async () => {
     api: {
       listPatients: vi.fn(),
       erasePatient: vi.fn(),
+      patchPatient: vi.fn(),
     },
   }
 })
@@ -136,8 +137,14 @@ describe('PatientList', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Kumar Nair' }))
 
     expect(screen.getByText('2 selected')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
-    await waitFor(() => expect(screen.getByText('Select all')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }))
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('checkbox', { name: 'Select Aisha Rahman' }) as HTMLInputElement).checked,
+      ).toBe(false),
+    )
+    // No select-all row above the table any more: the island carries it.
+    expect(screen.queryByText('Select all')).toBeNull()
   })
 })
 
@@ -254,5 +261,48 @@ describe('erasing patients', () => {
 
     expect(await within(dialog).findByRole('alert')).toBeTruthy()
     expect(dialog.hasAttribute('open')).toBe(true)
+  })
+})
+
+describe('paging and renaming patients', () => {
+  const many = Array.from({ length: 18 }, (_, i) => ({
+    ...(PATIENTS[1] as (typeof PATIENTS)[number]),
+    id: `patient-${i + 1}`,
+    name: `Patient ${String(i + 1).padStart(2, '0')}`,
+  }))
+
+  it('pages the table at fifteen rows, like the consultation list', async () => {
+    vi.mocked(api.listPatients).mockResolvedValue(many)
+    setup()
+    await screen.findByText('Patient 01')
+
+    expect(screen.queryByText('Patient 16')).toBeNull()
+    expect(screen.getByText('Page 1 of 2')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }))
+    expect(await screen.findByText('Patient 16')).toBeTruthy()
+    expect(screen.queryByText('Patient 01')).toBeNull()
+  })
+
+  it('renames a patient from the row, and refuses an empty name', async () => {
+    vi.mocked(api.patchPatient).mockReset()
+    vi.mocked(api.patchPatient).mockResolvedValue(
+      {} as Awaited<ReturnType<typeof api.patchPatient>>,
+    )
+    setup()
+    await screen.findByText('Aisha Rahman')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Aisha Rahman' }))
+    const input = screen.getByRole('textbox', { name: 'Rename Aisha Rahman' })
+    fireEvent.change(input, { target: { value: 'Aisha binti Rahman' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() =>
+      expect(api.patchPatient).toHaveBeenCalledWith('patient-1', { name: 'Aisha binti Rahman' }),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Kumar Nair' }))
+    const second = screen.getByRole('textbox', { name: 'Rename Kumar Nair' })
+    fireEvent.change(second, { target: { value: '   ' } })
+    fireEvent.keyDown(second, { key: 'Enter' })
+    expect(api.patchPatient).toHaveBeenCalledTimes(1)
   })
 })

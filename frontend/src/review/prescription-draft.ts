@@ -136,6 +136,8 @@ export type LineEdit = {
   /** Another of the line's own candidates, picked over the first. */
   readonly chosen?: string
   readonly fields?: Partial<Omit<PrescriptionDraft, 'drug' | 'lexiconId'>>
+  /** Taken out of the table by the doctor, while its words stay in the box. */
+  readonly removed?: boolean
 }
 
 /**

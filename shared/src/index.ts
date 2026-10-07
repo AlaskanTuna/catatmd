@@ -1515,6 +1515,15 @@ export const ConsultationListItemSchema = ConsultationSchema.pick({
   title: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  /*
+   * Who the visit is for, so a row names its patient rather than showing an id
+   * fragment nobody reads. The doctor already holds this name on the patient
+   * list, and the projection only ever reaches that same doctor. Null for a
+   * visit filed to nobody and for an erased patient. Defaulted so a response
+   * from an API that predates the field still parses.
+   */
+  patientName: z.string().nullable().default(null),
 })
 
 /*

@@ -1,6 +1,7 @@
 import { Check, ChevronDown } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { cn } from '../lib/cn.js'
+import { POPOVER, useAnchoredPopover } from './use-anchored-popover.js'
 
 /**
  * A listbox, not a `<select>`.
@@ -51,6 +52,7 @@ export function Select({
   const list = useRef<HTMLDivElement>(null)
   const wrap = useRef<HTMLDivElement>(null)
   const labelId = useId()
+  const placement = useAnchoredPopover(trigger, list, open)
 
   const selected = options.findIndex((option) => option.value === value)
   const current = options[selected] ?? options[0]
@@ -122,6 +124,8 @@ export function Select({
         <div
           ref={list}
           role="listbox"
+          popover={POPOVER}
+          style={placement}
           aria-labelledby={labelId}
           onKeyDown={(event) => {
             const nodes = [
@@ -148,14 +152,12 @@ export function Select({
             }
           }}
           className={cn(
-            // `w-full`, not `min-w-full`. Anchored at `right-0`, a list allowed
-            // to exceed the trigger grows leftward, and inside a `<dialog>`
-            // that is narrower than the widest option it grows straight out of
-            // the dialog's box, where the UA's `overflow: auto` cuts it off.
-            // Device labels are the case that proves it: "Communications -
-            // Microphone (Razer Seiren Mini) (1532:0531)" is wider than the
-            // 28rem audio dialog on its own.
-            'absolute right-0 z-20 mt-1.5 max-h-72 w-full overflow-y-auto',
+            // In the top layer and pinned to the trigger by
+            // `useAnchoredPopover`, which also sets the width and height. It
+            // was absolutely positioned inside its container, and a container
+            // that clips (every `<dialog>`, the prescription theatre's body)
+            // cut the list off at its edge.
+            'overflow-y-auto text-ink',
             'rounded-card border border-line bg-surface p-1 shadow-float',
           )}
         >

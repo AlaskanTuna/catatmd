@@ -129,7 +129,9 @@ patientsRouter.get('/:id', async (req, res) => {
   res.json({
     patient: PatientDetailSchema.parse({
       ...toPatient(patient),
-      consultations: consultations.map((row) => ConsultationListItemSchema.parse(row)),
+      consultations: consultations.map((row) =>
+        ConsultationListItemSchema.parse({ ...row, patientName: patient.name }),
+      ),
     }),
   })
 })

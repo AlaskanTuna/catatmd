@@ -117,7 +117,7 @@ export const TOUR_STEPS: TourStep[] = [
     route: '/consultations/:id',
     subject: 'flagged',
     target: '[data-tour="gap"]',
-    hint: 'Each prompt is a question the consultation never answered. The Sources chips show whether it came from a guideline document or the record checklist, and why that source expects it.',
+    hint: 'Each prompt is a question the consultation never answered. The Sources chips show whether it came from a guideline document in the corpus or from the CatatMD missing-information checklist, and why that source expects it.',
   },
   {
     label: 'Checklist',

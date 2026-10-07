@@ -1678,6 +1678,26 @@ describe('evidence links', () => {
   })
 })
 
+describe('the consultation list', () => {
+  it('names the patient a visit is filed to, and null for a visit filed to nobody', async () => {
+    // The mock returns stored rows as they are, so the selected relation is
+    // seeded in the shape Prisma hands back for `patient: { select: { name } }`.
+    seed('awaiting_review', { patient: { name: 'Aisha Rahman' } })
+    seed('draft', { id: 'c2', patient: null })
+
+    const res = await call('GET', '/api/consultations')
+    const body = (await res.json()) as {
+      consultations: { id: string; patientName: string | null; patient?: unknown }[]
+    }
+
+    const byId = new Map(body.consultations.map((row) => [row.id, row]))
+    expect(byId.get('c1')?.patientName).toBe('Aisha Rahman')
+    expect(byId.get('c2')?.patientName).toBeNull()
+    // The relation itself is not echoed, only the one field the row shows.
+    expect(byId.get('c1')).not.toHaveProperty('patient')
+  })
+})
+
 describe('erase', () => {
   const erase = (ids: string[]) => call('POST', '/api/consultations/erase', { ids })
 

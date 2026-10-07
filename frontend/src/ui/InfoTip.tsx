@@ -26,8 +26,9 @@ import { cn } from '../lib/cn.js'
  * click latches it open so the panel survives the pointer leaving, which is
  * what makes text inside it selectable.
  *
- * Focus opens it too, so the keyboard path matches the mouse one rather than
- * requiring Enter on a control whose peers respond to hover.
+ * Keyboard focus opens it too, so the keyboard path matches the mouse one
+ * rather than requiring Enter on a control whose peers respond to hover. Focus
+ * a dialog moves there on opening does not, or the tip greets every opening.
  *
  * Hand-rolled for the reason `ui/Select.tsx` gives at length: nothing in this
  * codebase uses a headless UI library, and a disclosure is a poor reason to add
@@ -306,7 +307,16 @@ export function InfoTip({
           setPinned(true)
           setOpen(true)
         }}
-        onFocus={() => setOpen(true)}
+        /*
+         * Keyboard focus only. A dialog opened with `showModal()` hands its
+         * initial focus to the first focusable element, which in the audio
+         * dialog is this trigger, so every opening showed the tip unasked.
+         * Focus moved there by a script after a pointer press does not match
+         * `:focus-visible`; a Tab does.
+         */
+        onFocus={(event) => {
+          if (event.currentTarget.matches(':focus-visible')) setOpen(true)
+        }}
         onBlur={() => {
           if (!pinned) setOpen(false)
         }}
