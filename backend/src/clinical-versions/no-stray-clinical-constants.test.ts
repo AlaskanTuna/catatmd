@@ -3,6 +3,7 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { GAP_CHECKLIST } from '../gaps/index.js'
+import { MEDICATION_LEXICON } from '../medications/index.js'
 import { ALL_REDFLAG_TRIGGERS } from '../redflags/index.js'
 
 /**
@@ -36,6 +37,10 @@ const VERSIONED_DATA_FILES = [
   'backend/src/gaps/checklist.ts',
   'backend/src/guidelines/documents.ts',
   'backend/src/guidelines/legacy.ts',
+  'backend/src/medications/lexicon.ts',
+  // Recogniser priming, stamped as its own artefact (`ASR_VOCABULARY_VERSION`).
+  // Its drug words are spoken forms to listen for, never a rule anything reads.
+  'backend/src/lib/asr/vocabulary.ts',
 ]
 
 const SCANNED_TREES = [
@@ -50,6 +55,7 @@ const SCORING_SYSTEMS = /\b(centor|mcisaac)\b/i
 const CLINICAL_IDS = [
   ...ALL_REDFLAG_TRIGGERS.map((trigger) => trigger.id),
   ...GAP_CHECKLIST.map((entry) => entry.id),
+  ...MEDICATION_LEXICON.map(({ id }) => id),
 ]
 
 /**
