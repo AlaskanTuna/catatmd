@@ -8,7 +8,7 @@ import { count } from '../lib/plural.js'
 import { Button } from '../ui/Button.js'
 import { Card, EmptyState, Skeleton } from '../ui/Card.js'
 import { PageHeader } from '../ui/PageHeader.js'
-import { ConsultationRow } from './ConsultationRow.js'
+import { ConsultationRows } from './ConsultationRows.js'
 import { ErasePatientDialog } from './PatientList.js'
 
 const formatGender = (gender: 'male' | 'female' | 'other' | null) => {
@@ -156,8 +156,8 @@ export function PatientDetail() {
           </div>
         </div>
 
-        <div className="mt-4 flex flex-col gap-2">
-          {detail.consultations.length === 0 ? (
+        <ConsultationRows consultations={detail.consultations} showPatient={false}>
+          {detail.consultations.length === 0 && (
             <EmptyState
               title="No Consultations Yet"
               body="Start a consultation from this profile to file it to the patient record."
@@ -171,12 +171,8 @@ export function PatientDetail() {
                 </button>
               }
             />
-          ) : (
-            detail.consultations.map((consultation) => (
-              <ConsultationRow key={consultation.id} consultation={consultation} />
-            ))
           )}
-        </div>
+        </ConsultationRows>
       </section>
 
       {/*

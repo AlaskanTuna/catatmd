@@ -284,10 +284,21 @@ consultationsRouter.get('/', async (req, res) => {
   const rows = await prisma.consultation.findMany({
     where: { doctorId: doctorId(req), erasedAt: null },
     orderBy: { updatedAt: 'desc' },
-    select: { id: true, status: true, title: true, createdAt: true, updatedAt: true },
+    select: {
+      id: true,
+      status: true,
+      title: true,
+      createdAt: true,
+      updatedAt: true,
+      patient: { select: { name: true } },
+    },
   })
 
-  res.json({ consultations: rows.map((row) => ConsultationListItemSchema.parse(row)) })
+  res.json({
+    consultations: rows.map(({ patient, ...row }) =>
+      ConsultationListItemSchema.parse({ ...row, patientName: patient?.name ?? null }),
+    ),
+  })
 })
 
 /*

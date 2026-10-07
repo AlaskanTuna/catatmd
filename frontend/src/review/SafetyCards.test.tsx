@@ -423,13 +423,20 @@ describe('GapCard sources panel', () => {
     expect(screen.queryByText('No guideline citation.')).toBeNull()
   })
 
-  it('shows a checklist chip and the reason for an unsourced gap', () => {
+  it('names the checklist and points at the corpus for an unsourced gap', () => {
     renderGap({ ...GAP, source: { kind: 'unsourced', reason: 'Payer record field.' } })
     fireEvent.click(screen.getByRole('button', { name: /more options/i }))
     fireEvent.click(screen.getByRole('button', { name: /sources/i }))
 
-    expect(screen.getByText('record checklist')).toBeTruthy()
+    expect(screen.getByText('Not in the Guideline Corpus')).toBeTruthy()
+    expect(screen.getByText('CatatMD Missing-Information Checklist')).toBeTruthy()
+    expect(
+      screen.getByRole('link', { name: 'Browse the Guideline Corpus' }).getAttribute('href'),
+    ).toBe('/guidelines')
     expect(screen.getByText('Payer record field.')).toBeTruthy()
+    // The bare label it replaced said neither where the prompt came from nor
+    // where to check it.
+    expect(screen.queryByText('record checklist')).toBeNull()
     expect(screen.queryByText('No guideline citation.')).toBeNull()
   })
 

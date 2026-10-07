@@ -26,6 +26,7 @@ const row = (status: ConsultationStatus, n: number): ConsultationListItem => ({
   title: `${status} visit ${n}`,
   createdAt: new Date(2026, 7, n),
   updatedAt: new Date(2026, 7, n),
+  patientName: `Patient ${n}`,
 })
 
 const rows = (status: ConsultationStatus, n: number): ConsultationListItem[] =>
@@ -205,5 +206,56 @@ describe('ConsultationList categories', () => {
 
     pickCategory('Approved')
     expect(await screen.findByText('No approved consultations yet.')).toBeTruthy()
+  })
+})
+
+describe('ConsultationList rows and selection', () => {
+  beforeEach(() => {
+    vi.mocked(api.listConsultations).mockReset()
+  })
+
+  it('names the patient on each row rather than an id fragment', async () => {
+    vi.mocked(api.listConsultations).mockResolvedValue([
+      row('awaiting_review', 1),
+      { ...row('awaiting_review', 2), patientName: null },
+    ])
+    setup()
+
+    expect(await screen.findByText(/^Patient 1 · /)).toBeTruthy()
+    expect(screen.getByText(/^No patient on file · /)).toBeTruthy()
+    expect(screen.queryByText('awaiting')).toBeNull()
+  })
+
+  it('carries the selection on a floating island rather than a select-all row', async () => {
+    vi.mocked(api.listConsultations).mockResolvedValue(rows('awaiting_review', 20))
+    setup()
+    await screen.findByText('awaiting_review visit 1')
+
+    expect(screen.queryByText(/Select all on this page/)).toBeNull()
+    const island = screen.getByRole('status').parentElement as HTMLElement
+    // Mounted but inert until something is ticked, so it can fade both ways.
+    expect(island.hasAttribute('inert')).toBe(true)
+    expect(island.className).toContain('glass')
+
+    const boxes = screen.getAllByRole('checkbox', { name: /Select consultation/ })
+    fireEvent.click(boxes[0] as HTMLElement)
+    fireEvent.click(boxes[1] as HTMLElement)
+    expect(island.hasAttribute('inert')).toBe(false)
+    expect(screen.getByRole('status').textContent).toBe('2 selected')
+
+    // Select All reaches past the fifteen on screen to the whole view.
+    fireEvent.click(screen.getByRole('button', { name: 'Select all 20 consultations' }))
+    expect(screen.getByRole('status').textContent).toBe('20 selected')
+    expect(screen.getByRole('button', { name: 'Erase 20' })).toBeTruthy()
+
+    const clear = screen.getByRole('button', { name: 'Clear selection' })
+    clear.focus()
+    fireEvent.click(clear)
+    expect(screen.getByRole('status').textContent).toBe('0 selected')
+    expect(island.hasAttribute('inert')).toBe(true)
+    // Focus leaves the island as it goes inert, rather than falling to the body.
+    expect(document.activeElement).toBe(
+      screen.getAllByRole('checkbox', { name: /Select consultation/ })[0],
+    )
   })
 })

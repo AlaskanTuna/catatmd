@@ -542,15 +542,105 @@ describe('PrescriptionTheatre', () => {
       await type(REPORTED)
       await table()
 
-      const field = screen.getByLabelText('Drug, line 3') as HTMLInputElement
+      const field = screen.getByRole('combobox', { name: 'Drug, line 3' }) as HTMLInputElement
       expect(field.value).toBe('')
-      const suggestions = document.getElementById(field.getAttribute('list') ?? '')
-      expect(suggestions?.querySelectorAll('option')).toHaveLength(3)
+      // Nothing offered until something is typed, so the field never reads as
+      // a picklist the name has to come from.
+      expect(field.getAttribute('list')).toBeNull()
+      expect(screen.queryByRole('listbox')).toBeNull()
       expect(screen.getByText(/Needs a drug name/)).toBeTruthy()
       expect(field.getAttribute('aria-invalid')).toBe('true')
       expect(
         document.getElementById(field.getAttribute('aria-describedby') ?? '')?.textContent,
       ).toMatch(/untick it to leave it out/)
+    })
+
+    it('offers the generics a typed name matches, and keeps a name the lexicon lacks', async () => {
+      mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
+      renderTheatre()
+      await type(REPORTED)
+      await table()
+
+      const field = screen.getByRole('combobox', { name: 'Drug, line 3' }) as HTMLInputElement
+      fireEvent.change(field, { target: { value: 'a' } })
+      const offered = within(
+        screen.getByRole('listbox', { name: 'Suggestions for Drug, line 3' }),
+      ).getAllByRole('option')
+      // Names starting with what was typed come first.
+      expect(offered.map((option) => option.textContent)).toEqual([
+        'amoxicillin',
+        'azithromycin',
+        'paracetamol',
+      ])
+      expect(screen.getByText(/Any name is accepted/)).toBeTruthy()
+
+      fireEvent.keyDown(field, { key: 'ArrowDown' })
+      fireEvent.keyDown(field, { key: 'ArrowDown' })
+      fireEvent.keyDown(field, { key: 'Enter' })
+      expect(field.value).toBe('azithromycin')
+      expect(screen.queryByRole('listbox')).toBeNull()
+
+      fireEvent.change(field, { target: { value: 'Strepsils' } })
+      expect(screen.queryByRole('listbox')).toBeNull()
+      expect(field.value).toBe('Strepsils')
+      expect(screen.queryByText(/Needs a drug name/)).toBeNull()
+    })
+
+    it('asks before removing a named drug, and Restore brings removed lines back', async () => {
+      mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
+      // jsdom implements no `confirm`, so it is defined rather than spied on.
+      const confirm = vi.fn<(message?: string) => boolean>(() => false)
+      window.confirm = confirm
+      try {
+        renderTheatre()
+        await type(REPORTED)
+        await table()
+
+        // Every line starts ticked here, so the button says how many it takes.
+        const remove = screen.getByRole('button', { name: 'Remove ticked lines' })
+        expect(remove.textContent).toBe('3')
+        fireEvent.click(remove)
+        expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/^Remove 3 ticked lines\?/))
+        expect(within(await table()).getAllByRole('listitem')).toHaveLength(3)
+
+        confirm.mockReturnValue(true)
+        fireEvent.click(remove)
+        expect(screen.queryByRole('list', { name: 'Prescription lines' })).toBeNull()
+        // Removed is not the same as never read.
+        expect(screen.queryByText(/No drug name or dose was read/)).toBeNull()
+
+        fireEvent.click(screen.getByRole('button', { name: 'Restore 3' }))
+        expect(within(await table()).getAllByRole('listitem')).toHaveLength(3)
+        expect(screen.queryByRole('button', { name: /^Restore/ })).toBeNull()
+      } finally {
+        Reflect.deleteProperty(window, 'confirm')
+      }
+    })
+
+    it('removes the ticked lines from the control beside Add Line', async () => {
+      mocks.parsePrescription.mockResolvedValue(REPORTED_RESPONSE)
+      const { onSave } = renderTheatre()
+      await type(REPORTED)
+      await table()
+
+      // One control for the table, not one per row.
+      expect(screen.getAllByRole('button', { name: 'Remove ticked lines' })).toHaveLength(1)
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Include line 1' }))
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Include line 2' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Remove ticked lines' }))
+
+      // The unnamed line was the one ticked, so it goes and the other two stay.
+      expect(within(await table()).getAllByRole('listitem')).toHaveLength(2)
+      expect(screen.queryByText(/Needs a drug name/)).toBeNull()
+      expect(
+        (screen.getByRole('button', { name: 'Remove ticked lines' }) as HTMLButtonElement).disabled,
+      ).toBe(true)
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Include line 1' }))
+      fireEvent.click(confirmButton())
+      await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+      const sent = onSave.mock.calls[0]?.[0] as Prescription[]
+      expect(sent.map(({ drug }) => drug)).toEqual(['amoxicillin'])
     })
 
     it('shows the words each line was read from, and where a shared field came from', async () => {

@@ -1,6 +1,6 @@
 import type { PatientListItem } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Trash2, X } from 'lucide-react'
+import { Pencil, Plus, Search, X } from 'lucide-react'
 import { useId, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
@@ -10,7 +10,13 @@ import { Button } from '../ui/Button.js'
 import { Card, Skeleton } from '../ui/Card.js'
 import { Checkbox } from '../ui/Checkbox.js'
 import { PageHeader } from '../ui/PageHeader.js'
+import { clampPage, Pagination, paginate } from '../ui/Pagination.js'
+import { RenameField } from '../ui/RenameField.js'
 import { Select } from '../ui/Select.js'
+import { SelectionIsland } from '../ui/SelectionIsland.js'
+
+/** The same page length as the consultation lists, so every list pages alike. */
+const PAGE_SIZE = 15
 
 const VISIT_FILTERS = [
   { value: 'all', label: 'All Patients' },
@@ -33,12 +39,16 @@ const formatGender = (gender: PatientListItem['gender']) => {
 }
 
 export function PatientList() {
+  const queryClient = useQueryClient()
   const patients = useQuery({ queryKey: ['patients'], queryFn: api.listPatients })
   const [query, setQuery] = useState('')
   const [visitFilter, setVisitFilter] = useState('all')
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
+  const [page, setPage] = useState(1)
+  /** One row renaming at a time, for the reason `ConsultationRows` gives. */
+  const [renaming, setRenaming] = useState<string | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
-  const selectAllId = useId()
+  const table = useRef<HTMLDivElement>(null)
 
   const normalisedQuery = query.trim().toLowerCase()
   const filtered = (patients.data ?? []).filter((patient) => {
@@ -50,7 +60,27 @@ export function PatientList() {
     return matchesName && matchesVisits
   })
   const selected = filtered.filter((patient) => picked.has(patient.id))
-  const allSelected = filtered.length > 0 && selected.length === filtered.length
+
+  const pageCount = Math.ceil(filtered.length / PAGE_SIZE)
+  // Clamped and written back, as the consultation list does, so an erase or a
+  // narrower search cannot leave the table on a page that no longer exists.
+  const currentPage = clampPage(page, pageCount)
+  if (currentPage !== page) setPage(currentPage)
+  const pageRows = paginate(filtered, currentPage, PAGE_SIZE)
+
+  /*
+   * A correction to the name on the card, not a free-text label. The server
+   * requires a name, so emptying the field is refused here rather than sent.
+   */
+  const rename = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => api.patchPatient(id, { name }),
+    onSuccess: (_patient, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: ['patient', id] })
+      void queryClient.invalidateQueries({ queryKey: ['consultations'] })
+      return queryClient.invalidateQueries({ queryKey: ['patients'] })
+    },
+    onError: () => toast.error('That name could not be saved.'),
+  })
 
   const erase = useErasePatients(selected, () => {
     dialog.current?.close()
@@ -90,7 +120,10 @@ export function PatientList() {
           <input
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setPage(1)
+            }}
             aria-label="Search patients"
             placeholder="Search by patient name"
             className="h-11 w-full rounded-control border border-line bg-surface pr-10 pl-10 text-sm text-ink transition-colors duration-150 hover:border-accent focus:border-accent"
@@ -98,7 +131,10 @@ export function PatientList() {
           {query && (
             <button
               type="button"
-              onClick={() => setQuery('')}
+              onClick={() => {
+                setQuery('')
+                setPage(1)
+              }}
               aria-label="Clear patient search"
               className="absolute top-1/2 right-2 flex size-7 -translate-y-1/2 items-center justify-center rounded-control text-ink-muted transition-colors duration-150 hover:bg-sunken hover:text-ink"
             >
@@ -113,6 +149,7 @@ export function PatientList() {
           onChange={(value) => {
             setVisitFilter(value)
             setPicked(new Set())
+            setPage(1)
           }}
           className="sm:w-52"
         />
@@ -127,49 +164,8 @@ export function PatientList() {
       )}
 
       {patients.data && (
-        <>
-          <div className="mt-4 flex min-h-9 items-center justify-between gap-4">
-            <label
-              htmlFor={selectAllId}
-              className="flex cursor-pointer items-center gap-3 text-sm text-ink-muted"
-            >
-              <Checkbox
-                id={selectAllId}
-                checked={allSelected}
-                ref={(element) => {
-                  if (element) element.indeterminate = selected.length > 0 && !allSelected
-                }}
-                onChange={() =>
-                  setPicked(
-                    allSelected ? new Set() : new Set(filtered.map((patient) => patient.id)),
-                  )
-                }
-              />
-              <span aria-live="polite">
-                {selected.length === 0 ? 'Select all' : `${selected.length} selected`}
-              </span>
-            </label>
-            {selected.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="neutral" onClick={() => setPicked(new Set())}>
-                  Clear
-                </Button>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  icon={<Trash2 aria-hidden className="size-3.5" />}
-                  onClick={() => {
-                    erase.reset()
-                    dialog.current?.showModal()
-                  }}
-                >
-                  Erase {selected.length}
-                </Button>
-              </div>
-            )}
-          </div>
-
-          <Card data-tour="patients" className="mt-2 overflow-hidden">
+        <div ref={table}>
+          <Card data-tour="patients" className="mt-4 overflow-hidden">
             <div className="max-w-full overflow-x-auto">
               <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
                 {/*
@@ -206,10 +202,13 @@ export function PatientList() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
-                  {filtered.map((patient) => {
+                  {pageRows.map((patient) => {
                     const name = patient.name ?? 'Not recorded'
                     return (
-                      <tr key={patient.id} className="transition-colors hover:bg-sunken-soft">
+                      <tr
+                        key={patient.id}
+                        className="group/row transition-colors hover:bg-sunken-soft"
+                      >
                         <td className="px-4 py-3.5">
                           <Checkbox
                             checked={picked.has(patient.id)}
@@ -218,12 +217,39 @@ export function PatientList() {
                           />
                         </td>
                         <th scope="row" className="px-4 py-3.5 font-medium">
-                          <Link
-                            to={`/patients/${patient.id}`}
-                            className="text-ink transition-colors hover:text-accent"
-                          >
-                            {name}
-                          </Link>
+                          {renaming === patient.id ? (
+                            <RenameField
+                              defaultEditing
+                              value={patient.name}
+                              fallback="Not recorded"
+                              label={`Rename ${name}`}
+                              onDone={() => setRenaming(null)}
+                              onSave={(next) => {
+                                if (next === null) {
+                                  toast.error('A patient record needs a name.')
+                                  return
+                                }
+                                rename.mutate({ id: patient.id, name: next })
+                              }}
+                            />
+                          ) : (
+                            <span className="flex items-center gap-1.5">
+                              <Link
+                                to={`/patients/${patient.id}`}
+                                className="truncate text-ink transition-colors hover:text-accent"
+                              >
+                                {name}
+                              </Link>
+                              <button
+                                type="button"
+                                aria-label={`Rename ${name}`}
+                                onClick={() => setRenaming(patient.id)}
+                                className="-my-1 flex size-6 shrink-0 items-center justify-center rounded-control text-ink-muted opacity-0 transition-opacity hover:bg-sunken hover:text-ink focus-visible:opacity-100 group-hover/row:opacity-100 pointer-coarse:opacity-100"
+                              >
+                                <Pencil aria-hidden className="size-3.5" />
+                              </button>
+                            </span>
+                          )}
                         </th>
                         <td className="px-4 py-3.5 text-ink-muted">
                           {patient.age ?? 'Not recorded'}
@@ -280,8 +306,23 @@ export function PatientList() {
               </table>
             </div>
           </Card>
-        </>
+
+          <Pagination page={currentPage} pageCount={pageCount} onPageChange={setPage} />
+        </div>
       )}
+
+      <SelectionIsland
+        count={selected.length}
+        total={filtered.length}
+        noun={{ one: 'patient', many: 'patients' }}
+        list={table}
+        onSelectAll={() => setPicked(new Set(filtered.map((patient) => patient.id)))}
+        onClear={() => setPicked(new Set())}
+        onErase={() => {
+          erase.reset()
+          dialog.current?.showModal()
+        }}
+      />
 
       <ErasePatientDialog
         ref={dialog}

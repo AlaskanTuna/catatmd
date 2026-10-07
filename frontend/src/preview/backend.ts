@@ -233,6 +233,7 @@ export function createPreviewBackend() {
     title: row.title,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    patientName: row.patientId === null ? null : (patients.get(row.patientId)?.name ?? null),
   })
 
   const byUpdatedDesc = (a: { updatedAt: Date }, b: { updatedAt: Date }) =>

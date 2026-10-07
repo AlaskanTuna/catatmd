@@ -9,7 +9,7 @@ import {
   type SigRoute,
 } from '@shared/types'
 import { useMutation } from '@tanstack/react-query'
-import { Check, CircleHelp, Mic, Plus, Square, Trash2, X } from 'lucide-react'
+import { Check, CircleHelp, Mic, Plus, RotateCcw, Square, Trash2, X } from 'lucide-react'
 import { type SyntheticEvent, useCallback, useEffect, useId, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
@@ -22,15 +22,18 @@ import { InputMeter } from '../audio/InputMeter.js'
 import type { WorkerRequest, WorkerResponse } from '../audio/protocol.js'
 import { ApiError, api } from '../lib/api.js'
 import { cn } from '../lib/cn.js'
+import { count } from '../lib/plural.js'
 import { Button } from '../ui/Button.js'
 import { Checkbox } from '../ui/Checkbox.js'
 import { Select } from '../ui/Select.js'
+import { DrugField } from './DrugField.js'
 import {
   capDictation,
   FOOD_OPTIONS,
   FREQUENCY_OPTIONS,
   type LineEdit,
   type LineRow,
+  lineKeys,
   MAX_DICTATED_CHARACTERS,
   manualRow,
   ROUTE_OPTIONS,
@@ -134,6 +137,10 @@ function Quote({
 /** Queried rather than reffed, because `Button` does not declare a `ref` prop. */
 const STOP_LABEL = 'Stop dictation'
 const ADD_LINE_LABEL = 'Add Line'
+const REMOVE_LABEL = 'Remove ticked lines'
+
+const removePrompt = (n: number) =>
+  `Remove ${count(n, 'ticked line')}? Restore brings ${n === 1 ? 'it' : 'them'} back until the dictation is closed.`
 
 const DISCARD_PROMPT = 'Discard the prescriptions you have not confirmed?'
 
@@ -169,7 +176,6 @@ export function PrescriptionTheatre({
   const titleId = useId()
   const boxId = useId()
   const linesId = useId()
-  const genericsId = useId()
 
   /*
    * Streaming is always preferred here, and on-device is only the fallback when
@@ -255,6 +261,23 @@ export function PrescriptionTheatre({
       }
       setError(null)
       setParseFailed(false)
+      /*
+       * A line the doctor removed stays removed only while the text still
+       * holds it. Its key is by drug, so without this a drug removed, deleted
+       * from the box and then dictated again would come back hidden: said, and
+       * dropped with no row to show for it.
+       */
+      const present = new Set(lineKeys(dictated, response.lines ?? []))
+      setEdits((current) => {
+        // A row added by hand is in no read, so only read rows are pruned.
+        const stale = [...current].filter(
+          ([key, each]) => each.removed && !key.startsWith('manual-') && !present.has(key),
+        )
+        if (stale.length === 0) return current
+        const next = new Map(current)
+        for (const [key, each] of stale) next.set(key, { ...each, removed: undefined })
+        return next
+      })
       setLines(response.lines ?? [])
       setGenerics(response.generics ?? [])
       setParsedFrom(dictated)
@@ -630,10 +653,12 @@ export function PrescriptionTheatre({
 
   /** The table is from the text as it stands, not from words since changed. */
   const fresh = parsedFrom !== null && dictation.trim() === parsedFrom
-  const rows: LineRow[] = [
+  const everyRow: LineRow[] = [
     ...(parsedFrom === null ? [] : rowsFrom(parsedFrom, lines, edits)),
     ...manual.map(({ key, phrase }) => manualRow(key, phrase, edits.get(key))),
   ]
+  const rows = everyRow.filter(({ key }) => edits.get(key)?.removed !== true)
+  const removedCount = everyRow.length - rows.length
   const { ready, unnamed, undecided } = toConfirm(rows)
   const room = MAX_PRESCRIPTIONS - stored.length
   /*
@@ -680,6 +705,39 @@ export function PrescriptionTheatre({
     focusNext.current = key
     setManual((current) => [...current, { key, phrase }])
   }
+
+  /*
+   * One control for the table rather than one per row, beside Add Line, acting
+   * on the ticked lines the way a list's selection does. A row read from the
+   * box is hidden rather than deleted, since its words are still there and the
+   * next read would only bring it back; a row added by hand is hidden too, so
+   * Restore can bring either back.
+   *
+   * The tick also means "include", and exact names start ticked, so the button
+   * counts what it would take and asks before it takes a named drug. Without
+   * both, one press on a freshly read table hid every line it had.
+   */
+  const ticked = rows.filter((row) => row.ticked)
+  const removeTicked = () => {
+    if (ticked.length === 0) return
+    const named = ticked.some((row) => row.draft.drug.trim() !== '')
+    if (named && !window.confirm(removePrompt(ticked.length))) return
+    setEdits((current) => {
+      const next = new Map(current)
+      for (const row of ticked) next.set(row.key, { ...current.get(row.key), removed: true })
+      return next
+    })
+    self.current?.querySelector<HTMLButtonElement>(`[aria-label="${ADD_LINE_LABEL}"]`)?.focus()
+  }
+
+  const restoreRemoved = () =>
+    setEdits((current) => {
+      const next = new Map(current)
+      for (const [key, each] of current) {
+        if (each.removed) next.set(key, { ...each, removed: undefined })
+      }
+      return next
+    })
 
   const stale = parsedFrom !== null && !fresh
   const confirmable =
@@ -776,6 +834,13 @@ export function PrescriptionTheatre({
      * scrolls while the header and the Confirm footer stay put. `open:flex`
      * rather than `flex`, for the reason `ChecklistPanel` gives: author display
      * outranks the UA rule hiding a closed dialog.
+     *
+     * A fifth larger on every bound than it first shipped (08/10/26): six
+     * columns of sig controls left the drug field too narrow to read a long
+     * generic name. The chrome is the lighter `glass` rather than
+     * `glass-panel`, so the header and footer frost the page behind instead of
+     * reading as a flat grey band; every panel carrying clinical text inside
+     * stays on an opaque surface.
      */
     <dialog
       ref={self}
@@ -787,12 +852,14 @@ export function PrescriptionTheatre({
       aria-labelledby={titleId}
       data-print="hide"
       className={cn(
-        'glass-panel m-auto max-h-[min(85vh,48rem)] max-w-none overflow-hidden rounded-float p-0 text-ink open:flex open:flex-col backdrop:bg-scrim backdrop:backdrop-blur-sm',
-        reviewing ? 'w-[min(64rem,calc(100vw-2rem))]' : 'w-[min(40rem,calc(100vw-2rem))]',
+        'glass m-auto max-h-[min(92vh,57.5rem)] max-w-none overflow-hidden rounded-float p-0 text-ink shadow-float open:flex open:flex-col backdrop:bg-scrim backdrop:backdrop-blur-sm',
+        reviewing ? 'w-[min(77rem,calc(100vw-2rem))]' : 'w-[min(48rem,calc(100vw-2rem))]',
       )}
     >
       {open && (
         <>
+          {/* No fill of its own: the header is the dialog's glass, so the page
+            frosts through it rather than stopping at a grey band. */}
           <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-5 py-3.5">
             <div className="min-w-0">
               <p
@@ -945,7 +1012,7 @@ export function PrescriptionTheatre({
 
                 {/* A parse that found nothing must say so. Brand names are
                   outside the lexicon by D-001, so this is a common case. */}
-                {rows.length === 0 && fresh && (
+                {everyRow.length === 0 && fresh && (
                   <p className="mt-2 text-xs text-ink-muted">
                     No drug name or dose was read from the text. Add a line and fill it in.
                   </p>
@@ -954,7 +1021,7 @@ export function PrescriptionTheatre({
                 {rows.length > 0 && (
                   <>
                     <div aria-hidden className={cn('mt-3 hidden gap-2 px-3 lg:flex', FIELD_LABEL)}>
-                      <span className="w-56 shrink-0 pl-6.5">Drug</span>
+                      <span className="w-64 shrink-0 pl-6.5">Drug</span>
                       <span className={cn(SIG_GRID, 'flex-1')}>
                         <span>Dose</span>
                         <span>Duration</span>
@@ -996,7 +1063,7 @@ export function PrescriptionTheatre({
                             )}
                           >
                             <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-                              <div className="flex items-center gap-2 lg:w-56 lg:shrink-0">
+                              <div className="flex items-center gap-2 lg:w-64 lg:shrink-0">
                                 <Checkbox
                                   aria-label={`Include line ${line}`}
                                   checked={row.ticked}
@@ -1004,38 +1071,19 @@ export function PrescriptionTheatre({
                                     edit(row.key, { ticked: event.target.checked })
                                   }
                                 />
-                                <input
-                                  ref={(node) => {
+                                <DrugField
+                                  inputRef={(node) => {
                                     if (node === null) drugFields.current.delete(row.key)
                                     else drugFields.current.set(row.key, node)
                                   }}
-                                  aria-label={`Drug, line ${line}`}
-                                  aria-invalid={needsName || undefined}
-                                  aria-describedby={prompt ? noteId : undefined}
-                                  list={genericsId}
+                                  label={`Drug, line ${line}`}
+                                  invalid={needsName}
+                                  describedBy={prompt ? noteId : undefined}
+                                  suggestions={generics}
                                   className={cn(TEXT_INPUT, 'min-w-0 flex-1')}
                                   value={row.draft.drug}
-                                  placeholder="Name this drug"
-                                  onChange={(event) => edit(row.key, { drug: event.target.value })}
+                                  onChange={(drug) => edit(row.key, { drug })}
                                 />
-                                {row.kind === 'manual' && (
-                                  <Button
-                                    size="sm"
-                                    variant="neutral"
-                                    aria-label={`Remove line ${line}`}
-                                    icon={<Trash2 aria-hidden className="size-3.5" />}
-                                    onClick={() => {
-                                      setManual((current) =>
-                                        current.filter(({ key }) => key !== row.key),
-                                      )
-                                      self.current
-                                        ?.querySelector<HTMLButtonElement>(
-                                          `[aria-label="${ADD_LINE_LABEL}"]`,
-                                        )
-                                        ?.focus()
-                                    }}
-                                  />
-                                )}
                               </div>
 
                               <div className={cn(SIG_GRID, 'lg:flex-1')}>
@@ -1194,13 +1242,7 @@ export function PrescriptionTheatre({
                   </>
                 )}
 
-                <datalist id={genericsId}>
-                  {generics.map((name) => (
-                    <option key={name} value={name} />
-                  ))}
-                </datalist>
-
-                <div className="mt-3">
+                <div className="mt-3 flex items-center gap-2">
                   <Button
                     size="sm"
                     variant="neutral"
@@ -1211,6 +1253,31 @@ export function PrescriptionTheatre({
                   >
                     Add Line
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="neutral"
+                    aria-label={REMOVE_LABEL}
+                    title={REMOVE_LABEL}
+                    icon={<Trash2 aria-hidden className="size-3.5" />}
+                    disabled={ticked.length === 0}
+                    onClick={removeTicked}
+                  >
+                    {ticked.length > 0 && (
+                      <span aria-hidden className="tabular-nums">
+                        {ticked.length}
+                      </span>
+                    )}
+                  </Button>
+                  {removedCount > 0 && (
+                    <Button
+                      size="sm"
+                      variant="neutral"
+                      icon={<RotateCcw aria-hidden className="size-3.5" />}
+                      onClick={restoreRemoved}
+                    >
+                      Restore {removedCount}
+                    </Button>
+                  )}
                 </div>
               </section>
             )}

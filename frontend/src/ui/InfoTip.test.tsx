@@ -85,3 +85,21 @@ describe('a portalled tip', () => {
     expect(Number.parseFloat(panel.style.maxWidth)).toBeGreaterThan(288)
   })
 })
+
+describe('opening on focus', () => {
+  it('stays shut when focus arrives without a keyboard, as a dialog opening hands it', async () => {
+    render(<InfoTip label="About this">Detail.</InfoTip>)
+    const trigger = screen.getByRole('button', { name: 'About this' })
+
+    // jsdom never matches `:focus-visible`, which is the pointer case exactly.
+    await act(async () => trigger.focus())
+    expect(screen.queryByRole('tooltip')).toBeNull()
+
+    vi.spyOn(trigger, 'matches').mockImplementation((selector) => selector === ':focus-visible')
+    await act(async () => {
+      trigger.blur()
+      trigger.focus()
+    })
+    expect(screen.getByRole('tooltip').textContent).toBe('Detail.')
+  })
+})

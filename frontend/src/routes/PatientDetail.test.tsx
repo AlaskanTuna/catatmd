@@ -10,6 +10,8 @@ vi.mock('../lib/api.js', () => ({
     getPatient: vi.fn(),
     createConsultation: vi.fn(),
     erasePatient: vi.fn(),
+    eraseConsultations: vi.fn(),
+    patch: vi.fn(),
   },
 }))
 
@@ -37,6 +39,7 @@ const PATIENT = {
       title: 'Acute cough',
       createdAt: new Date('2026-08-26T06:00:00.000Z'),
       updatedAt: new Date('2026-08-26T06:00:00.000Z'),
+      patientName: 'Aisha Rahman',
     },
   ],
 }
@@ -182,5 +185,35 @@ describe('erasing this patient record', () => {
     if (!start) throw new Error('expected a start control')
 
     expect(start.compareDocumentPosition(erase) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
+describe('the consultation history', () => {
+  const visits = Array.from({ length: 17 }, (_, i) => ({
+    ...(PATIENT.consultations[0] as (typeof PATIENT.consultations)[number]),
+    id: `consultation-${i + 1}`,
+    title: `Visit ${String(i + 1).padStart(2, '0')}`,
+  }))
+
+  it('pages, selects and renames like the consultation list', async () => {
+    vi.mocked(api.getPatient).mockResolvedValue({ ...PATIENT, consultations: visits })
+    setup()
+    await screen.findByText('Visit 01')
+
+    // The patient is named once on the card, not again on every row.
+    expect(screen.queryByText(/^Aisha Rahman · /)).toBeNull()
+    expect(screen.queryByText('Visit 16')).toBeNull()
+    expect(screen.getByText('Page 1 of 2')).toBeTruthy()
+
+    const boxes = screen.getAllByRole('checkbox', { name: /Select consultation/ })
+    expect(boxes).toHaveLength(15)
+    fireEvent.click(boxes[0] as HTMLElement)
+    expect(screen.getByRole('status').textContent).toBe('1 selected')
+    expect(screen.getByRole('button', { name: 'Select all 17 consultations' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Erase 1' })).toBeTruthy()
+
+    expect(screen.getAllByRole('button', { name: /^Rename the consultation from/ })).toHaveLength(
+      15,
+    )
   })
 })

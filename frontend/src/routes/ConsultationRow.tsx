@@ -22,6 +22,7 @@ export const formatConsultationDate = (value: Date) =>
 
 export function ConsultationRow({
   consultation,
+  showPatient = true,
   selected = false,
   renaming = false,
   onSelect,
@@ -30,6 +31,8 @@ export function ConsultationRow({
   onRenameDone,
 }: {
   consultation: ConsultationListItem
+  /** Off where every row belongs to the same patient. */
+  showPatient?: boolean
   selected?: boolean
   renaming?: boolean
   onSelect?: () => void
@@ -39,6 +42,15 @@ export function ConsultationRow({
 }) {
   const status = STATUS[consultation.status]
   const when = formatConsultationDate(consultation.createdAt)
+  /*
+   * The patient, not an id fragment. The row used to lead its second line with
+   * the first eight characters of the cuid, which no doctor reads and which
+   * looked like debug output on a clinical list.
+   */
+  const meta = [
+    showPatient ? (consultation.patientName ?? 'No patient on file') : null,
+    consultation.title === null ? null : when,
+  ].filter((part) => part !== null)
 
   return (
     <div
@@ -73,10 +85,9 @@ export function ConsultationRow({
         >
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{consultation.title ?? when}</p>
-            <p className="mt-0.5 truncate text-2xs text-ink-muted">
-              <span className="font-mono">{consultation.id.slice(0, 8)}</span>
-              {consultation.title === null ? null : ` · ${when}`}
-            </p>
+            {meta.length > 0 && (
+              <p className="mt-0.5 truncate text-2xs text-ink-muted">{meta.join(' · ')}</p>
+            )}
           </div>
           <span
             className={cn(
