@@ -569,6 +569,7 @@ Two additions raise precision and recall respectively, at low cost:
 
 - **NRIC structural validation.** Layer a date-of-birth validity check and a place-of-birth state-code check on top of the `YYMMDD-PB-###G` shape match. **MyKad has no checksum**, so this is the only structural check that exists. Copy the state-code table from the MIT-licensed `mykad` package rather than adding a dependency. Cuts false positives at zero recall cost.
 - **Name gazetteer.** A deny-list of Malay, Chinese, Indian, Pakistani and Bangladeshi given names plus honorifics, applied as a second recall pass for names carrying no particle or honorific cue. This is the **only** measure available in this window that raises name recall without a model.
+- **Name stopwords.** `NAME_STOPWORDS` holds words shaped like names that are not, so the gazetteer's adjacency rules do not take them into a name span. Every drug the medication lexicon spells is derived into it rather than copied (#317), so a newly listed drug is never tokenised as part of a patient's name.
 
 ### Why Not Presidio Or An Off-The-Shelf Library
 

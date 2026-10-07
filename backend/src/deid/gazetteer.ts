@@ -8,6 +8,8 @@
  * claim of completeness. docs/prd.md §12 states the recall limitation plainly.
  */
 
+import { MEDICATION_LEXICON } from '../medications/lexicon.js'
+
 /** Titles that precede a name. Malay, English and clinical. */
 export const HONORIFICS = [
   'Mr',
@@ -308,6 +310,19 @@ export const GIVEN_NAMES = new Set(
 )
 
 /**
+ * Every drug the medication lexicon spells, word by word as the detector reads
+ * one, hyphenated parts included (#317). Derived rather than copied, so a drug
+ * added to the lexicon is never taken for part of a patient's name.
+ */
+const DRUG_NAME_WORDS = MEDICATION_LEXICON.flatMap(({ generic, synonyms }) => [
+  generic,
+  ...synonyms,
+])
+  .flatMap((term) => term.split(/\s+/))
+  .flatMap((word) => [word, ...word.split('-')])
+  .map((word) => word.toLowerCase().replace(/[^a-z]/g, ''))
+
+/**
  * Words that look like names by shape but are clinical, geographic or
  * conversational. Without this the detector tokenises half the transcript,
  * which destroys the note rather than protecting it.
@@ -340,9 +355,7 @@ export const NAME_STOPWORDS = new Set(
     'october',
     'november',
     'december',
-    'paracetamol',
-    'amoxicillin',
-    'ibuprofen',
+    ...DRUG_NAME_WORDS,
     'lozenge',
     'antibiotic',
     'antibiotics',

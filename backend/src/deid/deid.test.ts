@@ -1,7 +1,9 @@
 import type { Transcript } from '@shared/types'
 import { describe, expect, it } from 'vitest'
 import { FIXTURES } from '../fixtures/index.js'
+import { MEDICATION_LEXICON } from '../medications/lexicon.js'
 import { detect } from './detectors.js'
+import { GIVEN_NAMES, HONORIFICS, NAME_STOPWORDS } from './gazetteer.js'
 import {
   assertNoIdentifiers,
   deidentify,
@@ -112,6 +114,30 @@ describe('precision — clinical content must survive', () => {
     const { text } = deidentify('Take Paracetamol QID. Come back Monday if the fever persists.')
     expect(text).toContain('Paracetamol')
     expect(text).toContain('Monday')
+  })
+
+  it('never takes a drug the medication lexicon holds for part of a name (#317)', () => {
+    for (const { generic, synonyms } of MEDICATION_LEXICON) {
+      for (const term of [generic, ...synonyms]) {
+        // Each word as the detector reads one, and each part of a hyphenated one.
+        for (const word of term.split(/\s+/).flatMap((word) => [word, ...word.split('-')])) {
+          expect(NAME_STOPWORDS.has(word.toLowerCase().replace(/[^a-z]/g, '')), word).toBe(true)
+        }
+      }
+    }
+    // Before #317 only three drugs were listed, and the rest went into the token.
+    expect(deidentify('Nitrofurantoin Siti binti Ahmad').text).toBe('Nitrofurantoin [PATIENT_1]')
+  })
+
+  it('derives no drug stopword that is also a name or an honorific (#317)', () => {
+    // A lexicon change now edits the deny-list, so a synonym shaped like a name
+    // would quietly stop that name being tokenised.
+    const drugWords = MEDICATION_LEXICON.flatMap(({ generic, synonyms }) => [generic, ...synonyms])
+      .flatMap((term) => term.split(/\s+/))
+      .flatMap((word) => [word, ...word.split('-')])
+      .map((word) => word.toLowerCase().replace(/[^a-z]/g, ''))
+    const nameLike = new Set([...GIVEN_NAMES, ...HONORIFICS.map((title) => title.toLowerCase())])
+    expect(drugWords.filter((word) => nameLike.has(word))).toEqual([])
   })
 
   it('does not tokenise an arbitrary twelve-digit reference number', () => {
