@@ -561,6 +561,12 @@ export const LiveSessionRequestSchema = z
 export const LiveSessionSchema = LiveAsrConfigSchema.extend({
   apiKey: z.string().min(1),
   expiresAt: z.string().min(1),
+  /**
+   * How long the session may stream. The client bounds a reconnected capture by
+   * it (#256), so reopening a dropped socket cannot outlast the cap the API set.
+   * Optional so a client and an API on either side of a deploy still agree.
+   */
+  maxSessionSeconds: z.number().int().positive().optional(),
 })
 
 // ─── Structured clinical note (SOAP) ─────────────────────────────────────────

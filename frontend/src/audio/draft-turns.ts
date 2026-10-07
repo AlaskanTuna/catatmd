@@ -399,18 +399,25 @@ export function voteRolesBySpeaker(
       votes.set(voice, tally)
     }
   }
-  const heard = [...votes.values()].reduce((sum, { doctor, patient }) => sum + doctor + patient, 0)
-  const ranked = [...votes]
-    .filter(([, { doctor, patient }]) => doctor + patient >= MIN_VOICE_SHARE * heard)
-    .map(([voice, { doctor, patient }]) => ({ voice, share: doctor / (doctor + patient) }))
-    .sort((a, b) => b.share - a.share)
-  const [top, next] = ranked
-  if (top === undefined || next === undefined || top.share - next.share < DECISIVE_MARGIN) {
-    return [...lines]
+  // A reopened socket numbers its voices afresh (#256), so the doctor is chosen
+  // within each connection, which `fromConnection` marks with `/n`, and never
+  // across them.
+  const connectionOf = (voice: string) => voice.split('/')[1] ?? ''
+  const roleOf = new Map<string, Speaker>()
+  for (const connection of new Set([...votes.keys()].map(connectionOf))) {
+    const tallies = [...votes].filter(([voice]) => connectionOf(voice) === connection)
+    const heard = tallies.reduce((sum, [, { doctor, patient }]) => sum + doctor + patient, 0)
+    const ranked = tallies
+      .filter(([, { doctor, patient }]) => doctor + patient >= MIN_VOICE_SHARE * heard)
+      .map(([voice, { doctor, patient }]) => ({ voice, share: doctor / (doctor + patient) }))
+      .sort((a, b) => b.share - a.share)
+    const [top, next] = ranked
+    if (top === undefined || next === undefined || top.share - next.share < DECISIVE_MARGIN) {
+      continue
+    }
+    for (const { voice } of ranked) roleOf.set(voice, voice === top.voice ? 'doctor' : 'patient')
   }
-  const roleOf = new Map<string, Speaker>(
-    ranked.map(({ voice }) => [voice, voice === top.voice ? 'doctor' : 'patient']),
-  )
+  if (roleOf.size === 0) return [...lines]
 
   return lines.flatMap((line, i): DraftLine[] => {
     const span = found[i]

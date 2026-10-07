@@ -1,4 +1,4 @@
-import type { DraftTurn, InterpretedLanguage, LiveAsrConfig } from '@shared/types'
+import type { DraftTurn, InterpretedLanguage, LiveAsrConfig, LiveSession } from '@shared/types'
 import { MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
 import { Loader2, Maximize2, Mic, Minimize2, Square } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
@@ -23,8 +23,10 @@ import type { LiveFoldSegment } from './live-fold.js'
 import {
   absorb,
   EMPTY_LIVE_TRANSCRIPT,
+  fromConnection,
   interimSpeaker,
   interimText,
+  type LiveToken,
   type LiveTranscript,
   tokensToSegments,
   tokensToText,
@@ -67,6 +69,59 @@ const MIC_FAILED_ERROR =
 
 const DROPPED_ERROR =
   'Capture stopped: the connection was lost. Everything already transcribed is kept, but the last few words may be missing. Start again to continue.'
+
+/**
+ * How a dropped socket is retried (#256): at once, then after one and three
+ * more seconds. A clinic wifi blip is seconds long, and past these the doctor
+ * is better told than kept waiting.
+ */
+const RECONNECT_DELAYS_MS = [0, 1_000, 3_000]
+
+/**
+ * The most audio held for a socket that is not back yet. It is queued in
+ * memory only, and a consultation is better restarted than caught up by more.
+ */
+const MAX_BEHIND_MS = 60_000
+
+const RECONNECTED_NOTICE =
+  'The connection dropped and came back. Words spoken around the drop may be missing, so check that part of the transcript.'
+
+const UNSENT_TAIL_ERROR =
+  'Stopped while reconnecting, so the speech held since the connection dropped was not transcribed. Check the end of the transcript.'
+
+/** Built the same way for the first socket and every reopened one. */
+function buildRecorder(microphone: MediaStream): MediaRecorder {
+  const supported =
+    typeof MediaRecorder !== 'undefined' &&
+    MediaRecorder.isTypeSupported?.('audio/webm;codecs=opus')
+  return supported
+    ? new MediaRecorder(microphone, { mimeType: 'audio/webm;codecs=opus' })
+    : new MediaRecorder(microphone)
+}
+
+/** Stops a recorder and waits, bounded, for its last chunk. */
+function stopRecorder(active: MediaRecorder | null): Promise<void> {
+  if (!active || active.state === 'inactive') return Promise.resolve()
+  // Bounded, because a recorder that never fires `onstop` would otherwise
+  // strand the screen mid-stop with no way forward. Two seconds is far beyond
+  // the real path, which resolves on the next task.
+  return new Promise<void>((resolve) => {
+    const give = window.setTimeout(resolve, RECORDER_STOP_TIMEOUT_MS)
+    active.onstop = () => {
+      window.clearTimeout(give)
+      resolve()
+    }
+    active.stop()
+  })
+}
+
+/** Detaches a recorder's handlers before stopping it, so nothing re-enters. */
+function discardRecorder(active: MediaRecorder | null) {
+  if (!active) return
+  active.ondataavailable = null
+  active.onstop = null
+  if (active.state !== 'inactive') active.stop()
+}
 
 /**
  * Shown after a stop the provider never acknowledged.
@@ -199,6 +254,10 @@ export function AmbientCapture({
   const [error, setError] = useState<string | null>(null)
   const [seconds, setSeconds] = useState(0)
   const [micStream, setMicStream] = useState<MediaStream | null>(null)
+  /** When the socket dropped, while it is being reopened (#256). */
+  const [downSince, setDownSince] = useState<number | null>(null)
+  /** A caution that is not a failure, such as a reconnect that worked. */
+  const [notice, setNotice] = useState<string | null>(null)
   /**
    * The patient's language when the consultation is interpreted (#393). `null`
    * is auto-detect, which the recogniser transcribes as spoken.
@@ -283,7 +342,33 @@ export function AmbientCapture({
   const attempt = useRef(0)
   const agreedRef = useRef(false)
   const stream = useRef<SonioxStream | null>(null)
+  /** The recorder feeding the socket now. A reconnect gives it a fresh one. */
   const recorder = useRef<MediaRecorder | null>(null)
+  /**
+   * The recorder behind the playback copy (#293), which runs the whole
+   * consultation.
+   *
+   * It is the first socket's recorder too, and it outlives a drop (#256): a
+   * reopened socket needs a stream with its own container header, so it gets a
+   * recorder of its own, while this one keeps the recording a single container
+   * whose clock the transcript's offsets still index into.
+   */
+  const archive = useRef<MediaRecorder | null>(null)
+  /** When the archive started, which every connection's clock is moved to. */
+  const startedAt = useRef(0)
+  /** How many times the socket has been reopened this session. */
+  const connection = useRef(0)
+  /** The minted cap on the whole capture, in milliseconds, when the API gave one. */
+  const capMs = useRef<number | null>(null)
+  /** True from a drop until a socket is streaming again. */
+  const down = useRef(false)
+  /**
+   * Which reconnect loop may still act. Bumped by every stop, start, failure
+   * and unmount, so a loop waiting out a delay or a mint cannot wake inside a
+   * session it does not belong to. Not the attempt counter: a stop must still
+   * hear the live socket's last words while it drains.
+   */
+  const generation = useRef(0)
   const tracks = useRef<MediaStream | null>(null)
   const inflight = useRef<AbortController | null>(null)
   /** True once the doctor has pressed stop, so no other path may deliver. */
@@ -377,15 +462,13 @@ export function AmbientCapture({
   }, [])
 
   const teardown = useCallback(() => {
-    const active = recorder.current
-    if (active) {
-      // Detached first: a stop this component initiated must not re-enter the
-      // delivery path through a handler that is about to be discarded.
-      active.ondataavailable = null
-      active.onstop = null
-      if (active.state !== 'inactive') active.stop()
-    }
+    generation.current += 1
+    // Detached first: a stop this component initiated must not re-enter the
+    // delivery path through a handler that is about to be discarded.
+    discardRecorder(recorder.current)
+    discardRecorder(archive.current)
     recorder.current = null
+    archive.current = null
     stream.current?.abort()
     stream.current = null
     inflight.current?.abort()
@@ -491,14 +574,15 @@ export function AmbientCapture({
     // The stop path has already claimed the transcript and is mid-drain.
     if (stopping.current) return
     attempt.current += 1
-    const active = recorder.current
-    if (active) {
-      active.ondataavailable = null
-      active.onstop = null
-      if (active.state !== 'inactive') active.stop()
-    }
+    generation.current += 1
+    discardRecorder(recorder.current)
+    discardRecorder(archive.current)
     recorder.current = null
+    archive.current = null
+    stream.current?.abort()
     stream.current = null
+    down.current = false
+    setDownSince(null)
     releaseMicrophone()
     onLiveChangeRef.current(false)
     setError(DROPPED_ERROR)
@@ -507,6 +591,147 @@ export function AmbientCapture({
     if (settled.current.final.length > 0) void deliver(settled.current)
     else setPhase('idle')
   }, [deliver, releaseMicrophone])
+
+  /**
+   * Reopens a socket that dropped mid-consultation (#256).
+   *
+   * A fresh recorder starts at once and queues what is said while a new key is
+   * minted, so the words spoken during the outage are sent late rather than
+   * lost. Only a plain drop is retried: a refusal or a message off contract
+   * still ends the session, and so does reaching the minted cap, because
+   * reopening past it would make the cap a number rather than a bound.
+   */
+  const reconnect = useCallback(
+    async (id: number) => {
+      if (stopping.current || attempt.current !== id) return
+      generation.current += 1
+      const gen = generation.current
+      const current = () =>
+        !stopping.current && attempt.current === id && generation.current === gen
+      const microphone = tracks.current
+      const lostAt = Date.now()
+      const cap = capMs.current
+      if (!microphone || (cap !== null && lostAt - startedAt.current >= cap)) {
+        onStreamFailure()
+        return
+      }
+
+      // The dropped socket's own recorder ends here, unless it is the archive.
+      if (recorder.current !== archive.current) discardRecorder(recorder.current)
+      stream.current = null
+      down.current = true
+      setDownSince(lostAt)
+      // The dropped socket's provisional words will never settle, and its last
+      // utterance is closed here, so a turn never runs across the drop and a
+      // translation from the new socket never attaches to words from the old.
+      const boundary: LiveToken = {
+        text: '',
+        startMs: lostAt - startedAt.current,
+        endMs: lostAt - startedAt.current,
+        isFinal: true,
+        speaker: null,
+        language: null,
+        confidence: null,
+        endpoint: true,
+      }
+      settled.current = absorb({ final: settled.current.final, interim: [] }, [boundary])
+      setLive(settled.current)
+
+      const queued: Blob[] = []
+      let target: SonioxStream | null = null
+      const media = buildRecorder(microphone)
+      media.ondataavailable = (event) => {
+        if (attempt.current !== id || event.data.size === 0) return
+        // Ahead of the generation check on purpose: a stop bumps it before the
+        // drain, and the live socket still needs this recorder's last chunk.
+        if (target?.state === 'streaming') {
+          target.send(event.data)
+          return
+        }
+        if (generation.current !== gen) return
+        // Held no longer than the bound, however slow the mint or the connect.
+        if (Date.now() - lostAt > MAX_BEHIND_MS) {
+          onStreamFailure()
+          return
+        }
+        queued.push(event.data)
+      }
+      media.start(TIMESLICE_MS)
+      recorder.current = media
+      const offsetMs = lostAt - startedAt.current
+      connection.current += 1
+      const heard = connection.current
+      const requested = pair.current
+
+      for (const delay of RECONNECT_DELAYS_MS) {
+        if (delay > 0) await new Promise((resolve) => window.setTimeout(resolve, delay))
+        if (!current()) return
+        if (Date.now() - lostAt > MAX_BEHIND_MS) break
+
+        const controller = new AbortController()
+        inflight.current = controller
+        let minted: LiveSession
+        try {
+          minted =
+            requested === null
+              ? await api.createLiveSession(controller.signal, 'ambient', true)
+              : await api.createLiveSession(controller.signal, 'ambient', true, requested)
+        } catch {
+          continue
+        } finally {
+          if (inflight.current === controller) inflight.current = null
+        }
+        if (!current()) return
+        // The pair the session is reopened with must be the pair it began with.
+        if (requested !== null && minted.config.translation?.languageA !== requested) break
+
+        let opened = false
+        const reopened = await new Promise<SonioxStream | null>((resolve) => {
+          const candidate = openSonioxStream(minted, {
+            onOpen: () => {
+              opened = true
+              resolve(candidate)
+            },
+            onTokens: (tokens) => {
+              if (attempt.current !== id) return
+              const next = absorb(settled.current, fromConnection(tokens, offsetMs, heard))
+              settled.current = next
+              setLive(next)
+            },
+            onFailure: (failure) => {
+              if (!opened) {
+                resolve(null)
+                return
+              }
+              if (attempt.current !== id) return
+              if (failure === 'closed') void reconnectRef.current(id)
+              else onStreamFailure()
+            },
+          })
+          stream.current = candidate
+        })
+        if (!reopened) continue
+        if (!current()) {
+          reopened.abort()
+          return
+        }
+        for (const chunk of queued.splice(0)) reopened.send(chunk)
+        target = reopened
+        down.current = false
+        setDownSince(null)
+        setNotice(RECONNECTED_NOTICE)
+        return
+      }
+
+      if (!current()) return
+      onStreamFailure()
+    },
+    [onStreamFailure],
+  )
+  const reconnectRef = useRef(reconnect)
+  useEffect(() => {
+    reconnectRef.current = reconnect
+  })
 
   const start = useCallback(async () => {
     if (availability.status !== 'ready') return
@@ -518,6 +743,11 @@ export function AmbientCapture({
     setError(null)
     setPhase('starting')
     stopping.current = false
+    generation.current += 1
+    down.current = false
+    setDownSince(null)
+    setNotice(null)
+    connection.current = 0
     setLive(EMPTY_LIVE_TRANSCRIPT)
     settled.current = EMPTY_LIVE_TRANSCRIPT
     // Cleared with the transcript, not after delivery: a session that failed
@@ -604,12 +834,7 @@ export function AmbientCapture({
         onOpen: () => {
           if (attempt.current !== id) return
           streaming = true
-          const supported =
-            typeof MediaRecorder !== 'undefined' &&
-            MediaRecorder.isTypeSupported?.('audio/webm;codecs=opus')
-          const media = supported
-            ? new MediaRecorder(microphone, { mimeType: 'audio/webm;codecs=opus' })
-            : new MediaRecorder(microphone)
+          const media = buildRecorder(microphone)
           media.ondataavailable = (event) => {
             if (attempt.current !== id) return
             if (event.data.size === 0) return
@@ -618,6 +843,10 @@ export function AmbientCapture({
           }
           mime.current = media.mimeType
           recorder.current = media
+          archive.current = media
+          startedAt.current = Date.now()
+          capMs.current =
+            session.maxSessionSeconds === undefined ? null : session.maxSessionSeconds * 1_000
           media.start(TIMESLICE_MS)
           setMicStream(microphone)
           setPhase('listening')
@@ -635,7 +864,7 @@ export function AmbientCapture({
           settled.current = next
           setLive(next)
         },
-        onFailure: () => {
+        onFailure: (failure) => {
           if (attempt.current !== id) return
           if (!streaming) {
             attempt.current += 1
@@ -646,7 +875,8 @@ export function AmbientCapture({
             setError(START_FAILED_ERROR)
             return
           }
-          onStreamFailure()
+          if (failure === 'closed') void reconnectRef.current(id)
+          else onStreamFailure()
         },
       })
       stream.current = opened
@@ -675,26 +905,24 @@ export function AmbientCapture({
      * end of the consultation went with it.
      */
     stopping.current = true
+    generation.current += 1
+    inflight.current?.abort()
     setPhase('finishing')
+    // Read before anything settles: a stop mid-reconnect has audio queued for a
+    // socket that never came back, and that is said rather than glossed.
+    const unsent = down.current
+    down.current = false
+    setDownSince(null)
 
-    if (active && active.state !== 'inactive') {
-      // Bounded, because a recorder that never fires `onstop` would otherwise
-      // strand the screen mid-stop with no way forward. Two seconds is far
-      // beyond the real path, which resolves on the next task.
-      await new Promise<void>((resolve) => {
-        const give = window.setTimeout(resolve, RECORDER_STOP_TIMEOUT_MS)
-        active.onstop = () => {
-          window.clearTimeout(give)
-          resolve()
-        }
-        active.stop()
-      })
-    }
+    const kept = archive.current
+    await Promise.all([stopRecorder(active), kept === active ? undefined : stopRecorder(kept)])
     recorder.current = null
+    archive.current = null
 
     // The last chunk has been handed over by now, so the end frame cannot
     // arrive ahead of audio the provider still needs.
-    const drained = await opened?.finish()
+    if (unsent) opened?.abort()
+    const drained = unsent ? undefined : await opened?.finish()
     stream.current = null
     releaseMicrophone()
     onLiveChangeRef.current(false)
@@ -702,7 +930,8 @@ export function AmbientCapture({
     // `finished: false` means the provider never acknowledged the end, so what
     // it still held is lost. Saying so is the difference between a short
     // transcript and a short transcript the doctor knows about.
-    if (opened && drained?.finished === false) setError(SHORT_TAIL_NOTICE)
+    if (unsent) setError(UNSENT_TAIL_ERROR)
+    else if (opened && drained?.finished === false) setError(SHORT_TAIL_NOTICE)
 
     await deliver(settled.current)
   }, [deliver, releaseMicrophone])
@@ -838,6 +1067,11 @@ export function AmbientCapture({
         </p>
       )}
 
+      {/* Mounted empty, so the text is announced when it arrives. */}
+      <p role="status" className="text-ink-muted text-sm empty:hidden">
+        {notice ?? ''}
+      </p>
+
       {phase === 'idle' && (
         <div>
           <Button variant="primary" onClick={() => void start()} disabled={!agreed}>
@@ -881,6 +1115,8 @@ export function AmbientCapture({
               </button>
             )}
           </div>
+
+          <Reconnecting since={downSince} />
 
           {/*
             Withheld while the theatre is open rather than rendered twice. Two
@@ -965,6 +1201,7 @@ export function AmbientCapture({
                   </span>
                   <span className="tabular-nums text-ink-muted text-sm">{clock(seconds)}</span>
                   <InputMeter stream={micStream ?? undefined} />
+                  <Reconnecting since={downSince} />
                   <button
                     type="button"
                     onClick={() => onConversationExpandedChange(false)}
@@ -1009,5 +1246,26 @@ export function AmbientCapture({
         </dialog>
       )}
     </div>
+  )
+}
+
+/**
+ * Says the socket is being reopened and how far capture is behind (#256). It
+ * re-renders with the session clock, which ticks every second while listening.
+ *
+ * The live region stays mounted while listening and only its text changes,
+ * because a region inserted already filled is often not announced. The counter
+ * sits outside it, so a screen reader hears the drop once, not every second.
+ */
+function Reconnecting({ since }: { since: number | null }) {
+  const behind = since === null ? 0 : Math.max(0, Math.round((Date.now() - since) / 1_000))
+  return (
+    <p className="flex items-center gap-2 text-ink-muted text-sm empty:hidden">
+      {since !== null && <Loader2 aria-hidden className="size-4 animate-spin" />}
+      <span role="status">{since === null ? '' : 'Connection lost, reconnecting.'}</span>
+      {since !== null && (
+        <span className="tabular-nums">{behind} s of speech held until it is back.</span>
+      )}
+    </p>
   )
 }

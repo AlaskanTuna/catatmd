@@ -381,6 +381,8 @@ describe('the mint, and the row that must precede it reaching the client', () =>
       expect(body.data.apiKey).toBe('temp-session-key')
       expect(body.data.expiresAt).toBe('2026-09-06T12:01:00Z')
       expect(body.data.websocketUrl).toBe('wss://stt-rt.soniox.com/transcribe-websocket')
+      // The client bounds a reconnected capture by this (#256).
+      expect(body.data.maxSessionSeconds).toBe(1_800)
     }
   })
 
