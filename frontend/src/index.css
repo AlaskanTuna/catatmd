@@ -1183,3 +1183,17 @@
     }
   }
 }
+
+/*
+ * A scroller with no visible bar, for a row that says it scrolls some other
+ * way (CatatAI's chips fade at the edge and take the wheel). Both halves, for
+ * the reason the global scrollbar rule gives: Firefox reads the property,
+ * Chromium the pseudo-element. Never on a scroller that has no other cue.
+ */
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

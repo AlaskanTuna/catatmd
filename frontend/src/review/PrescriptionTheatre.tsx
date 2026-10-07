@@ -84,7 +84,8 @@ const SAVE_FAILED = 'That could not be saved. Nothing was lost, try Confirm agai
 const FIELD_LABEL = 'text-2xs font-semibold text-ink-muted'
 const TEXT_INPUT =
   'h-11 rounded-control border border-line bg-surface px-3.5 text-sm transition-colors hover:border-accent focus:border-accent'
-const PANEL = 'rounded-card bg-surface p-4 shadow-card'
+/** The Completeness Checklist's section card: bordered on the sunken body, no shadow. */
+const PANEL = 'rounded-card border border-line bg-surface p-4'
 
 /** Dose, duration, frequency, food and route: one row wide; the lists take a full row on a phone. */
 const SIG_GRID =
@@ -837,10 +838,14 @@ export function PrescriptionTheatre({
      *
      * A fifth larger on every bound than it first shipped (08/10/26): six
      * columns of sig controls left the drug field too narrow to read a long
-     * generic name. The chrome is the lighter `glass` rather than
-     * `glass-panel`, so the header and footer frost the page behind instead of
-     * reading as a flat grey band; every panel carrying clinical text inside
-     * stays on an opaque surface.
+     * generic name.
+     *
+     * The background is the Completeness Checklist's, so the two floating
+     * panels on the review page read as one family: `glass-panel` chrome for
+     * the header and footer, an opaque `bg-sunken` body, and bordered surface
+     * cards on it. The lighter `.glass` tried in #427 frosted the chrome but
+     * left white cards floating on a translucent ground, which read as two
+     * materials fighting rather than as glass.
      */
     <dialog
       ref={self}
@@ -852,14 +857,12 @@ export function PrescriptionTheatre({
       aria-labelledby={titleId}
       data-print="hide"
       className={cn(
-        'glass m-auto max-h-[min(92vh,57.5rem)] max-w-none overflow-hidden rounded-float p-0 text-ink shadow-float open:flex open:flex-col backdrop:bg-scrim backdrop:backdrop-blur-sm',
+        'glass-panel m-auto max-h-[min(92vh,57.5rem)] max-w-none overflow-hidden rounded-float p-0 text-ink open:flex open:flex-col backdrop:bg-scrim backdrop:backdrop-blur-sm',
         reviewing ? 'w-[min(77rem,calc(100vw-2rem))]' : 'w-[min(48rem,calc(100vw-2rem))]',
       )}
     >
       {open && (
         <>
-          {/* No fill of its own: the header is the dialog's glass, so the page
-            frosts through it rather than stopping at a grey band. */}
           <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-5 py-3.5">
             <div className="min-w-0">
               <p
@@ -930,7 +933,7 @@ export function PrescriptionTheatre({
             </div>
           </header>
 
-          <div className="flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto p-4 sm:p-5">
+          <div className="flex min-h-0 flex-auto flex-col gap-4 overflow-y-auto bg-sunken p-4 sm:p-5">
             <section className={PANEL}>
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-xs font-semibold text-ink" id={boxId}>
