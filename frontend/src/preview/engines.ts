@@ -2,11 +2,12 @@
  * The backend's pure modules, imported by the preview stub and by nothing else.
  *
  * Only side-effect-free code crosses here: no env, no Prisma, no logger, no
- * model client, no Node built-in. `redflags/` and `medications/` are pure by
- * their own contract, and `fixtures/corpus.ts` is a constant. Importing them
+ * model client, no Node built-in. `redflags/`, `medications/` and
+ * `calculators/` are pure by their own contract, and `fixtures/corpus.ts` is a constant. Importing them
  * rather than copying them is the point: a preview shows the real red-flag
  * engine and the real prescription parser, not a lookalike.
  */
+export { scoresFor } from '../../../backend/src/calculators/index.js'
 export { FIXTURES } from '../../../backend/src/fixtures/corpus.js'
 export { matchMedication, parseSigWithSpan } from '../../../backend/src/medications/index.js'
 export {
