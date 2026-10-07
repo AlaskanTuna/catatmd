@@ -1311,8 +1311,10 @@ describe('names in Chinese and Tamil script are found by their cues (#418)', () 
     ['என் பேர் முருகன்.', 'முருகன்'],
     ['Mr 陈 is here.', '陈'],
     ['Encik ராமசாமி came.', 'ராமசாமி'],
-    ['我叫美玲。', '美玲'],
-    ['我叫阿玲，发烧三天。', '阿玲'],
+    ['我的名字是美玲。', '美玲'],
+    ['我名叫阿玲，发烧三天。', '阿玲'],
+    ['我女儿叫陈小美。', '陈小美'],
+    ['我老公姓林。', '林'],
     ['我叫做陈美玲。', '陈美玲'],
     ['我姓陈，叫做美玲。', '美玲'],
     ['我姓陈，叫陈美玲。', '陈美玲'],
@@ -1364,6 +1366,15 @@ describe('names in Chinese and Tamil script are found by their cues (#418)', () 
    */
   it('still passes a full name said only before a title', () => {
     expect(deidentify('陈美玲小姐来了。').text).toContain('陈美玲')
+  })
+
+  /*
+   * KNOWN GAP, pinned deliberately (#418, D-011). Bare 我叫 is as often "I
+   * called" as "my name is", so a given name with no surname after it is not
+   * read. A surname-led name after 我叫, or a given name after 我的名字是, is.
+   */
+  it('still passes a given name alone after a bare 我叫', () => {
+    expect(deidentify('我叫美玲。').text).toContain('美玲')
   })
 
   it.each([
@@ -1490,6 +1501,22 @@ describe('names in Chinese and Tamil script are found by their cues (#418)', () 
     'Dr 高烧三天了',
     'terms 马上去急诊',
     'Cik 黄痰很多',
+    '我叫救护车。',
+    '我叫医生。',
+    '我叫醫生。',
+    '我叫護士嚟。',
+    '我叫白車。',
+    '我叫老公。',
+    '我叫媽媽。',
+    '我叫儿子。',
+    '我叫外卖。',
+    '我叫的士。',
+    '我叫醒他。',
+    '我叫佢食藥。',
+    '我叫做检查。',
+    '我叫醫生嚟。',
+    'Puan 高血压 ada ke?',
+    'Dr 马上 come?',
   ])('leaves clinical speech with no name in it alone: %j', (sentence) => {
     expect(deidentify(sentence).text).toBe(sentence)
   })

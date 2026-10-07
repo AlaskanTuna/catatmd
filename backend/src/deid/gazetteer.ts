@@ -67,8 +67,44 @@ export const HAN_NAME_INTRODUCERS = [
   '我叫',
 ] as const
 
+/**
+ * "My name is" with nothing else it could mean, so a given name alone after it
+ * is read too (我的名字是美玲). Bare 我叫 is left out: it is as often "I called"
+ * (我叫救护车, an ambulance; 我叫老公, my husband).
+ */
+export const HAN_UNAMBIGUOUS_INTRODUCERS = [
+  '我的名字是',
+  '我的名字叫',
+  '我嘅名係',
+  '我個名叫',
+  '我名叫',
+] as const
+
 /** "He is called", "she is called": read only when a surname opens what follows. */
 export const HAN_THIRD_PERSON_INTRODUCERS = ['他叫', '她叫', '佢叫'] as const
+
+/**
+ * Relatives a patient introduces, as in 我女儿叫陈小美 or 我老公姓林. A GP
+ * consultation often has one in the room, and their name is an identifier too.
+ */
+export const HAN_RELATIVES = [
+  '女儿',
+  '女兒',
+  '儿子',
+  '兒子',
+  '老公',
+  '老婆',
+  '太太',
+  '丈夫',
+  '妈妈',
+  '媽媽',
+  '爸爸',
+  '孩子',
+  '朋友',
+] as const
+
+/** Surname-led words that are not names after 我叫: 白车 is an ambulance. */
+export const HAN_NOT_NAMES = ['白车', '白車'] as const
 
 /** "My surname is", after which the surname, and sometimes the given name, follow. */
 export const HAN_SURNAME_INTRODUCERS = ['我姓', '他姓', '她姓', '佢姓'] as const

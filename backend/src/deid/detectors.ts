@@ -3,10 +3,13 @@ import {
   HAN_BEFORE_SURNAME,
   HAN_COMPOUND_SURNAMES,
   HAN_NAME_INTRODUCERS,
+  HAN_NOT_NAMES,
+  HAN_RELATIVES,
   HAN_SURNAME_INTRODUCERS,
   HAN_SURNAMES,
   HAN_THIRD_PERSON_INTRODUCERS,
   HAN_TITLES,
+  HAN_UNAMBIGUOUS_INTRODUCERS,
   HONORIFICS,
   NAME_INTRODUCERS,
   NAME_STOPWORDS,
@@ -768,7 +771,7 @@ const CLAUSE_END = '(?=[\\p{P}\\p{S}\\s]|$)'
 const CUE_GAP = '[\\s:：「『"“]*'
 // A pronoun, a question word or a completed action after "我叫" is "I told
 // you", "what is your name" or "I called", not a name.
-const NOT_A_NAME = '(?![你他她它我您們们什甚啥谁誰乜了咗過过])'
+const NOT_A_NAME = `(?![你他她它我您佢們们什甚啥谁誰乜了咗過过]|${HAN_NOT_NAMES.join('|')})`
 const TAMIL = '[\\u0B80-\\u0BFF]'
 const TAMIL_WORD = `${TAMIL}+`
 // An initial: one letter, as ஆர். or கே. or R., never a whole short word such
@@ -794,15 +797,17 @@ const latin = (cues: readonly string[]) => `\\b(?:${cues.map(caseInsensitiveLite
  */
 const NATIVE_NAME_PATTERNS: RegExp[] = [
   new RegExp(`(?:${HAN_NAME_INTRODUCERS.join('|')})${CUE_GAP}${NOT_A_NAME}(${HAN_NAME})`, 'gu'),
-  // A given name with no surname, "我叫美玲", only where the clause then ends.
+  // A given name with no surname, "我的名字是美玲", only after an introducer
+  // that cannot mean anything else, and only where the clause then ends.
   new RegExp(
-    `(?:${HAN_NAME_INTRODUCERS.join('|')})${CUE_GAP}${NOT_A_NAME}(${HAN}{2,3})${CLAUSE_END}`,
+    `(?:${HAN_UNAMBIGUOUS_INTRODUCERS.join('|')})${CUE_GAP}${NOT_A_NAME}(${HAN}{2,3})${CLAUSE_END}`,
     'gu',
   ),
   new RegExp(
-    `(?:${HAN_THIRD_PERSON_INTRODUCERS.join('|')})${CUE_GAP}(${HAN_NAME})${CLAUSE_END}`,
+    `(?:${[...HAN_THIRD_PERSON_INTRODUCERS, ...HAN_RELATIVES.map((who) => `${who}叫`)].join('|')})${CUE_GAP}(${HAN_NAME})${CLAUSE_END}`,
     'gu',
   ),
+  new RegExp(`(?:${HAN_RELATIVES.join('|')})姓${CUE_GAP}(${SURNAME})${CLAUSE_END}`, 'gu'),
   // "我姓陈，叫美玲" gives the given name as a second capture.
   new RegExp(
     `(?:${HAN_SURNAME_INTRODUCERS.join('|')})${CUE_GAP}${NOT_A_NAME}(${SURNAME})(?:[，,、\\s]*(?:名叫|叫做|叫|名)(?![我你他她])(${HAN}{1,4})${CLAUSE_END})?`,
@@ -820,10 +825,9 @@ const NATIVE_NAME_PATTERNS: RegExp[] = [
   ),
   new RegExp(`(?<!${TAMIL})(?:${TAMIL_TITLES.join('|')})(?:\\.\\s*|\\s+)(${TAMIL_ONE})`, 'gu'),
   new RegExp(`${latin(LATIN_NAME_INTRODUCERS)}\\s+(${HAN_NAME}|${TAMIL_FULL})${CLAUSE_END}`, 'gu'),
-  new RegExp(
-    `${latin(HONORIFICS)}\\.?\\s+(${SURNAME}(?:${HAN}{1,2})?|${TAMIL_ONE})${CLAUSE_END}`,
-    'gu',
-  ),
+  // An honorific takes a surname only when it stands alone: "Puan 高血压" is a
+  // question about blood pressure, not Mrs Gao.
+  new RegExp(`${latin(HONORIFICS)}\\.?\\s+(${SURNAME}|${TAMIL_ONE})${CLAUSE_END}`, 'gu'),
 ]
 
 /**

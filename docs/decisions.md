@@ -529,19 +529,20 @@ Each language goes to the path below, and Cantonese is stated as not supported o
 
 `detectNativeScriptNames` tokenises a name in Chinese or Tamil script where a cue says a name is there, and nothing else. The note keeps reading Mandarin and Tamil speech, which is why `SCRIPT` still leaves both scripts alone.
 
-| Cue                                 | Example                                                | Tokenised                                                                            |
-| ----------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Self-introduction, Chinese          | 我叫陈美玲, 我的名字是王小明, 我姓陈，叫美玲, 他叫陈伟 | A name opening on a listed surname, or a given name alone where the clause then ends |
-| Self-introduction, Tamil            | என் பெயர் ஆர். லட்சுமி, என் பேர் முருகன்               | Up to two words, with an initial                                                     |
-| Latin introducer or title before it | Nama saya 陈美玲, Mr 陈, Encik ராமசாமி                 | The script name after it                                                             |
-| Title after a surname               | 陈先生, 给林医生, 司徒先生                             | The surname alone, where it starts a word                                            |
-| Title before a Tamil name           | திரு ராமசாமி, திருமதி லட்சுமி                          | One word, with an initial                                                            |
+| Cue                                 | Example                                              | Tokenised                                                                                     |
+| ----------------------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Self-introduction, Chinese          | 我叫陈美玲, 我姓陈，叫美玲, 他叫陈伟, 我的名字是美玲 | A name opening on a listed surname; a given name alone only after an unambiguous "my name is" |
+| A relative introduced               | 我女儿叫陈小美, 我老公姓林                           | The name or surname that follows                                                              |
+| Self-introduction, Tamil            | என் பெயர் ஆர். லட்சுமி, என் பேர் முருகன்             | Up to two words, with an initial                                                              |
+| Latin introducer or title before it | Nama saya 陈美玲, Mr 陈, Encik ராமசாமி               | The script name after an introducer; a surname standing alone after a title                   |
+| Title after a surname               | 陈先生, 给林医生, 司徒先生                           | The surname alone, where it starts a word                                                     |
+| Title before a Tamil name           | திரு ராமசாமி, திருமதி லட்சுமி                        | One word, with an initial                                                                     |
 
 A name found by its cue is found again wherever it is repeated in the same text, unless it is one character (陈 also opens 陈皮) or the capture did not end a clause, so a wrong guess cut from a phrase is never spread. A Tamil name is carried only as a whole word.
 
 ### Why Cues, And Why So Narrow
 
-Measured against a precision corpus of 118 clinical Mandarin, Cantonese, Tamil and code-switched lines, pinned in `deid.test.ts`, every one of which must pass unchanged. Three rounds of `phi-boundary-auditor` built it.
+Measured against a precision corpus of 134 clinical Mandarin, Cantonese, Tamil and code-switched lines, pinned in `deid.test.ts`, every one of which must pass unchanged. Four rounds of `phi-boundary-auditor` built it.
 
 - **A Chinese name must open on a listed surname.** "我叫" is as often "I called" (我叫救护车, an ambulance) as "my name is", and the surname is what tells them apart.
 - **The title rule reads the surname alone, and only where it starts a word.** That is after punctuation, a space, or a verb that takes a person (给, 找, 是, 谢). Reading back from the title turned 白天医生 ("daytime, the doctor") into a name, and any other character before the surname usually makes it the end of a word: 体温医生 ("temperature, the doctor"), 主任医生 ("the consultant").
@@ -552,7 +553,7 @@ Measured against a precision corpus of 118 clinical Mandarin, Cantonese, Tamil a
 ### What Still Passes
 
 - **A name said with no cue.** "陈美玲今天咳嗽" reaches the model on the Auto-Detect path. Translated sessions are unaffected: the script never reaches `turn.text` there.
-- **A full name before a title,** as in 陈美玲小姐, pinned as a known gap.
+- **A full name before a title,** as in 陈美玲小姐, and **a given name alone after a bare 我叫**, as in 我叫美玲, both pinned as known gaps. Bare 我叫 is as often "I called" (我叫救护车, an ambulance; 我叫老公, my husband).
 - **A surname outside the list,** a Tamil father's name after a title, and a native-script address.
 
 ### What This Decision Does Not License
