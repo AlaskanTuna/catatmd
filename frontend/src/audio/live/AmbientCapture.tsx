@@ -642,6 +642,8 @@ export function AmbientCapture({
       const media = buildRecorder(microphone)
       media.ondataavailable = (event) => {
         if (attempt.current !== id || event.data.size === 0) return
+        // Ahead of the generation check on purpose: a stop bumps it before the
+        // drain, and the live socket still needs this recorder's last chunk.
         if (target?.state === 'streaming') {
           target.send(event.data)
           return
@@ -1065,11 +1067,10 @@ export function AmbientCapture({
         </p>
       )}
 
-      {notice && (
-        <p role="status" className="text-ink-muted text-sm">
-          {notice}
-        </p>
-      )}
+      {/* Mounted empty, so the text is announced when it arrives. */}
+      <p role="status" className="text-ink-muted text-sm empty:hidden">
+        {notice ?? ''}
+      </p>
 
       {phase === 'idle' && (
         <div>
@@ -1115,7 +1116,7 @@ export function AmbientCapture({
             )}
           </div>
 
-          {downSince !== null && <Reconnecting since={downSince} />}
+          <Reconnecting since={downSince} />
 
           {/*
             Withheld while the theatre is open rather than rendered twice. Two
@@ -1200,7 +1201,7 @@ export function AmbientCapture({
                   </span>
                   <span className="tabular-nums text-ink-muted text-sm">{clock(seconds)}</span>
                   <InputMeter stream={micStream ?? undefined} />
-                  {downSince !== null && <Reconnecting since={downSince} />}
+                  <Reconnecting since={downSince} />
                   <button
                     type="button"
                     onClick={() => onConversationExpandedChange(false)}
@@ -1251,16 +1252,20 @@ export function AmbientCapture({
 /**
  * Says the socket is being reopened and how far capture is behind (#256). It
  * re-renders with the session clock, which ticks every second while listening.
+ *
+ * The live region stays mounted while listening and only its text changes,
+ * because a region inserted already filled is often not announced. The counter
+ * sits outside it, so a screen reader hears the drop once, not every second.
  */
-function Reconnecting({ since }: { since: number }) {
-  const behind = Math.max(0, Math.round((Date.now() - since) / 1_000))
-  // The counter sits outside the live region, so a screen reader hears the
-  // drop once rather than every second.
+function Reconnecting({ since }: { since: number | null }) {
+  const behind = since === null ? 0 : Math.max(0, Math.round((Date.now() - since) / 1_000))
   return (
-    <p className="flex items-center gap-2 text-ink-muted text-sm">
-      <Loader2 aria-hidden className="size-4 animate-spin" />
-      <span role="status">Connection lost, reconnecting.</span>
-      <span className="tabular-nums">{behind} s of speech held until it is back.</span>
+    <p className="flex items-center gap-2 text-ink-muted text-sm empty:hidden">
+      {since !== null && <Loader2 aria-hidden className="size-4 animate-spin" />}
+      <span role="status">{since === null ? '' : 'Connection lost, reconnecting.'}</span>
+      {since !== null && (
+        <span className="tabular-nums">{behind} s of speech held until it is back.</span>
+      )}
     </p>
   )
 }

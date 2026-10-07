@@ -733,7 +733,7 @@ describe('a dropped connection', () => {
     await act(async () => socket().drop())
     await settle()
 
-    expect(screen.getByRole('status').textContent).toMatch(/reconnecting/i)
+    expect(screen.getByText(/connection lost, reconnecting/i).getAttribute('role')).toBe('status')
     expect(screen.queryByRole('alert')).toBeNull()
     expect(tracks[0]?.stop).not.toHaveBeenCalled()
     expect(createLiveSession).toHaveBeenCalledTimes(2)
@@ -766,6 +766,28 @@ describe('a dropped connection', () => {
     const voices = new Set(delivered.segments.map((s: { speaker: string }) => s.speaker))
     expect(voices.size).toBe(2)
     expect([...voices]).not.toContain('1')
+  })
+
+  it("still hears the reopened socket's last words while a stop drains", async () => {
+    const { onTranscript } = await startSession()
+    await act(async () => socket().drop())
+    await settle()
+    const reopened = sockets[1]
+    if (!reopened) throw new Error('no second socket')
+    await act(async () => reopened.open())
+    await settle()
+
+    const stopped = act(async () => {
+      screen.getByRole('button', { name: /stop and finish/i }).click()
+    })
+    await settle()
+    await act(async () =>
+      reopened.message({ tokens: [said('Come back on Monday.', 0, 900, 1)], finished: true }),
+    )
+    await stopped
+    await settle()
+
+    expect(onTranscript.mock.calls[0]?.[0].text).toBe('Come back on Monday.')
   })
 
   it('keeps one recorder running for the playback copy, across the drop', async () => {
