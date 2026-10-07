@@ -251,21 +251,11 @@ export function CatatAI({
         )}
 
         {!demo && (messages.length === 0 || showFollowUps) && (
-          <div className="flex flex-wrap gap-1.5">
-            {(messages.length === 0 ? opening : followUps).map((question) => (
-              <button
-                key={question}
-                type="button"
-                onClick={() => submit(question)}
-                disabled={streaming}
-                /* 10px, not a pill: pressing this sends a message, and
-                   docs/DESIGN.md reserves 999px for labels. */
-                className="rounded-control border border-line bg-surface px-2.5 py-1.5 text-left text-ink-muted text-xs transition-colors hover:border-accent/40 hover:text-ink disabled:opacity-50"
-              >
-                {question}
-              </button>
-            ))}
-          </div>
+          <ChipRow
+            questions={messages.length === 0 ? opening : followUps}
+            disabled={streaming}
+            onPick={submit}
+          />
         )}
 
         {!demo && (
@@ -530,6 +520,93 @@ function ToolRuns({
           </ol>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** How far the row's edge fades, which is what says there is more beyond it. */
+const CHIP_FADE = '2rem'
+
+/**
+ * The suggestion chips, as one row that scrolls sideways.
+ *
+ * **One row, not a wrapped stack.** Four chips wrapped to four lines in the
+ * docked panel and took a third of its height from the conversation they
+ * exist to start. In a row they cost one line in both the docked and the
+ * expanded panel.
+ *
+ * **The scrollbar is hidden, so the row has to say it scrolls some other
+ * way.** An edge fades while there is more past it, a vertical wheel turns
+ * the row sideways (a mouse with no horizontal wheel could not reach the last
+ * chip otherwise), and Tab still walks every chip, scrolling each into view.
+ */
+function ChipRow({
+  questions,
+  disabled,
+  onPick,
+}: {
+  questions: readonly string[]
+  disabled: boolean
+  onPick: (question: string) => void
+}) {
+  const row = useRef<HTMLDivElement>(null)
+  const [more, setMore] = useState({ before: false, after: false })
+
+  const measure = () => {
+    const node = row.current
+    if (!node) return
+    const before = node.scrollLeft > 1
+    const after = node.scrollLeft + node.clientWidth < node.scrollWidth - 1
+    setMore((current) =>
+      current.before === before && current.after === after ? current : { before, after },
+    )
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new set of questions is a new width to measure
+  useEffect(() => {
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [questions])
+
+  const mask =
+    more.before && more.after
+      ? `linear-gradient(to right, transparent, #000 ${CHIP_FADE}, #000 calc(100% - ${CHIP_FADE}), transparent)`
+      : more.after
+        ? `linear-gradient(to right, #000 calc(100% - ${CHIP_FADE}), transparent)`
+        : more.before
+          ? `linear-gradient(to left, #000 calc(100% - ${CHIP_FADE}), transparent)`
+          : undefined
+
+  return (
+    <div
+      ref={row}
+      onScroll={measure}
+      onWheel={(event) => {
+        const node = event.currentTarget
+        if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+        if (node.scrollWidth <= node.clientWidth) return
+        node.scrollLeft += event.deltaY
+      }}
+      style={{ maskImage: mask, WebkitMaskImage: mask }}
+      className="scrollbar-none flex gap-1.5 overflow-x-auto overscroll-x-contain"
+    >
+      {questions.map((question) => (
+        <button
+          key={question}
+          type="button"
+          onClick={() => onPick(question)}
+          onFocus={(event) =>
+            event.currentTarget.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+          }
+          disabled={disabled}
+          /* 10px, not a pill: pressing this sends a message, and
+             docs/DESIGN.md reserves 999px for labels. */
+          className="shrink-0 whitespace-nowrap rounded-control border border-line bg-surface px-2.5 py-1.5 text-left text-ink-muted text-xs transition-colors hover:border-accent/40 hover:text-ink disabled:opacity-50"
+        >
+          {question}
+        </button>
+      ))}
     </div>
   )
 }

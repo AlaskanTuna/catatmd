@@ -331,10 +331,11 @@ sig controls left the drug field too narrow for a long generic name. Past the
 cap the header and the Confirm footer stay put. The microphone shows as a small
 wave rather than words.
 
-**The chrome is `.glass`, not `.glass-panel` (08/10/26).** At the heavier fill
-the header read as a flat grey band. The lighter one frosts the page through the
-header, footer and gutters, while every panel carrying clinical text stays
-opaque. Muted text on it measures 4.93:1.
+**The background is the Completeness Checklist's (08/10/26).** `glass-panel`
+chrome for the header and footer, an opaque `bg-sunken` body, and bordered
+`bg-surface` cards with no shadow, so the review page's two floating panels are
+one family. The lighter `.glass` tried first left white cards floating on a
+translucent ground, which read as two materials rather than as glass.
 
 **Why it is a theatre at all.** The compose surface lived in the review page's
 middle column: about 620px wide, itself an internal scroller, holding a

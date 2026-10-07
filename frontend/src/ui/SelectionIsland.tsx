@@ -86,7 +86,9 @@ export function SelectionIsland({
         onClick={onSelectAll}
         aria-label={`Select all ${total} ${total === 1 ? noun.one : noun.many}`}
       >
-        <span className="hidden sm:inline">Select&nbsp;</span>All {total}
+        {/* No space inside the span: the button's flex gap already sits
+            between it and "All", and a second one doubled the gap. */}
+        <span className="hidden sm:inline">Select</span>All {total}
       </Button>
       <Button
         size="sm"

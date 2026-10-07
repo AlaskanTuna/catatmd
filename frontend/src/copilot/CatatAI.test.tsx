@@ -2,6 +2,7 @@ import type { ConsultationDetail } from '@shared/types'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CatatAI } from './CatatAI.js'
+import { OPENING_QUESTIONS } from './chips.js'
 
 /**
  * The copilot's demo mode, as the guided tour meets it (issue #179).
@@ -328,5 +329,45 @@ describe('Propose as Edit', () => {
   it('does not offer it on a signed note, which nothing may change', async () => {
     await ask('approved', prose)
     expect(screen.queryByRole('button', { name: /propose as edit/i })).toBeNull()
+  })
+})
+
+describe('the suggestion chips', () => {
+  const chips = () =>
+    screen
+      .getAllByRole('button')
+      .filter((button) =>
+        (OPENING_QUESTIONS as readonly string[]).includes(button.textContent ?? ''),
+      )
+
+  it('sit in one sideways-scrolling row with no visible bar, rather than wrapping', () => {
+    renderPanel(false)
+    openPanel()
+
+    const offered = chips()
+    expect(offered).toHaveLength(4)
+    const row = offered[0]?.parentElement as HTMLElement
+    expect(offered.every((chip) => chip.parentElement === row)).toBe(true)
+    expect(row.className).toContain('overflow-x-auto')
+    expect(row.className).toContain('scrollbar-none')
+    expect(row.className).not.toContain('flex-wrap')
+    for (const chip of offered) expect(chip.className).toContain('whitespace-nowrap')
+  })
+
+  it('turns a vertical wheel into sideways scroll once the row overflows', () => {
+    renderPanel(false)
+    openPanel()
+
+    const row = chips()[0]?.parentElement as HTMLElement
+    // jsdom lays nothing out, so the overflow is stated rather than measured.
+    Object.defineProperty(row, 'scrollWidth', { configurable: true, value: 900 })
+    Object.defineProperty(row, 'clientWidth', { configurable: true, value: 300 })
+
+    fireEvent.wheel(row, { deltaY: 120, deltaX: 0 })
+    expect(row.scrollLeft).toBe(120)
+
+    // A horizontal gesture is already sideways, so it is left to the browser.
+    fireEvent.wheel(row, { deltaY: 0, deltaX: 80 })
+    expect(row.scrollLeft).toBe(120)
   })
 })
