@@ -581,10 +581,6 @@ async function loadManifest(): Promise<Manifest> {
   return JSON.parse(raw) as Manifest
 }
 
-async function saveManifest(manifest: Manifest): Promise<void> {
-  await fs.writeFile(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`)
-}
-
 async function findPdfs(): Promise<string[]> {
   try {
     const entries = await fs.readdir(RAW_DIR)
@@ -842,10 +838,22 @@ async function processDocument(
   return summary
 }
 
-async function main(): Promise<void> {
-  const flags = parseFlags(process.argv)
+type MainDeps = {
+  findPdfs: () => Promise<string[]>
+  processDocument: (
+    filePath: string,
+    manifest: Manifest,
+    flags: IngestFlags,
+  ) => Promise<IngestSummary | null>
+}
+
+export async function main(
+  argv: string[] = process.argv,
+  deps: MainDeps = { findPdfs, processDocument },
+): Promise<void> {
+  const flags = parseFlags(argv)
   const manifest = await loadManifest()
-  const pdfs = await findPdfs()
+  const pdfs = await deps.findPdfs()
 
   if (pdfs.length === 0) {
     logger.info('no PDFs found in corpus/cpg/raw')
@@ -854,12 +862,12 @@ async function main(): Promise<void> {
 
   const summaries: IngestSummary[] = []
   for (const pdf of pdfs) {
-    const summary = await processDocument(pdf, manifest, flags)
+    const summary = await deps.processDocument(pdf, manifest, flags)
     if (summary) summaries.push(summary)
   }
 
   if (flags.dryRun) {
-    await saveManifest(manifest)
+    logger.info('dry run: database, storage and corpus/cpg/manifest.json not written')
   }
 
   const totals = summaries.reduce(

@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { promises as fs } from 'node:fs'
+import * as path from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
 import {
   chunkPage,
   cleanPage,
@@ -6,6 +8,7 @@ import {
   findHeadings,
   findManifestMatch,
   isScannedPage,
+  main,
   manifestSyncData,
   normalise,
   parseFlags,
@@ -403,5 +406,28 @@ describe('manifestSyncData', () => {
       sourceLicence: 'MOH-CPG',
       verbatimAllowed: true,
     })
+  })
+})
+
+describe('main', () => {
+  it('leaves the manifest byte-identical on a dry run', async () => {
+    const manifestPath = path.resolve(import.meta.dirname, '../../../corpus/cpg/manifest.json')
+    const before = await fs.readFile(manifestPath)
+    const writeFile = vi.spyOn(fs, 'writeFile')
+
+    // A matched document records its file name on the manifest in memory,
+    // which is what a dry run used to write back.
+    await main(['node', 'ingest-cpg', '--dry-run'], {
+      findPdfs: async () => ['/raw/renamed.pdf'],
+      processDocument: async (_file, loaded) => {
+        const [doc] = loaded.documents
+        if (doc) doc.file = 'renamed.pdf'
+        return { documentId: doc?.id ?? 'none', pages: 1, ocrPages: 0, chunks: 1, uploaded: false }
+      },
+    })
+
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(await fs.readFile(manifestPath)).toEqual(before)
+    writeFile.mockRestore()
   })
 })
