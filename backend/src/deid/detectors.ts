@@ -671,13 +671,19 @@ function detectNames(text: string): Match[] {
   //    left `Tan Sri` uncovered by the winning span and the preserved prefix
   //    tokenised the title as a patient. Trimming first puts the run fully
   //    inside the winner, where it is dropped as before.
+  //
+  //    The gazetteer is asked after trimming, and of every word (#413). Asking
+  //    the run's first word before trimming meant any capitalised word in front
+  //    of a name, "Today Siti Aminah", sent the whole name in cleartext. A word
+  //    in front that is not a stopword stays inside the token, as #149 rules: it
+  //    may be a name element the gazetteer does not know.
   for (const m of text.matchAll(CAPITALISED_RUN)) {
     const run = m[0]
     if (isStopword(run)) continue
-    const first = run.split(/\s+/)[0]?.toLowerCase()
-    if (!first || !GIVEN_NAMES.has(first)) continue
     const trimmed = trimNameSpan(run, m.index)
     if (!trimmed) continue
+    const words = trimmed.value.split(/\s+/).map((word) => word.toLowerCase())
+    if (!words.some((word) => GIVEN_NAMES.has(word))) continue
     out.push({
       label: 'PATIENT',
       start: trimmed.start,

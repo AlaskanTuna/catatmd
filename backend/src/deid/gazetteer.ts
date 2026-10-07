@@ -362,6 +362,36 @@ export const NAME_STOPWORDS = new Set(
     'covid',
     'influenza',
     'urti',
+    // English symptoms, beside the Malay ones below, so a symptom opening a
+    // sentence before a name stays in the note rather than inside the token
+    // (#413). No Malaysian given name or surname takes any of these. Fever
+    // is absent because it is a checklist id, which the clinical-constants
+    // guard keeps out of source; a run it opens is still tokenised, whole.
+    'cough',
+    'flu',
+    'cold',
+    'sore',
+    'throat',
+    'pain',
+    'headache',
+    'phlegm',
+    'runny',
+    'nose',
+    'rash',
+    'vomiting',
+    'diarrhoea',
+    'diarrhea',
+    'chills',
+    'dizzy',
+    'nausea',
+    // Brands, which the medication lexicon deliberately leaves out (D-001), so
+    // the derived drug words above cannot cover them (#413).
+    'panadol',
+    'strepsils',
+    'augmentin',
+    'ventolin',
+    'piriton',
+    'difflam',
     'mc',
     'ic',
     'nric',
@@ -421,6 +451,13 @@ export const NAME_STOPWORDS = new Set(
     // 'see' is deliberately absent although it fits the pattern, because See is
     // an attested Chinese Malaysian surname and a false stopword truncates a
     // real name, which is the failure mode that outranks this one.
+    'also',
+    'then',
+    'did',
+    'mother',
+    'father',
+    'auntie',
+    'uncle',
     'tell',
     'call',
     'ask',
