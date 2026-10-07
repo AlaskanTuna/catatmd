@@ -156,6 +156,7 @@ export class OpenAICompatibleClient implements LLMClient {
               parameters: tool.parameters,
             },
           })),
+          ...(request.toolChoice && { tool_choice: request.toolChoice }),
         }),
       },
       { signal: request.signal },

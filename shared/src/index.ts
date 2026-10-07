@@ -1891,6 +1891,11 @@ export const COPILOT_HISTORY_MAX = 20
 export const CopilotRequestSchema = z.object({
   message: z.string().min(1).max(2_000),
   history: z.array(CopilotTurnSchema).max(COPILOT_HISTORY_MAX).default([]),
+  /**
+   * The doctor pressed Propose as Edit on an answer that came back as prose
+   * (#185), so this turn must end in a tool call rather than more prose.
+   */
+  propose: z.boolean().optional(),
 })
 
 /**

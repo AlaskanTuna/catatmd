@@ -322,3 +322,41 @@ describe('DEID_FAIL_CLOSED=false skips the guard, which is why production forbid
     expect(completionsCreate).toHaveBeenCalledTimes(1)
   })
 })
+
+/*
+ * Propose as Edit (#185). A forced tool call is the only way a stream may ask
+ * for one, and it must reach the provider only when the caller asked.
+ */
+describe('a forced tool call', () => {
+  const tool = { name: 'edit_note_section', description: 'Propose an edit.', parameters: {} }
+
+  beforeEach(() => {
+    completionsCreate.mockReset().mockResolvedValue(
+      (async function* () {
+        yield { choices: [{ delta: { content: 'ok' } }] }
+      })(),
+    )
+  })
+
+  async function send(toolChoice?: 'required') {
+    const stream = client().stream({
+      operation: 'copilot_turn',
+      system: deidentify('ordinary system prompt').text,
+      turns: [{ role: 'user', content: deidentify('add a safety net').text }],
+      tools: [tool],
+      ...(toolChoice && { toolChoice }),
+    })
+    for await (const _ of stream) {
+      // drained
+    }
+    return completionsCreate.mock.calls[0]?.[0] as Record<string, unknown>
+  }
+
+  it('reaches the provider when the caller asks for one', async () => {
+    expect((await send('required')).tool_choice).toBe('required')
+  })
+
+  it('is absent otherwise, so the model still chooses', async () => {
+    expect(await send()).not.toHaveProperty('tool_choice')
+  })
+})

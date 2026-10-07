@@ -34,6 +34,9 @@ import { type CopilotMessage, useCopilot } from './use-copilot.js'
  * labels that disclose. `docs/DESIGN.md`: round means "this is telling you
  * something", rounded-rect means "this does something".
  */
+/** What the doctor's Propose as Edit press sends, shown as their message. */
+const PROPOSE_MESSAGE = 'Propose that as an edit to the note.'
+
 export function CatatAI({
   consultation,
   onApply,
@@ -117,6 +120,33 @@ export function CatatAI({
 
   const showFollowUps = messages.length > 0 && !streaming
 
+  /*
+   * Propose as Edit (#185). Four prompt and tool-description revisions could
+   * not make the model reach for the tool reliably without breaking something
+   * else (docs/trd.md §25), so when an answer comes back as prose the doctor
+   * can ask for it as a card. Offered only under the latest answer, only when
+   * that answer ran no tool, and never on a signed note, where nothing may
+   * change. The card it produces is still only a proposal.
+   */
+  const signed = consultation.status === 'approved'
+  const last = messages.at(-1)
+  // Not under an answer that was itself a press (its fallback line would
+  // invite the same retry), nor under one an error cut short.
+  const pressed = messages.at(-2)?.content === PROPOSE_MESSAGE
+  const proposable =
+    !streaming &&
+    !demo &&
+    !signed &&
+    !error &&
+    !pressed &&
+    last?.role === 'copilot' &&
+    last.tools.length === 0 &&
+    last.content.trim() !== ''
+  const propose = () => {
+    if (!proposable) return
+    void send(PROPOSE_MESSAGE, { propose: true })
+  }
+
   const body = (
     <>
       <header className="flex shrink-0 items-center gap-3 border-b border-line px-6 py-4">
@@ -196,7 +226,13 @@ export function CatatAI({
         )}
 
         {messages.map((message) => (
-          <Turn key={message.id} message={message} onApply={onApply} onResolve={resolveProposal} />
+          <Turn
+            key={message.id}
+            message={message}
+            onApply={onApply}
+            onResolve={resolveProposal}
+            onPropose={proposable && message === last ? propose : undefined}
+          />
         ))}
 
         {error && (
@@ -338,10 +374,12 @@ function Turn({
   message,
   onApply,
   onResolve,
+  onPropose,
 }: {
   message: CopilotMessage
   onApply: (proposal: CopilotProposal, reason?: string) => Promise<void>
   onResolve: (cardId: string) => void
+  onPropose?: () => void
 }) {
   /*
    * Both sides are bubbles, and they are told apart by colour rather than by
@@ -378,6 +416,12 @@ function Turn({
 
       {message.streaming && message.content.length === 0 && message.tools.length === 0 && (
         <p className="text-ink-muted text-sm">Reading the consultation…</p>
+      )}
+
+      {onPropose && (
+        <Button size="sm" onClick={onPropose}>
+          Propose as Edit
+        </Button>
       )}
 
       {message.proposals.map((card) => (

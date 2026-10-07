@@ -222,3 +222,111 @@ describe('the Conversation surface grammar', () => {
     expect(scrollers[0]?.classList.contains('bg-sunken')).toBe(true)
   })
 })
+
+/*
+ * Propose as Edit (#185). When an answer about the note comes back as prose,
+ * the doctor can ask for it as a card; that turn forces a tool call.
+ */
+describe('Propose as Edit', () => {
+  // jsdom has no scrollTo, and the panel scrolls to each new answer.
+  beforeEach(() => {
+    HTMLElement.prototype.scrollTo = vi.fn()
+  })
+
+  const sse = (...frames: unknown[]) =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          for (const frame of frames) {
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`))
+          }
+          controller.close()
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    )
+
+  const prose = () =>
+    sse(
+      { type: 'token', text: 'You could add: "Return if the fever lasts beyond 3 days."' },
+      { type: 'done' },
+    )
+  const card = () =>
+    sse(
+      { type: 'tool', name: 'edit_note_section', label: 'Drafting a note edit' },
+      {
+        type: 'proposal',
+        proposal: {
+          tool: 'edit_note_section',
+          section: 'plan',
+          text: 'Review in 3 days.',
+          rationale: 'Asked.',
+        },
+      },
+      { type: 'done' },
+    )
+
+  async function ask(status: string, first: () => Response) {
+    fetchSpy = vi
+      .fn()
+      .mockImplementationOnce(async () => first())
+      .mockImplementation(async () => card())
+    vi.stubGlobal('fetch', fetchSpy)
+    render(
+      <CatatAI
+        consultation={{ id: 'c1', status } as unknown as ConsultationDetail}
+        onApply={vi.fn(async () => {})}
+      />,
+    )
+    openPanel()
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'add a safety net to the plan' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /send/i }))
+    await screen.findByText(/return if the fever|review in 3 days/i)
+  }
+
+  it('offers it under an answer that came back as prose, and forces the card', async () => {
+    await ask('analysed', prose)
+
+    fireEvent.click(screen.getByRole('button', { name: /propose as edit/i }))
+    await screen.findByText('Review in 3 days.')
+
+    const body = JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))
+    expect(body.propose).toBe(true)
+    expect(body.history.map((turn: { role: string }) => turn.role)).toEqual(['doctor', 'copilot'])
+    expect(screen.queryByRole('button', { name: /propose as edit/i })).toBeNull()
+  })
+
+  it('does not offer it when the answer already ran a tool', async () => {
+    await ask('analysed', card)
+    expect(screen.queryByRole('button', { name: /propose as edit/i })).toBeNull()
+  })
+
+  it('does not offer it again under the answer to a press', async () => {
+    await ask('analysed', prose)
+    fetchSpy.mockImplementation(async () =>
+      sse({ type: 'token', text: 'I could not turn that into an edit.' }, { type: 'done' }),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /propose as edit/i }))
+    await screen.findByText(/could not turn that into an edit/i)
+
+    expect(screen.queryByRole('button', { name: /propose as edit/i })).toBeNull()
+  })
+
+  it('does not offer it under an answer an error cut short', async () => {
+    await ask('analysed', () =>
+      sse(
+        { type: 'token', text: 'You could add: "Return if the fever' },
+        { type: 'error', message: 'CatatAI could not complete that answer.' },
+      ),
+    )
+    expect(screen.queryByRole('button', { name: /propose as edit/i })).toBeNull()
+  })
+
+  it('does not offer it on a signed note, which nothing may change', async () => {
+    await ask('approved', prose)
+    expect(screen.queryByRole('button', { name: /propose as edit/i })).toBeNull()
+  })
+})
