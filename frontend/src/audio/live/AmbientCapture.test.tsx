@@ -701,35 +701,166 @@ describe('stopping', () => {
   })
 })
 
+/*
+ * A dropped connection (#256). The socket is reopened on a fresh key while a
+ * second recorder queues the audio, so a wifi blip costs the words around the
+ * drop rather than the rest of the consultation.
+ */
 describe('a dropped connection', () => {
-  it('keeps what was already transcribed and says capture stopped', async () => {
-    const { onTranscript } = await startSession()
+  const said = (text: string, start: number, end: number, speaker: number) => ({
+    text,
+    start_ms: start,
+    end_ms: end,
+    is_final: true,
+    speaker,
+  })
 
+  const stopAndFinish = async (live: FakeWebSocket | undefined) => {
+    const stopped = act(async () => {
+      screen.getByRole('button', { name: /stop and finish/i }).click()
+    })
+    await settle()
+    if (live) await act(async () => live.message({ tokens: [], finished: true }))
+    await stopped
+    await settle()
+  }
+
+  it('reconnects on its own and keeps transcribing into the same consultation', async () => {
+    const { onTranscript } = await startSession()
+    await act(async () => socket().message({ tokens: [said('I have had a cough', 0, 900, 2)] }))
+    await act(async () => vi.advanceTimersByTime(5_000))
+
+    await act(async () => socket().drop())
+    await settle()
+
+    expect(screen.getByRole('status').textContent).toMatch(/reconnecting/i)
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(tracks[0]?.stop).not.toHaveBeenCalled()
+    expect(createLiveSession).toHaveBeenCalledTimes(2)
+
+    // Audio spoken while the socket was down is queued, then sent in order.
+    const transport = recorders[1]
+    if (!transport) throw new Error('no transport recorder')
+    await act(async () => {
+      transport.emit(5)
+      transport.emit(6)
+    })
+    const reopened = sockets[1]
+    if (!reopened) throw new Error('no second socket')
+    await act(async () => reopened.open())
+    await settle()
+    expect(reopened.sent.slice(1).map((chunk) => (chunk as Blob).size)).toEqual([5, 6])
+    expect(screen.queryByText(/reconnecting/i)).toBeNull()
+
+    await act(async () => reopened.message({ tokens: [said(' for three days', 0, 900, 1)] }))
+    await stopAndFinish(reopened)
+
+    expect(onTranscript).toHaveBeenCalledTimes(1)
+    const delivered = onTranscript.mock.calls[0]?.[0]
+    expect(delivered.text).toBe('I have had a cough for three days')
+    // The second socket's clock restarts at zero, so its words are moved to
+    // where they fell in the consultation.
+    const later = delivered.segments.find((s: { text: string }) => s.text.includes('three days'))
+    expect(later.start).toBeGreaterThanOrEqual(5)
+    // Speaker 1 on the new socket is not assumed to be speaker 1 on the old.
+    const voices = new Set(delivered.segments.map((s: { speaker: string }) => s.speaker))
+    expect(voices.size).toBe(2)
+    expect([...voices]).not.toContain('1')
+  })
+
+  it('keeps one recorder running for the playback copy, across the drop', async () => {
+    await startSession()
+    await act(async () => socket().drop())
+    await settle()
+
+    expect(recorder().state).toBe('recording')
+    expect(recorders[1]?.state).toBe('recording')
+  })
+
+  it('names the reconnected speaker by number alone', async () => {
+    await startSession()
+    await act(async () => socket().drop())
+    await settle()
+    const reopened = sockets[1]
+    if (!reopened) throw new Error('no second socket')
+    await act(async () => reopened.open())
+    await act(async () => reopened.message({ tokens: [said('Any fever?', 0, 900, 1)] }))
+
+    expect(screen.getByText('Speaker 1')).toBeTruthy()
+  })
+
+  it('gives up, keeps what was transcribed and says capture stopped when it cannot reconnect', async () => {
+    createLiveSession.mockResolvedValueOnce(session).mockRejectedValue(new Error('offline'))
+    const { onTranscript } = await startSession()
     await act(async () =>
       socket().message({
         tokens: [
-          { text: 'I have had a cough', start_ms: 0, end_ms: 900, is_final: true, speaker: 2 },
+          said('I have had a cough', 0, 900, 2),
           { text: ' for th', start_ms: 900, end_ms: 1100, is_final: false, speaker: 2 },
         ],
       }),
     )
     await act(async () => socket().drop())
     await settle()
+    for (let i = 0; i < 5; i += 1) {
+      await act(async () => vi.advanceTimersByTime(5_000))
+      await settle()
+    }
 
     expect(screen.getByRole('alert').textContent).toMatch(/capture stopped/i)
-    expect(screen.getByRole('alert').textContent).toMatch(/connection/i)
     expect(tracks[0]?.stop).toHaveBeenCalled()
+    expect(recorders.every((r) => r.state === 'inactive')).toBe(true)
     // Settled text is a true record of the consultation; the unsettled tail is
     // not, so it goes.
     expect(onTranscript).toHaveBeenCalledTimes(1)
     expect(onTranscript.mock.calls[0]?.[0].text).toBe('I have had a cough')
   })
 
-  it('delivers nothing when the drop happened before anyone spoke', async () => {
+  it('delivers what it has when the doctor stops while it is reconnecting', async () => {
+    const { onTranscript } = await startSession()
+    await act(async () => socket().message({ tokens: [said('Take one tablet', 0, 900, 1)] }))
+    await act(async () => socket().drop())
+    await settle()
+
+    await stopAndFinish(undefined)
+
+    expect(onTranscript).toHaveBeenCalledTimes(1)
+    expect(onTranscript.mock.calls[0]?.[0].text).toBe('Take one tablet')
+    expect(screen.getByRole('alert').textContent).toMatch(/not transcribed/i)
+    expect(sockets.every((s) => s.readyState === FakeWebSocket.CLOSED)).toBe(true)
+    expect(tracks[0]?.stop).toHaveBeenCalled()
+  })
+
+  it('does not reconnect past the session cap', async () => {
+    createLiveSession.mockResolvedValue({ ...session, maxSessionSeconds: 60 })
+    await startSession()
+    await act(async () => vi.advanceTimersByTime(61_000))
+    await act(async () => socket().drop())
+    await settle()
+
+    expect(createLiveSession).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('alert').textContent).toMatch(/capture stopped/i)
+  })
+
+  it('does not reconnect a session the provider refused', async () => {
+    await startSession()
+    await act(async () => socket().message({ tokens: [], error_code: 401 }))
+    await settle()
+
+    expect(createLiveSession).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('alert').textContent).toMatch(/capture stopped/i)
+  })
+
+  it('delivers nothing when the drop happened before anyone spoke and it cannot reconnect', async () => {
+    createLiveSession.mockResolvedValueOnce(session).mockRejectedValue(new Error('offline'))
     const { onTranscript } = await startSession()
 
     await act(async () => socket().drop())
     await settle()
+    for (let i = 0; i < 5; i += 1) {
+      await act(async () => vi.advanceTimersByTime(5_000))
+      await settle()
+    }
 
     expect(onTranscript).not.toHaveBeenCalled()
     expect(screen.getByRole('alert').textContent).toMatch(/capture stopped/i)

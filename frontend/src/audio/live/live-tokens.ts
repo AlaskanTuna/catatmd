@@ -66,6 +66,32 @@ export type LiveTranscript = {
 export const EMPTY_LIVE_TRANSCRIPT: LiveTranscript = { final: [], interim: [] }
 
 /**
+ * Tokens from a reopened socket (#256), placed in the consultation they belong
+ * to.
+ *
+ * The provider's clock restarts at zero on every connection, so each token is
+ * moved by how far into the consultation that connection began. It also
+ * numbers voices afresh, so its "1" is never assumed to be the earlier "1": the
+ * connection is appended to the speaker, which keeps the two apart when roles
+ * are voted by voice, and `speakerNumber` drops it again for display.
+ */
+export function fromConnection(
+  tokens: readonly LiveToken[],
+  offsetMs: number,
+  connection: number,
+): LiveToken[] {
+  return tokens.map((token) => ({
+    ...token,
+    startMs: token.startMs + offsetMs,
+    endMs: token.endMs + offsetMs,
+    speaker: token.speaker === null ? null : `${token.speaker}/${connection}`,
+  }))
+}
+
+/** The number a speaker is shown by, whichever connection heard them. */
+export const speakerNumber = (speaker: string): string => speaker.split('/')[0] ?? speaker
+
+/**
  * A segment that still knows who was speaking.
  *
  * The recogniser diarises (`speakerDiarization: true` in
