@@ -53,37 +53,63 @@ export const NAME_INTRODUCERS = [
  *
  * `SCRIPT` leaves both scripts alone so the note can read Mandarin and Tamil
  * speech, so a name in either is found only where something says a name comes
- * next: a self-introduction, or a title. A list of surnames on its own would
- * tokenise ordinary words, because 黄, 白 and 高 are also "yellow", "white" and
- * "tall"; here it is used only in front of a title.
+ * next: a self-introduction, or a title. A Chinese name must also open on a
+ * listed surname, because "我叫" is as often "I called" (我叫救护车, an
+ * ambulance) as "my name is", and a surname is what tells the two apart.
  */
 export const HAN_NAME_INTRODUCERS = [
   '我的名字是',
   '我的名字叫',
   '我嘅名係',
   '我個名叫',
-  '名字是',
-  '名字叫',
   '我名叫',
-  '病人叫',
   '我叫',
 ] as const
 
-/** "My surname is", after which one or two characters are the surname. */
+/** "My surname is", after which the surname, and sometimes the given name, follow. */
 export const HAN_SURNAME_INTRODUCERS = ['我姓', '他姓', '她姓', '佢姓'] as const
 
 /** Titles that follow a surname, as in 陈先生 or 林医生. */
 export const HAN_TITLES = ['先生', '小姐', '女士', '太太', '医生', '醫生', '老师', '老師'] as const
 
 /**
- * Common Chinese surnames in Malaysia, simplified and traditional, read only in
- * front of a `HAN_TITLES` entry.
+ * Common Chinese surnames in Malaysia, simplified and traditional. Several are
+ * ordinary words too (黄 "yellow", 白 "white", 高 "tall"), which is why the list
+ * is only ever read after a cue or directly before a title.
  */
 export const HAN_SURNAMES =
-  '陈陳林李黄黃张張王吴吳刘劉蔡杨楊郑鄭梁谢謝许許何郭罗羅黎胡曾邱丘叶葉周赖賴苏蘇洪朱孙孫马馬高徐钟鍾邓鄧冯馮彭潘卢盧温溫江方沈余傅宋萧蕭庄莊卓颜顏石施侯邝鄺麦麥伍姚汤湯简簡范魏廖骆駱欧歐戴唐袁董程韩韓曹夏于蒋蔣田杜姜崔谭譚陆陸汪任金邵贺賀龚龔熊孟秦薛雷尹段白毛甘尤柯翁游涂关關辜'
+  '陈陳林李黄黃张張王吴吳刘劉蔡杨楊郑鄭梁谢謝许許何郭罗羅黎胡曾邱丘叶葉周赖賴苏蘇洪朱孙孫马馬高徐钟鍾邓鄧冯馮彭潘卢盧温溫江方沈余傅宋萧蕭庄莊卓颜顏石施侯邝鄺麦麥伍姚汤湯简簡范魏廖骆駱欧歐戴唐袁董程韩韓曹夏于蒋蔣田杜姜崔谭譚陆陸汪任金邵贺賀龚龔熊孟秦薛雷尹段白毛甘尤柯翁游涂关關辜赵趙孔鲁魯倪史钱錢严嚴陶包华華祝邢龙龍万萬顾顧阮杭池宁寧'
 
-/** "My name is", in Tamil. */
-export const TAMIL_NAME_INTRODUCERS = ['என்னுடைய பெயர்', 'எனது பெயர்', 'என் பெயர்'] as const
+/** Two-character surnames, read wherever a single-character one is. */
+export const HAN_COMPOUND_SURNAMES = [
+  '欧阳',
+  '歐陽',
+  '司徒',
+  '上官',
+  '诸葛',
+  '諸葛',
+  '司马',
+  '司馬',
+  '东方',
+  '東方',
+] as const
+
+/**
+ * Characters that, directly before a surname, make it part of an ordinary word
+ * rather than a name: 谢谢医生 ("thank you, doctor"), 上周医生 ("last week the
+ * doctor"), 关于医生 ("about the doctor"), 任何医生 ("any doctor").
+ */
+export const HAN_NOT_BEFORE_SURNAME = '谢謝多这這那下上每本其关關由对對至有任'
+
+/** "My name is", in Tamil, written and spoken. */
+export const TAMIL_NAME_INTRODUCERS = [
+  'என்னுடைய பெயர்',
+  'எனது பெயர்',
+  'என் பெயர்',
+  'என்னோட பேரு',
+  'என் பேரு',
+  'என் பேர்',
+] as const
 
 /** Mrs, Miss and Mr, written before the name. Longest first, as `திரு` opens `திருமதி`. */
 export const TAMIL_TITLES = ['திருமதி', 'செல்வி', 'திரு'] as const

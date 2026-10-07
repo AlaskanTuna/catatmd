@@ -1,6 +1,8 @@
 import {
   GIVEN_NAMES,
+  HAN_COMPOUND_SURNAMES,
   HAN_NAME_INTRODUCERS,
+  HAN_NOT_BEFORE_SURNAME,
   HAN_SURNAME_INTRODUCERS,
   HAN_SURNAMES,
   HAN_TITLES,
@@ -757,23 +759,43 @@ function nameSegments(run: string, start: number): { value: string; start: numbe
 // ─── Names in Chinese and Tamil script (#418) ───────────────────────────────
 
 const HAN = '\\p{Script=Han}'
-const TAMIL_WORD = '[\\u0B80-\\u0BFF]+'
-const TAMIL_NAME = `(${TAMIL_WORD}(?:[ \\t]+${TAMIL_WORD})?)`
-// A pronoun or a question word after "我叫" or "名字是" is "I told you to" or
-// "what is your name", not a name.
-const NOT_A_NAME = '(?![你他她它我您們们什甚啥谁誰乜])'
+const SURNAME = `(?:${HAN_COMPOUND_SURNAMES.join('|')}|[${HAN_SURNAMES}])`
+/** A Chinese name opens on a listed surname: 陈美玲, 欧阳娜娜. */
+const HAN_NAME = `(${SURNAME}${HAN}{1,2})`
+const TAMIL = '[\\u0B80-\\u0BFF]'
+const TAMIL_WORD = `${TAMIL}+`
+/** One Tamil word, with an initial before it if there is one: ஆர். லட்சுமி. */
+const TAMIL_ONE = `((?:${TAMIL}{1,3}\\.\\s*)?${TAMIL_WORD})`
+/** Up to two, after an explicit "my name is". */
+const TAMIL_FULL = `((?:${TAMIL}{1,3}\\.\\s*)?${TAMIL_WORD}(?:[ \\t]+${TAMIL_WORD})?)`
+// "என் பெயர் என்ன" is "what is my name", and "சொல்ல" opens "shall I say it".
+const NOT_A_TAMIL_NAME = '(?!என்ன|சொல்ல)'
+const CUE_GAP = '[\\s:：「『"“]*'
 // Only the Latin introducers that say "name": "saya" or "I am" before Chinese
 // or Tamil is ordinary code-switched speech ("saya 咳嗽三天").
 const LATIN_NAME_INTRODUCERS = NAME_INTRODUCERS.filter((intro) => /name|nama/.test(intro))
+const LATIN_CUES = [...LATIN_NAME_INTRODUCERS, ...HONORIFICS].map(caseInsensitiveLiteral)
 
 const NATIVE_NAME_PATTERNS = [
-  new RegExp(`(?:${HAN_NAME_INTRODUCERS.join('|')})\\s*${NOT_A_NAME}(${HAN}{2,4})`, 'gu'),
-  new RegExp(`(?:${HAN_SURNAME_INTRODUCERS.join('|')})\\s*(${HAN}{1,2})`, 'gu'),
-  new RegExp(`([${HAN_SURNAMES}]${HAN}{0,2})(?=${HAN_TITLES.join('|')})`, 'gu'),
-  new RegExp(`(?:${TAMIL_NAME_INTRODUCERS.join('|')})\\s+${TAMIL_NAME}`, 'gu'),
-  new RegExp(`(?<![\\u0B80-\\u0BFF])(?:${TAMIL_TITLES.join('|')})\\.?\\s+${TAMIL_NAME}`, 'gu'),
+  new RegExp(`(?:${HAN_NAME_INTRODUCERS.join('|')})${CUE_GAP}${HAN_NAME}`, 'gu'),
+  // "我姓陈，叫美玲" gives the given name as a second capture.
   new RegExp(
-    `(?:${LATIN_NAME_INTRODUCERS.map(caseInsensitiveLiteral).join('|')})\\s+(${HAN}{2,4}|${TAMIL_WORD}(?:[ \\t]+${TAMIL_WORD})?)`,
+    `(?:${HAN_SURNAME_INTRODUCERS.join('|')})${CUE_GAP}(${SURNAME})(?:[，,、\\s]*(?:名叫|叫|名)(${HAN}{1,2}))?`,
+    'gu',
+  ),
+  // The surname alone, directly before a title, unless the character before it
+  // makes it part of a word (谢谢医生, 上周医生).
+  new RegExp(
+    `(?<![${HAN_NOT_BEFORE_SURNAME}])(${SURNAME})[ \\t]?(?=${HAN_TITLES.join('|')})`,
+    'gu',
+  ),
+  new RegExp(
+    `(?:${TAMIL_NAME_INTRODUCERS.join('|')})[:：]?\\s+${NOT_A_TAMIL_NAME}${TAMIL_FULL}`,
+    'gu',
+  ),
+  new RegExp(`(?<!${TAMIL})(?:${TAMIL_TITLES.join('|')})(?:\\.\\s*|\\s+)${TAMIL_ONE}`, 'gu'),
+  new RegExp(
+    `(?:${LATIN_CUES.join('|')})\\.?\\s+(${SURNAME}${HAN}{0,2}|${TAMIL_WORD}(?:[ \\t]+${TAMIL_WORD})?)`,
     'gu',
   ),
 ]
@@ -785,17 +807,36 @@ const NATIVE_NAME_PATTERNS = [
  * speech, and no Latin detector reads them either. A cue is the only footing
  * that does not tokenise ordinary speech: "我叫" or "என் பெயர்" before the
  * name, or a title such as 先生 or திரு beside it. A name said with no cue still
- * reaches the model, which `docs/decisions.md` records.
+ * reaches the model, which `docs/decisions.md` D-011 records.
+ *
+ * Once a name has been found by its cue, its other mentions in the same text
+ * are found too, so "我叫陈美玲。陈美玲今年三十岁" does not send the second one.
+ * A one-character surname is not carried, because 陈 also opens 陈皮.
  */
 function detectNativeScriptNames(text: string): Match[] {
-  return NATIVE_NAME_PATTERNS.flatMap((pattern) =>
+  const cued = NATIVE_NAME_PATTERNS.flatMap((pattern) =>
     [...text.matchAll(pattern)].flatMap((m): Match[] => {
-      const name = m[1]
-      if (!name) return []
-      const start = m.index + m[0].lastIndexOf(name)
-      return [{ label: 'PATIENT', start, end: start + name.length, value: name, score: 0.85 }]
+      let from = m.index + m[0].length
+      const found: Match[] = []
+      for (const name of m.slice(1).reverse()) {
+        if (!name) continue
+        const start = m.index + m[0].lastIndexOf(name, from - m.index)
+        from = start
+        found.push({ label: 'PATIENT', start, end: start + name.length, value: name, score: 0.85 })
+      }
+      return found
     }),
   )
+  const repeated = [...new Set(cued.map((m) => m.value))]
+    .filter((value) => [...value].length >= 2)
+    .flatMap((value) => {
+      const out: Match[] = []
+      for (let at = text.indexOf(value); at !== -1; at = text.indexOf(value, at + value.length)) {
+        out.push({ label: 'PATIENT', start: at, end: at + value.length, value, score: 0.85 })
+      }
+      return out
+    })
+  return [...cued, ...repeated]
 }
 
 /**
