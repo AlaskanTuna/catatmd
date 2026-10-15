@@ -3330,6 +3330,221 @@ One patient sentence per trigger, in each language, run through the real engine:
 - Open-model numbers: Fleurs-SLU (arXiv 2501.06117), and "WER We Stand" (arXiv 2409.11252) for Urdu.
 - Clinical guidance: NHS England interpreting guidance and its improvement framework for translation and interpreting services.
 
+### 20.13 Evaluated 15/10/26: ElevenLabs Scribe v2 Realtime As A Soniox Replacement
+
+**Status: `Evaluated, not adopted`.** Recorded 15/10/26. Nothing in production changes: Soniox stays for ambient, dictation and translated capture. No new audio egress was granted, and only synthetic audio was sent to ElevenLabs.
+
+- **The question.** The owner asked whether Scribe v2 Realtime can replace Soniox `stt-rt-v5`. The motive was accuracy.
+- **The hard requirement.** Diarisation, because ambient capture is a doctor and a patient.
+- **Languages that matter.** English, Malay, Mandarin and Tamil, plus code-switching. Translation is not a priority yet.
+
+#### Scope Change And How It Is Recorded
+
+| Stage          | What Happened                                                                                                                                                                                     |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| First pass     | The rule below was written before any run and the first measurement used four corpus fixtures, centred on Manglish and Malay                                                                      |
+| Scope widened  | The owner then named Mandarin and Tamil as in scope, with code-switching, and the measurement was extended to them using the owner's notes on how Malaysians speak                                |
+| How it is read | The rule is **evaluated unchanged on its original Manglish and Malay fixtures**. The new languages are additional evidence. The rule was not re-fitted to them                                    |
+| Out of scope   | Bengali and Urdu speech, and translation. The one fixture carrying them was kept and measured, but it informs no verdict here. Scribe Realtime has no translation, recorded as a constraint below |
+
+#### Pre-Registered Decision Rule
+
+Written before any run, before the scope widened.
+
+| Criterion                    | Threshold                                                                                                                                                  |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ambient replacement fails if | Scribe Realtime puts a `speaker_id` on fewer than 95% of words, **or** its two-speaker word attribution trails Soniox by more than 5 points on clean turns |
+| An accuracy win is           | At least 2 points of absolute WER improvement on the Manglish and Malay fixtures, consistent across runs                                                   |
+
+#### Verdict
+
+| Question                     | Answer                                                                                                                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ambient replacement          | **Fails on diarisation alone, in every language.** Soniox stays                                                                                                                 |
+| Accuracy motive              | **Mixed, not met.** Pooled Manglish and Malay is 4.5% against 5.6%, a 1.1-point difference under the 2-point bar                                                                |
+| Clean turns, Scribe Realtime | Better than Soniox on Malay, Malay with English, Mandarin and Malaysian Mandarin; about level on English                                                                        |
+| Where it is worse            | Much worse on Tamil, loses turns under overlap, changes script under automatic language, and fabricates symptoms when tuned to commit per turn                                  |
+| Any safe configuration       | None tested was safe across all four languages                                                                                                                                  |
+| Open question for the owner  | Prescription dictation is a single speaker in Malay and English and needs no diarisation, so it is the one surface where the clean-turn Malay edge could matter. See Follow-Ups |
+
+#### Method
+
+| Piece        | What Was Done                                                                                                                                                                                                                                                                                                                       |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fixtures     | 11 in total. Four from `backend/src/fixtures/corpus.ts`: `urti-gap-heavy` (Manglish), `urti-malay-red-flag` (Malay), `urti-hard-red-flag` (English), `urti-script-mixed-paste` (out of scope, below). Mandarin and Tamil lines from `backend/src/fixtures/languages.ts`, roles alternating. Five authored for this run (next table) |
+| Authored set | Shaped by the owner's notes: one base language per sentence with single English words inserted, colloquial Malay, Malaysian terms inside Mandarin, three-language sentences rare. Short, written by us, and kept with the harness outside the repo                                                                                  |
+| Voices       | Two ElevenLabs TTS voice pairs (`eleven_multilingual_v2`; `eleven_v3` for non-Latin lines), doctor and patient. Each turn trimmed and joined into 16 kHz mono PCM                                                                                                                                                                   |
+| Conditions   | Clean turns 600 ms apart, and turns overlapping by 300 ms where the speaker changes (mirrors #388). Ground truth per turn from clip boundaries                                                                                                                                                                                      |
+| Volume       | 44 files, 19.3 minutes, two voice pairs, both conditions. 628 results, 0 failed calls                                                                                                                                                                                                                                               |
+| Feeding      | Every arm got the same PCM in 250 ms real-time-paced slices, as the SPA sends it                                                                                                                                                                                                                                                    |
+| Attribution  | Share of words, each placed in a ground-truth turn by its timestamp midpoint (words inside an overlap excluded), whose speaker label matches the turn under the best one-to-one label-to-role mapping                                                                                                                               |
+
+**Authored fixtures:**
+
+| Fixture                           | Content                                                          |
+| --------------------------------- | ---------------------------------------------------------------- |
+| Malay with English words          | "saya dah demam tiga hari, pastu tekak sakit, susah nak swallow" |
+| Malaysian Mandarin, English words | Local terms such as MC, panadol, office                          |
+| Mandarin with English             | Mandarin base, single English words                              |
+| Tamil with English                | Tamil base, single English words                                 |
+| Three languages                   | Reported as the rare case                                        |
+
+**Metrics:**
+
+| Metric                | Use                                                                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| WER                   | Latin-script text, with `evals/wer.ts`                                                                                                       |
+| CER                   | Anything containing Chinese                                                                                                                  |
+| Tamil WER, marks kept | Computed with combining marks kept, because `evals/wer.ts` strips them and splits Tamil words at the vowel signs                             |
+| Number-blind variant  | Sets digits and number words aside on both sides. Soniox writes numbers as digits ("3天", "3 hari"), which the plain metrics count as errors |
+| Turn majority         | Share of turns whose majority label maps to the right role                                                                                   |
+
+**Arms:**
+
+| Arm                             | Configuration                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Soniox control                  | Production ambient first frame (`stt-rt-v5`, hints ms/en/zh/ta, diarisation on, endpoint detection off, the 120 `asrContextTerms` and the same `context.general`), with `audio_format: 'pcm_s16le'` instead of production's `'auto'` webm                                                                                                               |
+| `scribe_v2_realtime`            | Minted through `POST /v1/single-use-token/realtime_scribe` (the browser-direct shape), `commit_strategy=vad`, `include_timestamps`, `include_language_detection`, keyterms = the first 50 of those terms of at most 20 characters (Scribe Realtime's cap). Two variants: `language_code=ms` with `secondary_languages` en/zh/ta, and automatic language |
+| Best-effort Scribe arm, partial | `language_code=ms` with secondaries and `vad_silence_threshold_secs=0.5`, so it commits per turn. The 600 ms turn gaps never reach the 1.5 s default, so a default session commits the whole consultation as one segment. The machine ran low on memory and the run was stopped at 84 of 120 results, with every file run at least once                 |
+| Diarize probe                   | The `ms` variant plus `diarize=true` and `num_speakers=2` on the realtime socket                                                                                                                                                                                                                                                                        |
+| Batch reference                 | `scribe_v2_medical` on the finished file, `diarize=true`, `num_speakers=2`, word timestamps, all 120 terms as keyterms                                                                                                                                                                                                                                  |
+
+**Harness self-check, passed before any Scribe number was read:**
+
+- Soniox attributed 100% of words on clean turns, as #388 measured.
+- Soniox read the Malay fixture at 7.8% WER (#218 measured 9.4% on different lines).
+
+#### Results On The Pre-Registered Fixtures
+
+Manglish and Malay fixtures pooled, 12 results per cell. The rule is applied to this table.
+
+| Arm                        | WER Clean | WER Overlap | Speaker Coverage | Word Attribution Clean | Word Attribution Overlap |
+| -------------------------- | --------- | ----------- | ---------------- | ---------------------- | ------------------------ |
+| Soniox `stt-rt-v5`         | 5.6%      | 6.1%        | 100%             | 100%                   | 100%                     |
+| `scribe_v2_realtime`, ms   | 4.5%      | 21.7%       | 0%               | 0%                     | 0%                       |
+| `scribe_v2_realtime`, auto | 5.9%      | 22.3%       | 0%               | 0%                     | 0%                       |
+| `scribe_v2_medical`, batch | 4.5%      | 5.3%        | 100%             | 61.6%                  | 67.5%                    |
+
+- **Per-run WER, both conditions pooled.** Soniox 5.6 / 6.1 / 5.8%; Scribe Realtime ms 13.0 / 13.0 / 13.3%; batch medical 4.4 / 5.5 / 4.8%.
+- **English fixture.** Soniox 3.1% clean / 3.5% overlap, 100% attribution. Scribe Realtime ms 2.7% / 2.7%, 0% attribution. Batch medical 1.9% / 2.7%, 91.7% / 75.7% attribution.
+- **The Malay-only gap of 2.6 points** (Soniox 7.8%, Scribe Realtime ms 5.2%, clean) is a subgroup read after the fact. It is recorded as an observation and not as a win under the rule.
+
+#### Results On The Widened Scope
+
+Additional evidence, not the basis of the verdict. Error rates in percent. Scribe RT is Scribe Realtime. "VAD 0.5 s" is the partial best-effort arm.
+
+**Clean turns:**
+
+| Fixture                            | Metric          | Soniox | Scribe RT (ms) | Scribe RT (auto) | Scribe RT (ms, VAD 0.5 s, partial) | Batch |
+| ---------------------------------- | --------------- | ------ | -------------- | ---------------- | ---------------------------------- | ----- |
+| Malay                              | WER             | 7.8    | 5.2            | 9.1              | 8.8                                | 4.1   |
+| Malay + English words              | WER             | 11.7   | 5.1            | 5.1              | 9.4                                | 5.1   |
+| English base + Malay words         | WER             | 3.8    | 4.0            | 3.5              | 5.5                                | 4.8   |
+| English                            | WER             | 3.1    | 2.7            | 4.0              | 3.5                                | 1.9   |
+| Malaysian Mandarin + English words | CER             | 8.5    | 4.2            | 3.8              | 22.4                               | 1.9   |
+| Mandarin                           | CER             | 7.6    | 0.0            | 0.0              | 93.5                               | 0.0   |
+| Mandarin + English                 | CER             | 9.5    | 1.8            | 4.0              | 23.7                               | 7.5   |
+| Tamil                              | WER, marks kept | 17.9   | 33.9           | 33.9             | 32.1                               | 10.7  |
+| Tamil + English                    | WER, marks kept | 12.8   | 36.9           | 71.5             | 25.0                               | 82.7  |
+| Three languages, rare              | CER             | 8.7    | 36.4           | 36.9             | 34.9                               | 16.1  |
+
+**Turns overlapping by 300 ms:**
+
+| Fixture                            | Metric          | Soniox | Scribe RT (ms) | Scribe RT (auto) | Scribe RT (ms, VAD 0.5 s, partial) | Batch |
+| ---------------------------------- | --------------- | ------ | -------------- | ---------------- | ---------------------------------- | ----- |
+| Malay                              | WER             | 9.5    | 6.9            | 8.4              | 7.1                                | 4.8   |
+| Malay + English words              | WER             | 11.4   | 6.1            | 6.1              | 6.1                                | 5.1   |
+| English base + Malay words         | WER             | 3.5    | 33.0           | 33.0             | 20.5                               | 5.7   |
+| English                            | WER             | 3.5    | 2.7            | 2.7              | 4.0                                | 2.7   |
+| Malaysian Mandarin + English words | CER             | 7.5    | 10.1           | 199.8            | 10.1                               | 2.9   |
+| Mandarin                           | CER             | 7.6    | 18.5           | 18.5             | 17.4                               | 0.0   |
+| Mandarin + English                 | CER             | 12.6   | 1.8            | 1.8              | 7.8                                | 6.6   |
+| Tamil                              | WER, marks kept | 19.6   | 85.7           | 85.7             | 100.0                              | 9.5   |
+| Tamil + English                    | WER, marks kept | 16.7   | 7.7            | 48.1             | 8.7                                | 32.7  |
+| Three languages, rare              | CER             | 8.8    | 23.9           | 24.9             | 30.6                               | 9.3   |
+
+**Number-blind, clean turns:**
+
+| Fixture               | Soniox | Scribe RT (ms) |
+| --------------------- | ------ | -------------- |
+| Mandarin (CER)        | 3.6%   | 0.0%           |
+| Tamil (WER)           | 8.0%   | 36.0%          |
+| Malay (WER)           | 5.9%   | 3.5%           |
+| Malay + English (WER) | 8.0%   | 5.3%           |
+
+Digits therefore account for about half of Soniox's Mandarin and Tamil error.
+
+**Speaker attribution, every in-scope fixture, both conditions:**
+
+| Arm                          | Words Attributed                                                                  |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| Soniox                       | 100%                                                                              |
+| Every Scribe Realtime config | 0%                                                                                |
+| Batch `scribe_v2_medical`    | 51 to 92% clean and 51 to 100% overlap, with some runs returning a single speaker |
+
+#### Findings
+
+| #   | Finding                                                      | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **No diarisation on the realtime model**                     | 0 of 25,187 words across 364 Scribe Realtime streams carried a speaker. `diarize=true` and `num_speakers=2` on the socket are silently ignored: no error, no warning, and the `session_started` config does not echo them. ElevenLabs documents diarisation only for the batch models                                                                                                                                                                                                                                                                                                                                                  |
+| 2   | **Drops a speaker under overlap**                            | Manglish fixture: 0 of 6 doctor turns for one voice pair and 4 of 6 for the other, on every run. Tamil: the doctor's question "காய்ச்சல் இருக்கிறதா?" ("Do you have a fever?") survived in 3 of 12 results. Soniox and batch kept 12 of 12. Losing a doctor's question matters beyond WER: the red-flag engine reads the question-denial shape                                                                                                                                                                                                                                                                                         |
+| 3   | **Changes script under automatic language**                  | Tamil with English came back in Devanagari ("इन्नकी एन्ना problem"). Overlapping Malaysian Mandarin came back as pinyin ("Nihao, jingtian shi yao wèn ti"), which is where the 199.8% CER comes from                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 4   | **Fabricates and inverts symptoms when committing per turn** | With 0.5 s VAD (partial arm), short Mandarin turns were relabelled Malay or English and rewritten. "喉咙痛吗？" ("Sore throat?") became "Hidung tersumbat" ("blocked nose"), a symptom nobody said. "有没有发烧？" became "You have fever?". "有，晚上会发烧" became "You, when shall we have a show?". A Mandarin result came back partly in Latin script in 4 of 8 runs. Tamil "மூச்சு விடுவதில் சிரமம் இல்லை" ("no difficulty breathing") became "சிரமம் மிகுந்து விட்டது" ("the difficulty has increased") in 2 of 8, a fabricated red-flag symptom. The setting that would fix long-segment truncation makes the output less safe |
+| 5   | **Truncates Tamil mid-character**                            | The text ended in U+FFFD in 4 of 120 results for each realtime config, never on Soniox or batch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 6   | **Batch medical translates, and does not rescue a hybrid**   | It returned the Tamil-with-English consultation as Malay ("Selamat pagi. Hari ini apa masalahnya?"), hence 82.7%. Its diarisation is 51 to 92%, so a batch pass after Stop does not improve speaker separation over what Soniox already gives live                                                                                                                                                                                                                                                                                                                                                                                     |
+| 7   | **Soniox makes its own errors**                              | On Malay with English words, the most common Malaysian shape, Soniox heard "Ada batuk sikit" ("a little cough") as "Tak ada batuk" ("no cough") in 3 of 12 results, a negation flip. It lost "chest pain" (as "chestbone") in 3 of 12, and misheard 咳嗽 ("cough") as 可搜 in some Mandarin results. Every ElevenLabs arm kept "a little cough" and "chest pain" in 12 of 12. Scribe Realtime reads clean Malay and Mandarin better than Soniox does                                                                                                                                                                                   |
+| 8   | **Commit latency is not comparable**                         | Scribe's committed text arrived a median 1.2 to 2.0 s after the last word; Soniox's final tokens 5.3 to 5.7 s, because ambient runs with endpoint detection off by design (§20.10) and shows non-final tokens immediately. VAD commits need 1.5 s of silence, so on the overlap audio Scribe committed nothing until the stream ended                                                                                                                                                                                                                                                                                                  |
+
+#### Platform Constraints From Vendor Docs
+
+Read 15/10/26, unverified by us.
+
+| Constraint     | Detail                                                                                                                                                                                     |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Translation    | None on the realtime model. A constraint, not a reason: translation is not a priority yet                                                                                                  |
+| Keyterms       | Capped at 50 terms of 20 characters. Soniox takes 120 plus `context.general`                                                                                                               |
+| Input          | PCM or u-law only, so the browser would need a PCM path where it now forwards `MediaRecorder` output                                                                                       |
+| Idle timeout   | The server closes after 15 s without a client message, which conflicts with recording pause                                                                                                |
+| Data residency | Singapore (`api.sg.residency.elevenlabs.io`) is Enterprise-only, in a separate workspace with its own key, and the docs say processing may still occur outside the region                  |
+| Zero retention | `enable_logging=false` is Enterprise-only                                                                                                                                                  |
+| List price     | About $0.39 per audio hour against Soniox's about $0.12 (third-party and vendor comparison tables, not ElevenLabs' own pricing page; ElevenLabs advertises $0.28 on annual Business plans) |
+
+#### What It Would Have Cost To Adopt
+
+- **The code hard-wires Soniox.** `provider: z.literal('soniox')` and the websocket URL check in `shared/src/index.ts`, the CSP in `vercel.json`, and `no-stray-websocket.test.ts`.
+- **There is no ASR port in code,** despite §20's description.
+- **A second vendor is a new audio egress,** needing the owner's sign-off under §20.10.
+
+#### Out Of Scope: Bengali, Urdu And Translation
+
+- **Not a reason for the verdict.** The owner placed these outside the languages that matter for ambient capture, and translation is not a priority yet.
+- **Recorded so it is not lost.** In `urti-script-mixed-paste`, Scribe Realtime omitted the Bengali and Urdu sentences with no marker, where Soniox returned both in the right scripts. Revisit if translated capture (§20.12) is prioritised.
+
+#### What It Does Not Establish
+
+| Limit           | Detail                                                                                                                                   |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Real audio      | Synthetic voices only, no real consulting-room audio                                                                                     |
+| Voice bias      | ElevenLabs voices may favour ElevenLabs' recogniser, which makes the Soniox advantage the more robust direction and its deficits less so |
+| Codec           | PCM rather than production's webm/opus                                                                                                   |
+| Coverage        | Two voice pairs. The five authored fixtures are short and written by us, not drawn from real speech                                      |
+| Best-effort arm | Partial: stopped at 84 of 120 results, every file run at least once. Its findings (4 especially) rest on fewer runs                      |
+| Overlap         | Synthetic 300 ms mixing, not real cross-talk                                                                                             |
+| Latency         | Through the deployed path, unmeasured                                                                                                    |
+
+#### Follow-Ups
+
+| Item                            | Detail                                                                                                                                                                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dictation question (owner only) | Prescription dictation is a single speaker in Malay and English and needs no diarisation. Using Scribe there would mean a second audio vendor, needing a fresh sign-off under §20.10, and a dictation-shaped measurement. An open question, not a build |
+| Soniox negation flip            | "Ada batuk sikit" read as "Tak ada batuk" on Malay with English words. A recognition error on the current provider, the same class as the devoicing family in §20.10, and `redflags/mishears.ts` cannot claim a phrase-level flip like this one         |
+| Harness                         | If a vendor is re-evaluated, the same pre-registered rule and fixtures apply. The harness could be promoted into `evals/` as a Soniox arm (already listed as a §20.10 follow-up)                                                                        |
+
+#### Provenance Of The Sources In This Section
+
+- ElevenLabs realtime and batch speech-to-text API reference, models page, data residency docs and changelog, read 15/10/26.
+- The harness, the authored fixtures and the raw message logs are kept outside the repo and not committed, per the `evals/asr-ab.ts` convention that billed measurement runs never enter the test suite.
+
 ---
 
 ## 21. LLM Guardrail Architecture
