@@ -261,6 +261,7 @@ transcript ──► deid gate ──► LLMClient ──► provider
 
 - **Tokenisation is stable within a request** — `[PATIENT_1]`, `[NRIC_1]` — so the model sees one consistent handle per person across the whole transcript.
 - **The vault is request-scoped.** It is never a singleton, never attached to a database row, never logged, and is discarded when the handler returns.
+- **Identifiers read aloud are tokenised too, with measured gaps.** A spoken IC, phone or record number arrives as words, not digits, so a dedicated detector tokenises number-word runs. On 28 measured readings of one synthetic IC, 18 tokenise whole, 4 up to the transcriber's comma and 6 pass; Tamil numerals and phonetic fragments still pass ([`trd.md` §9, Spoken Digit Runs](./trd.md#spoken-digit-runs)).
 - **Audit events record detector _labels_, never values** (`["NRIC","NAME"]`), so the audit trail cannot become a second leak vector (`docs/trd.md` §15).
 
 `LLMClient.generate()` accepts only a `Deidentified` branded string, so passing a plain `string` — an accidental leak — is a compile error, not a code-review question. Two further enforcement points were open gaps in earlier drafts and were **closed on 13/08/26**:

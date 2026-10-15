@@ -561,6 +561,8 @@ The rest of the surface has since been built and is catalogued in §13; `backend
 
 This inventory satisfies Q7/Q8's honest-limitations posture, not a clinical-grade NER system — see the recall note below.
 
+Identifiers read aloud as number words are covered by a further detector under the existing `NRIC`, `PHONE` and `MRN` labels; see Spoken Digit Runs below.
+
 ### Detector Shape — `pattern + score + context`
 
 Detectors are specified as `{ pattern, baseScore, contextWords }` rather than as flat boolean regex, matching Microsoft Presidio's `PatternRecognizer` contract. A low-confidence pattern match is **promoted** when a context word appears nearby — `IC`, `no. kad pengenalan`, `pesakit`, `patient`, `MyKad` — and demoted otherwise. This is the industry-standard shape and is citable as such, which matters for a component whose recall cannot be guaranteed.
@@ -606,6 +608,83 @@ Each analyse run writes one `consultation.analysis_completed` `AuditEvent` (§15
 ### Recall Limitation
 
 Stated plainly in `docs/prd.md` §12: these detectors are pattern-based and may miss an identifier, particularly an unmarked name with no adjacent honorific, patronymic, or context cue. **An ML NER would miss it too**, and the published evidence says it would miss it disproportionately for Malay names — so this is a limitation of the problem, not only of the chosen approach. That is why raw transcripts are still treated as sensitive at rest (Q9, §4), and the mitigations that do exist are named rather than implied: the outbound payload is reviewable, the vault is request-scoped, and `LLMClient` is the sole egress point.
+
+<a id="spoken-digit-runs"></a>
+
+### Spoken Digit Runs
+
+**Status: `Built`** (#435). `detectSpokenNumbers` in `backend/src/deid/detectors.ts` is in `DETECTORS`, so `assertNoIdentifiers` re-runs it at egress. The scanner is `backend/src/deid/spoken-numbers.ts` (`scanSpokenNumbers`, `spokenDigitRuns`).
+
+#### Why It Exists
+
+- Speech-to-text returns an identifier as words, not digits: the synthetic line "Nombor kad pengenalan saya 900412086543." (fixture `urti-malay-red-flag`) was read by two TTS voices and transcribed by batch `scribe_v2` 32 times, never once as digits, in 28 distinct readings (measured 15/10/26).
+- Every digit detector is blind to that, which is the §20.13 risk "Spelled-out numbers are a de-identification risk".
+- No new `DetectorLabel`: it mints `NRIC`, `PHONE` or `MRN`, so the logger allowlist is unchanged.
+
+#### Scanner
+
+| Aspect       | Behaviour                                                                                                                                                                                    |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tables       | Its own. English singles (zero, oh, o, nought, one to nine), Malay (kosong, sifar, satu to sembilan, lapan, delapan), Mandarin (零 〇 一 幺 to 九, one unit per character, no spaces needed) |
+| Multi-digit  | English ten to nineteen, twenty to ninety, and tens plus single as one compound ("thirty-eight" is 38). Malay sepuluh, sebelas, X belas, X puluh, X puluh Y                                  |
+| Repeats      | double or triple plus a single. "sama" directly after a single repeats it                                                                                                                    |
+| ASCII digits | Each counts as one single unit inside a mixed run. A run of ASCII digits only is never reported, so digit-only text passes the gate byte-identically                                         |
+| Breakers     | point, titik, hundred, ratus, over, kali; 两 十 百 千 万 点; `? ! ;` and full-width forms; newline; the vault placeholder                                                                    |
+| Separators   | At most one of `, - – / :` (and full-width `，：、`) per gap                                                                                                                                 |
+| Independence | Deliberately does not import `SPOKEN_NUMERALS` from `medications/vocabulary.ts`, so a dose-parser change cannot move the PHI boundary                                                        |
+| Cost         | Linear: one tokenising regex that cannot backtrack, and a bounded clause scan                                                                                                                |
+
+#### Run Rule
+
+| Digits    | Requirement                                                                                 | Label                                                                                               | Outcome                                              |
+| --------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 9 or more | At least 4 single-digit units                                                               | `NRIC` if 12 digits and structurally valid, `PHONE` if the digits match `PHONE_PATTERN`, else `MRN` | Always tokenised (score 0.8)                         |
+| 3 to 8    | Every unit a single digit, directly after an MRN cue (only `[:\s.#-]*` between)             | `MRN`                                                                                               | Tokenised (0.8)                                      |
+| 6 to 8    | At least 4 single units, not a +/-1 progression, `NRIC` or `PHONE` cue within 48 characters | The cue's label                                                                                     | Tokenised (0.3 base plus 0.35 boost via `scoreWith`) |
+| Other     |                                                                                             |                                                                                                     | Untouched                                            |
+
+#### Cue-Anchored Rule
+
+- **Anchor.** An identity cue: ic, icnya, i/c, k/p, nric, mykad, mykadnya, kad pengenalan, kad pengenalannya, identity. Never the clinical-setting words clinic, klinik, medical, physician, pesakit.
+- **Fillers.** Up to three of: number, no, nombor, card, kad, is, was, it's, its, my, saya, dia, ialah, adalah, ni, ini, punya. The next word must be a number unit.
+- **Clause end.** Whichever comes first: a breaker; `. ? ! ;` or full-width forms; a newline or vault placeholder; any other punctuation; a separator not directly followed by a number unit; an opener (and, but, so, then, also, dan, tapi, tetapi, lepas, lagi, sebab, kerana, juga); 16 words after the anchor.
+- **Span.** If the clause ends on a number unit, the whole clause from the anchor is tokenised, fragments included. Otherwise only the unbroken run at the anchor.
+- **Label and score.** `NRIC`, 0.85, when the span holds at least 2 units and at least one spoken number word.
+- **Why bounded.** Running past a comma, opener or sentence end into ordinary words is the #174 failure (masking "500 mg").
+
+#### Measured Outcome (15/10/26)
+
+| Readings             | Count    | Result                                                                                                                                                                                                                     |
+| -------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 to 28 except below | 18 of 28 | Tokenise whole: everything after "saya" becomes one `[NRIC_1]`                                                                                                                                                             |
+| 6, 11, 12, 13        | 4 of 28  | Tokenise up to the transcriber's comma. The tail survives, one to three garbled digits (for example ", biawak sangkar enam empat tiga")                                                                                    |
+| 23 to 28             | 6 of 28  | Decay into phonetic fragments with no number word after the cue, so nothing fires. In 26 to 28 the capitalised fragments are tokenised as `PATIENT` by the existing "saya" name introducer, by accident and not as a catch |
+
+#### Tests
+
+- `backend/src/deid/spoken-numbers.test.ts`: the scanner.
+- The `identifiers spoken as number words (#435)` block at the end of `backend/src/deid/deid.test.ts`, including its precision list.
+- `backend/src/deid/system-prompts.test.ts`: `detect()` finds nothing in any LLM system prompt.
+- Fixture `backend/src/fixtures/spoken-identifiers.ts` (28 readings), deliberately not in `FIXTURES`.
+
+#### Deviations From The Approved Plan
+
+- The MRN-direct band runs to 8 digits, not 5. "MRN" names neither an IC nor a phone, so a six-digit record number read after it would otherwise pass.
+- "no." with its full stop is accepted as a filler ("IC no. nine ..."), because it abbreviates rather than ends a sentence.
+- Punctuation other than the listed separators ends the cued clause, which is more conservative than the plan's list.
+
+#### Known Costs And Gaps
+
+| Item                         | Effect                                                                                                                                                                                                                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Counting aloud to ten        | "one, two, ... nine, ten" is nine single units, so it is always tokenised (as `MRN`). Pinned as a known cost: the 9-digit rule has no progression exemption because the corpus phone read aloud ("zero one two three four five six seven eight nine") is itself a progression |
+| Phonetic-fragment readings   | Still pass (readings 23 to 28)                                                                                                                                                                                                                                                |
+| Tamil number words           | Still pass. There is no Tamil table, and `SCRIPT` deliberately does not read Tamil                                                                                                                                                                                            |
+| Uncued pairs                 | Numbers read in pairs with fewer than four single units and no cue still pass. The same reading after "My IC is" is caught by the cue rule                                                                                                                                    |
+| Mandarin cue                 | 身份证 is not an anchor, and a Latin cue written directly against Han characters ("我的IC是") does not match, so a Mandarin reading is caught only by the run rule                                                                                                            |
+| Date of birth as words       | Not covered by `DOB` (which needs digits). Caught only if it happens to meet a run rule                                                                                                                                                                                       |
+| Long cued clause             | Takes up to 16 words of fragments when it ends on a number unit, so clinical words said in the same unpunctuated clause before a final number word would go into the token                                                                                                    |
+| IC cue plus two number words | "IC dua tiga hari" tokenises "dua tiga": a precision cost of the 2-unit floor                                                                                                                                                                                                 |
 
 ---
 
@@ -3567,14 +3646,14 @@ Extrapolated, a 10-minute consultation would wait about a minute. That is unmeas
 
 **What it would cost the product:**
 
-| Cost                                             | Detail                                                                                                                                                                                                                                                                              |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| No live text during the consultation             | So no live panes or live red-flag hints in that mode (§20.11)                                                                                                                                                                                                                       |
-| A second audio vendor                            | A new egress needing the owner's sign-off under §20.10                                                                                                                                                                                                                              |
-| Spelled-out numbers are a de-identification risk | The synthetic IC number came back as words in 8 of 8 results, once as gibberish. A detector that looks for digit patterns would not see it, so `backend/src/deid/` must be checked against spelled-out identifiers before any adoption. This is a PHI-boundary item, not formatting |
-| Data residency                                   | Singapore residency and zero retention are Enterprise-only                                                                                                                                                                                                                          |
-| Cost                                             | List price for batch Scribe v2 about $0.22 to $0.27 per hour (third-party and vendor comparison tables), against Soniox real-time at about $0.12. Keyterms add 20% and roles add 10% (vendor API reference)                                                                         |
-| Chunking during the consultation                 | Speaker ids reset per request. Role labels might survive chunking; that is unmeasured                                                                                                                                                                                               |
+| Cost                                             | Detail                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No live text during the consultation             | So no live panes or live red-flag hints in that mode (§20.11)                                                                                                                                                                                                                                                                                            |
+| A second audio vendor                            | A new egress needing the owner's sign-off under §20.10                                                                                                                                                                                                                                                                                                   |
+| Spelled-out numbers are a de-identification risk | The synthetic IC number came back as words in 8 of 8 results, once as gibberish. A detector that looks for digit patterns would not see it, so `backend/src/deid/` must be checked against spelled-out identifiers before any adoption. This is a PHI-boundary item, not formatting. #435 addresses it; see §9 "Spoken Digit Runs" for what still passes |
+| Data residency                                   | Singapore residency and zero retention are Enterprise-only                                                                                                                                                                                                                                                                                               |
+| Cost                                             | List price for batch Scribe v2 about $0.22 to $0.27 per hour (third-party and vendor comparison tables), against Soniox real-time at about $0.12. Keyterms add 20% and roles add 10% (vendor API reference)                                                                                                                                              |
+| Chunking during the consultation                 | Speaker ids reset per request. Role labels might survive chunking; that is unmeasured                                                                                                                                                                                                                                                                    |
 
 #### Platform Constraints From Vendor Docs
 
