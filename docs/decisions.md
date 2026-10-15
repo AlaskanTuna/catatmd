@@ -656,7 +656,9 @@ The evidence shown is the whole sentence, so the doctor can see what was read.
 
 ### Decision
 
-Speech recognition stays on Soniox for ambient, dictation and translated capture. Scribe v2 Realtime was measured on English, Malay, Mandarin and Tamil with code-switching, and does not diarise, drops a speaker under overlap, and fabricates or rewrites short turns when tuned to commit per turn. Numbers and method: `docs/trd.md` §20.13.
+Speech recognition stays on Soniox for ambient, dictation and translated capture, and this decision is about the **realtime** model only. Scribe v2 Realtime was measured on English, Malay, Mandarin and Tamil with code-switching, and does not diarise, drops a speaker under overlap, and fabricates or rewrites short turns when tuned to commit per turn. Numbers and method: `docs/trd.md` §20.13.
+
+Batch `scribe_v2` is not decided here: it diarised and read the four languages well, and is an open owner question (`docs/trd.md` §20.13).
 
 ### Why
 
@@ -670,7 +672,7 @@ Speech recognition stays on Soniox for ambient, dictation and translated capture
 ### What This Decision Does Not License
 
 - **No ElevenLabs audio egress of any kind.** The evaluation sent synthetic audio only.
-- **No judgement on ElevenLabs batch models for other uses.**
+- **Not a rejection of batch `scribe_v2`.** It is measured and open, not adopted.
 - **No claim that Soniox is more accurate everywhere.** Scribe Realtime read clean Malay and Mandarin better, and Soniox flipped a symptom to its denial in 3 of 12 Malay-with-English results.
 - **No claim about Soniox accuracy on real speech.** §20.10's unmeasured table still applies.
 - **What reverses it:** a realtime model with documented and measured diarisation that reads English, Malay, Mandarin and Tamil without dropping or rewriting turns, taken through a fresh owner sign-off.
