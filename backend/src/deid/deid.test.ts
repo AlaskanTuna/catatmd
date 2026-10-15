@@ -1696,6 +1696,18 @@ describe('identifiers spoken as number words (#435)', () => {
     'Augmentin 625 one-zero-one, come back to the clinic if worse.',
     'The number on the thermometer was three nine one, three eight five.',
     'For my medical certificate, fever 38, 39, 38, thirty-seven.',
+    // Found in second review: a cue in another sentence or turn, or a verb
+    // that is not a phone, beside a vital-sign series.
+    'Call us if the oximeter shows nine two, nine one, nine zero.',
+    'Doctor: Any close contact?\nPatient: No.\nDoctor: Sats nine six, nine five, nine three.',
+    'Doctor: Call us if worse.\nPatient: Okay.\nDoctor: Sats nine two, nine one, nine zero.',
+    'If the reading goes nine two, nine one, nine zero, call the clinic.',
+    'Kalau oksigen sembilan dua, sembilan satu, sembilan kosong, call klinik.',
+    'Saya call tadi, suhu tiga lapan lima, tiga sembilan, tiga lapan dua.',
+    'Doctor call 了, 血氧九六，九五，九三。',
+    'Thanks for the IC. Temperature three eight five, three nine one.',
+    'She called, temp thirty-eight five, thirty-nine two, thirty-eight nine, thirty-nine one.',
+    'Augmentin one-zero-one, one-zero-one, call if worse.',
     // A duration straight after an identity cue.
     'Do you have your IC two three days of fever is it',
     'IC saya, dua tiga hari demam',
@@ -1752,6 +1764,10 @@ describe('identifiers spoken as number words (#435)', () => {
       'Prednisolone [MRN_1].',
     ],
     ['病人：发烧三八五，三九，三八二，三七八。', '病人：发烧[MRN_1]。'],
+    [
+      'Bring your IC. Pulse one one two, one oh eight, one oh four.',
+      'Bring your IC. Pulse [PHONE_1].',
+    ],
   ])('tokenises %j, which is the price of the nine-digit rule', (sentence, expected) => {
     // KNOWN COST, pinned rather than fixed. The values come back on
     // rehydration, so the note is right; what the model reads is not.

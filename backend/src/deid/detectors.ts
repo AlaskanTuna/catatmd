@@ -541,8 +541,12 @@ const IDENTITY_CUES = [
   'kad pengenalannya',
   'identity',
 ]
-// "number" is left out for the same reason: "the number on the thermometer".
-const SPOKEN_PHONE_CUES = PHONE_CONTEXT.filter((cue) => !/^(?:numbers?|nombor)$/.test(cue))
+/*
+ * Nouns only, for the same reason. "the number on the thermometer", "Call us if
+ * the oximeter shows nine two" and "Any close contact?" are routine in a URTI
+ * consultation, so "number", "call" and "contact" never mark a spoken run.
+ */
+const SPOKEN_PHONE_CUES = ['phone', 'telephone', 'handphone', 'hp', 'mobile', 'telefon']
 const IDENTITY_CUE = new RegExp(
   `${WORD_BEFORE}(?:${IDENTITY_CUES.map(escapeCue).join('|')})${WORD_AFTER}`,
   'giu',
@@ -571,6 +575,27 @@ const MRN_CUE_BEFORE = new RegExp(String.raw`\b(?:${MRN_CUE_WORDS})\b[:\s.#-]*$`
 const directlyAfterMrnCue = (text: string, start: number) =>
   MRN_CUE_BEFORE.test(text.slice(Math.max(0, start - CONTEXT_WINDOW), start))
 
+const SENTENCE_END = /[.!?;\n。！？；]/g
+
+/*
+ * What a spoken run's cue may sit in: its own sentence, up to where the run
+ * starts. `scoreWith` looks both ways across sentences and turns, which a digit
+ * run can afford and a run of number words cannot: "Thanks for the IC.
+ * Temperature three eight five, three nine one" is a temperature.
+ */
+function sentenceBefore(text: string, start: number): string {
+  const window = text.slice(Math.max(0, start - CONTEXT_WINDOW), start)
+  const ends = [...window.matchAll(SENTENCE_END)]
+  return window.slice((ends.at(-1)?.index ?? -1) + 1)
+}
+
+function spokenCueLabel(text: string, start: number): DetectorLabel | undefined {
+  const sentence = sentenceBefore(text, start)
+  if (IDENTITY_CUES.some((cue) => cuePattern(cue).test(sentence))) return 'NRIC'
+  if (SPOKEN_PHONE_CUES.some((cue) => cuePattern(cue).test(sentence))) return 'PHONE'
+  return undefined
+}
+
 function longRunLabel(digits: string): DetectorLabel {
   if (digits.length === 12 && isStructurallyValidNric(digits)) return 'NRIC'
   return PHONE_DIGITS.test(digits) ? 'PHONE' : 'MRN'
@@ -595,8 +620,8 @@ function longRunLabel(digits: string): DetectorLabel {
  *   MRN. The plan stops this band at five; it runs to eight here because "MRN"
  *   names neither an IC nor a phone, so the cued band below would leave a
  *   six-digit record number read out after it in clear.
- * - **Six or more, at least four single units, beside an identity or phone
- *   cue:** that cue's label. Six to eight must not be a progression. Nine or
+ * - **Six or more, at least four single units, after an identity or phone
+ *   cue earlier in its own sentence:** that cue's label. Six to eight must not be a progression. Nine or
  *   more lands here when it holds a number word of two digits, because a fever
  *   log read "thirty-nine five, thirty-nine eight, thirty-nine one" is twelve
  *   digits too.
@@ -634,11 +659,9 @@ function detectSpokenNumbers(text: string): Match[] {
     } else if (length >= 3 && run.singles === run.units && directlyAfterMrnCue(text, run.start)) {
       emit('MRN', run, 0.8)
     } else if (length >= 6 && run.singles >= 4 && (length >= 9 || !run.progression)) {
-      // Base 0.3 clears `ACCEPT_THRESHOLD` only with a cue in the window.
-      const nric = scoreWith(text, run.start, run.end, 0.3, IDENTITY_CUES)
-      const phone = scoreWith(text, run.start, run.end, 0.3, SPOKEN_PHONE_CUES)
-      const label = nric > 0.3 ? 'NRIC' : phone > 0.3 ? 'PHONE' : undefined
-      if (label) emit(label, run, Math.max(nric, phone))
+      // Base 0.3 clears `ACCEPT_THRESHOLD` only with a cue before it.
+      const label = spokenCueLabel(text, run.start)
+      if (label) emit(label, run, 0.3 + CONTEXT_BOOST)
     }
   }
   for (const clause of clauses) {
