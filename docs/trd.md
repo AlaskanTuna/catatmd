@@ -3663,10 +3663,12 @@ Read 15/10/26, unverified by us.
 2. **Mint.** `POST /api/asr/batch-sessions` with `{ consent: true, durationSeconds }`. The API calls the vendor's `single-use-token/batch_scribe` endpoint with the key and returns `{ provider, uploadUrl, token, config }`.
 3. **Upload.** The browser posts the recording to the literal upload URL with a fixed form (`model_id`, `diarize`, `num_speakers`, `timestamps_granularity`, `tag_audio_events`, repeated `keyterms`, `file`).
 4. **Verdict.** `batch-tokens.ts` maps vendor words to the same `LiveToken` shape and runs the sanity checks below.
-5. **Check.** `POST /api/asr/refinement-check` sends live and refined segment texts and returns the red flags the live text fired that the refined text lost.
-6. **Labelling.** The existing `tokensToSegments`, `segmentsToDraft`, labelling pass and `voteRolesBySpeaker` run unchanged on the accepted tokens. There is one role mechanism, and it also repairs speaker renumbering after a reconnect (D-010).
+5. **Labelling.** The existing `tokensToSegments`, labelling pass and `voteRolesBySpeaker` run unchanged on the candidate tokens, through `draftLinesFor` (`frontend/src/audio/draft-turns.ts`), the same function `CapturePanel` stores lines with. There is one role mechanism, and it also repairs speaker renumbering after a reconnect (D-010).
+6. **Check.** `POST /api/asr/refinement-check` sends the live segment texts and the refined turns that will be stored, and returns the red flags the live text fired that the refined text lost. On acceptance those exact turns are delivered and never re-labelled; on refusal the live text is labelled instead, so a refused refinement costs a second labelling pass.
 
-**Phase.** A new `'refining'` phase sits between `'finishing'` and `'labelling'` in `AmbientCapture.tsx`, untranslated branch only. One `AbortController` spans mint, upload and check, and a "Use Live Transcript" Skip button aborts it. `onLiveChange(false)` now fires after delivery, so Consultation Settings stay locked and the leave-page guard holds through refinement and labelling.
+**Phase.** A new `'refining'` phase sits between `'finishing'` and `'labelling'` in `AmbientCapture.tsx`, untranslated branch only. The mint and upload run under the upload timeout; the refined labelling and the check run under the labelling bound. A "Use Live Transcript" Skip button stops whichever is running and takes focus when the phase starts. Refinement never starts if the panel was unmounted after Stop. `onLiveChange(false)` now fires after delivery, in a `finally`, so Consultation Settings stay locked and the leave-page guard holds through refinement and labelling.
+
+**Why the check runs after labelling.** The clinical-safety review showed the engine is sensitive to where turns break: a negation reads back only within a turn, and a denied ability pairs adjacent turns. The recogniser's segments are not the turns the labelling pass and the voice vote make of them, so "nothing lost" on segments did not mean nothing lost in the record.
 
 #### Controls
 
@@ -3682,9 +3684,21 @@ Read 15/10/26, unverified by us.
 | Exact CSP host           | `vercel.json` `connect-src` adds exactly `https://api.elevenlabs.io`, no wildcard, pinned by `backend/src/lib/asr/elevenlabs.test.ts`                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Guards                   | `no-stray-fetch.test.ts` (backend) pins four entries including `elevenlabs.ts: 1`. `no-stray-provider-sdk.test.ts` adds scope `@elevenlabs/` and package `elevenlabs`. New `frontend/src/no-stray-fetch.test.ts` inventories `fetch`, `XMLHttpRequest`, `sendBeacon` and `EventSource` per file and checks every call outside the upload module and the preview stub addresses `${BASE}/api`. `no-stray-audio-persistence.test.ts` allows `live/elevenlabs-batch.ts` and its one caller, and matches raw `fetch(` and `new FormData` under `audio/` |
 | Vendor-neutral UI        | The "Refine After Stop" switch and the "Refining the transcript" label name no vendor (D-004). The pin tests also reject "ElevenLabs". The setting reads on when absent and off when present but not `true` (`refineAfterStop`)                                                                                                                                                                                                                                                                                                                     |
-| Fallback is visible      | The notice shows in the panel and as a toast, because the review page unmounts the capture panel once the transcript saves (precedent `PrescriptionTheatre`). On acceptance the unsent-tail and short-tail notices are cleared                                                                                                                                                                                                                                                                                                                      |
+| Fallback is visible      | The notice shows in the panel and as a toast raised after delivery, because the review page unmounts the capture panel once the transcript saves (precedent `PrescriptionTheatre`). On acceptance the unsent-tail and short-tail notices are cleared, but only when the refined words reach within 5 s of the end of the recording                                                                                                                                                                                                                  |
+| Client-enforced surface  | The untranslated-ambient-only scope, the consent tick and the acceptance verdict are enforced in the SPA. The mint does not know the capture mode, and the token binds neither the mode nor the vendor parameters, so a caller holding a session could upload other audio under other settings. The 5/min limiter, the audit row and the vendor credit quota are what bound that, stated as a gap in `.claude/rules/security.md`                                                                                                                    |
+| One caller               | `frontend/src/no-stray-fetch.test.ts` also pins, across the whole SPA, that only `AmbientCapture.tsx` imports the upload module or mints a batch token, so no other surface can reach the egress the grant scopes to post-Stop ambient refinement                                                                                                                                                                                                                                                                                                   |
 
-**The refinement check.** The server runs `evaluateRedFlags` with `ALL_REDFLAG_TRIGGERS` over both sides, with `source: 'asr_live'`, `labelsReviewed: false` and every turn forced to `speaker: 'patient'` set server-side, because no role exists before labelling. Forcing the patient role turns off the doctor-only safety-netting reading on both sides, which can only make the check fire more. The result is a differential (rule ids fired on live but not on refined). It writes no audit row (precedent: the live-flags route). Segment texts only, up to 1500 turns and 100000 characters per side.
+**The refinement check.** The server runs `evaluateRedFlags` with `ALL_REDFLAG_TRIGGERS` over both sides, with `source: 'asr_live'` and `labelsReviewed: false` set server-side. The result is a differential: rule ids fired on live but not on refined. It writes no audit row (precedent: the live-flags route). Texts only, up to 1500 turns and 100000 characters per side.
+
+**The speaker is set server-side too, and differs by side.** With unreviewed labels, the only label-dependent reading is the doctor-only safety-netting suppression, and it can only remove a hit.
+
+| Side    | Read as                                                                      | Why                                                                                                                                                                                  |
+| ------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Live    | Every turn the patient's, read by segment and as one whole turn, hits pooled | The most the live transcript could raise under any labelling. Segments alone are not an upper bound: a pause can split a phrase so neither half fires while the stored turn joins it |
+| Refined | Every turn the doctor's                                                      | The least the refined transcript could raise, so it passes whatever its labels end up                                                                                                |
+
+- **Why not the same reading on both sides.** That was the first design, and the clinical-safety review found it unsound. A patient's "I coughed up blood" dropped by the refined pass stayed covered by the doctor's closing "come back if you cough up blood" read as the patient's. Nothing looked lost, and the stored transcript, with the advice labelled the doctor's, raised no haemoptysis. `asr-refinement-check.test.ts` pins that case.
+- **The cost.** A symptom named only in safety-netting advice reads as lost, so the live transcript is kept. Closing advice often names one, so this will refuse many refinements until the owner decides otherwise. It is the safe direction, and the measurement gate should count how often it fires.
 
 #### Sanity Checks
 
@@ -3697,10 +3711,13 @@ Any failure keeps the live transcript with a notice.
 | 3   | At least 95% of words carry a speaker (`MIN_SPEAKER_COVERAGE`, from the §20.13 pre-registered rule)                                    |
 | 4   | Speaker count at least min(2, live voices) and never more than 2                                                                       |
 | 5   | Every word timed, starts monotonic                                                                                                     |
-| 6   | Refined units at least 0.8 times live units (`MIN_REFINED_UNIT_RATIO`)                                                                 |
-| 7   | Units per minute under 300 (`MAX_REFINED_UNITS_PER_MINUTE`). A unit is a word in spaced scripts or a Han character. Deliberately loose |
-| 8   | No Bengali, Arabic or Devanagari script that the live text lacked (§20.13 finding 3)                                                   |
-| 9   | The server red-flag check finds no lost flags                                                                                          |
+| 6   | Reaches the live transcript's last word within 5 s (`MAX_REFINED_TAIL_SHORTFALL_MS`), so a truncated close is refused                  |
+| 7   | Refined units at least 0.8 times live units (`MIN_REFINED_UNIT_RATIO`)                                                                 |
+| 8   | Units per minute under 300 (`MAX_REFINED_UNITS_PER_MINUTE`). A unit is a word in spaced scripts or a Han character. Deliberately loose |
+| 9   | No Bengali, Arabic or Devanagari script that the live text lacked (§20.13 finding 3)                                                   |
+| 10  | The server red-flag check, on the turns that will be stored, finds no lost flags                                                       |
+
+**What the unit ratio does not cover.** It lets a refined transcript drop up to a fifth of what live heard. The red-flag check protects only the rule triggers, so allergies, medicines, durations and checklist facts in that fifth are unprotected until the gate sets the ratio.
 
 **Token mapping.** A `spacing` element folds into the next word, which keeps its own timing so the 1500 ms segment backstop still sees pauses. `speaker_N` becomes `"N+1"`, `confidence` is `null`, and `audio_event` is dropped.
 
@@ -3708,12 +3725,13 @@ Any failure keeps the live transcript with a notice.
 
 Each is a named constant, **provisional until the measurement gate**.
 
-| Constant                       | Value                                          | File                                          |
-| ------------------------------ | ---------------------------------------------- | --------------------------------------------- |
-| `MAX_BATCH_RECORDING_SECONDS`  | 1860                                           | `shared/src/index.ts`                         |
-| Upload timeout                 | `min(240 s, max(60 s, 30 s + 15 s x minutes))` | `frontend/src/audio/live/elevenlabs-batch.ts` |
-| `MIN_REFINED_UNIT_RATIO`       | 0.8                                            | `frontend/src/audio/live/batch-tokens.ts`     |
-| `MAX_REFINED_UNITS_PER_MINUTE` | 300                                            | `frontend/src/audio/live/batch-tokens.ts`     |
+| Constant                        | Value                                          | File                                      |
+| ------------------------------- | ---------------------------------------------- | ----------------------------------------- |
+| `MAX_BATCH_RECORDING_SECONDS`   | 1860                                           | `shared/src/index.ts`                     |
+| Upload timeout                  | `min(240 s, max(60 s, 30 s + 15 s x minutes))` | `frontend/src/audio/live/batch-tokens.ts` |
+| `MIN_REFINED_UNIT_RATIO`        | 0.8                                            | `frontend/src/audio/live/batch-tokens.ts` |
+| `MAX_REFINED_TAIL_SHORTFALL_MS` | 5000                                           | `frontend/src/audio/live/batch-tokens.ts` |
+| `MAX_REFINED_UNITS_PER_MINUTE`  | 300                                            | `frontend/src/audio/live/batch-tokens.ts` |
 
 `MIN_SPEAKER_COVERAGE` (95%) is not provisional: it comes from the §20.13 pre-registered rule.
 
@@ -3744,6 +3762,10 @@ Each is a named constant, **provisional until the measurement gate**.
 #### Known Costs
 
 - **No uncertainty underlines.** Refined transcripts carry no confidence (`confidence: null`), so the underlines are lost.
+- **No model-edit cleanup layer.** That pass only edits inside uncertain ranges (§20.10, #309), so it never runs on a refined transcript. The deterministic mishear proposals are unaffected, since they key on `asr_live`.
+- **A second labelling pass on refusal.** The refined text is labelled before the check, so a refused refinement labels the live text as well, adding up to one more bounded wait.
+- **Safety-netting advice refuses refinement.** See the refinement check above.
+- **Only this pass is checked.** A refined pass appended to earlier text is compared with its own live text, not across the boundary with the earlier passes. Low likelihood, recorded rather than covered.
 - **Sore-throat score pre-fill.** The score reads temperature digits only (`backend/src/calculators/sore-throat-score.ts:138`, regex `\d{2}(?:\.\d{1,2})?`), so a spelled-out "thirty-eight point two" from batch no longer pre-fills it.
 - **Price.** About $0.22 to $0.27/hour at list price, and keyterms add 20% (§20.13).
 - **Live panes unchanged.** Soniox still streams during capture, so the live panes and live red-flag hints are as before.

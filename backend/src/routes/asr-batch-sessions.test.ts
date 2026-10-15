@@ -249,6 +249,14 @@ describe('pre-flight rejections, which mint nothing and audit nothing', () => {
     expect(auditState.writes).toEqual([])
   })
 
+  it('names consent first when both consent and duration are wrong', async () => {
+    const res = await mint({ consent: false, durationSeconds: 0 })
+
+    await expect(res.json()).resolves.toMatchObject({
+      error: { message: 'Consent for this consultation is required.' },
+    })
+  })
+
   it('bounds one caller to five refinements a minute', async () => {
     upstream.mockImplementation(async () => mintedToken())
     const ip = '198.51.100.251'
@@ -364,6 +372,28 @@ describe('upstream failures, each audited exactly once', () => {
 
     expect(res.status).toBe(502)
     expect(auditActions()).toEqual(['asr.batch_session_failed'])
+  })
+
+  it('refuses a minted token the session contract would not carry, auditing it once', async () => {
+    // Parsed before the success row, so a recorded mint is never followed by a
+    // body the browser would refuse.
+    upstream.mockResolvedValueOnce(jsonResponse({ token: 'x'.repeat(4_097) }))
+
+    const res = await mint()
+
+    expect(res.status).toBe(502)
+    expect(auditActions()).toEqual(['asr.batch_session_failed'])
+    expect(auditState.writes[0]?.data).toMatchObject({ metadata: { reason: 'unavailable' } })
+  })
+
+  it('fails the request when the failure row cannot be written', async () => {
+    upstream.mockResolvedValueOnce(jsonResponse({ detail: 'nope' }, 500))
+    auditState.failNextWrite = true
+
+    const res = await mint()
+
+    expect(res.status).toBe(500)
+    expect(auditState.writes).toEqual([])
   })
 })
 

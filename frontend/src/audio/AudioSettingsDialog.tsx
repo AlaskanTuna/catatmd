@@ -228,14 +228,16 @@ export function AudioSettingsDialog({
                       belongs to the ambient engine and to nothing below it.
                       Vendor neutral on purpose, label and tip alike: naming the
                       second processor somewhere quieter than the consent gate
-                      is what D-004 forbids. */}
+                      is what D-004 forbids. Saying the recording is sent again
+                      names nobody, and it is what makes this switch an honest
+                      control rather than a quality setting. */}
                   {refinementAvailable && (
                     <div className="mt-2 border-accent/20 border-t">
                       <Toggle
                         checked={draft.refineAfterStop}
                         onChange={(next) => setDraft({ ...draft, refineAfterStop: next })}
                         label="Refine After Stop"
-                        detail="After you stop, the whole recording is transcribed again for a more accurate transcript. If that fails, or you skip it, the live transcript is used and you are told. Not used on translated consultations."
+                        detail="After you stop, the whole recording is sent once more and transcribed again, for a more accurate transcript. If that fails, or you skip it, the live transcript is used and you are told. Not used on translated consultations."
                       />
                     </div>
                   )}

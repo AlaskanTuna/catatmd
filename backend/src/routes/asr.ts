@@ -9,6 +9,7 @@ import {
   LiveAsrModeSchema,
   LiveSessionRequestSchema,
   LiveSessionSchema,
+  type RedFlag,
   RefinementCheckRequestSchema,
   RefinementCheckResponseSchema,
   type Transcript,
@@ -582,16 +583,33 @@ asrRouter.post('/batch-sessions', requireElevenLabsConfigured, async (req, res) 
  * The transcript the rules engine reads for one side of a refinement check.
  *
  * **Every field but the text is the server's.** `source` gates the measured
- * Malay confusables, `labelsReviewed` the question-denial suppression, and
- * `speaker` the doctor-only safety-netting reading; each can only ever weaken
- * the engine, so none is the client's to send. No turn has a role yet at this
- * point, so every one is read as the patient's on both sides alike, which turns
- * the safety-netting reading off and can only make the check fire more.
+ * Malay confusables and `labelsReviewed` the question-denial suppression; each
+ * can only ever weaken the engine, so neither is the client's to send.
+ *
+ * **The speaker is the server's too, and it differs by side on purpose.** With
+ * `labelsReviewed: false`, the only reading that depends on a label is the
+ * doctor-only safety-netting suppression (`isSafetyNetting` in
+ * `redflags/triggers.ts`), and it can only remove a hit. So reading every turn
+ * as the patient's gives the most a transcript could raise under any labelling,
+ * and reading every turn as the doctor's gives the least. The live side is read
+ * at its most and the refined side at its least, so a refined transcript passes
+ * only if it keeps every live hit however its own turns are later labelled.
+ *
+ * Reading both sides the same way was the first design, and the review that
+ * found it wrong is worth keeping: a patient's "I coughed up blood" dropped by
+ * the refined pass is still covered on that side by the doctor's closing "come
+ * back if you cough up blood" when that advice is read as the patient's, so
+ * nothing looked lost, and the stored transcript, with the advice labelled the
+ * doctor's, then raised nothing. The cost is that a symptom named only in
+ * safety-netting advice keeps the live transcript, which is the safe direction.
  */
-const asCheckedTranscript = (turns: readonly string[]): Transcript => ({
+const asCheckedTranscript = (
+  turns: readonly string[],
+  speaker: 'doctor' | 'patient',
+): Transcript => ({
   source: 'asr_live',
   labelsReviewed: false,
-  turns: turns.map((text) => ({ speaker: 'patient', text })),
+  turns: turns.map((text) => ({ speaker, text })),
 })
 
 /** The rule ids a transcript raises over every trigger there is. */
@@ -609,6 +627,10 @@ const firedRuleIds = (transcript: Transcript): Set<string> =>
  * passed in**, also from that file: a profile is a filtered slice, and
  * `ALL_REDFLAG_TRIGGERS` can only over-protect.
  *
+ * The SPA sends the live side as its recogniser's segments and the refined side
+ * as the labelled turns it will store, because where turns break changes what
+ * the rules raise; `asCheckedTranscript` says how each side is read.
+ *
  * In-process and model-free, so it writes no audit row, the precedent being
  * `POST /consultations/:id/live-flags`: nothing egresses and nothing is stored.
  * The authoritative run is still `evaluateRedFlags` over the stored transcript.
@@ -621,11 +643,25 @@ asrRouter.post('/refinement-check', (req, res) => {
     throw new HttpError(400, 'invalid_body', 'A live and a refined transcript are required.')
   }
 
-  const live = asCheckedTranscript(parsed.data.live)
-  const after = firedRuleIds(asCheckedTranscript(parsed.data.refined))
-  const lost = evaluateRedFlags(live, ALL_REDFLAG_TRIGGERS).filter(
-    (flag) => !after.has(flag.ruleId ?? flag.id),
-  )
+  /*
+   * The live side is read twice and the hits pooled. Its segments are the
+   * recogniser's finest cut, but they are not an upper bound: a pause or an
+   * endpoint can split a phrase so neither half fires, while the turn it is
+   * stored in joins them. Reading the whole text as one turn as well catches
+   * that, and a union can only add hits the refined side must keep.
+   */
+  const heard = new Map<string, RedFlag>()
+  for (const reading of [parsed.data.live, [parsed.data.live.join(' ')]]) {
+    for (const flag of evaluateRedFlags(
+      asCheckedTranscript(reading, 'patient'),
+      ALL_REDFLAG_TRIGGERS,
+    )) {
+      const id = flag.ruleId ?? flag.id
+      if (!heard.has(id)) heard.set(id, flag)
+    }
+  }
+  const after = firedRuleIds(asCheckedTranscript(parsed.data.refined, 'doctor'))
+  const lost = [...heard].filter(([id]) => !after.has(id)).map(([, flag]) => flag)
 
   res.json(RefinementCheckResponseSchema.parse({ lost }))
 })

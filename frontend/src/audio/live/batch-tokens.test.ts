@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { segmentsToDraft, voteRolesBySpeaker } from '../draft-turns.js'
 import {
   batchWordsToTokens,
+  MAX_REFINED_TAIL_SHORTFALL_MS,
   MAX_REFINED_UNITS_PER_MINUTE,
   MIN_REFINED_UNIT_RATIO,
   MIN_SPEAKER_COVERAGE,
@@ -267,15 +268,17 @@ describe('refinementVerdict', () => {
   })
 
   it('counts reconnected live voices by number, not by connection', () => {
-    // `fromConnection` marks a reopened socket's voices `n/c`; the person is
-    // still one of two.
-    const reconnected = live.map((token, index) =>
-      index > 6 ? { ...token, speaker: `${token.speaker}/1` } : token,
+    // `fromConnection` marks a reopened socket's voices `n/c`. One person heard
+    // across a reconnect is still one voice, so a one-voice refined reading
+    // must pass rather than be refused for losing a voice that never existed.
+    const oneVoice = conversation.map((entry) => ({ ...entry, speaker_id: 'speaker_0' }))
+    const reconnected = liveOf(oneVoice).map((token, index) =>
+      index > 4 ? { ...token, speaker: `${token.speaker}/1` } : token,
     )
 
-    expect(
-      refinementVerdict({ words: conversation, live: reconnected, durationSeconds: 60 }).ok,
-    ).toBe(true)
+    expect(refinementVerdict({ words: oneVoice, live: reconnected, durationSeconds: 60 }).ok).toBe(
+      true,
+    )
   })
 
   it('refuses word starts that run backwards', () => {
@@ -352,17 +355,36 @@ describe('refinementVerdict', () => {
   })
 
   it('reads the live voices from settled speech only', () => {
-    // A translation is not speech: counted, its seven words would push the
-    // live side past what the refined one has to match.
+    // One real voice. The translation token carries a second speaker and seven
+    // words: counted as speech, it would demand a second refined voice and
+    // push the live side past what the refined one has to match.
+    const oneVoice = conversation.map((entry) => ({ ...entry, speaker_id: 'speaker_0' }))
     const withMarker: LiveToken[] = [
-      ...live,
+      ...liveOf(oneVoice),
       { ...liveToken('', 9_000, null), endpoint: true },
-      { ...liveToken(' satu dua tiga empat lima enam tujuh', 9_100, '3'), translated: true },
+      { ...liveToken(' satu dua tiga empat lima enam tujuh', 4_500, '3'), translated: true },
     ]
 
-    expect(
-      refinementVerdict({ words: conversation, live: withMarker, durationSeconds: 60 }).ok,
-    ).toBe(true)
+    expect(refinementVerdict({ words: oneVoice, live: withMarker, durationSeconds: 60 }).ok).toBe(
+      true,
+    )
+  })
+
+  it(`refuses a reading that stops more than ${MAX_REFINED_TAIL_SHORTFALL_MS / 1_000} s before the live one`, () => {
+    // Truncated before the close: the plan and the advice are what goes.
+    const closing = sentence('Datang balik kalau demam tinggi', 20, 'speaker_0')
+    const live = liveOf([...conversation, ...closing])
+
+    expect(refinementVerdict({ words: conversation, live, durationSeconds: 60 })).toEqual({
+      ok: false,
+      reason: 'truncated',
+    })
+  })
+
+  it('accepts a reading that ends a little before the live one', () => {
+    const live = liveOf([...conversation, ...sentence('Ya', 8, 'speaker_1')])
+
+    expect(refinementVerdict({ words: conversation, live, durationSeconds: 60 }).ok).toBe(true)
   })
 })
 

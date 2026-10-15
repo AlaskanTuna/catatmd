@@ -1,4 +1,9 @@
-import { MAX_UNCERTAIN_RANGES_PER_TURN, type TextRange, type TranscriptTurn } from '@shared/types'
+import {
+  type DraftTurn,
+  MAX_UNCERTAIN_RANGES_PER_TURN,
+  type TextRange,
+  type TranscriptTurn,
+} from '@shared/types'
 import type { TranscriptSegment } from './protocol.js'
 
 /**
@@ -526,4 +531,56 @@ export function carryUncertain(
 
     return uncertain.length > 0 ? { ...line, uncertain } : line
   })
+}
+
+/**
+ * The lines one recording becomes, in the order the Record tab prefers them
+ * (#436).
+ *
+ * One place rather than two, because two callers must agree on it exactly.
+ * `CapturePanel` stores these lines. Ambient refinement asks the rules engine
+ * whether a refined transcript would lose a red flag, and the engine is
+ * sensitive to where turns break (a negation reads back only within a turn, and
+ * a denied ability pairs adjacent turns), so the check has to read the turns
+ * that will be stored, not the recogniser's own cut.
+ *
+ * - **Drafted turns first**, from the labelling pass, voted by voice when
+ *   `voteBySpeaker` (#388) and timed from the segments when `withOffsets`.
+ * - **Then the segments**, drafted by their content when no turns came back.
+ * - **Then prose**, so a recording with neither stays usable (#189).
+ *
+ * `labelled` says the first branch was taken, which is the only shape a
+ * translated recording's pairs line up with. `withOffsets` changes the timing
+ * and never the words.
+ */
+export function draftLinesFor({
+  text,
+  segments,
+  draftTurns,
+  voteBySpeaker,
+  withOffsets,
+}: {
+  text: string
+  segments: readonly MarkedSegment[]
+  draftTurns?: readonly DraftTurn[]
+  voteBySpeaker: boolean
+  withOffsets: boolean
+}): { lines: DraftLine[]; labelled: boolean } {
+  /*
+   * `hosted-` ids are a namespace disjoint from the local `seg-` ones. The
+   * server's `undrafted` marker is deliberately not carried: its only reader
+   * was the review list, and `labelsReviewed` bounds the placeholder speaker.
+   */
+  const hostedLines = (draftTurns ?? []).map(
+    (turn, i): DraftLine => ({ id: `hosted-${i}`, speaker: turn.speaker, text: turn.text }),
+  )
+  const voted = (drafted: DraftLine[]) =>
+    voteBySpeaker ? voteRolesBySpeaker(drafted, segments) : drafted
+  const labelledLines = withOffsets
+    ? timeDraftLines(voted(hostedLines), segments)
+    : voted(hostedLines)
+  if (labelledLines.length > 0) return { lines: labelledLines, labelled: true }
+  const timedLines = voted(segmentsToDraft(segments, text, { withOffsets }))
+  if (timedLines.length > 0) return { lines: timedLines, labelled: false }
+  return { lines: proseToDraft(text), labelled: false }
 }

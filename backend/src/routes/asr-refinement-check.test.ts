@@ -1,5 +1,9 @@
 import type { Server } from 'node:http'
-import { MAX_REFINEMENT_CHECK_TURNS, RefinementCheckResponseSchema } from '@shared/types'
+import {
+  MAX_REFINEMENT_CHECK_CHARACTERS,
+  MAX_REFINEMENT_CHECK_TURNS,
+  RefinementCheckResponseSchema,
+} from '@shared/types'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
@@ -204,6 +208,8 @@ describe('POST /refinement-check', () => {
   })
 
   it('ignores a profile, a source and a label review sent by the client', async () => {
+    // Zod strips the keys, so this pins the contract rather than the engine;
+    // the two cases below are what pin the server's own values.
     expect(
       await lostIds({
         live: ['I have been coughing up blood since this morning.'],
@@ -215,19 +221,79 @@ describe('POST /refinement-check', () => {
     ).toEqual(['haemoptysis'])
   })
 
-  it('labels no turn as the doctor, so advice cannot hide a symptom on one side only', async () => {
+  it('reads both sides as unreviewed, so a denied ability is paired whoever said it', async () => {
+    // Fires only with `labelsReviewed: false`: on reviewed labels the pair
+    // needs a doctor question and a patient reply, which no turn here is.
+    expect(
+      await lostIds({
+        live: ['Boleh telan tak?', 'Tak boleh doktor.'],
+        refined: ['Boleh telan tak?', 'Boleh doktor.'],
+      }),
+    ).toContain('swallowing-oral-intake')
+  })
+
+  it('reads both sides as ambient capture, so the measured mishears apply', async () => {
+    // "teman" is a measured mishear of "demam" on recorded sources only.
+    expect(await lostIds({ live: ['teman dua hari'], refined: ['dua hari'] })).toContain(
+      'uti-systemic-features',
+    )
+  })
+
+  it('catches a dropped report that advice on both sides would otherwise cover', async () => {
     /*
-     * Before labelling there is no role, so every turn is read as the
-     * patient's. That turns off the doctor-only safety-netting reading on both
-     * sides alike, which can only make the check fire more: a symptom named in
-     * advice on the live side still counts when the refined side drops it.
+     * The review finding that changed the design. Read as the patient's, the
+     * closing advice raises haemoptysis on the refined side too, so the dropped
+     * report looked like no loss. The stored transcript labels the advice the
+     * doctor's, which suppresses it, and then raises nothing.
      */
+    const advice = 'Come back if you cough up blood again.'
+    expect(
+      await lostIds({
+        live: ['I coughed up blood this morning.', advice],
+        refined: ['I coughed this morning.', advice],
+      }),
+    ).toContain('haemoptysis')
+  })
+
+  it('counts a live hit split across segments, which a stored turn would join', async () => {
+    // A pause or an endpoint can cut a phrase in two. Neither half fires, but
+    // the stored turn joins them and does, so the live side is also read whole.
+    expect(
+      await lostIds({
+        live: ['I have been coughing up', 'blood since this morning.'],
+        refined: ['I have been coughing since this morning.'],
+      }),
+    ).toContain('haemoptysis')
+  })
+
+  it('keeps the live transcript for a symptom named only in safety-netting advice', async () => {
+    // The stated cost of reading the refined side at its least: the advice is
+    // suppressed there and not on the live side, so this reads as a loss.
     expect(
       await lostIds({
         live: ['Come back if you become breathless.'],
-        refined: ['Come back if you become tired.'],
+        refined: ['Come back if you become breathless.'],
       }),
     ).toContain('significant-dyspnoea')
+  })
+
+  it('reads a genuine report on the refined side as raised, whoever is later labelled', async () => {
+    expect(
+      await lostIds({
+        live: ['I am breathless when I climb the stairs.'],
+        refined: ['I am breathless when I climb the stairs.'],
+      }),
+    ).toEqual([])
+  })
+
+  it('accepts text up to the bound on each side, and refuses past it', async () => {
+    const turn = 'batuk '.repeat(600).trim()
+    const atBound = Array.from(
+      { length: Math.floor(MAX_REFINEMENT_CHECK_CHARACTERS / turn.length) },
+      () => turn,
+    )
+    expect((await check({ live: ['x'], refined: atBound })).status).toBe(200)
+    expect((await check({ live: ['x'], refined: [...atBound, turn] })).status).toBe(400)
   })
 
   it('requires a session', async () => {

@@ -758,18 +758,28 @@ export function createPreviewBackend() {
       body,
       'A live and a refined transcript are required.',
     )
-    const checked = (turns: readonly string[]): Transcript => ({
+    // Live read at its most (every turn the patient's), refined at its least
+    // (every turn the doctor's), exactly as `backend/src/routes/asr.ts` does.
+    const checked = (turns: readonly string[], speaker: 'doctor' | 'patient'): Transcript => ({
       source: 'asr_live',
       labelsReviewed: false,
-      turns: turns.map((text) => ({ speaker: 'patient', text })),
+      turns: turns.map((text) => ({ speaker, text })),
     })
     const after = new Set(
-      evaluateRedFlags(checked(refined), ALL_REDFLAG_TRIGGERS).map((f) => f.ruleId ?? f.id),
-    )
-    return json(200, {
-      lost: evaluateRedFlags(checked(live), ALL_REDFLAG_TRIGGERS).filter(
-        (flag) => !after.has(flag.ruleId ?? flag.id),
+      evaluateRedFlags(checked(refined, 'doctor'), ALL_REDFLAG_TRIGGERS).map(
+        (f) => f.ruleId ?? f.id,
       ),
+    )
+    // The live side read by segment and whole, pooled, as the API does.
+    const heard = new Map<string, ReturnType<typeof evaluateRedFlags>[number]>()
+    for (const reading of [live, [live.join(' ')]]) {
+      for (const flag of evaluateRedFlags(checked(reading, 'patient'), ALL_REDFLAG_TRIGGERS)) {
+        const id = flag.ruleId ?? flag.id
+        if (!heard.has(id)) heard.set(id, flag)
+      }
+    }
+    return json(200, {
+      lost: [...heard].filter(([id]) => !after.has(id)).map(([, flag]) => flag),
     })
   })
 

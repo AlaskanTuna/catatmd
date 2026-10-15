@@ -5,6 +5,7 @@ import {
   BatchSessionRequestSchema,
   BatchSessionSchema,
   LiveAsrConfigSchema,
+  MAX_ASR_CONTEXT_TERMS,
   MAX_BATCH_RECORDING_SECONDS,
   MAX_REFINEMENT_CHECK_CHARACTERS,
   MAX_REFINEMENT_CHECK_TURNS,
@@ -144,6 +145,17 @@ describe('BatchSessionSchema', () => {
     ).toBe(false)
   })
 
+  it('refuses a token past its bound', () => {
+    expect(BatchSessionSchema.safeParse({ ...session, token: 'x'.repeat(4_097) }).success).toBe(
+      false,
+    )
+  })
+
+  it('refuses more keyterms than the vocabulary bound', () => {
+    const keyterms = Array.from({ length: MAX_ASR_CONTEXT_TERMS + 1 }, (_, i) => `term ${i}`)
+    expect(BatchAsrConfigSchema.safeParse({ ...CONFIG, keyterms }).success).toBe(false)
+  })
+
   it('refuses an empty token', () => {
     expect(BatchSessionSchema.safeParse({ ...session, token: '' }).success).toBe(false)
   })
@@ -225,6 +237,15 @@ describe('RefinementCheckRequestSchema', () => {
     )
     expect(RefinementCheckRequestSchema.safeParse({ live: ['x'], refined: tooMuch }).success).toBe(
       false,
+    )
+  })
+
+  it('accepts exactly the character bound on a side', () => {
+    const turn = 'x'.repeat(4_000)
+    const atBound = Array.from({ length: MAX_REFINEMENT_CHECK_CHARACTERS / 4_000 }, () => turn)
+    expect(atBound.join('').length).toBe(MAX_REFINEMENT_CHECK_CHARACTERS)
+    expect(RefinementCheckRequestSchema.safeParse({ live: ['x'], refined: atBound }).success).toBe(
+      true,
     )
   })
 

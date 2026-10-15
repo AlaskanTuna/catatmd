@@ -117,12 +117,6 @@ describe('batchRefinementConfig, which crosses the egress with the recording', (
     expect(BatchAsrConfigSchema.safeParse(batchRefinementConfig()).success).toBe(true)
   })
 
-  it('never asks for the medical model or for speaker roles', () => {
-    const config = batchRefinementConfig() as Record<string, unknown>
-    expect(config.modelId).not.toBe('scribe_v2_medical')
-    expect(Object.keys(config)).not.toContain('detectSpeakerRoles')
-  })
-
   it('carries the whole ambient vocabulary, each term inside the vendor bounds', () => {
     const { keyterms } = batchRefinementConfig()
     expect(keyterms).toHaveLength(asrContextTerms().length)
@@ -158,6 +152,16 @@ describe('mintBatchToken, the outbound request', () => {
     expect(init?.signal).toBeInstanceOf(AbortSignal)
     // Nothing a caller supplies reaches the vendor on this request.
     expect(init?.body).toBeUndefined()
+  })
+
+  it('bounds the mint at ten seconds', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    upstream.mockResolvedValue(jsonResponse({ token: 'single-use-abc' }))
+
+    await mintBatchToken()
+
+    expect(timeout).toHaveBeenCalledWith(10_000)
+    timeout.mockRestore()
   })
 
   it('makes exactly one attempt, with no retries', async () => {

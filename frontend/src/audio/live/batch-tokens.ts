@@ -31,6 +31,15 @@ export const MIN_SPEAKER_COVERAGE = 0.95
 export const MIN_REFINED_UNIT_RATIO = 0.8
 
 /**
+ * How far before the live transcript's last word the refined one may end.
+ * **Provisional until the measurement gate.** The unit ratio alone would let a
+ * response truncated before the closing plan and advice through, since a fifth
+ * of a consultation is often exactly that; this row is what refuses it. Five
+ * seconds absorbs the two recognisers placing the same last word differently.
+ */
+export const MAX_REFINED_TAIL_SHORTFALL_MS = 5_000
+
+/**
  * The most units a minute of recording may carry, as a check against invented
  * text. **Provisional until the measurement gate**, and deliberately loose:
  * conversational speech runs well under it, but each Chinese character is a
@@ -138,6 +147,7 @@ export type RefinementFailure =
   | 'speakers_missing'
   | 'speaker_count'
   | 'timing'
+  | 'truncated'
   | 'too_short'
   | 'too_dense'
   | 'new_script'
@@ -146,15 +156,25 @@ export type RefinementVerdict =
   | { ok: true; tokens: LiveToken[] }
   | { ok: false; reason: RefinementFailure }
 
+/** The live tokens that are speech: no translation, no marker, no empty text. */
+const spokenLive = (live: readonly LiveToken[]): LiveToken[] =>
+  live.filter((token) => token.translated !== true && !token.endpoint && token.text.trim() !== '')
+
 /** Voices the live transcript heard, by number, so a reconnect is not a new voice. */
 function liveVoices(live: readonly LiveToken[]): number {
   const voices = new Set<string>()
-  for (const token of live) {
-    if (token.translated === true || token.endpoint || token.speaker === null) continue
-    if (token.text.trim() === '') continue
-    voices.add(speakerNumber(token.speaker))
+  for (const token of spokenLive(live)) {
+    if (token.speaker !== null) voices.add(speakerNumber(token.speaker))
   }
   return voices.size
+}
+
+/** Where the live transcript's last word ended, or null when it timed none. */
+function liveEndMs(live: readonly LiveToken[]): number | null {
+  const ends = spokenLive(live)
+    .map((token) => token.endMs)
+    .filter(Number.isFinite)
+  return ends.length > 0 ? Math.max(...ends) : null
 }
 
 /**
@@ -170,9 +190,11 @@ function liveVoices(live: readonly LiveToken[]): number {
  * 2. At least `MIN_SPEAKER_COVERAGE` of words carry a speaker.
  * 3. At least `min(2, live voices)` speakers, and never more than two.
  * 4. Every word timed, and starts never run backwards.
- * 5. At least `MIN_REFINED_UNIT_RATIO` of the live transcript's units.
- * 6. At most `MAX_REFINED_UNITS_PER_MINUTE` units a minute of recording.
- * 7. No Bengali, Arabic or Devanagari script the live text lacked.
+ * 5. It reaches the live transcript's last word, within
+ *    `MAX_REFINED_TAIL_SHORTFALL_MS`, so the close of a consultation is in it.
+ * 6. At least `MIN_REFINED_UNIT_RATIO` of the live transcript's units.
+ * 7. At most `MAX_REFINED_UNITS_PER_MINUTE` units a minute of recording.
+ * 8. No Bengali, Arabic or Devanagari script the live text lacked.
  */
 export function refinementVerdict({
   words,
@@ -205,6 +227,12 @@ export function refinementVerdict({
     previous = token.startMs
   }
 
+  const heardUntil = liveEndMs(live)
+  const refinedUntil = Math.max(...tokens.map((token) => token.endMs))
+  if (heardUntil !== null && refinedUntil < heardUntil - MAX_REFINED_TAIL_SHORTFALL_MS) {
+    return { ok: false, reason: 'truncated' }
+  }
+
   const refinedText = tokensToText(tokens)
   const liveText = tokensToText(live)
   const refinedUnits = units(refinedText)
@@ -227,9 +255,10 @@ export function refinementVerdict({
 }
 
 /**
- * What the server's red-flag check reads for one side: the segment texts the
- * recogniser cut, and nothing else. No speaker travels, because the server
- * sets every field that could weaken the engine itself.
+ * What the server's red-flag check reads for the live side: the segment texts
+ * the recogniser cut, its finest cut, and nothing else. The refined side is
+ * sent as the turns that will be stored. No speaker travels, because the
+ * server sets every field that could weaken the engine itself.
  */
 export function refinementCheckTexts(tokens: readonly LiveToken[]): string[] {
   return tokensToSegments(tokens).map((segment) => segment.text)

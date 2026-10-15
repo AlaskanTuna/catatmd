@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   carryUncertain,
   type DraftLine,
+  draftLinesFor,
   draftToTurns,
   type MarkedSegment,
   proseToDraft,
@@ -594,5 +595,103 @@ describe('voteRolesBySpeaker', () => {
       line('x', 'patient', 'Not in the audio.'),
     ]
     expect(voteRolesBySpeaker(drafted, segments.slice(0, 2))[2]).toEqual(drafted[2])
+  })
+})
+
+/*
+ * The lines a recording becomes, chosen in one place (#436). `CapturePanel`
+ * stores them, and ambient refinement reads exactly these when it asks the
+ * rules engine whether a refined transcript loses a red flag, because where
+ * turns break changes what the engine raises.
+ */
+describe('draftLinesFor', () => {
+  const segments: MarkedSegment[] = [
+    { text: 'Any fever?', start: 0, end: 1, speaker: '1' },
+    { text: 'Yes, at night.', start: 1, end: 2, speaker: '2' },
+    { text: 'How long?', start: 2, end: 3, speaker: '1' },
+    { text: 'Two days.', start: 3, end: 4, speaker: '2' },
+  ]
+  const text = 'Any fever? Yes, at night. How long? Two days.'
+
+  it('takes the drafted turns, voted by voice, when the labelling pass returned some', () => {
+    const { lines, labelled } = draftLinesFor({
+      text,
+      segments,
+      draftTurns: [
+        { speaker: 'doctor', text: 'Any fever?' },
+        { speaker: 'patient', text: 'Yes, at night. How long?' },
+        { speaker: 'patient', text: 'Two days.' },
+      ],
+      voteBySpeaker: true,
+      withOffsets: true,
+    })
+
+    expect(labelled).toBe(true)
+    // The middle line ran across a change of voice, so the vote cuts it there.
+    expect(lines.map((line) => [line.speaker, line.text])).toEqual([
+      ['doctor', 'Any fever?'],
+      ['patient', 'Yes, at night.'],
+      ['doctor', 'How long?'],
+      ['patient', 'Two days.'],
+    ])
+  })
+
+  it('drafts from the segments when the labelling pass returned nothing', () => {
+    const { lines, labelled } = draftLinesFor({
+      text,
+      segments,
+      voteBySpeaker: true,
+      withOffsets: true,
+    })
+
+    expect(labelled).toBe(false)
+    expect(lines.map((line) => line.text)).toEqual([
+      'Any fever?',
+      'Yes, at night.',
+      'How long?',
+      'Two days.',
+    ])
+  })
+
+  it('falls back to prose when neither turns nor usable segments exist', () => {
+    const { lines, labelled } = draftLinesFor({
+      text: 'Batuk sudah tiga hari.',
+      segments: [],
+      voteBySpeaker: true,
+      withOffsets: true,
+    })
+
+    expect(labelled).toBe(false)
+    expect(lines.map((line) => line.text)).toEqual(['Batuk sudah tiga hari.'])
+  })
+
+  it('gives the same words with or without offsets, which change only the timing', () => {
+    const args = { text, segments, voteBySpeaker: true }
+    const timed = draftLinesFor({ ...args, withOffsets: true }).lines
+    const untimed = draftLinesFor({ ...args, withOffsets: false }).lines
+
+    expect(untimed.map((line) => line.text)).toEqual(timed.map((line) => line.text))
+    expect(untimed.every((line) => line.offsetSeconds === undefined)).toBe(true)
+    expect(timed[0]?.offsetSeconds).toBe(0)
+  })
+
+  it('keeps the drafted roles when told not to vote, as a translated recording is', () => {
+    const { lines } = draftLinesFor({
+      text,
+      segments,
+      draftTurns: [
+        { speaker: 'doctor', text: 'Any fever?' },
+        { speaker: 'patient', text: 'Yes, at night. How long?' },
+        { speaker: 'patient', text: 'Two days.' },
+      ],
+      voteBySpeaker: false,
+      withOffsets: false,
+    })
+
+    expect(lines.map((line) => line.text)).toEqual([
+      'Any fever?',
+      'Yes, at night. How long?',
+      'Two days.',
+    ])
   })
 })

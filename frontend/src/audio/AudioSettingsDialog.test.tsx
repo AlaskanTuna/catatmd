@@ -412,6 +412,8 @@ describe('the refinement switch', () => {
     fireEvent.click(screen.getByRole('button', { name: 'About Refine After Stop' }))
     const tip = screen.getByRole('tooltip').textContent ?? ''
     expect(tip).toMatch(/live transcript/i)
+    // It says the recording leaves again, which names nobody (D-004).
+    expect(tip).toMatch(/recording is sent once more/i)
     expect(tip).not.toMatch(/ElevenLabs|Soniox|scribe_v2/i)
   })
 

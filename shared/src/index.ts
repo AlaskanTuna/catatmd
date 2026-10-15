@@ -2282,8 +2282,10 @@ const RefinementTurnsSchema = z
   )
 
 /**
- * Body of `POST /api/asr/refinement-check`: the live and refined transcripts,
- * as the segment texts each recogniser cut.
+ * Body of `POST /api/asr/refinement-check`: the live transcript as the segment
+ * texts its recogniser cut, and the refined one as the turns that will be
+ * stored, after labelling, because where turns break changes what the rules
+ * raise.
  *
  * **Text only, and that is deliberate.** No speaker, no source, no
  * `labelsReviewed`: each of those can only ever weaken the red-flag engine, so

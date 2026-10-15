@@ -1563,8 +1563,13 @@ describe('refining the transcript after Stop', () => {
       expect(screen.getByRole('status').textContent).toMatch(notice)
       // The panel unmounts once the transcript saves, so the notice also goes
       // where it outlives the panel.
-      expect(toast).toHaveBeenCalledWith(expect.stringMatching(notice))
+      expect(toast).toHaveBeenCalledWith(expect.stringMatching(notice), expect.anything())
       expect(String(toast.mock.calls[0]?.[0])).not.toMatch(/ElevenLabs/i)
+      expect(screen.getByRole('status').textContent).not.toMatch(/ElevenLabs|Soniox/i)
+      // Raised once the transcript is handed over, so it outlives the panel.
+      expect(toast.mock.invocationCallOrder[0]).toBeGreaterThan(
+        onTranscript.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+      )
       return result
     }
 
@@ -1686,12 +1691,181 @@ describe('refining the transcript after Stop', () => {
     expect(result.text).toBe(LIVE_TEXT)
     expect(result.batchTranscription).toEqual({ used: false })
     expect(screen.getByRole('status').textContent).toMatch(/skipped/i)
-    expect(toast).toHaveBeenCalledWith(expect.stringMatching(/skipped/i))
+    expect(toast).toHaveBeenCalledWith(expect.stringMatching(/skipped/i), expect.anything())
   })
 
-  it('clears the short-tail notice once the whole recording is refined', async () => {
-    // The refined transcript is read from the whole recording, so the gap the
-    // notice warned about is not in it.
+  it('stops the check too when the doctor skips while it runs', async () => {
+    refinementCheck.mockImplementation(
+      (_live: unknown, _refined: unknown, signal: AbortSignal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+        }),
+    )
+    const { onTranscript } = await startRefinable()
+
+    await pressStop()
+    await drain()
+    expect(refinementCheck).toHaveBeenCalledTimes(1)
+    await act(async () => screen.getByRole('button', { name: 'Use Live Transcript' }).click())
+    await drain()
+
+    expect(delivered(onTranscript).text).toBe(LIVE_TEXT)
+    expect(delivered(onTranscript).batchTranscription).toEqual({ used: false })
+  })
+
+  it('moves focus to Use Live Transcript when refining starts', async () => {
+    hangingUpload()
+    await startRefinable()
+
+    await pressStop()
+    await settle()
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Use Live Transcript' }))
+  })
+
+  it('checks the turns that will be stored, and delivers exactly those', async () => {
+    /*
+     * The labelling pass runs on the refined text before the check, because
+     * where turns break changes what the rules raise; the check then reads the
+     * labelled turns, and those are what is delivered, never re-labelled.
+     */
+    const labelled = [
+      { speaker: 'patient' as const, text: 'Ada batuk sikit doktor.' },
+      { speaker: 'doctor' as const, text: 'Berapa lama sudah batuk?' },
+    ]
+    draftHostedTurns.mockResolvedValue(labelled)
+    const { onTranscript } = await startRefinable()
+
+    await pressStop()
+    await drain()
+
+    expect(draftHostedTurns).toHaveBeenCalledTimes(1)
+    expect(draftHostedTurns).toHaveBeenCalledWith(REFINED_TEXT, expect.any(AbortSignal))
+    expect(refinementCheck.mock.calls[0]?.[1]).toEqual(labelled.map((turn) => turn.text))
+    expect(delivered(onTranscript).draftTurns).toEqual(labelled)
+  })
+
+  it('labels the live text after a refined transcript is refused', async () => {
+    refinementCheck.mockResolvedValue([
+      {
+        id: 'chest-pain',
+        label: 'Chest pain',
+        severity: 'urgent',
+        evidence: 'chest pain',
+        source: 'rule',
+        ruleId: 'chest-pain',
+      },
+    ])
+    const { onTranscript } = await startRefinable()
+
+    await pressStop()
+    await drain()
+
+    expect(draftHostedTurns.mock.calls.map((call) => call[0])).toEqual([REFINED_TEXT, LIVE_TEXT])
+    expect(delivered(onTranscript).text).toBe(LIVE_TEXT)
+  })
+
+  it('starts no upload when the panel is unmounted while finishing', async () => {
+    const view = await startRefinable()
+
+    const stopped = act(async () => {
+      screen.getByRole('button', { name: /stop and finish/i }).click()
+    })
+    await settle()
+    view.unmount()
+    await act(async () => vi.advanceTimersByTime(FINISH_TIMEOUT_MS))
+    await stopped
+    await drain()
+
+    expect(createBatchSession).not.toHaveBeenCalled()
+    expect(transcribeRecording).not.toHaveBeenCalled()
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it('stops the upload when the panel is unmounted while refining, and says nothing', async () => {
+    hangingUpload()
+    const view = await startRefinable()
+
+    await pressStop()
+    await settle()
+    const signal = transcribeRecording.mock.calls[0]?.[2] as AbortSignal
+    view.unmount()
+    await drain()
+
+    expect(signal.aborted).toBe(true)
+    expect(createBatchSession).toHaveBeenCalledTimes(1)
+    expect(refinementCheck).not.toHaveBeenCalled()
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it('holds the latch through labelling, refined or not', async () => {
+    let finishLabelling: (turns: unknown) => void = () => {}
+    draftHostedTurns.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishLabelling = resolve
+        }),
+    )
+    const { onLiveChange, onTranscript } = await startRefinable({ refineAfterStop: false })
+
+    await pressStop()
+    await drain()
+    expect(screen.getByText('Drafting speaker labels')).toBeTruthy()
+    expect(onLiveChange).not.toHaveBeenCalledWith(false)
+
+    await act(async () => finishLabelling([]))
+    await drain()
+
+    expect(onTranscript).toHaveBeenCalledTimes(1)
+    expect(onLiveChange).toHaveBeenLastCalledWith(false)
+  })
+
+  it('refines a recording exactly at the bound', async () => {
+    await startRefinable()
+    await act(async () => vi.advanceTimersByTime(1_800_000))
+
+    await pressStop()
+    await drain()
+
+    expect(createBatchSession).toHaveBeenCalledWith(expect.any(AbortSignal), 1_860)
+  })
+
+  it('uploads nothing when there is no recording to send', async () => {
+    const { onTranscript } = await startRefinable()
+    // A recorder that hands over nothing: no chunk ever reached the archive.
+    recorder().stop = function stop(this: FakeMediaRecorder) {
+      this.state = 'inactive'
+      queueMicrotask(() => this.onstop?.())
+    }
+
+    await pressStop()
+    await drain()
+
+    expect(createBatchSession).not.toHaveBeenCalled()
+    expect(delivered(onTranscript).text).toBe(LIVE_TEXT)
+  })
+
+  it('clears the short-tail notice once the refined reading runs to the end', async () => {
+    // Read from the whole recording, so the gap the notice warned about is not
+    // in it, provided its words reach the end of what was recorded.
+    transcribeRecording.mockResolvedValue({
+      ok: true,
+      sent: true,
+      words: [...REFINED_WORDS, ...vendorSentence('Jumpa lagi doktor.', 58, 'speaker_1')],
+    })
+    const { onTranscript } = await startRefinable()
+
+    await pressStop({ acknowledged: false })
+    await act(async () => vi.advanceTimersByTime(FINISH_TIMEOUT_MS))
+    await drain()
+
+    expect(delivered(onTranscript).text).toBe(`${REFINED_TEXT} Jumpa lagi doktor.`)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('keeps the short-tail notice when the refined reading stops short of the end', async () => {
+    // Accepted, because it reaches where the live transcript ended; but that
+    // is where the tail was lost, so the warning still stands.
     const { onTranscript } = await startRefinable()
 
     await pressStop({ acknowledged: false })
@@ -1699,7 +1873,7 @@ describe('refining the transcript after Stop', () => {
     await drain()
 
     expect(delivered(onTranscript).text).toBe(REFINED_TEXT)
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('alert').textContent).toMatch(/last few words may be missing/i)
   })
 
   it('keeps the short-tail notice when the live transcript is used', async () => {

@@ -4,7 +4,12 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Every way the SPA can make a request of its own, pinned per file (#436).
+ * The request APIs the SPA uses, pinned per file (#436).
+ *
+ * A guard against drift, not a proof that nothing else can leave: an image
+ * source, `window.open`, a form action, a dynamic `import(url)` or a `Request`
+ * built and handed elsewhere are outside it, and the CSP `connect-src` is what
+ * bounds those at the platform layer.
  *
  * The companion of `audio/live/no-stray-websocket.test.ts`, and needed for the
  * same reason: refinement after Stop uploads a finished recording from the
@@ -110,7 +115,16 @@ function inType(node: ts.Node): boolean {
  * `const send = fetch`. Aliasing is counted on purpose, because it is the shape
  * someone reaches for when working around a guard they have noticed.
  */
-function isRequestReference(node: ts.Node): node is ts.Identifier {
+function isRequestReference(node: ts.Node): node is ts.Identifier | ts.StringLiteral {
+  // `window['fetch']` and `globalThis["fetch"]` reach the same global.
+  if (
+    ts.isStringLiteral(node) &&
+    REQUEST_APIS.has(node.text) &&
+    ts.isElementAccessExpression(node.parent) &&
+    node.parent.argumentExpression === node
+  ) {
+    return true
+  }
   if (!ts.isIdentifier(node) || !REQUEST_APIS.has(node.text)) return false
   if (inType(node)) return false
   const parent = node.parent
@@ -126,8 +140,8 @@ function isRequestReference(node: ts.Node): node is ts.Identifier {
   return true
 }
 
-function requestSites(source: ts.SourceFile): ts.Identifier[] {
-  const found: ts.Identifier[] = []
+function requestSites(source: ts.SourceFile): (ts.Identifier | ts.StringLiteral)[] {
+  const found: (ts.Identifier | ts.StringLiteral)[] = []
   const visit = (node: ts.Node) => {
     if (isRequestReference(node)) found.push(node)
     ts.forEachChild(node, visit)
@@ -190,6 +204,8 @@ describe('only the refinement upload reaches past our own origin (issue #436)', 
       'const xhr = new XMLHttpRequest()',
       'navigator.sendBeacon(url, body)',
       'const events = new EventSource(url)',
+      "await window['fetch'](url)",
+      'const send = globalThis["fetch"]',
     ]) {
       expect(probe(form), `${form} should be caught`).toBe(1)
     }
@@ -205,6 +221,8 @@ describe('only the refinement upload reaches past our own origin (issue #436)', 
       'await queryClient.fetchQuery(options)',
       'const options = { fetch: undefined }',
       'function prefetch() {}',
+      "const key = 'fetch'",
+      "record['prefetch']",
     ]) {
       expect(probe(form), `${form} should not be caught`).toBe(0)
     }
@@ -258,5 +276,91 @@ describe('only the refinement upload reaches past our own origin (issue #436)', 
     expect(addressesOwnApi(firstCall(templated('https://x.example/BASE/api')))).toBe(false)
     expect(addressesOwnApi(firstCall("fetch('https://api.example/v1')"))).toBe(false)
     expect(addressesOwnApi(firstCall('fetch(target)'))).toBe(false)
+  })
+})
+
+/**
+ * Who may start the upload (#436), pinned across the whole SPA.
+ *
+ * The inventory above pins where the one cross-origin request sits, not who
+ * reaches it. The 16/10/26 grant covers post-Stop ambient refinement and no
+ * other surface, so a dictation or review-page component importing the upload
+ * module or minting a batch token would widen the egress past the grant while
+ * every other guard stayed green. Only `AmbientCapture.tsx` may do either;
+ * `batch-tokens.ts` imports the wire type and nothing that runs.
+ */
+const UPLOAD_MODULE = /(?:^|\/)elevenlabs-batch\.js$/
+const UPLOAD_ENTRY_POINTS = new Set(['transcribeRecording', 'createBatchSession'])
+const EXPECTED_UPLOAD_CALLERS = ['frontend/src/audio/live/AmbientCapture.tsx']
+
+/** A value import of the upload module, which a type-only import is not. */
+function importsUploadModule(source: ts.SourceFile): boolean {
+  return source.statements.some((statement) => {
+    if (!ts.isImportDeclaration(statement)) return false
+    if (!ts.isStringLiteral(statement.moduleSpecifier)) return false
+    if (!UPLOAD_MODULE.test(statement.moduleSpecifier.text)) return false
+    const clause = statement.importClause
+    if (clause === undefined) return true
+    if (clause.isTypeOnly) return false
+    const bindings = clause.namedBindings
+    const everyNamedIsType =
+      bindings !== undefined &&
+      ts.isNamedImports(bindings) &&
+      bindings.elements.every((element) => element.isTypeOnly)
+    return clause.name !== undefined || !everyNamedIsType
+  })
+}
+
+/** A call to `transcribeRecording(...)` or `api.createBatchSession(...)`. */
+function callsUploadEntryPoint(source: ts.SourceFile): boolean {
+  let found = false
+  const visit = (node: ts.Node) => {
+    if (found) return
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression
+      const name = ts.isIdentifier(callee)
+        ? callee.text
+        : ts.isPropertyAccessExpression(callee)
+          ? callee.name.text
+          : null
+      if (name !== null && UPLOAD_ENTRY_POINTS.has(name)) found = true
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return found
+}
+
+describe('only ambient capture may start the refinement upload (issue #436)', () => {
+  it('finds the upload imported and minted for in exactly one module', () => {
+    const callers = sourceFiles().filter((path) => {
+      const source = parse(path, readFileSync(join(REPO_ROOT, path), 'utf8'))
+      return importsUploadModule(source) || callsUploadEntryPoint(source)
+    })
+
+    expect(
+      callers,
+      'a module other than AmbientCapture reaches the refinement upload; the egress ' +
+        'is granted for post-Stop ambient refinement only, so this widens it',
+    ).toEqual(EXPECTED_UPLOAD_CALLERS)
+  })
+
+  it('tells a type-only import apart from one that runs', () => {
+    const probe = (text: string) => importsUploadModule(parse('probe.ts', text))
+
+    expect(probe("import { transcribeRecording } from './elevenlabs-batch.js'")).toBe(true)
+    expect(probe("import * as upload from '../live/elevenlabs-batch.js'")).toBe(true)
+    expect(probe("import './elevenlabs-batch.js'")).toBe(true)
+    expect(probe("import type { BatchWord } from './elevenlabs-batch.js'")).toBe(false)
+    expect(probe("import { type BatchWord } from './elevenlabs-batch.js'")).toBe(false)
+    expect(probe("import { transcribeRecording } from './elevenlabs-batch-notes.js'")).toBe(false)
+  })
+
+  it('recognises a call to either entry point', () => {
+    const probe = (text: string) => callsUploadEntryPoint(parse('probe.ts', text))
+
+    expect(probe('await transcribeRecording(session, blob, signal)')).toBe(true)
+    expect(probe('await api.createBatchSession(signal, 60)')).toBe(true)
+    expect(probe('await api.createLiveSession(signal, "ambient", true)')).toBe(false)
   })
 })
