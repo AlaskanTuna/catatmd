@@ -1684,6 +1684,22 @@ describe('identifiers spoken as number words (#435)', () => {
     'MRN pending, she is sixty-five years old.',
     'MRN unknown so I gave five hundred mg.',
     'The scores were seven two nine four five one.',
+    // Found in review: vital-sign series, which the model pass alone reasons
+    // over, since the rules engine carries no numeric cutoff.
+    'Patient: Thirty-nine five, thirty-nine eight, thirty-nine one, thirty-eight eight.',
+    'Suhu tiga puluh lapan lima, tiga puluh sembilan satu, tiga puluh lapan lapan, tiga puluh tujuh sembilan.',
+    'Doctor: And SpO2 nine one, nine zero, eight nine, eight eight.',
+    'Fever 38, 39, 38, 37, 38, two days already.',
+    // Beside the clinical-setting words, which a spoken run is never scored on.
+    'Sats nine one, nine zero, eight nine, eight eight, at the clinic.',
+    'Pulse one two zero, one one eight, at the clinic.',
+    'Augmentin 625 one-zero-one, come back to the clinic if worse.',
+    'The number on the thermometer was three nine one, three eight five.',
+    'For my medical certificate, fever 38, 39, 38, thirty-seven.',
+    // A duration straight after an identity cue.
+    'Do you have your IC two three days of fever is it',
+    'IC saya, dua tiga hari demam',
+    'IC number two, three days cough?',
   ]
 
   it.each(PRECISION)('leaves %j unchanged', (sentence) => {
@@ -1717,13 +1733,83 @@ describe('identifiers spoken as number words (#435)', () => {
     expect(deidentify(sentence).text).toBe(sentence)
   })
 
-  it('tokenises counting aloud to ten, which is the price of the nine-digit rule', () => {
-    // KNOWN COST, pinned rather than fixed. Nine single units always tokenise,
-    // with no progression exemption, because the corpus phone read aloud is
-    // itself a progression: "zero one two three four five six seven eight nine".
-    expect(
-      deidentify('Count with me: one, two, three, four, five, six, seven, eight, nine, ten.').text,
-    ).toBe('Count with me: [MRN_1].')
+  it.each([
+    // Nine single units always tokenise, with no progression exemption,
+    // because the corpus phone read aloud is itself a progression: "zero one
+    // two three four five six seven eight nine".
+    [
+      'Count with me: one, two, three, four, five, six, seven, eight, nine.',
+      'Count with me: [PHONE_1].',
+    ],
+    ['一二三四五六七八九十', '[PHONE_1]十'],
+    // Readings said digit by digit, nine digits and more in one breath.
+    [
+      'Take one-one-one, one-zero-one, zero-zero-one for five days.',
+      'Take [PHONE_1] for five days.',
+    ],
+    [
+      'Prednisolone four four four three three three two two two one one one.',
+      'Prednisolone [MRN_1].',
+    ],
+    ['病人：发烧三八五，三九，三八二，三七八。', '病人：发烧[MRN_1]。'],
+  ])('tokenises %j, which is the price of the nine-digit rule', (sentence, expected) => {
+    // KNOWN COST, pinned rather than fixed. The values come back on
+    // rehydration, so the note is right; what the model reads is not.
+    expect(deidentify(sentence).text).toBe(expected)
+  })
+
+  it('leaves counting to ten alone, because ten is a number word of two digits', () => {
+    const sentence = 'Count with me: one, two, three, four, five, six, seven, eight, nine, ten.'
+    expect(deidentify(sentence).text).toBe(sentence)
+  })
+
+  it.each([
+    ['Patient ID: 12345, one tablet daily.', 'Patient ID: [MRN_1], one tablet daily.'],
+    ['RN 4521 two tablets', 'RN [MRN_1] two tablets'],
+    ['My IC is 900412-08-6543, two tablets.', 'My IC is [NRIC_1], two tablets.'],
+    ['Oh, 0123456789 is my number.', 'Oh, [PHONE_1] is my number.'],
+  ])('keeps a dose word beside an identifier written in digits: %j', (sentence, expected) => {
+    // One number word is never a reading, so the digit detectors' output is
+    // exactly what it was before #435.
+    expect(deidentify(sentence).text).toBe(expected)
+  })
+
+  it.each([
+    [
+      'My IC is nine zero zero four one two zero eight six five four three pulse one oh two',
+      'My IC is [NRIC_1] pulse one oh two',
+    ],
+    [
+      'Okay IC nine zero zero four one two zero eight six five four three temperature thirty-eight point five',
+      'Okay IC [NRIC_1] temperature thirty-eight point five',
+    ],
+    [
+      'My IC is nine zero zero four one two zero eight six five four three BP one twenty over eighty',
+      'My IC is [NRIC_1] BP one twenty over eighty',
+    ],
+    [
+      'IC saya sembilan kosong kosong empat satu dua kosong lapan enam lima empat tiga demam tiga',
+      'IC saya [NRIC_1] demam tiga',
+    ],
+  ])('stops a cued reading before the clinical words said after it: %j', (sentence, expected) => {
+    // An unpunctuated reading runs straight into the vital sign. Once a whole
+    // number has been read, the next ordinary word is not more of it.
+    expect(deidentify(sentence).text).toBe(expected)
+  })
+
+  it.each([
+    [
+      'My IC is nine she lives two. Encik Zarul Damia Qaseh binti Abdullah at Jalan Ampang 5.',
+      'My IC is nine she lives two. Encik [PATIENT_1] at [ADDRESS_1].',
+    ],
+    [
+      'IC saya sembilan kosong empat tiga tinggal di blok dua. Encik Zarul Damia Qaseh binti Abdullah pun di Jalan Ampang 5.',
+      'IC saya [NRIC_1] tinggal di blok dua. Encik [PATIENT_1] pun di [ADDRESS_1].',
+    ],
+  ])("never takes another detector's cue into the token: %j", (sentence, expected) => {
+    // Found in review. "lives" and "tinggal" went into [NRIC_1], and the
+    // address they cued, reachable only on the second pass, passed in clear.
+    expect(deidentify(sentence).text).toBe(expected)
   })
 
   it('leaves the egress guard nothing to find after every case', () => {
@@ -1751,7 +1837,7 @@ describe('identifiers spoken as number words (#435)', () => {
     ['one long run', 'nine zero '.repeat(15_000)],
     ['cues with no anchor', 'IC number is semak '.repeat(7_000)],
     ['cues with a one-unit clause', 'IC tiga hari lagi. '.repeat(7_000)],
-  ])('detects over %s in linear time', (_shape, text) => {
+  ])('detects over %s within a time budget', (_shape, text) => {
     const started = performance.now()
     detect(text)
     expect(performance.now() - started).toBeLessThan(2_000)

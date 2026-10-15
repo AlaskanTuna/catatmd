@@ -13,9 +13,10 @@
  * change made for the dose parser must not be able to move what the PHI
  * boundary tokenises.
  *
- * **Linear time by construction.** One tokenising pass with a regex that cannot
- * backtrack across the input, one pass building units, one building runs, and a
- * clause scan bounded at `CLAUSE_WORDS` per cue.
+ * **The scan is linear in the input.** One tokenising pass with a regex that
+ * cannot backtrack across it, one pass building units, one building runs, and
+ * a clause scan bounded at `CLAUSE_WORDS` per cue. `detect()` as a whole is not
+ * linear in the number of matches, because `resolveOverlaps` is not.
  */
 
 const SINGLES = new Map<string, number>([
@@ -224,8 +225,8 @@ function tokenise(text: string): Token[] {
 }
 
 interface Unit {
-  /** The value of each unit, in order: `[38]` for "thirty-eight", `[9, 9]` for "double nine". */
-  readonly values: readonly number[]
+  /** Each unit's digits, in order: `['38']` for "thirty-eight", `['9', '9']` for "double nine". */
+  readonly digits: readonly string[]
   /** False only for an ASCII digit group. */
   readonly spoken: boolean
   /** How many words it was said in, for the clause bound. */
@@ -241,29 +242,46 @@ interface Item {
   readonly unit?: Unit
 }
 
-const isSingle = (value: number) => value < 10
+const isSingle = (digits: string) => digits.length === 1
 
-function singleAt(token: Token | undefined): number | undefined {
+function singleAt(token: Token | undefined): string | undefined {
   if (!token) return undefined
-  if (token.kind === 'digits') return token.text.length === 1 ? Number(token.text) : undefined
-  return token.kind === 'word' || token.kind === 'han' ? SINGLES.get(token.text) : undefined
+  if (token.kind === 'digits') return isSingle(token.text) ? token.text : undefined
+  if (token.kind !== 'word' && token.kind !== 'han') return undefined
+  return SINGLES.get(token.text)?.toString()
 }
 
 /** The token after `i`, across whitespace or one hyphen, as a compound is said. */
 const joined = (tokens: readonly Token[], i: number) =>
   tokens[i + 1]?.text === '-' ? i + 2 : i + 1
 
+const spokenUnit = (digits: number[], words: number, next: number): Unit => ({
+  digits: digits.map(String),
+  spoken: true,
+  words,
+  next,
+})
+
+/**
+ * An ASCII digit group is one unit whatever its length, so "38, 39, 38" is
+ * three readings and never nine single digits. A group written against a letter
+ * is part of a word, as in SpO2 or B12, and is no unit at all.
+ */
+function digitGroupAt(tokens: readonly Token[], i: number, token: Token): Unit | undefined {
+  const before = tokens[i - 1]
+  const after = tokens[i + 1]
+  if (before?.kind === 'word' && before.end === token.start) return undefined
+  if (after?.kind === 'word' && after.start === token.end) return undefined
+  return { digits: [token.text], spoken: false, words: 1, next: i + 1 }
+}
+
 function unitAt(tokens: readonly Token[], i: number, previous: Item | undefined): Unit | undefined {
   const token = tokens[i]
   if (!token) return undefined
-  if (token.kind === 'digits') {
-    return { values: [...token.text].map(Number), spoken: false, words: 1, next: i + 1 }
-  }
+  if (token.kind === 'digits') return digitGroupAt(tokens, i, token)
   if (token.kind === 'han') {
     const value = SINGLES.get(token.text)
-    return value === undefined
-      ? undefined
-      : { values: [value], spoken: true, words: 1, next: i + 1 }
+    return value === undefined ? undefined : spokenUnit([value], 1, i + 1)
   }
   if (token.kind !== 'word') return undefined
   const word = token.text
@@ -271,9 +289,9 @@ function unitAt(tokens: readonly Token[], i: number, previous: Item | undefined)
   const times = REPEATS.get(word)
   if (times !== undefined) {
     const j = joined(tokens, i)
-    const value = singleAt(tokens[j])
-    if (value === undefined) return undefined
-    return { values: Array(times).fill(value), spoken: true, words: 2, next: j + 1 }
+    const digit = singleAt(tokens[j])
+    if (digit === undefined) return undefined
+    return { digits: Array(times).fill(digit), spoken: true, words: 2, next: j + 1 }
   }
 
   const tens = ENGLISH_TENS.get(word)
@@ -282,38 +300,36 @@ function unitAt(tokens: readonly Token[], i: number, previous: Item | undefined)
     // from counting as single digits. "ten one" is never a compound.
     const j = joined(tokens, i)
     const ones = tokens[j]?.kind === 'word' ? ENGLISH_ONES.get(tokens[j]?.text ?? '') : undefined
-    if (ones !== undefined) return { values: [tens + ones], spoken: true, words: 2, next: j + 1 }
-    return { values: [tens], spoken: true, words: 1, next: i + 1 }
+    if (ones !== undefined) return spokenUnit([tens + ones], 2, j + 1)
+    return spokenUnit([tens], 1, i + 1)
   }
 
   const teen = ENGLISH_TEENS.get(word) ?? MALAY_TEENS.get(word)
-  if (teen !== undefined) return { values: [teen], spoken: true, words: 1, next: i + 1 }
+  if (teen !== undefined) return spokenUnit([teen], 1, i + 1)
 
   const multiplier = MALAY_MULTIPLIERS.get(word)
   if (multiplier !== undefined) {
     const j = joined(tokens, i)
     const after = tokens[j]
     if (after?.kind === 'word' && after.text === 'belas') {
-      return { values: [10 + multiplier], spoken: true, words: 2, next: j + 1 }
+      return spokenUnit([10 + multiplier], 2, j + 1)
     }
     if (after?.kind === 'word' && after.text === 'puluh') {
       const k = joined(tokens, j)
       const ones = tokens[k]?.kind === 'word' ? MALAY_ONES.get(tokens[k]?.text ?? '') : undefined
-      if (ones !== undefined) {
-        return { values: [multiplier * 10 + ones], spoken: true, words: 3, next: k + 1 }
-      }
-      return { values: [multiplier * 10], spoken: true, words: 2, next: j + 1 }
+      if (ones !== undefined) return spokenUnit([multiplier * 10 + ones], 3, k + 1)
+      return spokenUnit([multiplier * 10], 2, j + 1)
     }
   }
 
   const single = SINGLES.get(word)
-  if (single !== undefined) return { values: [single], spoken: true, words: 1, next: i + 1 }
+  if (single !== undefined) return spokenUnit([single], 1, i + 1)
 
   // "sama" ("same") repeats a single said directly before it, with nothing but
   // whitespace between. Anywhere else it is an ordinary Malay word.
-  const last = previous?.unit?.values.at(-1)
+  const last = previous?.unit?.digits.at(-1)
   if (word === 'sama' && previous?.unit?.next === i && last !== undefined && isSingle(last)) {
-    return { values: [last], spoken: true, words: 1, next: i + 1 }
+    return { digits: [last], spoken: true, words: 1, next: i + 1 }
   }
   return undefined
 }
@@ -336,24 +352,31 @@ function itemise(tokens: readonly Token[]): Item[] {
   return items
 }
 
-export interface SpokenDigitRun {
+interface Counts {
+  /** How many units it holds. An ASCII digit group is one unit. */
+  readonly units: number
+  /** How many of those are a number word, not an ASCII digit group. */
+  readonly spoken: number
+}
+
+export interface SpokenDigitRun extends Counts {
   readonly start: number
   readonly end: number
   /** The digits the run spells, "9047222" for "sembilan zero empat tujuh dua dua sama". */
   readonly digits: string
-  /** How many units it holds. An ASCII digit counts as one single unit. */
-  readonly units: number
-  /** How many of those are a single digit, zero to nine. */
+  /** How many units are a single digit, zero to nine. */
   readonly singles: number
+  /** How many are a number word of two digits or more, as "thirty-eight" or "sepuluh". */
+  readonly compounds: number
   /** Every step +1, or every step -1, which is counting rather than an identifier. */
   readonly progression: boolean
 }
 
-export interface SpokenNumberClause {
+export interface SpokenNumberClause extends Counts {
   readonly start: number
   readonly end: number
-  /** How many units it holds, counted as in `SpokenDigitRun`. */
-  readonly units: number
+  /** How many ordinary words it took in on the way to its last number word. */
+  readonly fragments: number
 }
 
 function isProgression(values: readonly number[]): boolean {
@@ -363,15 +386,29 @@ function isProgression(values: readonly number[]): boolean {
   return values.every((value, i) => i === 0 || value - (values[i - 1] ?? 0) === step)
 }
 
+function count(members: readonly Item[]): Counts {
+  let units = 0
+  let spoken = 0
+  for (const { unit } of members) {
+    units += unit?.digits.length ?? 0
+    if (unit?.spoken) spoken += unit.digits.length
+  }
+  return { units, spoken }
+}
+
 function describeRun(run: readonly Item[]): SpokenDigitRun {
-  const values = run.flatMap((item) => item.unit?.values ?? [])
+  const units = run.flatMap((item) => item.unit?.digits ?? [])
+  const compounds = run.flatMap((item) =>
+    item.unit?.spoken ? item.unit.digits.filter((digits) => !isSingle(digits)) : [],
+  )
   return {
+    ...count(run),
     start: run[0]?.start ?? 0,
     end: run.at(-1)?.end ?? 0,
-    digits: values.join(''),
-    units: values.length,
-    singles: values.filter(isSingle).length,
-    progression: isProgression(values),
+    digits: units.join(''),
+    singles: units.filter(isSingle).length,
+    compounds: compounds.length,
+    progression: isProgression(units.map(Number)),
   }
 }
 
@@ -381,7 +418,7 @@ const isWordLike = (item: Item) => item.token.kind === 'word' || item.token.kind
  * Runs of units: one unit, then any number more, each separated from the last
  * by whitespace and at most one separator.
  *
- * A run made only of ASCII digits is never reported, so text whose numbers are
+ * A run holding no number word is never reported, so text whose numbers are all
  * written as digits produces nothing here and passes the gate exactly as it did
  * before this module existed.
  */
@@ -445,49 +482,78 @@ function anchorAfter(items: readonly Item[], from: number): number | undefined {
   }
 }
 
+/** A run of this many units, or this many digits in all, is an identifier's worth. */
+const WHOLE_RUN = 9
+const WHOLE_DIGITS = 12
+
 /**
- * The clause from an anchor to whichever comes first: a breaker, an opener,
- * sentence punctuation, a line break or a minted token, a separator not
- * followed by a unit, or `CLAUSE_WORDS` words.
+ * The clause from an anchor to whichever comes first: a breaker, an opener, a
+ * word in `stops`, sentence punctuation, a line break or a minted token, a
+ * separator not followed by a unit, an ordinary word once an identifier's
+ * worth has been read, or `CLAUSE_WORDS` words.
  *
  * Ending on a unit, the whole clause is the reading, fragments included,
  * because a garbled reading is still the identifier. Ending on a word, only
  * the run at the anchor is: running on past a comma, an opener or the end of a
  * sentence into ordinary words is how #174 masked "500 mg".
+ *
+ * `stops` holds the other detectors' cue words. A fragment taken into the
+ * token takes its cue with it, and an address or a name that needed the cue to
+ * be found would then pass in clear.
  */
 function clauseFrom(
   items: readonly Item[],
   anchor: number,
   runs: readonly SpokenDigitRun[],
   runAt: ReadonlyMap<number, number>,
+  stops: ReadonlySet<string>,
 ): SpokenNumberClause | undefined {
   let words = 0
   let last = anchor
+  let run = 0
+  let longest = 0
+  let digits = 0
+  let fragments = 0
+  let fragmentsAtLast = 0
   for (let k = anchor; k < items.length; k++) {
     const item = items[k] as Item
     if (item.token.kind === 'separator') {
       if (items[k + 1]?.unit) continue
       break
     }
-    const size = item.unit?.words ?? 1
-    if (!item.unit && (!isWordLike(item) || BREAKERS.has(item.token.text))) break
-    if (!item.unit && OPENERS.has(item.token.text)) break
+    const { unit } = item
+    const size = unit?.words ?? 1
     if (words + size > CLAUSE_WORDS) break
+    if (unit) {
+      run += unit.digits.length
+      longest = Math.max(longest, run)
+      digits += unit.digits.join('').length
+      fragmentsAtLast = fragments
+    } else {
+      const text = item.token.text
+      if (!isWordLike(item) || BREAKERS.has(text) || OPENERS.has(text) || stops.has(text)) break
+      // A whole number already read: "pulse one oh two" after it is not more of it.
+      if (longest >= WHOLE_RUN || digits >= WHOLE_DIGITS) break
+      run = 0
+      fragments++
+    }
     words += size
     last = k
   }
 
   if (items[last]?.unit) {
     const members = items.slice(anchor, last + 1)
-    if (!members.some((item) => item.unit?.spoken)) return undefined
+    const counts = count(members)
+    if (counts.spoken === 0) return undefined
     return {
+      ...counts,
       start: items[anchor]?.start ?? 0,
       end: items[last]?.end ?? 0,
-      units: members.reduce((sum, item) => sum + (item.unit?.values.length ?? 0), 0),
+      fragments: fragmentsAtLast,
     }
   }
-  const run = runs[runAt.get(anchor) ?? -1]
-  return run && { start: run.start, end: run.end, units: run.units }
+  const at = runs[runAt.get(anchor) ?? -1]
+  return at && { start: at.start, end: at.end, units: at.units, spoken: at.spoken, fragments: 0 }
 }
 
 export interface SpokenNumberScan {
@@ -496,18 +562,28 @@ export interface SpokenNumberScan {
   readonly clauses: SpokenNumberClause[]
 }
 
+export interface ClauseCues {
+  /** Offsets where an identity cue ends. */
+  readonly cueEnds: readonly number[]
+  /** Lower-cased words that end a clause, the other detectors' cues. */
+  readonly stops: ReadonlySet<string>
+}
+
 /**
  * Runs of units in `text`, and the clause after each offset in `cueEnds` where
- * an identity cue ends. Neither is ever made only of ASCII digits.
+ * an identity cue ends. Neither is reported unless it holds a number word.
  */
-export function scanSpokenNumbers(text: string, cueEnds: readonly number[] = []): SpokenNumberScan {
+export function scanSpokenNumbers(
+  text: string,
+  { cueEnds, stops }: ClauseCues = { cueEnds: [], stops: new Set() },
+): SpokenNumberScan {
   const items = itemise(tokenise(text))
   const { runs, runAt } = buildRuns(items)
   const clauses: SpokenNumberClause[] = []
   for (const cueEnd of cueEnds) {
     const anchor = anchorAfter(items, firstItemFrom(items, cueEnd))
     if (anchor === undefined) continue
-    const clause = clauseFrom(items, anchor, runs, runAt)
+    const clause = clauseFrom(items, anchor, runs, runAt, stops)
     if (clause) clauses.push(clause)
   }
   return { runs, clauses }

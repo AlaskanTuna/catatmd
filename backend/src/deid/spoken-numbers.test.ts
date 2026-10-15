@@ -7,6 +7,8 @@ import { scanSpokenNumbers, spokenDigitRuns } from './spoken-numbers.js'
  * detector does with a run is pinned in `deid.test.ts`; these pin what a run is.
  */
 const digitsOf = (text: string) => spokenDigitRuns(text).map((run) => run.digits)
+/** Stands in for the other detectors' cue words, which the detector passes in. */
+const STOPS = new Set(['lives', 'phone'])
 
 describe('single-digit units', () => {
   it.each([
@@ -51,7 +53,7 @@ describe('multi-digit units', () => {
     ['tiga puluh lapan', '38'],
   ])('reads %j as one unit', (text, digits) => {
     expect(spokenDigitRuns(text)).toEqual([
-      expect.objectContaining({ digits, units: 1, singles: 0 }),
+      expect.objectContaining({ digits, units: 1, singles: 0, compounds: 1 }),
     ])
   })
 
@@ -93,9 +95,13 @@ describe('repeats', () => {
 })
 
 describe('ASCII digits', () => {
-  it('counts each ASCII digit as a single unit inside a mixed run', () => {
+  it('counts an ASCII digit group as one unit inside a mixed run', () => {
     expect(spokenDigitRuns('012 three four')).toEqual([
-      expect.objectContaining({ digits: '01234', units: 5, singles: 5 }),
+      expect.objectContaining({ digits: '01234', units: 3, singles: 2, spoken: 2, compounds: 0 }),
+    ])
+    // So a log of readings is never a run of single digits.
+    expect(spokenDigitRuns('38, 39, 38, 37, 38, two')).toEqual([
+      expect.objectContaining({ digits: '38393837382', units: 6, singles: 1, spoken: 1 }),
     ])
   })
 
@@ -103,6 +109,12 @@ describe('ASCII digits', () => {
     for (const text of ['012 345 6789', '900412086543', '500 mg', '120/80', '38.5']) {
       expect(spokenDigitRuns(text), text).toEqual([])
     }
+  })
+
+  it('takes no unit from a digit written against a letter', () => {
+    expect(digitsOf('SpO2 nine one, nine zero')).toEqual(['9190'])
+    expect(digitsOf('B12 one two')).toEqual(['12'])
+    expect(digitsOf('one two 3x daily')).toEqual(['12'])
   })
 })
 
@@ -161,7 +173,7 @@ describe('progressions', () => {
 describe('the clause after an identity cue', () => {
   const clauseAfter = (text: string, cue: string) => {
     const at = text.indexOf(cue) + cue.length
-    const [clause] = scanSpokenNumbers(text, [at]).clauses
+    const [clause] = scanSpokenNumbers(text, { cueEnds: [at], stops: STOPS }).clauses
     return clause && { text: text.slice(clause.start, clause.end), units: clause.units }
   }
 
@@ -211,12 +223,32 @@ describe('the clause after an identity cue', () => {
     expect(clauseAfter(fits, 'IC')?.text).toBe(fits.slice(3, -1))
   })
 
+  it('ends the clause at a word another detector reads as a cue', () => {
+    // The cue would go into the token, and what it marks would then pass.
+    expect(clauseAfter('My IC is nine she lives two.', 'IC')).toEqual({ text: 'nine', units: 1 })
+    expect(clauseAfter('IC nine zero phone two.', 'IC')?.text).toBe('nine zero')
+  })
+
+  it('ends the clause at the first word after a whole number has been read', () => {
+    expect(
+      clauseAfter('IC nine zero zero four one two zero eight six pulse one oh two', 'IC')?.text,
+    ).toBe('nine zero zero four one two zero eight six')
+    const twelve =
+      'IC nine zero zero four semak one two zero eight semak six five four three semak two'
+    expect(clauseAfter(twelve, 'IC')?.text).toBe(
+      'nine zero zero four semak one two zero eight semak six five four three',
+    )
+    // Below either, a garbled reading keeps its fragments.
+    const garbled = 'IC sembilan zero one empat two dua dua zero semak six semak empat tiga.'
+    expect(clauseAfter(garbled, 'IC')?.text).toBe(garbled.slice(3, -1))
+  })
+
   it('never reports a clause made only of ASCII digits', () => {
     expect(clauseAfter('IC saya 900412086543, doktor.', 'IC')).toBeUndefined()
   })
 })
 
-describe('linear time', () => {
+describe('time', () => {
   it.each([
     ['a long run', 'one '.repeat(100_000)],
     ['long gaps', `one${' '.repeat(200_000)}two`],
@@ -226,17 +258,17 @@ describe('linear time', () => {
     ['doubles', 'double '.repeat(100_000)],
     ['Mandarin', '一'.repeat(100_000)],
     ['ordinary words', 'semak '.repeat(100_000)],
-  ])('scans %s in linear time', (_shape, text) => {
+  ])('scans %s within a time budget', (_shape, text) => {
     const started = performance.now()
     spokenDigitRuns(text)
     expect(performance.now() - started).toBeLessThan(1_000)
   })
 
-  it('scans a clause after every one of many cues in linear time', () => {
+  it('scans a clause after every one of many cues within a time budget', () => {
     const text = 'IC number is nine semak '.repeat(40_000)
     const cues = [...text.matchAll(/IC/g)].map((m) => m.index + 2)
     const started = performance.now()
-    scanSpokenNumbers(text, cues)
+    scanSpokenNumbers(text, { cueEnds: cues, stops: STOPS })
     expect(performance.now() - started).toBeLessThan(1_000)
   })
 })
