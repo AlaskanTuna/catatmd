@@ -4,6 +4,7 @@ import {
   FIXTURES,
   LANGUAGE_SAMPLES,
   SPOKEN_IC_CUE,
+  SPOKEN_IC_DIGITS,
   SPOKEN_IC_READINGS,
   spokenIcSentence,
 } from '../fixtures/index.js'
@@ -1562,9 +1563,19 @@ describe('identifiers spoken as number words (#435)', () => {
   const readings = SPOKEN_IC_READINGS.map((reading, i) => ({ n: i + 1, reading }))
   const whole = readings.filter(({ n }) => !(n in PARTIAL) && !MISSED.includes(n))
 
-  it('holds the 28 measured readings, of which 18 tokenise whole, 4 partly and 6 not at all', () => {
+  it('holds the 28 measured readings of the synthetic IC in the fixture, in order', () => {
     expect(SPOKEN_IC_READINGS).toHaveLength(28)
-    expect([whole.length, Object.keys(PARTIAL).length, MISSED.length]).toEqual([18, 4, 6])
+    expect(new Set(SPOKEN_IC_READINGS).size).toBe(28)
+    expect(SPOKEN_IC_READINGS[0]).toBe(
+      'sembilan zero empat tujuh dua dua sama enam sembilan empat tiga',
+    )
+    expect(SPOKEN_IC_READINGS[27]).toBe('Semyonuarzborzpardre Byalusakas minum part tiga')
+    // The line they were read from, and kept out of the consultation corpus.
+    const source = FIXTURES.find((f) => f.id === 'urti-malay-red-flag')
+    const lines = source?.transcript.turns.map((turn) => turn.text) ?? []
+    expect(lines.some((line) => line.includes(`${SPOKEN_IC_CUE} ${SPOKEN_IC_DIGITS}.`))).toBe(true)
+    const corpus = FIXTURES.flatMap((f) => f.transcript.turns.map((turn) => turn.text)).join('\n')
+    expect(SPOKEN_IC_READINGS.filter((reading) => corpus.includes(reading))).toEqual([])
   })
 
   it.each(whole)('tokenises measured reading $n whole', ({ reading }) => {
@@ -1655,6 +1666,9 @@ describe('identifiers spoken as number words (#435)', () => {
     'BP 120 over 80.',
     'BP one twenty over eighty.',
     'Fever thirty-eight, thirty-nine, thirty-eight, thirty-seven, so I need a medical certificate.',
+    // Nine digits and more, past the cued band, with no single unit.
+    'Fever thirty-eight, thirty-nine, thirty-eight, thirty-seven, thirty-eight, so I need a medical certificate.',
+    'Demam tiga puluh lapan, tiga puluh sembilan, tiga puluh lapan, tiga puluh tujuh, tiga puluh lapan, tiga puluh sembilan.',
     'For the medical certificate: fever thirty-eight, then thirty-nine point five, two days.',
     '一天三次。',
     '体温三十八点五度。',
@@ -1674,6 +1688,18 @@ describe('identifiers spoken as number words (#435)', () => {
 
   it.each(PRECISION)('leaves %j unchanged', (sentence) => {
     expect(deidentify(sentence).text).toBe(sentence)
+  })
+
+  it.each([
+    'Her IC ends in one two three four five six.',
+    'Her IC ends in six five four three two one.',
+    'Her phone ends with one two three four five six.',
+  ])('leaves a counted progression beside a cue alone: %j', (sentence) => {
+    // KNOWN GAP, pinned deliberately. The cued six-to-eight band exempts a +/-1
+    // progression, because counting is what such a run usually is. Directly
+    // after an identity cue the cued rule still catches one ("IC six five...").
+    expect(deidentify(sentence).text).toBe(sentence)
+    expect(deidentify('IC six five four three two one.').text).toBe('IC [NRIC_1].')
   })
 
   it('still passes numbers read in pairs with no cue', () => {

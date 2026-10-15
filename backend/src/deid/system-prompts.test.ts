@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs'
+import { join, relative } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { GuidelineChunk } from '@shared/types'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -42,8 +45,44 @@ const SYSTEM_PROMPTS: [string, string][] = [
   ['draft_turns', DRAFT_TURNS_SYSTEM_PROMPT],
   ['transcript_cleanup', TRANSCRIPT_CLEANUP_SYSTEM_PROMPT],
   ['copilot', buildCopilotSystemPrompt('', [RETRIEVED])],
+  ['copilot, no guidance', buildCopilotSystemPrompt('', [])],
   ['copilot, signed', buildCopilotSystemPrompt('', [], { signed: true })],
 ]
+
+/*
+ * Every place a system prompt is handed to `LLMClient` (`system:`) or built
+ * for the copilot, pinned per file so a new prompt cannot arrive without a
+ * case above. The port's own declarations in `lib/llm/` are not call sites.
+ */
+const PROMPT_SITES: Record<string, number> = {
+  'analysis/index.ts': 2,
+  'analysis/live.ts': 1,
+  'copilot/index.ts': 1,
+  'draft-turns/index.ts': 1,
+  'suggestions/index.ts': 2,
+  'transcript-cleanup/index.ts': 1,
+}
+const SRC = fileURLToPath(new URL('../', import.meta.url))
+
+function promptSites(): Record<string, number> {
+  const found: Record<string, number> = {}
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) walk(path)
+      else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+        const file = relative(SRC, path).split('\\').join('/')
+        if (file.startsWith('lib/llm/') || file === 'copilot/prompt.ts') continue
+        const count = (
+          readFileSync(path, 'utf8').match(/\bsystem:|buildCopilotSystemPrompt\(/g) ?? []
+        ).length
+        if (count > 0) found[file] = count
+      }
+    }
+  }
+  walk(SRC)
+  return found
+}
 
 /*
  * A system prompt is checked at egress (`egress_system`) or gated whole before
@@ -54,5 +93,9 @@ const SYSTEM_PROMPTS: [string, string][] = [
 describe('the system prompts carry nothing the gate detects', () => {
   it.each(SYSTEM_PROMPTS)('finds nothing in the %s system prompt', (_operation, prompt) => {
     expect(detect(prompt)).toEqual([])
+  })
+
+  it('covers every place a system prompt is sent', () => {
+    expect(promptSites()).toEqual(PROMPT_SITES)
   })
 })

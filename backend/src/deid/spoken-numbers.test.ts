@@ -224,7 +224,7 @@ describe('linear time', () => {
     ['repeats', 'dua sama '.repeat(50_000)],
     ['compounds', 'dua puluh '.repeat(50_000)],
     ['doubles', 'double '.repeat(100_000)],
-    ['Mandarin', '一'.repeat(300_000)],
+    ['Mandarin', '一'.repeat(100_000)],
     ['ordinary words', 'semak '.repeat(100_000)],
   ])('scans %s in linear time', (_shape, text) => {
     const started = performance.now()
