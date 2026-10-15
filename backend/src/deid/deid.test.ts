@@ -1667,6 +1667,20 @@ describe('identifiers spoken as number words (#435)', () => {
       'My IC is nine zero zero four one two zero eight six er five four three, two tablets.',
       'My IC is [NRIC_1], two tablets.',
     ],
+    // Found in the final PHI review: a restart or a repeat, a pause on both
+    // sides of a hesitation, and a phone read in pairs after a phone cue.
+    [
+      'My IC is nine zero zero four one two, nine zero zero four one two, zero eight, four three.',
+      'My IC is [NRIC_1].',
+    ],
+    [
+      'My IC is nine zero zero four one two, uh, zero eight, six five four three.',
+      'My IC is [NRIC_1].',
+    ],
+    [
+      'My number is zero one ninety-three seventy-two eighty-four sixty-five.',
+      'My number is [PHONE_1].',
+    ],
     // Six to eight directly after a record cue, which names neither an IC nor
     // a phone, so the band above would leave it.
     ['MRN: seven two nine four five one.', 'MRN: [MRN_1].'],
@@ -1771,6 +1785,23 @@ describe('identifiers spoken as number words (#435)', () => {
     ).toBe('IC saya [NRIC_1] nama enam lima empat tiga.')
   })
 
+  it.each([
+    [
+      'Doctor: IC?\nPatient: nine zero zero four one two zero eight six five four three, sorry, six five four three.',
+      'Doctor: IC?\nPatient: [NRIC_1], sorry, six five four three.',
+    ],
+    [
+      "Doctor: what's your number?\nPatient: zero one ninety-three seventy-two eighty-four sixty-five.",
+      "Doctor: what's your number?\nPatient: zero one ninety-three seventy-two eighty-four sixty-five.",
+    ],
+  ])('still passes %j', (sentence, expected) => {
+    // KNOWN GAPS, pinned deliberately. A corrected tail after an ordinary word
+    // is a new reading with no cue, and a phone read in pairs in the next turn
+    // has no clause to anchor on: the question's cue reaches only the run rule,
+    // which wants four single digits.
+    expect(deidentify(sentence).text).toBe(expected)
+  })
+
   it('still passes numbers read in pairs with no cue', () => {
     // KNOWN BAD, pinned deliberately. Two single units where the run rule asks
     // for four; with "My IC is" in front, the cue rule catches it (above).
@@ -1816,11 +1847,26 @@ describe('identifiers spoken as number words (#435)', () => {
     // Mostly digit by digit, which is how a phone read with a pair is told
     // from a fever log read in pairs.
     ['Pulse one twenty, one eighteen, one oh two.', 'Pulse [PHONE_1].'],
+    // Found in the final clinical review: vital-sign logs mixing pairs and
+    // single digits, which only the model pass reads, since the rules engine
+    // carries no numeric cutoff. An open owner decision (docs/trd.md §9).
+    ['Sats ninety-two, nine one, nine zero, eighty-nine, eighty-eight.', 'Sats [MRN_1].'],
+    ['Temp three eight five, three eight nine, three nine one, thirty-eight.', 'Temp [MRN_1].'],
+    ['BP one three five eh eight five, one three two eh eight two.', 'BP [PHONE_1].'],
     // A cue in the question a turn answers, which is how "what's your
     // number?" reaches the number read back.
     [
       'Doctor: Do you have your IC?\nPatient: Temperature three eight five, three nine one.',
       'Doctor: Do you have your IC?\nPatient: Temperature [NRIC_1].',
+    ],
+    [
+      'Doctor: Did you check your oxygen on the phone app?\nPatient: Yes, nine one, nine zero, eight nine.',
+      'Doctor: Did you check your oxygen on the phone app?\nPatient: Yes, [PHONE_1].',
+    ],
+    // "your number" said of a reading.
+    [
+      "Doctor: What's your number on the oximeter?\nPatient: Eight nine, nine zero, eight eight.",
+      "Doctor: What's your number on the oximeter?\nPatient: [PHONE_1].",
     ],
   ])('tokenises %j, which is the price of the nine-digit rule', (sentence, expected) => {
     // KNOWN COST, pinned rather than fixed. The values come back on

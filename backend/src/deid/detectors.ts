@@ -563,10 +563,13 @@ const SPOKEN_PHONE_CUES = [
   'nombor awak',
   'nombor anda',
 ]
-const IDENTITY_CUE = new RegExp(
-  `${WORD_BEFORE}(?:${IDENTITY_CUES.map(escapeCue).join('|')})${WORD_AFTER}`,
-  'giu',
-)
+const cueRegExp = (cues: readonly string[]) =>
+  new RegExp(`${WORD_BEFORE}(?:${cues.map(escapeCue).join('|')})${WORD_AFTER}`, 'giu')
+/** The cues a cued clause may follow, and the label its reading takes. */
+const CLAUSE_CUES: readonly { pattern: RegExp; label: DetectorLabel }[] = [
+  { pattern: cueRegExp(IDENTITY_CUES), label: 'NRIC' },
+  { pattern: cueRegExp(SPOKEN_PHONE_CUES), label: 'PHONE' },
+]
 /*
  * Every word another detector reads as a cue ends a cued clause, so a fragment
  * taken into the token never takes a cue with it: "My IC is nine she lives
@@ -676,8 +679,13 @@ function longRunLabel(digits: string): DetectorLabel {
  * keeps its duration, or two with garbled fragments between them.
  */
 function detectSpokenNumbers(text: string): Match[] {
-  const cueEnds = [...text.matchAll(IDENTITY_CUE)].map((m) => m.index + m[0].length)
-  const { runs, clauses } = scanSpokenNumbers(text, { cueEnds, stops: CLAUSE_STOPS })
+  const cues = CLAUSE_CUES.flatMap(({ pattern, label }) =>
+    [...text.matchAll(pattern)].map((m) => ({ end: m.index + m[0].length, label })),
+  )
+  const { runs, clauses } = scanSpokenNumbers(text, {
+    cueEnds: cues.map((cue) => cue.end),
+    stops: CLAUSE_STOPS,
+  })
   const out: Match[] = []
   const emit = (label: DetectorLabel, span: { start: number; end: number }, score: number) => {
     out.push({
@@ -718,7 +726,8 @@ function detectSpokenNumbers(text: string): Match[] {
     // Two number words are a reading only with fragments between them, as a
     // garbled one has; with none they are as likely "two, three days".
     const floor = clause.fragments > 0 ? 2 : 3
-    if (clause.units >= floor && clause.spoken >= 2) emit('NRIC', clause, 0.85)
+    const label = cues[clause.cue]?.label
+    if (label && clause.units >= floor && clause.spoken >= 2) emit(label, clause, 0.85)
   }
   return out
 }

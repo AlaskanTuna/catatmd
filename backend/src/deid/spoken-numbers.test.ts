@@ -103,8 +103,8 @@ describe('ASCII digits', () => {
     expect(spokenDigitRuns('38, 39, 38, 37, 38, two')).toEqual([
       expect.objectContaining({ digits: '38393837382', units: 6, singles: 1, spoken: 1 }),
     ])
-    // And past an IC's twelve digits a separator starts the next thing said.
-    expect(digitsOf('900412-08-6543, two three')).toEqual(['23'])
+    // And after a whole reading, ", two tablets" is the next thing said.
+    expect(digitsOf('900412-08-6543, two tablets')).toEqual(['2'])
   })
 
   it('never reports a run made only of ASCII digits', () => {
@@ -245,14 +245,16 @@ describe('the clause after an identity cue', () => {
 
   it('reads a hesitation inside a reading as a pause', () => {
     expect(digitsOf('nine zero uh zero four erm one two')).toEqual(['900412'])
-    expect(digitsOf('nine zero uh, zero four')).toEqual(['90', '04'])
+    expect(digitsOf('nine zero, uh, zero four')).toEqual(['9004'])
+    expect(digitsOf('nine zero, uh, - zero four')).toEqual(['90', '04'])
   })
 
-  it('starts a new run at a separator once an IC has been read', () => {
-    expect(digitsOf('nine zero zero four one two zero eight six five four three, two')).toEqual([
-      '900412086543',
-      '2',
-    ])
+  it('ends a whole reading at a separator before a dose, and only there', () => {
+    const ic = 'nine zero zero four one two zero eight six five four three'
+    expect(digitsOf(`${ic}, two tablets`)).toEqual(['900412086543', '2'])
+    // A restart or a repeated group is still the reading.
+    expect(digitsOf(`${ic}, six five four three.`)).toEqual(['9004120865436543'])
+    expect(digitsOf(`nine zero zero four one two, ${ic}.`)).toEqual(['900412900412086543'])
   })
 
   it('never reports a clause made only of ASCII digits', () => {

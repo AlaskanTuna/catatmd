@@ -222,7 +222,7 @@ function tokenise(text: string): Token[] {
           : pause || SEPARATORS.has(whole)
             ? 'separator'
             : 'mark'
-    const normal = kind === 'word' ? whole.toLowerCase().replace(/’/g, "'") : whole
+    const normal = kind === 'word' || pause ? whole.toLowerCase().replace(/’/g, "'") : whole
     tokens.push({ kind, text: normal, start: m.index, end: m.index + whole.length })
   }
   return tokens
@@ -379,6 +379,8 @@ export interface SpokenDigitRun extends Counts {
 }
 
 export interface SpokenNumberClause extends Counts {
+  /** Which of the cues passed in it follows, by index. */
+  readonly cue: number
   readonly start: number
   readonly end: number
   /** How many ordinary words it took in on the way to its last number word. */
@@ -424,16 +426,45 @@ function describeRun(run: readonly Item[]): SpokenDigitRun {
 
 const isWordLike = (item: Item) => item.token.kind === 'word' || item.token.kind === 'han'
 
-/** An IC's length, the longest identifier read here. Past it, a separator starts something else. */
+/** An IC's length. Once a cued clause has read this many, an ordinary word ends it. */
 const WHOLE_DIGITS = 12
+/** The fewest digits any rule here reads as an identifier. */
+const READING_DIGITS = 9
 
-/** Two units are one reading across whitespace and at most one separator. */
-const joinsAcross = (items: readonly Item[], from: number, to: number) =>
-  to === from + 1 || (to === from + 2 && items[from + 1]?.token.kind === 'separator')
+/**
+ * The first item past a gap starting at `from`: one separator, or hesitations
+ * with at most one punctuation mark either side ("nine, uh, zero"). `undefined`
+ * when the gap holds more.
+ */
+function pastGap(items: readonly Item[], from: number): number | undefined {
+  let punctuation = 0
+  let hesitations = 0
+  let k = from
+  for (; items[k]?.token.kind === 'separator'; k++) {
+    if (HESITATIONS.has(items[k]?.token.text ?? '')) hesitations++
+    else punctuation++
+  }
+  return punctuation <= (hesitations > 0 ? 2 : 1) ? k : undefined
+}
+
+/*
+ * One number word and then an ordinary word, as in "..., two tablets". After
+ * a whole reading and a separator, that is the next thing said, not more of it.
+ */
+const isDoseAt = (items: readonly Item[], k: number) => {
+  const after = items[k + 1]
+  return after !== undefined && !after.unit && isWordLike(after)
+}
+
+/** Whether the unit at `to` continues the reading that has `digits` digits and ends at `from`. */
+function continues(items: readonly Item[], from: number, to: number, digits: number): boolean {
+  if (pastGap(items, from + 1) !== to) return false
+  return to === from + 1 || digits < READING_DIGITS || !isDoseAt(items, to)
+}
 
 /**
  * Runs of units: one unit, then any number more, each separated from the last
- * by whitespace and at most one separator.
+ * by whitespace, hesitations and at most one other separator.
  *
  * A run holding no number word is never reported, so text whose numbers are all
  * written as digits produces nothing here and passes the gate exactly as it did
@@ -457,9 +488,7 @@ function buildRuns(items: readonly Item[]): { runs: SpokenDigitRun[]; runAt: Map
   items.forEach((item, k) => {
     if (!item.unit) return
     const last = current.at(-1)
-    const continues =
-      last !== undefined && joinsAcross(items, last, k) && (last === k - 1 || digits < WHOLE_DIGITS)
-    if (!continues) {
+    if (last === undefined || !continues(items, last, k, digits)) {
       flush()
       digits = 0
     }
@@ -487,9 +516,10 @@ function firstItemFrom(items: readonly Item[], offset: number): number {
  * no anchor.
  */
 function anchorAfter(items: readonly Item[], from: number): number | undefined {
-  let k = from
+  let k: number | undefined = from
   for (let fillers = 0; ; fillers++) {
-    if (items[k]?.token.kind === 'separator') k++
+    k = pastGap(items, k)
+    if (k === undefined) return undefined
     const item = items[k]
     if (!item) return undefined
     if (item.unit) return k
@@ -524,7 +554,7 @@ function clauseFrom(
   runs: readonly SpokenDigitRun[],
   runAt: ReadonlyMap<number, number>,
   stops: ReadonlySet<string>,
-): SpokenNumberClause | undefined {
+): Omit<SpokenNumberClause, 'cue'> | undefined {
   let words = 0
   let last = anchor
   let digits = 0
@@ -533,9 +563,11 @@ function clauseFrom(
   for (let k = anchor; k < items.length; k++) {
     const item = items[k] as Item
     if (item.token.kind === 'separator') {
-      // Past an IC's worth of digits, "..., two tablets" is the next thing said.
-      if (items[k + 1]?.unit && digits < WHOLE_DIGITS) continue
-      break
+      const next = pastGap(items, k)
+      if (next === undefined || !items[next]?.unit) break
+      if (items[k - 1]?.unit && !continues(items, k - 1, next, digits)) break
+      k = next - 1
+      continue
     }
     const { unit } = item
     const size = unit?.words ?? 1
@@ -577,7 +609,7 @@ export interface SpokenNumberScan {
 }
 
 export interface ClauseCues {
-  /** Offsets where an identity cue ends. */
+  /** Offsets where a cue ends. */
   readonly cueEnds: readonly number[]
   /** Lower-cased words that end a clause, the other detectors' cues. */
   readonly stops: ReadonlySet<string>
@@ -585,7 +617,7 @@ export interface ClauseCues {
 
 /**
  * Runs of units in `text`, and the clause after each offset in `cueEnds` where
- * an identity cue ends. Neither is reported unless it holds a number word.
+ * a cue ends. Neither is reported unless it holds a number word.
  */
 export function scanSpokenNumbers(
   text: string,
@@ -594,12 +626,12 @@ export function scanSpokenNumbers(
   const items = itemise(tokenise(text))
   const { runs, runAt } = buildRuns(items)
   const clauses: SpokenNumberClause[] = []
-  for (const cueEnd of cueEnds) {
+  cueEnds.forEach((cueEnd, cue) => {
     const anchor = anchorAfter(items, firstItemFrom(items, cueEnd))
-    if (anchor === undefined) continue
+    if (anchor === undefined) return
     const clause = clauseFrom(items, anchor, runs, runAt, stops)
-    if (clause) clauses.push(clause)
-  }
+    if (clause) clauses.push({ ...clause, cue })
+  })
   return { runs, clauses }
 }
 
