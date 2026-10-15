@@ -1637,6 +1637,36 @@ describe('identifiers spoken as number words (#435)', () => {
     // Three to five, only directly after a record cue.
     ['MRN tujuh dua sembilan.', 'MRN [MRN_1].'],
     ['Registration no. seven two nine four.', 'Registration no. [MRN_1].'],
+    // Found in the second PHI review: a phone or IC read with a pair, after a
+    // possessive cue, in answer to a question, or with no cue at all.
+    [
+      'My number is oh one two, three four five, sixty-seven eighty-nine.',
+      'My number is [PHONE_1].',
+    ],
+    [
+      'Nombor saya kosong satu dua tiga empat lima enam, lapan puluh sembilan.',
+      'Nombor saya [PHONE_1].',
+    ],
+    [
+      'Doctor: what is your number?\nPatient: oh one two, three four five, sixty-seven, eighty-nine.',
+      'Doctor: what is your number?\nPatient: [PHONE_1].',
+    ],
+    [
+      'Patient: nine zero zero four one two, zero eight, sixty-five forty-three.',
+      'Patient: [NRIC_1].',
+    ],
+    ['Nine zero zero four twelve zero eight six five four three is my IC.', '[NRIC_1] is my IC.'],
+    // Partly in digits, and with a hesitation inside the reading.
+    ['My IC is 90041208654 three.', 'My IC is [NRIC_1].'],
+    ['My phone is 012 345 67 eight nine.', 'My phone is [PHONE_1].'],
+    [
+      'My IC is nine zero zero four one two zero eight six uh five four three.',
+      'My IC is [NRIC_1].',
+    ],
+    [
+      'My IC is nine zero zero four one two zero eight six er five four three, two tablets.',
+      'My IC is [NRIC_1], two tablets.',
+    ],
     // Six to eight directly after a record cue, which names neither an IC nor
     // a phone, so the band above would leave it.
     ['MRN: seven two nine four five one.', 'MRN: [MRN_1].'],
@@ -1730,6 +1760,17 @@ describe('identifiers spoken as number words (#435)', () => {
     expect(deidentify('IC six five four three two one.').text).toBe('IC [NRIC_1].')
   })
 
+  it('still passes the digits after a stop word said inside a reading', () => {
+    // KNOWN PARTIAL, pinned deliberately. "nama" is a name cue, so the clause
+    // ends there rather than take it into the token, and the reading's last
+    // four digits pass. A cue swallowed whole would hide the name after it.
+    expect(
+      deidentify(
+        'IC saya sembilan kosong kosong empat satu dua kosong lapan nama enam lima empat tiga.',
+      ).text,
+    ).toBe('IC saya [NRIC_1] nama enam lima empat tiga.')
+  })
+
   it('still passes numbers read in pairs with no cue', () => {
     // KNOWN BAD, pinned deliberately. Two single units where the run rule asks
     // for four; with "My IC is" in front, the cue rule catches it (above).
@@ -1753,6 +1794,10 @@ describe('identifiers spoken as number words (#435)', () => {
       'Count with me: one, two, three, four, five, six, seven, eight, nine.',
       'Count with me: [PHONE_1].',
     ],
+    [
+      'Count with me: one, two, three, four, five, six, seven, eight, nine, ten.',
+      'Count with me: [MRN_1].',
+    ],
     ['一二三四五六七八九十', '[PHONE_1]十'],
     // Readings said digit by digit, nine digits and more in one breath.
     [
@@ -1768,15 +1813,19 @@ describe('identifiers spoken as number words (#435)', () => {
       'Bring your IC. Pulse one one two, one oh eight, one oh four.',
       'Bring your IC. Pulse [PHONE_1].',
     ],
+    // Mostly digit by digit, which is how a phone read with a pair is told
+    // from a fever log read in pairs.
+    ['Pulse one twenty, one eighteen, one oh two.', 'Pulse [PHONE_1].'],
+    // A cue in the question a turn answers, which is how "what's your
+    // number?" reaches the number read back.
+    [
+      'Doctor: Do you have your IC?\nPatient: Temperature three eight five, three nine one.',
+      'Doctor: Do you have your IC?\nPatient: Temperature [NRIC_1].',
+    ],
   ])('tokenises %j, which is the price of the nine-digit rule', (sentence, expected) => {
     // KNOWN COST, pinned rather than fixed. The values come back on
     // rehydration, so the note is right; what the model reads is not.
     expect(deidentify(sentence).text).toBe(expected)
-  })
-
-  it('leaves counting to ten alone, because ten is a number word of two digits', () => {
-    const sentence = 'Count with me: one, two, three, four, five, six, seven, eight, nine, ten.'
-    expect(deidentify(sentence).text).toBe(sentence)
   })
 
   it.each([

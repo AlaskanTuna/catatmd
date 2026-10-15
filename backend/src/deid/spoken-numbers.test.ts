@@ -103,6 +103,8 @@ describe('ASCII digits', () => {
     expect(spokenDigitRuns('38, 39, 38, 37, 38, two')).toEqual([
       expect.objectContaining({ digits: '38393837382', units: 6, singles: 1, spoken: 1 }),
     ])
+    // And past an IC's twelve digits a separator starts the next thing said.
+    expect(digitsOf('900412-08-6543, two three')).toEqual(['23'])
   })
 
   it('never reports a run made only of ASCII digits', () => {
@@ -229,18 +231,28 @@ describe('the clause after an identity cue', () => {
     expect(clauseAfter('IC nine zero phone two.', 'IC')?.text).toBe('nine zero')
   })
 
-  it('ends the clause at the first word after a whole number has been read', () => {
+  it('ends the clause at the first word or separator after an IC has been read', () => {
+    const ic = 'nine zero zero four one two zero eight six five four three'
+    expect(clauseAfter(`IC ${ic} pulse one oh two`, 'IC')?.text).toBe(ic)
+    expect(clauseAfter(`IC ${ic}, two tablets`, 'IC')?.text).toBe(ic)
+    // Short of that, a hesitation inside a reading is part of it.
     expect(
-      clauseAfter('IC nine zero zero four one two zero eight six pulse one oh two', 'IC')?.text,
-    ).toBe('nine zero zero four one two zero eight six')
-    const twelve =
-      'IC nine zero zero four semak one two zero eight semak six five four three semak two'
-    expect(clauseAfter(twelve, 'IC')?.text).toBe(
-      'nine zero zero four semak one two zero eight semak six five four three',
-    )
-    // Below either, a garbled reading keeps its fragments.
+      clauseAfter('IC nine zero zero four one two zero eight six uh five four three.', 'IC')?.text,
+    ).toBe('nine zero zero four one two zero eight six uh five four three')
     const garbled = 'IC sembilan zero one empat two dua dua zero semak six semak empat tiga.'
     expect(clauseAfter(garbled, 'IC')?.text).toBe(garbled.slice(3, -1))
+  })
+
+  it('reads a hesitation inside a reading as a pause', () => {
+    expect(digitsOf('nine zero uh zero four erm one two')).toEqual(['900412'])
+    expect(digitsOf('nine zero uh, zero four')).toEqual(['90', '04'])
+  })
+
+  it('starts a new run at a separator once an IC has been read', () => {
+    expect(digitsOf('nine zero zero four one two zero eight six five four three, two')).toEqual([
+      '900412086543',
+      '2',
+    ])
   })
 
   it('never reports a clause made only of ASCII digits', () => {

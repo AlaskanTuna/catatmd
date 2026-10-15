@@ -542,11 +542,27 @@ const IDENTITY_CUES = [
   'identity',
 ]
 /*
- * Nouns only, for the same reason. "the number on the thermometer", "Call us if
- * the oximeter shows nine two" and "Any close contact?" are routine in a URTI
- * consultation, so "number", "call" and "contact" never mark a spoken run.
+ * Nouns, and "number" only where it is someone's, for the same reason. "the
+ * number on the thermometer", "Call us if the oximeter shows nine two" and
+ * "Any close contact?" are routine in a URTI consultation, so a bare "number",
+ * "call" and "contact" never mark a spoken run. "call me" is left out too: it
+ * opens safety-netting ("call me if it goes nine two") as often as a number.
  */
-const SPOKEN_PHONE_CUES = ['phone', 'telephone', 'handphone', 'hp', 'mobile', 'telefon']
+const SPOKEN_PHONE_CUES = [
+  'phone',
+  'telephone',
+  'handphone',
+  'hp',
+  'mobile',
+  'telefon',
+  'my number',
+  'your number',
+  'contact number',
+  'number saya',
+  'nombor saya',
+  'nombor awak',
+  'nombor anda',
+]
 const IDENTITY_CUE = new RegExp(
   `${WORD_BEFORE}(?:${IDENTITY_CUES.map(escapeCue).join('|')})${WORD_AFTER}`,
   'giu',
@@ -575,18 +591,37 @@ const MRN_CUE_BEFORE = new RegExp(String.raw`\b(?:${MRN_CUE_WORDS})\b[:\s.#-]*$`
 const directlyAfterMrnCue = (text: string, start: number) =>
   MRN_CUE_BEFORE.test(text.slice(Math.max(0, start - CONTEXT_WINDOW), start))
 
-const SENTENCE_END = /[.!?;\n。！？；]/g
+const SENTENCE_ENDS = new Set(['.', '!', ';', '\n', '。', '！', '；'])
+const QUESTION_MARKS = new Set(['?', '？'])
+
+function previousNonSpace(text: string, at: number): string {
+  for (let i = at - 1; i >= 0; i--) if (!/\s/.test(text[i] ?? '')) return text[i] ?? ''
+  return ''
+}
 
 /*
- * What a spoken run's cue may sit in: its own sentence, up to where the run
- * starts. `scoreWith` looks both ways across sentences and turns, which a digit
- * run can afford and a run of number words cannot: "Thanks for the IC.
- * Temperature three eight five, three nine one" is a temperature.
+ * What a spoken run's cue may sit in: its own sentence up to where the run
+ * starts, and the question before it when it answers one ("Doctor: what's your
+ * number?\nPatient: oh one two..."). `scoreWith` looks both ways across
+ * sentences and turns, which a digit run can afford and a run of number words
+ * cannot: "Thanks for the IC. Temperature three eight five, three nine one" is
+ * a temperature.
  */
 function sentenceBefore(text: string, start: number): string {
-  const window = text.slice(Math.max(0, start - CONTEXT_WINDOW), start)
-  const ends = [...window.matchAll(SENTENCE_END)]
-  return window.slice((ends.at(-1)?.index ?? -1) + 1)
+  const from = Math.max(0, start - CONTEXT_WINDOW)
+  let answered = false
+  for (let i = start - 1; i >= from; i--) {
+    const c = text[i] ?? ''
+    if (QUESTION_MARKS.has(c)) {
+      if (answered) return text.slice(i + 1, start)
+      answered = true
+    } else if (SENTENCE_ENDS.has(c)) {
+      // The line break after a question belongs to it.
+      if (c === '\n' && QUESTION_MARKS.has(previousNonSpace(text, i))) continue
+      return text.slice(i + 1, start)
+    }
+  }
+  return text.slice(from, start)
 }
 
 function spokenCueLabel(text: string, start: number): DetectorLabel | undefined {
@@ -607,27 +642,31 @@ function longRunLabel(digits: string): DetectorLabel {
  *
  * Batch transcription never wrote the synthetic IC as digits in 32 results, so
  * every detector above reads past it. Two rules, because neither alone covers
- * what came back. Neither fires on fewer than two number words, so a dose word
- * beside a digit identifier ("RN 4521 two tablets") is left alone.
+ * what came back. Neither fires on fewer than two number words, short of a
+ * cued reading of nine digits or more, so a dose word beside a digit
+ * identifier ("RN 4521 two tablets") is left alone.
  *
  * **The run rule** reads the digits a run of number words spells:
  *
- * - **Nine or more, said digit by digit with at least four single units:**
- *   always an identifier. No progression exemption, because the corpus phone
- *   read aloud, "zero one two three four five six seven eight nine", is itself
- *   one. Counting aloud to ten pays for that.
+ * - **Nine or more, mostly digit by digit:** at least four single units and
+ *   more singles than two-digit number words. Always an identifier. No
+ *   progression exemption, because the corpus phone read aloud, "zero one two
+ *   three four five six seven eight nine", is itself one. Counting aloud to
+ *   nine pays for that.
  * - **Three to eight, every unit a single digit, directly after a record cue:**
  *   MRN. The plan stops this band at five; it runs to eight here because "MRN"
  *   names neither an IC nor a phone, so the cued band below would leave a
  *   six-digit record number read out after it in clear.
  * - **Six or more, at least four single units, after an identity or phone
- *   cue earlier in its own sentence:** that cue's label. Six to eight must not be a progression. Nine or
- *   more lands here when it holds a number word of two digits, because a fever
- *   log read "thirty-nine five, thirty-nine eight, thirty-nine one" is twelve
- *   digits too.
+ *   cue earlier in its own sentence or the question it answers:** that cue's
+ *   label. Six to eight must not be a progression. Nine or more lands here
+ *   when two-digit words are at least half of it, because a fever log read
+ *   "thirty-nine five, thirty-nine eight, thirty-nine one" is twelve digits
+ *   too, one pair and one single per reading.
  *
- * Single units are the precision bound, and an ASCII digit group is one unit
- * whatever its length, so "38, 39, 38, 37, 38, two days" is not ten digits.
+ * Single units are the precision bound, and outside a cue an ASCII digit
+ * group is one unit whatever its length, so "38, 39, 38, 37, 38, two days" is
+ * not ten single digits.
  *
  * **The cued rule** catches what a run cannot: many readings mix languages,
  * insert fillers ("sama", "semak") or decay into phonetic fragments that break
@@ -651,18 +690,29 @@ function detectSpokenNumbers(text: string): Match[] {
   }
 
   for (const run of runs) {
-    if (run.spoken < 2) continue
     const length = run.digits.length
-    if (length >= 9 && run.singles >= 4 && run.compounds === 0) {
+    const twoWords = run.spoken >= 2
+    if (twoWords && length >= 9 && run.singles >= 4 && run.singles > run.compounds) {
       // Below the cued rule's 0.85, so the same span read after a cue is NRIC.
       emit(longRunLabel(run.digits), run, 0.8)
-    } else if (length >= 3 && run.singles === run.units && directlyAfterMrnCue(text, run.start)) {
-      emit('MRN', run, 0.8)
-    } else if (length >= 6 && run.singles >= 4 && (length >= 9 || !run.progression)) {
-      // Base 0.3 clears `ACCEPT_THRESHOLD` only with a cue before it.
-      const label = spokenCueLabel(text, run.start)
-      if (label) emit(label, run, 0.3 + CONTEXT_BOOST)
+      continue
     }
+    if (
+      twoWords &&
+      length >= 3 &&
+      run.singles === run.units &&
+      directlyAfterMrnCue(text, run.start)
+    ) {
+      emit('MRN', run, 0.8)
+      continue
+    }
+    // Under a cue each ASCII digit counts as a single, as a reading half
+    // written in digits ("My IC is 90041208654 three") is still one reading.
+    const singles = run.singles + run.asciiDigits
+    if (length < 6 || singles < 4 || (length <= 8 && (run.progression || !twoWords))) continue
+    // Base 0.3 clears `ACCEPT_THRESHOLD` only with a cue before it.
+    const label = spokenCueLabel(text, run.start)
+    if (label) emit(label, run, 0.3 + CONTEXT_BOOST)
   }
   for (const clause of clauses) {
     // Two number words are a reading only with fragments between them, as a

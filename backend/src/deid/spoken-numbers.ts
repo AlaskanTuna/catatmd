@@ -139,6 +139,9 @@ const BREAKERS = new Set([
 /** At most one of these may sit in the gap between two units. */
 const SEPARATORS = new Set([',', '-', '–', '/', ':', '，', '：', '、'])
 
+/** A hesitation inside a reading is a pause, and counts as its gap's one separator. */
+const HESITATIONS = new Set(['uh', 'um', 'umm', 'er', 'erm', 'ah', 'eh'])
+
 /** Words that may sit between an identity cue and the reading it introduces. */
 const FILLERS = new Set([
   'number',
@@ -209,13 +212,14 @@ function tokenise(text: string): Token[] {
   const tokens: Token[] = []
   for (const m of text.matchAll(TOKEN)) {
     const [whole, han, digits, word] = m
+    const pause = word !== undefined && HESITATIONS.has(word.toLowerCase())
     const kind: TokenKind = han
       ? 'han'
       : digits
         ? 'digits'
-        : word
+        : word && !pause
           ? 'word'
-          : SEPARATORS.has(whole)
+          : pause || SEPARATORS.has(whole)
             ? 'separator'
             : 'mark'
     const normal = kind === 'word' ? whole.toLowerCase().replace(/’/g, "'") : whole
@@ -368,6 +372,8 @@ export interface SpokenDigitRun extends Counts {
   readonly singles: number
   /** How many are a number word of two digits or more, as "thirty-eight" or "sepuluh". */
   readonly compounds: number
+  /** How many digits it holds that were written as ASCII digits. */
+  readonly asciiDigits: number
   /** Every step +1, or every step -1, which is counting rather than an identifier. */
   readonly progression: boolean
 }
@@ -408,11 +414,22 @@ function describeRun(run: readonly Item[]): SpokenDigitRun {
     digits: units.join(''),
     singles: units.filter(isSingle).length,
     compounds: compounds.length,
+    asciiDigits: run.reduce(
+      (sum, item) => sum + (item.unit?.spoken ? 0 : item.end - item.start),
+      0,
+    ),
     progression: isProgression(units.map(Number)),
   }
 }
 
 const isWordLike = (item: Item) => item.token.kind === 'word' || item.token.kind === 'han'
+
+/** An IC's length, the longest identifier read here. Past it, a separator starts something else. */
+const WHOLE_DIGITS = 12
+
+/** Two units are one reading across whitespace and at most one separator. */
+const joinsAcross = (items: readonly Item[], from: number, to: number) =>
+  to === from + 1 || (to === from + 2 && items[from + 1]?.token.kind === 'separator')
 
 /**
  * Runs of units: one unit, then any number more, each separated from the last
@@ -436,14 +453,18 @@ function buildRuns(items: readonly Item[]): { runs: SpokenDigitRun[]; runAt: Map
     current = []
   }
 
+  let digits = 0
   items.forEach((item, k) => {
     if (!item.unit) return
     const last = current.at(-1)
     const continues =
-      last !== undefined &&
-      (last === k - 1 || (last === k - 2 && items[k - 1]?.token.kind === 'separator'))
-    if (!continues) flush()
+      last !== undefined && joinsAcross(items, last, k) && (last === k - 1 || digits < WHOLE_DIGITS)
+    if (!continues) {
+      flush()
+      digits = 0
+    }
     current.push(k)
+    digits += item.unit.digits.join('').length
   })
   flush()
   return { runs, runAt }
@@ -482,15 +503,11 @@ function anchorAfter(items: readonly Item[], from: number): number | undefined {
   }
 }
 
-/** A run of this many units, or this many digits in all, is an identifier's worth. */
-const WHOLE_RUN = 9
-const WHOLE_DIGITS = 12
-
 /**
  * The clause from an anchor to whichever comes first: a breaker, an opener, a
  * word in `stops`, sentence punctuation, a line break or a minted token, a
- * separator not followed by a unit, an ordinary word once an identifier's
- * worth has been read, or `CLAUSE_WORDS` words.
+ * separator not followed by a unit it joins, an ordinary word once an IC's
+ * worth of digits has been read, or `CLAUSE_WORDS` words.
  *
  * Ending on a unit, the whole clause is the reading, fragments included,
  * because a garbled reading is still the identifier. Ending on a word, only
@@ -510,31 +527,28 @@ function clauseFrom(
 ): SpokenNumberClause | undefined {
   let words = 0
   let last = anchor
-  let run = 0
-  let longest = 0
   let digits = 0
   let fragments = 0
   let fragmentsAtLast = 0
   for (let k = anchor; k < items.length; k++) {
     const item = items[k] as Item
     if (item.token.kind === 'separator') {
-      if (items[k + 1]?.unit) continue
+      // Past an IC's worth of digits, "..., two tablets" is the next thing said.
+      if (items[k + 1]?.unit && digits < WHOLE_DIGITS) continue
       break
     }
     const { unit } = item
     const size = unit?.words ?? 1
     if (words + size > CLAUSE_WORDS) break
     if (unit) {
-      run += unit.digits.length
-      longest = Math.max(longest, run)
       digits += unit.digits.join('').length
       fragmentsAtLast = fragments
     } else {
       const text = item.token.text
       if (!isWordLike(item) || BREAKERS.has(text) || OPENERS.has(text) || stops.has(text)) break
-      // A whole number already read: "pulse one oh two" after it is not more of it.
-      if (longest >= WHOLE_RUN || digits >= WHOLE_DIGITS) break
-      run = 0
+      // A whole IC already read: "pulse one oh two" after it is not more of it.
+      // Short of that, a hesitation ("uh") inside a reading is.
+      if (digits >= WHOLE_DIGITS) break
       fragments++
     }
     words += size
