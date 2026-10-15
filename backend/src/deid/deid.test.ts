@@ -1,6 +1,12 @@
 import type { Transcript } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { FIXTURES, LANGUAGE_SAMPLES } from '../fixtures/index.js'
+import {
+  FIXTURES,
+  LANGUAGE_SAMPLES,
+  SPOKEN_IC_CUE,
+  SPOKEN_IC_READINGS,
+  spokenIcSentence,
+} from '../fixtures/index.js'
 import { MEDICATION_LEXICON } from '../medications/lexicon.js'
 import { detect } from './detectors.js'
 import { GIVEN_NAMES, HONORIFICS, NAME_STOPWORDS } from './gazetteer.js'
@@ -1035,14 +1041,18 @@ describe('sliceDeidentified', () => {
   })
 
   it('cuts only on whitespace, so every piece is a substring of the whole', () => {
-    const content = gated('one two three four five six seven eight nine ten eleven twelve')
+    const content = gated(
+      'cough fever sore throat runny nose headache chills fatigue nausea rash wheeze',
+    )
     for (const piece of sliceDeidentified(content, 20)) {
       expect(content).toContain(piece)
     }
   })
 
   it('loses no word across the cuts', () => {
-    const content = gated('one two three four five six seven eight nine ten eleven twelve')
+    const content = gated(
+      'cough fever sore throat runny nose headache chills fatigue nausea rash wheeze',
+    )
     const words = (text: string) => text.split(/\s+/).filter(Boolean)
     expect(sliceDeidentified(content, 20).flatMap(words)).toEqual(words(content))
   })
@@ -1530,5 +1540,194 @@ describe('names in Chinese and Tamil script are found by their cues (#418)', () 
 
   it('lets the egress guard refuse a payload that kept a cued name', () => {
     expect(() => assertNoIdentifiers('我叫陈美玲' as never, 'note_and_gaps')).toThrow(/PATIENT/)
+  })
+})
+
+/*
+ * Identifiers read aloud and written as number words (#435, docs/trd.md §9,
+ * "Spoken Digit Runs"). Batch `scribe_v2` never returned the synthetic IC as
+ * digits in 32 results, so a gate reading only digit patterns would pass every
+ * one of them to the model in cleartext. Synthetic numbers throughout.
+ */
+describe('identifiers spoken as number words (#435)', () => {
+  /** Reading number (1-based, as measured) to the tail the transcriber's comma leaves in clear. */
+  const PARTIAL: Record<number, string> = {
+    6: ', biola sangkas minum part tiga',
+    11: ', A lalu S lalu kas minum empat tiga',
+    12: ', bia husan kas minum part tiga',
+    13: ', biawak sangkar enam empat tiga',
+  }
+  /** Phonetic fragments with no number word after the cue at all. */
+  const MISSED = [23, 24, 25, 26, 27, 28]
+  const readings = SPOKEN_IC_READINGS.map((reading, i) => ({ n: i + 1, reading }))
+  const whole = readings.filter(({ n }) => !(n in PARTIAL) && !MISSED.includes(n))
+
+  it('holds the 28 measured readings, of which 18 tokenise whole, 4 partly and 6 not at all', () => {
+    expect(SPOKEN_IC_READINGS).toHaveLength(28)
+    expect([whole.length, Object.keys(PARTIAL).length, MISSED.length]).toEqual([18, 4, 6])
+  })
+
+  it.each(whole)('tokenises measured reading $n whole', ({ reading }) => {
+    const sentence = spokenIcSentence(reading)
+    const { text, vault } = deidentify(sentence)
+    expect(text).toBe(`${SPOKEN_IC_CUE} [NRIC_1].`)
+    expect(vault.rehydrate(text)).toBe(sentence)
+  })
+
+  it.each(Object.entries(PARTIAL).map(([n, tail]) => ({ n: Number(n), tail })))(
+    'tokenises measured reading $n up to the comma, and pins the tail it leaves',
+    ({ n, tail }) => {
+      // KNOWN PARTIAL. The cue-anchored clause ends at a comma before an ordinary
+      // word, because running on past one is how #174 masked "500 mg". What the
+      // transcriber put after the comma is one to three garbled digits.
+      const sentence = spokenIcSentence(SPOKEN_IC_READINGS[n - 1] ?? '')
+      const { text, vault } = deidentify(sentence)
+      expect(text).toBe(`${SPOKEN_IC_CUE} [NRIC_1]${tail}.`)
+      expect(vault.rehydrate(text)).toBe(sentence)
+    },
+  )
+
+  it.each(MISSED)(
+    'mints no number token for measured reading %i, which has no number word to anchor on',
+    (n) => {
+      // KNOWN BAD, pinned deliberately. The reading decayed into phonetic
+      // fragments, so nothing after the cue is a number word and no rule here
+      // can tell it from ordinary speech.
+      //
+      // Readings 26 to 28 open on two capitalised fragments, which the "saya"
+      // introducer takes for a name. That is the name detector's accident, not
+      // a catch, and "minum part tiga" still passes either way.
+      const sentence = spokenIcSentence(SPOKEN_IC_READINGS[n - 1] ?? '')
+      const expected = n >= 26 ? sentence.replace(/[A-Z]\w+ [A-Z]\w+/, '[PATIENT_1]') : sentence
+      expect(deidentify(sentence).text).toBe(expected)
+    },
+  )
+
+  const RECALL = [
+    // The IC read in English, and in Malay with and without a cue.
+    ['My IC is nine zero zero four one two zero eight six five four three.', 'My IC is [NRIC_1].'],
+    [
+      'IC saya sembilan kosong kosong empat satu dua kosong lapan enam lima empat tiga, doktor.',
+      'IC saya [NRIC_1], doktor.',
+    ],
+    ['Sembilan kosong kosong empat satu dua kosong lapan enam lima empat tiga.', '[NRIC_1].'],
+    // The corpus phone (`urti-identifier-dense-routine`), read aloud.
+    [
+      'And your contact number is still zero one two three four five six seven eight nine?',
+      'And your contact number is still [PHONE_1]?',
+    ],
+    ['我的身份证号码是九零零四一二零八六五四三。', '我的身份证号码是[NRIC_1]。'],
+    // Digits and words mixed in one reading.
+    ['My IC is 900412 zero eight six five four three.', 'My IC is [NRIC_1].'],
+    ['Call me at 012 three four five six seven eight nine.', 'Call me at [PHONE_1].'],
+    // Six to eight digits, tokenised only beside a cue, under the cue's label.
+    ['Her IC ends in seven two nine four five one.', 'Her IC ends in [NRIC_1].'],
+    ['Her phone ends with three nine four two seven one.', 'Her phone ends with [PHONE_1].'],
+    // Three to five, only directly after a record cue.
+    ['MRN tujuh dua sembilan.', 'MRN [MRN_1].'],
+    ['Registration no. seven two nine four.', 'Registration no. [MRN_1].'],
+    // Six to eight directly after a record cue, which names neither an IC nor
+    // a phone, so the band above would leave it.
+    ['MRN: seven two nine four five one.', 'MRN: [MRN_1].'],
+    // Read in pairs, caught only because the cue anchors the clause.
+    [
+      'My IC is eighty-five, oh five, twenty-three, fourteen, fifty-six, seventy-seven.',
+      'My IC is [NRIC_1].',
+    ],
+  ] as const
+
+  it.each(RECALL)('tokenises %j', (sentence, expected) => {
+    const { text, vault } = deidentify(sentence)
+    expect(text).toBe(expected)
+    expect(vault.rehydrate(text)).toBe(sentence)
+  })
+
+  /*
+   * The precision half. Each of these is the clinical content dose, age,
+   * duration and vital-sign checks reason over, so tokenising any of it
+   * degrades the model red-flag pass in the false-negative direction.
+   */
+  const PRECISION = [
+    'Makan ubat ini tiga kali sehari.',
+    'I need two days MC.',
+    'Temperature was thirty-eight point two last night.',
+    'Paracetamol 500 mg.',
+    'BP 120 over 80.',
+    'BP one twenty over eighty.',
+    'Fever thirty-eight, thirty-nine, thirty-eight, thirty-seven, so I need a medical certificate.',
+    'For the medical certificate: fever thirty-eight, then thirty-nine point five, two days.',
+    '一天三次。',
+    '体温三十八点五度。',
+    'Breathe in, one, two, three… and out.',
+    'At the clinic, take one tablet three times a day for five days.',
+    'Bring your IC and come back in two or three days.',
+    'IC tiga hari lagi siap.',
+    'Satu, dua, tiga, empat, lima, enam, tarik nafas.',
+    'Cough for two to three weeks, fever for four days.',
+    'Umur dua puluh lima tahun, demam tiga hari.',
+    'Take two tablets, then one tablet every four hours.',
+    'Pain score seven out of ten.',
+    'MRN pending, she is sixty-five years old.',
+    'MRN unknown so I gave five hundred mg.',
+    'The scores were seven two nine four five one.',
+  ]
+
+  it.each(PRECISION)('leaves %j unchanged', (sentence) => {
+    expect(deidentify(sentence).text).toBe(sentence)
+  })
+
+  it('still passes numbers read in pairs with no cue', () => {
+    // KNOWN BAD, pinned deliberately. Two single units where the run rule asks
+    // for four; with "My IC is" in front, the cue rule catches it (above).
+    const sentence = 'Eighty-five, oh five, twenty-three, fourteen, fifty-six, seventy-seven.'
+    expect(deidentify(sentence).text).toBe(sentence)
+  })
+
+  it('still passes an IC read in Tamil number words', () => {
+    // KNOWN BAD, pinned deliberately. There is no Tamil number table, and
+    // `SCRIPT` deliberately does not read Tamil (#391).
+    const sentence =
+      'என் அடையாள அட்டை எண் ஒன்பது பூஜ்ஜியம் பூஜ்ஜியம் நான்கு ஒன்று இரண்டு பூஜ்ஜியம் எட்டு ஆறு ஐந்து நான்கு மூன்று.'
+    expect(deidentify(sentence).text).toBe(sentence)
+  })
+
+  it('tokenises counting aloud to ten, which is the price of the nine-digit rule', () => {
+    // KNOWN COST, pinned rather than fixed. Nine single units always tokenise,
+    // with no progression exemption, because the corpus phone read aloud is
+    // itself a progression: "zero one two three four five six seven eight nine".
+    expect(
+      deidentify('Count with me: one, two, three, four, five, six, seven, eight, nine, ten.').text,
+    ).toBe('Count with me: [MRN_1].')
+  })
+
+  it('leaves the egress guard nothing to find after every case', () => {
+    const cases = [
+      ...SPOKEN_IC_READINGS.map(spokenIcSentence),
+      ...RECALL.map(([sentence]) => sentence),
+      ...PRECISION,
+    ]
+    for (const sentence of cases) {
+      expect(() => assertNoIdentifiers(deidentify(sentence).text, 'op'), sentence).not.toThrow()
+    }
+  })
+
+  it('lets the egress guard refuse a spoken identifier, naming the label only', () => {
+    const smuggled = 'My IC is nine zero zero four one two zero eight six five four three' as never
+    expect(() => assertNoIdentifiers(smuggled, 'note_and_gaps')).toThrow(/NRIC/)
+    try {
+      assertNoIdentifiers(smuggled, 'note_and_gaps')
+    } catch (error) {
+      expect(String(error)).not.toMatch(/nine|zero/)
+    }
+  })
+
+  it.each([
+    ['one long run', 'nine zero '.repeat(15_000)],
+    ['cues with no anchor', 'IC number is semak '.repeat(7_000)],
+    ['cues with a one-unit clause', 'IC tiga hari lagi. '.repeat(7_000)],
+  ])('detects over %s in linear time', (_shape, text) => {
+    const started = performance.now()
+    detect(text)
+    expect(performance.now() - started).toBeLessThan(2_000)
   })
 })
