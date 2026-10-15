@@ -9,6 +9,7 @@ import {
   analyzeRateLimit,
   audioReadRateLimit,
   audioWriteRateLimit,
+  batchSessionRateLimit,
   dictationSessionRateLimit,
   draftTurnsRateLimit,
   ephemeralAnalyzeRateLimit,
@@ -19,6 +20,7 @@ import {
   liveFlagsRateLimit,
   liveSessionRateLimit,
   prescriptionParseRateLimit,
+  refinementCheckRateLimit,
   settingsWriteRateLimit,
   transcriptCorrectionsRateLimit,
 } from './middleware/rate-limit.js'
@@ -117,6 +119,11 @@ export function createApp() {
   // body they read is already parsed (#356).
   app.post('/api/asr/live-sessions', liveSessionRateLimit)
   app.post('/api/asr/live-sessions', dictationSessionRateLimit)
+  // Refinement after Stop (#436): the mint for the one upload, and the rules
+  // check that decides whether its transcript is kept. Beside the live mint
+  // because they extend the same egress decision, each on its own bucket.
+  app.post('/api/asr/batch-sessions', batchSessionRateLimit)
+  app.post('/api/asr/refinement-check', refinementCheckRateLimit)
   // The two live panes, bucketed apart because they cost different things
   // (#219). Flags run the rules engine in-process and spend no model budget, so
   // they get a cadence-sized allowance; the fold is an LLM call and gets a

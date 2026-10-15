@@ -35,6 +35,13 @@ export type AudioSettings = {
    * needs the per-consultation gesture on the Record tab (#254).
    */
   engine: TranscriptionEngine
+  /**
+   * Whether an untranslated ambient transcript is refined after Stop (#436,
+   * docs/trd.md §20.14), when the API offers it. A device preference, not
+   * consent: refinement runs only while this consultation's tick is held, and
+   * this switch can only ever turn the second upload off.
+   */
+  refineAfterStop: boolean
 }
 
 export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
@@ -50,6 +57,9 @@ export const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
   // On-device is the floor: audio never leaves the machine unless the doctor
   // has gone out of their way to move the engine to ILMU.
   engine: 'local',
+  // On by default, on the owner's decision (16/10/26), with this switch as the
+  // per-device opt-out.
+  refineAfterStop: true,
 }
 
 const KEY = 'catatmd.audio'
@@ -68,6 +78,10 @@ export function loadAudioSettings(): AudioSettings {
       // Read positively for the value that sends: anything unrecognised,
       // absent or corrupted falls to on-device.
       engine: value.engine === 'hosted' ? 'hosted' : 'local',
+      // Absent is on, for a device that saved before this existed. Present and
+      // anything but `true` is off, so a corrupted value fails toward the
+      // doctor's opt-out rather than back to the upload.
+      refineAfterStop: value.refineAfterStop === undefined || value.refineAfterStop === true,
     }
   } catch {
     /*

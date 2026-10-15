@@ -32,11 +32,39 @@ describe('loadAudioSettings', () => {
       suppressNoise: false,
       boostQuietSpeech: true,
       engine: 'local',
+      refineAfterStop: false,
     }
     saveAudioSettings(settings)
 
     expect(loadAudioSettings()).toEqual(settings)
   })
+
+  /*
+   * Refinement after Stop (#436) defaults on, with a per-device opt-out. A
+   * device that saved its settings before the choice existed carries no key,
+   * and absent reads as on; anything stored that is not exactly `true` reads
+   * as the opt-out, because a corrupted value must not quietly re-enable an
+   * egress a doctor turned off.
+   */
+  it('reads an absent refinement choice as on', () => {
+    const { refineAfterStop: _absent, ...older } = DEFAULT_AUDIO_SETTINGS
+    localStorage.setItem('catatmd.audio', JSON.stringify(older))
+
+    expect(DEFAULT_AUDIO_SETTINGS.refineAfterStop).toBe(true)
+    expect(loadAudioSettings().refineAfterStop).toBe(true)
+  })
+
+  it.each([false, 'true', 1, null, 'yes'])(
+    'reads a stored refinement choice of %j as off',
+    (stored) => {
+      localStorage.setItem(
+        'catatmd.audio',
+        JSON.stringify({ ...DEFAULT_AUDIO_SETTINGS, refineAfterStop: stored }),
+      )
+
+      expect(loadAudioSettings().refineAfterStop).toBe(false)
+    },
+  )
 
   /*
    * The review page's dictation-engine choice was removed on 06/10/26
@@ -102,6 +130,7 @@ describe('toConstraints', () => {
         suppressNoise: true,
         boostQuietSpeech: false,
         engine: 'local',
+        refineAfterStop: true,
       }),
     ).toEqual({ noiseSuppression: true, autoGainControl: false, echoCancellation: true })
   })

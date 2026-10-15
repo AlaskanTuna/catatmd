@@ -156,6 +156,12 @@ export function CapturePanel({
    * A live session still wins, so this can never unmount one.
    */
   const [ambientUnavailable, setAmbientUnavailable] = useState(false)
+  /*
+   * Whether the API offers refinement after Stop (#436), as the ambient panel's
+   * config probe reported it, so the Audio dialog shows its switch only where
+   * the switch does something.
+   */
+  const [refinementAvailable, setRefinementAvailable] = useState(false)
   const showAmbient = (captureMode === 'ambient' && !ambientUnavailable) || ambientLive
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>(TABS[0].id)
   const audioDialog = useRef<HTMLDialogElement>(null)
@@ -200,6 +206,16 @@ export function CapturePanel({
   const translatedLanguages = useRef<InterpretedLanguage[]>([])
 
   /*
+   * Whether any recording was uploaded for refinement after Stop, and whether
+   * any refined transcript was used (#436). Both only ever widen, like the
+   * provenance stamp: a later pass that uploaded nothing does not make the
+   * earlier upload not have happened, and the trail reads this from the
+   * submitted transcript.
+   */
+  const batchUploaded = useRef(false)
+  const batchUsed = useRef(false)
+
+  /*
    * `labelsReviewed` says whether a person stands behind the speaker on every
    * turn, and the red-flag engine reads it before it is willing to drop a
    * trigger hit (shared/src/index.ts). True on Paste only, because the doctor
@@ -223,6 +239,7 @@ export function CapturePanel({
       turns: withUncertainty,
       labelsReviewed: nextSource === 'paste',
       ...(languages.length > 0 ? { machineTranslation: { languages: [...languages] } } : {}),
+      ...(batchUploaded.current ? { batchTranscription: { used: batchUsed.current } } : {}),
     })
   }
 
@@ -305,6 +322,7 @@ export function CapturePanel({
     otherLanguages,
     translation,
     audio: recording,
+    batchTranscription,
   }: {
     text: string
     segments: readonly MarkedSegment[]
@@ -313,6 +331,7 @@ export function CapturePanel({
     otherLanguages?: readonly (OtherLanguage | null)[]
     translation?: InterpretedLanguage
     audio?: Blob
+    batchTranscription?: { used: boolean }
   }) => {
     /*
      * Appended, never replacing what is already there. A doctor may
@@ -469,6 +488,10 @@ export function CapturePanel({
     if (translation !== undefined && !translatedLanguages.current.includes(translation)) {
       translatedLanguages.current = [...translatedLanguages.current, translation]
     }
+    if (batchTranscription !== undefined) {
+      batchUploaded.current = true
+      batchUsed.current = batchUsed.current || batchTranscription.used
+    }
     submitText(nextText, nextSource)
   }
 
@@ -531,6 +554,7 @@ export function CapturePanel({
           settings={audio}
           onApply={setAudio}
           ambient={showAmbient}
+          refinementAvailable={refinementAvailable}
         />
       )}
 
@@ -581,6 +605,8 @@ export function CapturePanel({
                 }}
                 onLiveSegments={onLiveSegments}
                 deviceId={audio.deviceId}
+                refineAfterStop={audio.refineAfterStop}
+                onRefinementAvailable={setRefinementAvailable}
                 conversationExpanded={conversationExpanded}
                 onConversationExpandedChange={onConversationExpandedChange}
                 prompter={prompter}

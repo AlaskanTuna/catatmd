@@ -1,4 +1,7 @@
 import {
+  BATCH_ASR_UPLOAD_URL,
+  BatchSessionRequestSchema,
+  BatchSessionSchema,
   DraftTurnsRequestSchema,
   DraftTurnsResponseSchema,
   InterpretedLanguageSchema,
@@ -6,16 +9,26 @@ import {
   LiveAsrModeSchema,
   LiveSessionRequestSchema,
   LiveSessionSchema,
+  RefinementCheckRequestSchema,
+  RefinementCheckResponseSchema,
+  type Transcript,
 } from '@shared/types'
 import { type NextFunction, type Request, type Response, Router } from 'express'
 import {
   type AsrRelayFailureReason,
+  type BatchSessionFailureReason,
   type LiveSessionFailureReason,
   recordAuditEvent,
 } from '../audit/index.js'
 import { env } from '../config/env.js'
 import { DeidentificationError, deidentify } from '../deid/index.js'
 import { DraftTurnsError, draftTurns } from '../draft-turns/index.js'
+import {
+  batchRefinementConfig,
+  ElevenLabsMintError,
+  getBatchAsrDescriptor,
+  mintBatchToken,
+} from '../lib/asr/elevenlabs.js'
 import { getAsrDescriptor, IlmuRelayError, transcribeWithIlmu } from '../lib/asr/ilmu.js'
 import {
   getLiveAsrDescriptor,
@@ -30,6 +43,7 @@ import { HttpError } from '../lib/http-error.js'
 import { getLLMDescriptor } from '../lib/llm/index.js'
 import { logger } from '../lib/logger.js'
 import { inFlightGate, parseAudioBody } from '../middleware/audio-body.js'
+import { ALL_REDFLAG_TRIGGERS, evaluateRedFlags } from '../redflags/index.js'
 
 export const asrRouter = Router()
 
@@ -257,6 +271,12 @@ asrRouter.get('/live-sessions/config', requireSonioxConfigured, (req, res) => {
         ? liveSessionConfig(mode.data)
         : translatedAmbientConfig(translation.data),
     availableTranslations: mode.data === 'ambient' ? [...InterpretedLanguageSchema.options] : [],
+    // Refinement after Stop is granted for untranslated ambient only (#436,
+    // docs/trd.md §20.14), so every other config stays byte-identical. Absent,
+    // rather than false, keeps it so.
+    ...(mode.data === 'ambient' && translation.data === undefined && env.ELEVENLABS_API_KEY
+      ? { batchRefinement: true }
+      : {}),
   })
   // A failure here is a configuration defect, not a caller error: the shared
   // schema refuses a socket address the browser would also refuse.
@@ -411,6 +431,203 @@ asrRouter.post('/live-sessions', requireSonioxConfigured, async (req, res) => {
 
     throw new HttpError(failure.status, failure.code, failure.message)
   }
+})
+
+/**
+ * Feature gate for refinement after Stop, mirroring `requireSonioxConfigured`:
+ * a deployment without the batch key answers 503 before minting anything, and
+ * the SPA keeps the live transcript. Production is inert until the account
+ * holder sets the key (docs/trd.md §20.14).
+ */
+function requireElevenLabsConfigured(_req: Request, _res: Response, next: NextFunction) {
+  if (!env.ELEVENLABS_API_KEY) {
+    next(new HttpError(503, 'asr_unavailable', 'Transcript refinement is not available.'))
+    return
+  }
+  next()
+}
+
+/**
+ * Fixed responses per mint failure, the live mint's mapping. `rejected` reads
+ * as plain unavailability because it means our own key was refused.
+ */
+const BATCH_FAILURE_RESPONSES: Record<
+  BatchSessionFailureReason,
+  { status: number; code: string; message: string }
+> = {
+  rejected: {
+    status: 503,
+    code: 'asr_unavailable',
+    message: 'Transcript refinement is not available.',
+  },
+  rate_limited: {
+    status: 429,
+    code: 'rate_limited',
+    message: 'Too many refinement requests. Please retry shortly.',
+  },
+  unavailable: {
+    status: 502,
+    code: 'asr_failed',
+    message: 'Transcript refinement could not start.',
+  },
+}
+
+/*
+ * Mints the single-use token that uploads one finished ambient recording for
+ * refinement after Stop (#436, docs/trd.md §20.14).
+ *
+ * **This route never receives audio**, for the reason the live mint gives and
+ * one of its own: a relay through `/api/*` would meet Vercel's 120 s
+ * time-to-first-byte cap on a long consultation (§17). So the browser uploads
+ * straight to the vendor, and what stays here is the policy: an authenticated
+ * session, the asserted consent, a bounded duration the client states, a
+ * per-caller limiter, a credential that is not the account key, the settings
+ * the upload must use, and an audit row written before the response.
+ *
+ * The audit contract is the live mint's. Pre-flight rejections (401, 400, 429
+ * and the unconfigured 503) write no row; once `mintBatchToken` is called,
+ * exactly one of the two events is written before any response leaves.
+ */
+asrRouter.post('/batch-sessions', requireElevenLabsConfigured, async (req, res) => {
+  const actor = doctorId(req)
+
+  const parsed = BatchSessionRequestSchema.safeParse(req.body)
+  if (!parsed.success) {
+    // Static text per cause, never the value.
+    const consentIssue = parsed.error.issues.some((issue) => issue.path[0] === 'consent')
+    throw new HttpError(
+      400,
+      'invalid_body',
+      consentIssue
+        ? 'Consent for this consultation is required.'
+        : 'A recording duration within the refinement bound is required.',
+    )
+  }
+
+  const { durationSeconds } = parsed.data
+  const { model } = getBatchAsrDescriptor()
+  const startedAt = performance.now()
+
+  // Built before anything is minted, as on the live mint, so a config that
+  // cannot be built fails before a token exists that no row recorded.
+  const config = batchRefinementConfig()
+
+  try {
+    const { token } = await mintBatchToken()
+
+    // Parsed before the audit row: a recorded success must never be followed
+    // by a body the client would refuse.
+    const body = BatchSessionSchema.safeParse({
+      provider: 'elevenlabs',
+      uploadUrl: BATCH_ASR_UPLOAD_URL,
+      token,
+      config,
+    })
+    if (!body.success) {
+      throw new ElevenLabsMintError('Minted batch session failed schema validation', 'unavailable')
+    }
+
+    // Before the response and unguarded: a failed audit write fails the
+    // request, so a token the trail did not record is never observable.
+    await recordAuditEvent({
+      action: 'asr.batch_session_minted',
+      actorId: actor,
+      metadata: {
+        model,
+        // What the client said the recording runs to. Unverifiable, which is
+        // why it is bounded by the schema and recorded rather than trusted.
+        durationSeconds,
+        // The schema requires the ambient tick, so this is always the
+        // assertion the body made, never a default the route chose.
+        consentAsserted: parsed.data.consent,
+      },
+    })
+
+    // A credential, so never cached, exactly as the live mint.
+    res.setHeader('Cache-Control', 'no-store')
+
+    logger.info('batch asr session minted', {
+      actorId: actor,
+      outcome: 'ok',
+      durationMs: Math.round(performance.now() - startedAt),
+      model,
+      status: 200,
+    })
+
+    res.json(body.data)
+  } catch (error) {
+    if (!(error instanceof ElevenLabsMintError)) throw error
+
+    const failure = BATCH_FAILURE_RESPONSES[error.reason]
+
+    await recordAuditEvent({
+      action: 'asr.batch_session_failed',
+      actorId: actor,
+      metadata: { reason: error.reason },
+    })
+
+    logger.warn('batch asr session failed', {
+      actorId: actor,
+      outcome: 'error',
+      durationMs: Math.round(performance.now() - startedAt),
+      model,
+      status: failure.status,
+    })
+
+    throw new HttpError(failure.status, failure.code, failure.message)
+  }
+})
+
+/**
+ * The transcript the rules engine reads for one side of a refinement check.
+ *
+ * **Every field but the text is the server's.** `source` gates the measured
+ * Malay confusables, `labelsReviewed` the question-denial suppression, and
+ * `speaker` the doctor-only safety-netting reading; each can only ever weaken
+ * the engine, so none is the client's to send. No turn has a role yet at this
+ * point, so every one is read as the patient's on both sides alike, which turns
+ * the safety-netting reading off and can only make the check fire more.
+ */
+const asCheckedTranscript = (turns: readonly string[]): Transcript => ({
+  source: 'asr_live',
+  labelsReviewed: false,
+  turns: turns.map((text) => ({ speaker: 'patient', text })),
+})
+
+/** The rule ids a transcript raises over every trigger there is. */
+const firedRuleIds = (transcript: Transcript): Set<string> =>
+  new Set(evaluateRedFlags(transcript, ALL_REDFLAG_TRIGGERS).map((flag) => flag.ruleId ?? flag.id))
+
+/*
+ * Whether a refined transcript would lose a rule hit the live one raised (#436).
+ *
+ * The SPA keeps the live transcript on any loss, so this is the gate between a
+ * refined transcript and the doctor. **Differential, not positional**, for the
+ * reason `transcript-cleanup/policy.ts` records: whether a match becomes a flag
+ * depends on text outside its span, so the only sound question is whether a
+ * rule that fired before fires after. **The trigger set is chosen here, never
+ * passed in**, also from that file: a profile is a filtered slice, and
+ * `ALL_REDFLAG_TRIGGERS` can only over-protect.
+ *
+ * In-process and model-free, so it writes no audit row, the precedent being
+ * `POST /consultations/:id/live-flags`: nothing egresses and nothing is stored.
+ * The authoritative run is still `evaluateRedFlags` over the stored transcript.
+ */
+asrRouter.post('/refinement-check', (req, res) => {
+  doctorId(req)
+
+  const parsed = RefinementCheckRequestSchema.safeParse(req.body)
+  if (!parsed.success) {
+    throw new HttpError(400, 'invalid_body', 'A live and a refined transcript are required.')
+  }
+
+  const live = asCheckedTranscript(parsed.data.live)
+  const after = firedRuleIds(asCheckedTranscript(parsed.data.refined))
+  const lost = evaluateRedFlags(live, ALL_REDFLAG_TRIGGERS).filter(
+    (flag) => !after.has(flag.ruleId ?? flag.id),
+  )
+
+  res.json(RefinementCheckResponseSchema.parse({ lost }))
 })
 
 /*

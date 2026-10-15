@@ -29,6 +29,7 @@ import {
   PatientSchema,
   PrescriptionParseResponseSchema,
   PrescriptionSchema,
+  RefinementCheckRequestSchema,
   RetentionPolicySchema,
   SoapNoteSchema,
   type Transcript,
@@ -747,6 +748,30 @@ export function createPreviewBackend() {
   on('POST', '/asr/live-sessions', asrUnavailable('Ambient transcription'))
   on('POST', '/asr/transcriptions', asrUnavailable('Hosted transcription'))
   on('POST', '/asr/draft-turns', asrUnavailable('Speaker labelling'))
+  // Refinement after Stop (#436) uploads to a vendor, which a preview never does.
+  on('POST', '/asr/batch-sessions', asrUnavailable('Transcript refinement'))
+  // The check is the rules engine, so it runs as the API runs it: every
+  // trigger, and every field that could weaken the engine set here.
+  on('POST', '/asr/refinement-check', (_id, body) => {
+    const { live, refined } = parse(
+      RefinementCheckRequestSchema,
+      body,
+      'A live and a refined transcript are required.',
+    )
+    const checked = (turns: readonly string[]): Transcript => ({
+      source: 'asr_live',
+      labelsReviewed: false,
+      turns: turns.map((text) => ({ speaker: 'patient', text })),
+    })
+    const after = new Set(
+      evaluateRedFlags(checked(refined), ALL_REDFLAG_TRIGGERS).map((f) => f.ruleId ?? f.id),
+    )
+    return json(200, {
+      lost: evaluateRedFlags(checked(live), ALL_REDFLAG_TRIGGERS).filter(
+        (flag) => !after.has(flag.ruleId ?? flag.id),
+      ),
+    })
+  })
 
   on('GET', '/fixtures', () => json(200, { fixtures: FIXTURES }))
   on('GET', '/guidelines/documents', () => json(200, { documents: guidelineDocuments() }))

@@ -279,6 +279,19 @@ function classifyFailure(error: unknown): AnalysisFailureReason {
   return 'internal_error'
 }
 
+/**
+ * Whether an ambient transcript's recording also went to the refinement vendor
+ * after Stop, and whether its transcript was kept (#436). Two booleans because
+ * a refused refinement still sent the audio, and a row that could only say
+ * "refined" would hide that egress.
+ */
+function batchMetadata(transcript: Transcript): { batchUploaded: boolean; batchUsed: boolean } {
+  return {
+    batchUploaded: transcript.batchTranscription !== undefined,
+    batchUsed: transcript.batchTranscription?.used === true,
+  }
+}
+
 // ─── Routes (docs/trd.md §13) ────────────────────────────────────────────────
 
 consultationsRouter.get('/', async (req, res) => {
@@ -402,6 +415,7 @@ consultationsRouter.post('/', async (req, res) => {
       action: 'consultation.asr_live_used',
       actorId: actor,
       consultationId: created.id,
+      metadata: batchMetadata(parsed.data.transcript),
     })
   }
 
@@ -1449,6 +1463,7 @@ consultationsRouter.patch('/:id', async (req, res) => {
         action: 'consultation.asr_live_used',
         actorId: actor,
         consultationId: consultation.id,
+        metadata: batchMetadata(patch.transcript),
       })
     }
     res.json({ consultation: await toDetailWithApprover(captured) })

@@ -94,7 +94,16 @@ export interface AnalysisVersions {
 export type ConsultationAuditEvent =
   | { action: 'consultation.created' }
   | { action: 'consultation.asr_hosted_used' }
-  | { action: 'consultation.asr_live_used' }
+  /*
+   * `batchUploaded` says the recording also went to the refinement vendor after
+   * Stop, and `batchUsed` whether its transcript is the one kept (#436). Both
+   * are client-asserted, copied from `Transcript.batchTranscription`, and
+   * separate because a refused refinement still sent the audio.
+   */
+  | {
+      action: 'consultation.asr_live_used'
+      metadata: { batchUploaded: boolean; batchUsed: boolean }
+    }
   | { action: 'consultation.analysis_started' }
   | {
       action: 'consultation.analysis_completed'
@@ -354,6 +363,14 @@ export type AsrRelayFailureReason =
 export type LiveSessionFailureReason = 'rejected' | 'rate_limited' | 'unavailable'
 
 /**
+ * Short failure categories for `asr.batch_session_failed` (#436). Closed for
+ * the `LiveSessionFailureReason` reason: the upstream body on this path is a
+ * credential, and `rejected` is our own account key refused, a configuration
+ * fault rather than the caller's business.
+ */
+export type BatchSessionFailureReason = 'rejected' | 'rate_limited' | 'unavailable'
+
+/**
  * The hosted-ASR relay (#154). It forwards consultation audio to the ASR
  * provider and persists nothing, so it belongs to an actor and to no
  * consultation for the same structural reason ephemeral analysis does: no
@@ -415,6 +432,26 @@ export type AsrAuditEvent =
       action: 'asr.live_session_failed'
       metadata: { reason: LiveSessionFailureReason; mode: LiveAsrMode }
     }
+  /**
+   * Refinement after Stop (#436, docs/trd.md §20.14). Like the pair above, it
+   * records a **minted credential**, not an upload: the browser sends the
+   * finished recording to the vendor without passing through here, so the
+   * issuing of the single-use token is the last moment the server sees.
+   *
+   * `durationSeconds` is what the client said the recording runs to, bounded
+   * by `MAX_BATCH_RECORDING_SECONDS` and unverifiable, which is why it is
+   * recorded rather than enforced. `consentAsserted` is the ambient tick, which
+   * the request schema requires. There is no reference id: the vendor token
+   * carries none that we know of, which §20.14 states as a gap.
+   *
+   * Nothing about translation, for the reason above, and nothing else is
+   * needed: refinement is offered on untranslated ambient only.
+   */
+  | {
+      action: 'asr.batch_session_minted'
+      metadata: { model: string; durationSeconds: number; consentAsserted: boolean }
+    }
+  | { action: 'asr.batch_session_failed'; metadata: { reason: BatchSessionFailureReason } }
   | {
       action: 'asr.hosted_draft_labelled'
       metadata: { turnCount: number; detected: readonly string[]; model: string }

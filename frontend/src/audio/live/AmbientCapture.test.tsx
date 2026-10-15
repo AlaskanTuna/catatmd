@@ -7,14 +7,30 @@ import { FINISH_TIMEOUT_MS } from './soniox-stream.js'
 const liveAsrConfig = vi.hoisted(() => vi.fn())
 const createLiveSession = vi.hoisted(() => vi.fn())
 const draftHostedTurns = vi.hoisted(() => vi.fn())
+const createBatchSession = vi.hoisted(() => vi.fn())
+const refinementCheck = vi.hoisted(() => vi.fn())
+const transcribeRecording = vi.hoisted(() => vi.fn())
+const toast = vi.hoisted(() => vi.fn())
 
 vi.mock('../../lib/api.js', async () => {
   const actual = await vi.importActual<typeof import('../../lib/api.js')>('../../lib/api.js')
   return {
     ApiError: actual.ApiError,
-    api: { liveAsrConfig, createLiveSession, draftHostedTurns },
+    api: {
+      liveAsrConfig,
+      createLiveSession,
+      draftHostedTurns,
+      createBatchSession,
+      refinementCheck,
+    },
   }
 })
+
+// The upload itself is pinned by `elevenlabs-batch.test.ts`; here it is the
+// seam the component drives.
+vi.mock('./elevenlabs-batch.js', () => ({ transcribeRecording }))
+
+vi.mock('react-hot-toast', () => ({ default: toast }))
 
 /** Every recorder the component builds, so tests can drive it. */
 const recorders: FakeMediaRecorder[] = []
@@ -140,6 +156,42 @@ const config = {
   config: session.config,
 }
 
+const BATCH_SESSION = {
+  provider: 'elevenlabs' as const,
+  uploadUrl: 'https://api.elevenlabs.io/v1/speech-to-text' as const,
+  token: 'single-use-batch-token',
+  config: {
+    modelId: 'scribe_v2' as const,
+    diarize: true as const,
+    numSpeakers: 2 as const,
+    timestampsGranularity: 'word' as const,
+    tagAudioEvents: false as const,
+    keyterms: ['batuk'],
+  },
+}
+
+/** The vendor's words for a sentence, with spacing elements between them. */
+function vendorSentence(text: string, startAt: number, speaker: string) {
+  const out: { text: string; start: number; end: number; type: string; speaker_id: string }[] = []
+  let at = startAt
+  for (const [index, piece] of text.split(' ').entries()) {
+    if (index > 0) out.push({ text: ' ', start: at, end: at, type: 'spacing', speaker_id: speaker })
+    out.push({ text: piece, start: at, end: at + 0.3, type: 'word', speaker_id: speaker })
+    at += 0.4
+  }
+  return out
+}
+
+/*
+ * The refined reading of the consultation the refinement tests stream. The
+ * live socket hears the negation flip §20.13 measured on Soniox ("Tak ada
+ * batuk" for "Ada batuk sikit"); the batch pass hears what was said.
+ */
+const REFINED_WORDS = [
+  ...vendorSentence('Ada batuk sikit doktor.', 0, 'speaker_1'),
+  ...vendorSentence('Berapa lama sudah batuk?', 4, 'speaker_0'),
+]
+
 let getUserMedia: () => Promise<MediaStream>
 let tracks: { stop: ReturnType<typeof vi.fn> }[]
 let gumCalls: unknown[]
@@ -153,6 +205,12 @@ beforeEach(() => {
   // Rejects promptly by default: labelling is a bonus on top of a transcript
   // already in hand, so a test that does not care must not wait out a hang.
   draftHostedTurns.mockReset().mockRejectedValue(new Error('not configured'))
+  // Refinement is offered only when the config says so, and no test outside
+  // its own block turns that on, so these answer only when asked.
+  createBatchSession.mockReset().mockResolvedValue(BATCH_SESSION)
+  transcribeRecording.mockReset().mockResolvedValue({ ok: true, sent: true, words: REFINED_WORDS })
+  refinementCheck.mockReset().mockResolvedValue([])
+  toast.mockReset()
   FakeMediaRecorder.isTypeSupported.mockReset().mockReturnValue(true)
   tracks = [{ stop: vi.fn() }]
   gumCalls = []
@@ -1331,5 +1389,457 @@ describe('translation', () => {
       ],
     })
     expect(delivered.text).not.toMatch(UNREADABLE)
+  })
+})
+
+/*
+ * Refinement after Stop (#436, docs/trd.md §20.14). The finished recording is
+ * re-transcribed in one batch pass and that transcript replaces the live one,
+ * but only when every check passes; any failure keeps the live transcript and
+ * says so.
+ */
+describe('refining the transcript after Stop', () => {
+  const refinedConfig = { ...config, batchRefinement: true }
+
+  const heard = (text: string, start: number, end: number, speaker: number) => ({
+    text,
+    start_ms: start,
+    end_ms: end,
+    is_final: true,
+    speaker,
+  })
+
+  /** What the live socket heard, including the negation flip. */
+  const LIVE_TOKENS = [
+    heard('Tak ada batuk doktor.', 0, 1_500, 2),
+    heard(' Berapa lama sudah batuk?', 4_000, 5_500, 1),
+  ]
+
+  const LIVE_TEXT = 'Tak ada batuk doktor. Berapa lama sudah batuk?'
+  const REFINED_TEXT = 'Ada batuk sikit doktor. Berapa lama sudah batuk?'
+
+  async function startRefinable(extra: Partial<AmbientProps> = {}) {
+    liveAsrConfig.mockResolvedValue(refinedConfig)
+    const view = await startSession(null, extra)
+    await act(async () => socket().message({ tokens: LIVE_TOKENS }))
+    // A minute of consultation, so the density row has a minute to judge.
+    await act(async () => vi.advanceTimersByTime(60_000))
+    return view
+  }
+
+  /**
+   * Presses Stop and, unless told not to, lets the provider acknowledge,
+   * leaving refinement to run.
+   */
+  async function pressStop({ acknowledged = true }: { acknowledged?: boolean } = {}) {
+    const stopped = act(async () => {
+      screen.getByRole('button', { name: /stop and finish/i }).click()
+    })
+    await settle()
+    if (acknowledged) await act(async () => socket().message({ tokens: [], finished: true }))
+    await stopped
+  }
+
+  async function drain() {
+    for (let i = 0; i < 6; i += 1) await settle()
+  }
+
+  /** An upload that only ever ends when its signal fires. */
+  const hangingUpload = () =>
+    transcribeRecording.mockImplementation(
+      (_session: unknown, _recording: Blob, signal: AbortSignal) =>
+        new Promise((resolve) => {
+          signal.addEventListener('abort', () =>
+            resolve({ ok: false, reason: 'aborted', sent: true }),
+          )
+        }),
+    )
+
+  const delivered = (onTranscript: ReturnType<typeof vi.fn>) => {
+    expect(onTranscript).toHaveBeenCalledTimes(1)
+    return onTranscript.mock.calls[0]?.[0]
+  }
+
+  it('uses the refined transcript when every check passes', async () => {
+    const { onTranscript } = await startRefinable()
+
+    await pressStop()
+    await drain()
+
+    const result = delivered(onTranscript)
+    expect(result.text).toBe(REFINED_TEXT)
+    expect(result.source).toBe('asr_live')
+    expect(result.batchTranscription).toEqual({ used: true })
+    // Roles come from the same vote as the live path: the voices travel on the
+    // segments, numbered from one.
+    expect(result.segments.map((s: { speaker: string }) => s.speaker)).toEqual(['2', '1'])
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it('mints for the recording it holds, with its duration', async () => {
+    await startRefinable()
+
+    await pressStop()
+    await drain()
+
+    expect(createBatchSession).toHaveBeenCalledTimes(1)
+    const [signal, durationSeconds] = createBatchSession.mock.calls[0] ?? []
+    expect(signal).toBeInstanceOf(AbortSignal)
+    expect(durationSeconds).toBeGreaterThanOrEqual(60)
+    expect(durationSeconds).toBeLessThan(65)
+  })
+
+  it('uploads the recording once, and keeps the same one for playback', async () => {
+    const { onTranscript } = await startRefinable()
+
+    await pressStop()
+    await drain()
+
+    expect(transcribeRecording).toHaveBeenCalledTimes(1)
+    const [sentSession, recording] = transcribeRecording.mock.calls[0] ?? []
+    expect(sentSession).toEqual(BATCH_SESSION)
+    expect(recording).toBeInstanceOf(Blob)
+    expect(delivered(onTranscript).audio).toBe(recording)
+  })
+
+  it('asks the rules engine about both readings before using the refined one', async () => {
+    await startRefinable()
+
+    await pressStop()
+    await drain()
+
+    expect(refinementCheck).toHaveBeenCalledWith(
+      ['Tak ada batuk doktor.', 'Berapa lama sudah batuk?'],
+      ['Ada batuk sikit doktor.', 'Berapa lama sudah batuk?'],
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('labels the refined text, not the live one', async () => {
+    await startRefinable()
+
+    await pressStop()
+    await drain()
+
+    expect(draftHostedTurns).toHaveBeenCalledWith(REFINED_TEXT, expect.any(AbortSignal))
+  })
+
+  it('says it is refining, and offers the live transcript instead, naming no vendor', async () => {
+    hangingUpload()
+    await startRefinable()
+
+    await pressStop()
+    await settle()
+
+    expect(screen.getByText('Refining the transcript')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Use Live Transcript' })).toBeTruthy()
+    expect(document.body.textContent).not.toMatch(/ElevenLabs|Soniox|scribe_v2/i)
+  })
+
+  it('holds the live latch until the transcript is delivered', async () => {
+    // Consultation Settings stay locked and the leave-page guard holds while
+    // the recording is being refined, exactly as while it is being heard.
+    hangingUpload()
+    const { onLiveChange, onTranscript } = await startRefinable()
+
+    await pressStop()
+    await settle()
+
+    expect(onLiveChange).not.toHaveBeenCalledWith(false)
+    expect(onTranscript).not.toHaveBeenCalled()
+
+    await act(async () => screen.getByRole('button', { name: 'Use Live Transcript' }).click())
+    await drain()
+
+    expect(onTranscript).toHaveBeenCalledTimes(1)
+    expect(onLiveChange).toHaveBeenLastCalledWith(false)
+  })
+
+  describe('every failure keeps the live transcript, and says so', () => {
+    const expectLiveWithNotice = (onTranscript: ReturnType<typeof vi.fn>) => {
+      const result = delivered(onTranscript)
+      expect(result.text).toBe(LIVE_TEXT)
+      const notice = /could not be refined/i
+      expect(screen.getByRole('status').textContent).toMatch(notice)
+      // The panel unmounts once the transcript saves, so the notice also goes
+      // where it outlives the panel.
+      expect(toast).toHaveBeenCalledWith(expect.stringMatching(notice))
+      expect(String(toast.mock.calls[0]?.[0])).not.toMatch(/ElevenLabs/i)
+      return result
+    }
+
+    it('when the token cannot be minted, recording no upload', async () => {
+      createBatchSession.mockRejectedValue(new ApiError(503, 'asr_unavailable', 'nope'))
+      const { onTranscript } = await startRefinable()
+
+      await pressStop()
+      await drain()
+
+      const result = expectLiveWithNotice(onTranscript)
+      // Nothing left the device, so nothing is recorded as uploaded.
+      expect(result.batchTranscription).toBeUndefined()
+      expect(transcribeRecording).not.toHaveBeenCalled()
+    })
+
+    it.each(['rejected', 'rate_limited', 'unavailable', 'invalid_response'])(
+      'when the upload fails as %s, recording the upload as unused',
+      async (reason) => {
+        transcribeRecording.mockResolvedValue({ ok: false, reason, sent: true })
+        const { onTranscript } = await startRefinable()
+
+        await pressStop()
+        await drain()
+
+        // The audio left whether or not a transcript came back.
+        expect(expectLiveWithNotice(onTranscript).batchTranscription).toEqual({ used: false })
+        expect(refinementCheck).not.toHaveBeenCalled()
+      },
+    )
+
+    it('when the upload was refused before sending, recording no upload', async () => {
+      transcribeRecording.mockResolvedValue({ ok: false, reason: 'refused', sent: false })
+      const { onTranscript } = await startRefinable()
+
+      await pressStop()
+      await drain()
+
+      expect(expectLiveWithNotice(onTranscript).batchTranscription).toBeUndefined()
+    })
+
+    it('when the refined transcript fails a sanity row', async () => {
+      // One voice where the live socket heard two: the merge §20.13 measured.
+      transcribeRecording.mockResolvedValue({
+        ok: true,
+        sent: true,
+        words: REFINED_WORDS.map((entry) => ({ ...entry, speaker_id: 'speaker_0' })),
+      })
+      const { onTranscript } = await startRefinable()
+
+      await pressStop()
+      await drain()
+
+      expect(expectLiveWithNotice(onTranscript).batchTranscription).toEqual({ used: false })
+      expect(refinementCheck).not.toHaveBeenCalled()
+    })
+
+    it('when the refined transcript would lose a red flag', async () => {
+      refinementCheck.mockResolvedValue([
+        {
+          id: 'haemoptysis',
+          label: 'Coughing up blood',
+          severity: 'emergency',
+          evidence: 'batuk berdarah',
+          source: 'rule',
+          ruleId: 'haemoptysis',
+        },
+      ])
+      const { onTranscript } = await startRefinable()
+
+      await pressStop()
+      await drain()
+
+      expect(expectLiveWithNotice(onTranscript).batchTranscription).toEqual({ used: false })
+    })
+
+    it('when the red-flag check itself fails', async () => {
+      refinementCheck.mockRejectedValue(new ApiError(429, 'rate_limited', 'slow down'))
+      const { onTranscript } = await startRefinable()
+
+      await pressStop()
+      await drain()
+
+      expect(expectLiveWithNotice(onTranscript).batchTranscription).toEqual({ used: false })
+    })
+
+    it('when the bound runs out', async () => {
+      hangingUpload()
+      const { onTranscript } = await startRefinable()
+
+      await pressStop()
+      await settle()
+      expect(onTranscript).not.toHaveBeenCalled()
+
+      // A minute of recording is bounded at the one-minute floor.
+      await act(async () => vi.advanceTimersByTime(59_000))
+      await settle()
+      expect(onTranscript).not.toHaveBeenCalled()
+
+      await act(async () => vi.advanceTimersByTime(1_500))
+      await drain()
+
+      expect(expectLiveWithNotice(onTranscript).batchTranscription).toEqual({ used: false })
+    })
+  })
+
+  it('uses the live transcript at once when the doctor skips, and says it was skipped', async () => {
+    hangingUpload()
+    const { onTranscript } = await startRefinable()
+
+    await pressStop()
+    await settle()
+    const signal = transcribeRecording.mock.calls[0]?.[2] as AbortSignal
+    await act(async () => screen.getByRole('button', { name: 'Use Live Transcript' }).click())
+    await drain()
+
+    expect(signal.aborted).toBe(true)
+    const result = delivered(onTranscript)
+    expect(result.text).toBe(LIVE_TEXT)
+    expect(result.batchTranscription).toEqual({ used: false })
+    expect(screen.getByRole('status').textContent).toMatch(/skipped/i)
+    expect(toast).toHaveBeenCalledWith(expect.stringMatching(/skipped/i))
+  })
+
+  it('clears the short-tail notice once the whole recording is refined', async () => {
+    // The refined transcript is read from the whole recording, so the gap the
+    // notice warned about is not in it.
+    const { onTranscript } = await startRefinable()
+
+    await pressStop({ acknowledged: false })
+    await act(async () => vi.advanceTimersByTime(FINISH_TIMEOUT_MS))
+    await drain()
+
+    expect(delivered(onTranscript).text).toBe(REFINED_TEXT)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('keeps the short-tail notice when the live transcript is used', async () => {
+    transcribeRecording.mockResolvedValue({ ok: false, reason: 'unavailable', sent: true })
+    await startRefinable()
+
+    await pressStop({ acknowledged: false })
+    await act(async () => vi.advanceTimersByTime(FINISH_TIMEOUT_MS))
+    await drain()
+
+    expect(screen.getByRole('alert').textContent).toMatch(/last few words may be missing/i)
+  })
+
+  describe('never refines', () => {
+    it('when the API does not offer it', async () => {
+      liveAsrConfig.mockResolvedValue(config)
+      const { onTranscript } = await startSession()
+      await act(async () => socket().message({ tokens: LIVE_TOKENS }))
+      await act(async () => vi.advanceTimersByTime(60_000))
+
+      await pressStop()
+      await drain()
+
+      expect(createBatchSession).not.toHaveBeenCalled()
+      expect(delivered(onTranscript).batchTranscription).toBeUndefined()
+      expect(toast).not.toHaveBeenCalled()
+    })
+
+    it('when this device has opted out', async () => {
+      const { onTranscript } = await startRefinable({ refineAfterStop: false })
+
+      await pressStop()
+      await drain()
+
+      expect(createBatchSession).not.toHaveBeenCalled()
+      expect(delivered(onTranscript).text).toBe(LIVE_TEXT)
+      expect(toast).not.toHaveBeenCalled()
+    })
+
+    it('when nobody spoke', async () => {
+      liveAsrConfig.mockResolvedValue(refinedConfig)
+      const { onTranscript } = await startSession()
+      await act(async () => vi.advanceTimersByTime(60_000))
+
+      await pressStop()
+      await drain()
+
+      expect(createBatchSession).not.toHaveBeenCalled()
+      expect(onTranscript).not.toHaveBeenCalled()
+    })
+
+    it('when the connection dropped and capture stopped on its own', async () => {
+      createLiveSession.mockResolvedValueOnce(session).mockRejectedValue(new Error('offline'))
+      const { onTranscript } = await startRefinable()
+
+      await act(async () => socket().drop())
+      await settle()
+      for (let i = 0; i < 5; i += 1) {
+        await act(async () => vi.advanceTimersByTime(5_000))
+        await settle()
+      }
+      await drain()
+
+      expect(screen.getByRole('alert').textContent).toMatch(/capture stopped/i)
+      expect(createBatchSession).not.toHaveBeenCalled()
+      expect(delivered(onTranscript).text).toBe(LIVE_TEXT)
+    })
+
+    it('when the recording runs past the bound', async () => {
+      const { onTranscript } = await startRefinable()
+      await act(async () => vi.advanceTimersByTime(1_801_000))
+
+      await pressStop()
+      await drain()
+
+      expect(createBatchSession).not.toHaveBeenCalled()
+      expect(delivered(onTranscript).text).toBe(LIVE_TEXT)
+    })
+
+    it('on a translated session, which the grant does not cover', async () => {
+      liveAsrConfig.mockResolvedValue({
+        ...refinedConfig,
+        availableTranslations: ['bn'],
+      })
+      createLiveSession.mockResolvedValue({
+        ...session,
+        config: {
+          ...session.config,
+          languageHints: ['bn', 'en', 'ms'],
+          speakerDiarization: false,
+          endpointDetection: true,
+          translation: { type: 'two_way', languageA: 'bn', languageB: 'en' },
+        },
+      })
+      const { onTranscript } = renderAmbient()
+      await settle()
+      await act(async () => screen.getByRole('button', { name: "Patient's language" }).click())
+      await act(async () => screen.getByRole('option', { name: 'Bengali (Translated)' }).click())
+      await act(async () => tick().click())
+      await act(async () => startButton().click())
+      await settle()
+      await act(async () => socket().open())
+      await settle()
+      await act(async () =>
+        socket().message({
+          tokens: [
+            {
+              text: 'Any cough?',
+              start_ms: 0,
+              end_ms: 900,
+              is_final: true,
+              language: 'en',
+              translation_status: 'original',
+            },
+            { text: '<end>', is_final: true },
+          ],
+        }),
+      )
+      await act(async () => vi.advanceTimersByTime(60_000))
+
+      await pressStop()
+      await drain()
+
+      expect(createBatchSession).not.toHaveBeenCalled()
+      expect(transcribeRecording).not.toHaveBeenCalled()
+      expect(onTranscript).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('reports whether refinement is on offer, so the settings can show its switch', async () => {
+    const onRefinementAvailable = vi.fn()
+    liveAsrConfig.mockResolvedValue(refinedConfig)
+    renderAmbient(null, { onRefinementAvailable })
+    await settle()
+    expect(onRefinementAvailable).toHaveBeenLastCalledWith(true)
+
+    cleanup()
+    liveAsrConfig.mockResolvedValue(config)
+    renderAmbient(null, { onRefinementAvailable })
+    await settle()
+    expect(onRefinementAvailable).toHaveBeenLastCalledWith(false)
   })
 })

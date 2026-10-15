@@ -180,6 +180,14 @@ describe('preview stub: consultations', () => {
     const ephemeral = await api.analyzeEphemeral(STRIDOR)
     expect(ephemeral.redFlags.length).toBeGreaterThan(0)
     expect(ephemeral.suggestions).toEqual([])
+
+    // The refinement check (#436) is the rules engine too, so it runs here.
+    const signal = new AbortController().signal
+    await expect(
+      api.refinementCheck(['Ada batuk berdarah.'], ['Ada batuk berdarah.'], signal),
+    ).resolves.toEqual([])
+    const lost = await api.refinementCheck(['Ada batuk berdarah.'], ['Tiada batuk.'], signal)
+    expect(lost.map((flag) => flag.ruleId)).toEqual(['haemoptysis'])
   })
 })
 
@@ -213,6 +221,9 @@ describe('preview stub: what a preview cannot do', () => {
       api.createLiveSession(new AbortController().signal, 'dictation'),
     )
     expect(session.status).toBe(503)
+    // No vendor key and no upload in a preview, so refinement is never offered.
+    const batch = await rejection(api.createBatchSession(new AbortController().signal, 60))
+    expect(batch).toMatchObject({ status: 503, code: 'asr_unavailable' })
   })
 
   it('stores no recording', async () => {
