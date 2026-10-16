@@ -1,6 +1,13 @@
 import type { Transcript } from '@shared/types'
 import { describe, expect, it } from 'vitest'
-import { FIXTURES, LANGUAGE_SAMPLES } from '../fixtures/index.js'
+import {
+  FIXTURES,
+  LANGUAGE_SAMPLES,
+  SPOKEN_IC_CUE,
+  SPOKEN_IC_DIGITS,
+  SPOKEN_IC_READINGS,
+  spokenIcSentence,
+} from '../fixtures/index.js'
 import { MEDICATION_LEXICON } from '../medications/lexicon.js'
 import { detect } from './detectors.js'
 import { GIVEN_NAMES, HONORIFICS, NAME_STOPWORDS } from './gazetteer.js'
@@ -1035,14 +1042,18 @@ describe('sliceDeidentified', () => {
   })
 
   it('cuts only on whitespace, so every piece is a substring of the whole', () => {
-    const content = gated('one two three four five six seven eight nine ten eleven twelve')
+    const content = gated(
+      'cough fever sore throat runny nose headache chills fatigue nausea rash wheeze',
+    )
     for (const piece of sliceDeidentified(content, 20)) {
       expect(content).toContain(piece)
     }
   })
 
   it('loses no word across the cuts', () => {
-    const content = gated('one two three four five six seven eight nine ten eleven twelve')
+    const content = gated(
+      'cough fever sore throat runny nose headache chills fatigue nausea rash wheeze',
+    )
     const words = (text: string) => text.split(/\s+/).filter(Boolean)
     expect(sliceDeidentified(content, 20).flatMap(words)).toEqual(words(content))
   })
@@ -1530,5 +1541,416 @@ describe('names in Chinese and Tamil script are found by their cues (#418)', () 
 
   it('lets the egress guard refuse a payload that kept a cued name', () => {
     expect(() => assertNoIdentifiers('我叫陈美玲' as never, 'note_and_gaps')).toThrow(/PATIENT/)
+  })
+})
+
+/*
+ * Identifiers read aloud and written as number words (#435, docs/trd.md §9,
+ * "Spoken Digit Runs"). Batch `scribe_v2` never returned the synthetic IC as
+ * digits in 32 results, so a gate reading only digit patterns would pass every
+ * one of them to the model in cleartext. Synthetic numbers throughout.
+ */
+describe('identifiers spoken as number words (#435)', () => {
+  /** Reading number (1-based, as measured) to the tail the transcriber's comma leaves in clear. */
+  const PARTIAL: Record<number, string> = {
+    6: ', biola sangkas minum part tiga',
+    11: ', A lalu S lalu kas minum empat tiga',
+    12: ', bia husan kas minum part tiga',
+    13: ', biawak sangkar enam empat tiga',
+  }
+  /** Phonetic fragments with no number word after the cue at all. */
+  const MISSED = [23, 24, 25, 26, 27, 28]
+  const readings = SPOKEN_IC_READINGS.map((reading, i) => ({ n: i + 1, reading }))
+  const whole = readings.filter(({ n }) => !(n in PARTIAL) && !MISSED.includes(n))
+
+  it('holds the 28 measured readings of the synthetic IC in the fixture, in order', () => {
+    expect(SPOKEN_IC_READINGS).toHaveLength(28)
+    expect(new Set(SPOKEN_IC_READINGS).size).toBe(28)
+    expect(SPOKEN_IC_READINGS[0]).toBe(
+      'sembilan zero empat tujuh dua dua sama enam sembilan empat tiga',
+    )
+    expect(SPOKEN_IC_READINGS[27]).toBe('Semyonuarzborzpardre Byalusakas minum part tiga')
+    // The line they were read from, and kept out of the consultation corpus.
+    const source = FIXTURES.find((f) => f.id === 'urti-malay-red-flag')
+    const lines = source?.transcript.turns.map((turn) => turn.text) ?? []
+    expect(lines.some((line) => line.includes(`${SPOKEN_IC_CUE} ${SPOKEN_IC_DIGITS}.`))).toBe(true)
+    const corpus = FIXTURES.flatMap((f) => f.transcript.turns.map((turn) => turn.text)).join('\n')
+    expect(SPOKEN_IC_READINGS.filter((reading) => corpus.includes(reading))).toEqual([])
+  })
+
+  it.each(whole)('tokenises measured reading $n whole', ({ reading }) => {
+    const sentence = spokenIcSentence(reading)
+    const { text, vault } = deidentify(sentence)
+    expect(text).toBe(`${SPOKEN_IC_CUE} [NRIC_1].`)
+    expect(vault.rehydrate(text)).toBe(sentence)
+  })
+
+  it.each(Object.entries(PARTIAL).map(([n, tail]) => ({ n: Number(n), tail })))(
+    'tokenises measured reading $n up to the comma, and pins the tail it leaves',
+    ({ n, tail }) => {
+      // KNOWN PARTIAL. The cue-anchored clause ends at a comma before an ordinary
+      // word, because running on past one is how #174 masked "500 mg". What the
+      // transcriber put after the comma is one to three garbled digits.
+      const sentence = spokenIcSentence(SPOKEN_IC_READINGS[n - 1] ?? '')
+      const { text, vault } = deidentify(sentence)
+      expect(text).toBe(`${SPOKEN_IC_CUE} [NRIC_1]${tail}.`)
+      expect(vault.rehydrate(text)).toBe(sentence)
+    },
+  )
+
+  it.each(MISSED)(
+    'mints no number token for measured reading %i, which has no number word to anchor on',
+    (n) => {
+      // KNOWN BAD, pinned deliberately. The reading decayed into phonetic
+      // fragments, so nothing after the cue is a number word and no rule here
+      // can tell it from ordinary speech.
+      //
+      // Readings 26 to 28 open on two capitalised fragments, which the "saya"
+      // introducer takes for a name. That is the name detector's accident, not
+      // a catch, and "minum part tiga" still passes either way.
+      const sentence = spokenIcSentence(SPOKEN_IC_READINGS[n - 1] ?? '')
+      const expected = n >= 26 ? sentence.replace(/[A-Z]\w+ [A-Z]\w+/, '[PATIENT_1]') : sentence
+      expect(deidentify(sentence).text).toBe(expected)
+    },
+  )
+
+  const RECALL = [
+    // The IC read in English, and in Malay with and without a cue.
+    ['My IC is nine zero zero four one two zero eight six five four three.', 'My IC is [NRIC_1].'],
+    [
+      'IC saya sembilan kosong kosong empat satu dua kosong lapan enam lima empat tiga, doktor.',
+      'IC saya [NRIC_1], doktor.',
+    ],
+    ['Sembilan kosong kosong empat satu dua kosong lapan enam lima empat tiga.', '[NRIC_1].'],
+    // The corpus phone (`urti-identifier-dense-routine`), read aloud.
+    [
+      'And your contact number is still zero one two three four five six seven eight nine?',
+      'And your contact number is still [PHONE_1]?',
+    ],
+    ['我的身份证号码是九零零四一二零八六五四三。', '我的身份证号码是[NRIC_1]。'],
+    // Digits and words mixed in one reading.
+    ['My IC is 900412 zero eight six five four three.', 'My IC is [NRIC_1].'],
+    ['Call me at 012 three four five six seven eight nine.', 'Call me at [PHONE_1].'],
+    // Six to eight digits, tokenised only beside a cue, under the cue's label.
+    ['Her IC ends in seven two nine four five one.', 'Her IC ends in [NRIC_1].'],
+    ['Her phone ends with three nine four two seven one.', 'Her phone ends with [PHONE_1].'],
+    // Three to five, only directly after a record cue.
+    ['MRN tujuh dua sembilan.', 'MRN [MRN_1].'],
+    ['Registration no. seven two nine four.', 'Registration no. [MRN_1].'],
+    // Found in the second PHI review: a phone or IC read with a pair, after a
+    // possessive cue, in answer to a question, or with no cue at all.
+    [
+      'My number is oh one two, three four five, sixty-seven eighty-nine.',
+      'My number is [PHONE_1].',
+    ],
+    [
+      'Nombor saya kosong satu dua tiga empat lima enam, lapan puluh sembilan.',
+      'Nombor saya [PHONE_1].',
+    ],
+    [
+      'Doctor: what is your number?\nPatient: oh one two, three four five, sixty-seven, eighty-nine.',
+      'Doctor: what is your number?\nPatient: [PHONE_1].',
+    ],
+    [
+      'Patient: nine zero zero four one two, zero eight, sixty-five forty-three.',
+      'Patient: [NRIC_1].',
+    ],
+    ['Nine zero zero four twelve zero eight six five four three is my IC.', '[NRIC_1] is my IC.'],
+    // Partly in digits, and with a hesitation inside the reading.
+    ['My IC is 90041208654 three.', 'My IC is [NRIC_1].'],
+    ['My phone is 012 345 67 eight nine.', 'My phone is [PHONE_1].'],
+    [
+      'My IC is nine zero zero four one two zero eight six uh five four three.',
+      'My IC is [NRIC_1].',
+    ],
+    [
+      'My IC is nine zero zero four one two zero eight six er five four three, two tablets.',
+      'My IC is [NRIC_1], two tablets.',
+    ],
+    // Found in the final PHI review: a restart or a repeat, a pause on both
+    // sides of a hesitation, and a phone read in pairs after a phone cue.
+    [
+      'My IC is nine zero zero four one two, nine zero zero four one two, zero eight, four three.',
+      'My IC is [NRIC_1].',
+    ],
+    [
+      'My IC is nine zero zero four one two, uh, zero eight, six five four three.',
+      'My IC is [NRIC_1].',
+    ],
+    [
+      'My number is zero one ninety-three seventy-two eighty-four sixty-five.',
+      'My number is [PHONE_1].',
+    ],
+    // Six to eight directly after a record cue, which names neither an IC nor
+    // a phone, so the band above would leave it.
+    ['MRN: seven two nine four five one.', 'MRN: [MRN_1].'],
+    // Read in pairs, caught only because the cue anchors the clause.
+    [
+      'My IC is eighty-five, oh five, twenty-three, fourteen, fifty-six, seventy-seven.',
+      'My IC is [NRIC_1].',
+    ],
+  ] as const
+
+  it.each(RECALL)('tokenises %j', (sentence, expected) => {
+    const { text, vault } = deidentify(sentence)
+    expect(text).toBe(expected)
+    expect(vault.rehydrate(text)).toBe(sentence)
+  })
+
+  /*
+   * The precision half. Each of these is the clinical content dose, age,
+   * duration and vital-sign checks reason over, so tokenising any of it
+   * degrades the model red-flag pass in the false-negative direction.
+   */
+  const PRECISION = [
+    'Makan ubat ini tiga kali sehari.',
+    'I need two days MC.',
+    'Temperature was thirty-eight point two last night.',
+    'Paracetamol 500 mg.',
+    'BP 120 over 80.',
+    'BP one twenty over eighty.',
+    'Fever thirty-eight, thirty-nine, thirty-eight, thirty-seven, so I need a medical certificate.',
+    // Nine digits and more, past the cued band, with no single unit.
+    'Fever thirty-eight, thirty-nine, thirty-eight, thirty-seven, thirty-eight, so I need a medical certificate.',
+    'Demam tiga puluh lapan, tiga puluh sembilan, tiga puluh lapan, tiga puluh tujuh, tiga puluh lapan, tiga puluh sembilan.',
+    'For the medical certificate: fever thirty-eight, then thirty-nine point five, two days.',
+    '一天三次。',
+    '体温三十八点五度。',
+    'Breathe in, one, two, three… and out.',
+    'At the clinic, take one tablet three times a day for five days.',
+    'Bring your IC and come back in two or three days.',
+    'IC tiga hari lagi siap.',
+    'Satu, dua, tiga, empat, lima, enam, tarik nafas.',
+    'Cough for two to three weeks, fever for four days.',
+    'Umur dua puluh lima tahun, demam tiga hari.',
+    'Take two tablets, then one tablet every four hours.',
+    'Pain score seven out of ten.',
+    'MRN pending, she is sixty-five years old.',
+    'MRN unknown so I gave five hundred mg.',
+    'The scores were seven two nine four five one.',
+    // Found in review: vital-sign series, which the model pass alone reasons
+    // over, since the rules engine carries no numeric cutoff.
+    'Patient: Thirty-nine five, thirty-nine eight, thirty-nine one, thirty-eight eight.',
+    'Suhu tiga puluh lapan lima, tiga puluh sembilan satu, tiga puluh lapan lapan, tiga puluh tujuh sembilan.',
+    'Doctor: And SpO2 nine one, nine zero, eight nine, eight eight.',
+    'Fever 38, 39, 38, 37, 38, two days already.',
+    // Beside the clinical-setting words, which a spoken run is never scored on.
+    'Sats nine one, nine zero, eight nine, eight eight, at the clinic.',
+    'Pulse one two zero, one one eight, at the clinic.',
+    'Augmentin 625 one-zero-one, come back to the clinic if worse.',
+    'The number on the thermometer was three nine one, three eight five.',
+    'For my medical certificate, fever 38, 39, 38, thirty-seven.',
+    // Found in second review: a cue in another sentence or turn, or a verb
+    // that is not a phone, beside a vital-sign series.
+    'Call us if the oximeter shows nine two, nine one, nine zero.',
+    'Doctor: Any close contact?\nPatient: No.\nDoctor: Sats nine six, nine five, nine three.',
+    'Doctor: Call us if worse.\nPatient: Okay.\nDoctor: Sats nine two, nine one, nine zero.',
+    'If the reading goes nine two, nine one, nine zero, call the clinic.',
+    'Kalau oksigen sembilan dua, sembilan satu, sembilan kosong, call klinik.',
+    'Saya call tadi, suhu tiga lapan lima, tiga sembilan, tiga lapan dua.',
+    'Doctor call 了, 血氧九六，九五，九三。',
+    'Thanks for the IC. Temperature three eight five, three nine one.',
+    'She called, temp thirty-eight five, thirty-nine two, thirty-eight nine, thirty-nine one.',
+    'Augmentin one-zero-one, one-zero-one, call if worse.',
+    // A duration straight after an identity cue.
+    'Do you have your IC two three days of fever is it',
+    'IC saya, dua tiga hari demam',
+    'IC number two, three days cough?',
+  ]
+
+  it.each(PRECISION)('leaves %j unchanged', (sentence) => {
+    expect(deidentify(sentence).text).toBe(sentence)
+  })
+
+  it.each([
+    'Her IC ends in one two three four five six.',
+    'Her IC ends in six five four three two one.',
+    'Her phone ends with one two three four five six.',
+  ])('leaves a counted progression beside a cue alone: %j', (sentence) => {
+    // KNOWN GAP, pinned deliberately. The cued six-to-eight band exempts a +/-1
+    // progression, because counting is what such a run usually is. Directly
+    // after an identity cue the cued rule still catches one ("IC six five...").
+    expect(deidentify(sentence).text).toBe(sentence)
+    expect(deidentify('IC six five four three two one.').text).toBe('IC [NRIC_1].')
+  })
+
+  it('still passes the digits after a stop word said inside a reading', () => {
+    // KNOWN PARTIAL, pinned deliberately. "nama" is a name cue, so the clause
+    // ends there rather than take it into the token, and the reading's last
+    // four digits pass. A cue swallowed whole would hide the name after it.
+    expect(
+      deidentify(
+        'IC saya sembilan kosong kosong empat satu dua kosong lapan nama enam lima empat tiga.',
+      ).text,
+    ).toBe('IC saya [NRIC_1] nama enam lima empat tiga.')
+  })
+
+  it.each([
+    [
+      'Doctor: IC?\nPatient: nine zero zero four one two zero eight six five four three, sorry, six five four three.',
+      'Doctor: IC?\nPatient: [NRIC_1], sorry, six five four three.',
+    ],
+    [
+      "Doctor: what's your number?\nPatient: zero one ninety-three seventy-two eighty-four sixty-five.",
+      "Doctor: what's your number?\nPatient: zero one ninety-three seventy-two eighty-four sixty-five.",
+    ],
+  ])('still passes %j', (sentence, expected) => {
+    // KNOWN GAPS, pinned deliberately. A corrected tail after an ordinary word
+    // is a new reading with no cue, and a phone read in pairs in the next turn
+    // has no clause to anchor on: the question's cue reaches only the run rule,
+    // which wants four single digits.
+    expect(deidentify(sentence).text).toBe(expected)
+  })
+
+  it('still passes numbers read in pairs with no cue', () => {
+    // KNOWN BAD, pinned deliberately. Two single units where the run rule asks
+    // for four; with "My IC is" in front, the cue rule catches it (above).
+    const sentence = 'Eighty-five, oh five, twenty-three, fourteen, fifty-six, seventy-seven.'
+    expect(deidentify(sentence).text).toBe(sentence)
+  })
+
+  it('still passes an IC read in Tamil number words', () => {
+    // KNOWN BAD, pinned deliberately. There is no Tamil number table, and
+    // `SCRIPT` deliberately does not read Tamil (#391).
+    const sentence =
+      'என் அடையாள அட்டை எண் ஒன்பது பூஜ்ஜியம் பூஜ்ஜியம் நான்கு ஒன்று இரண்டு பூஜ்ஜியம் எட்டு ஆறு ஐந்து நான்கு மூன்று.'
+    expect(deidentify(sentence).text).toBe(sentence)
+  })
+
+  it.each([
+    // Nine single units always tokenise, with no progression exemption,
+    // because the corpus phone read aloud is itself a progression: "zero one
+    // two three four five six seven eight nine".
+    [
+      'Count with me: one, two, three, four, five, six, seven, eight, nine.',
+      'Count with me: [PHONE_1].',
+    ],
+    [
+      'Count with me: one, two, three, four, five, six, seven, eight, nine, ten.',
+      'Count with me: [MRN_1].',
+    ],
+    ['一二三四五六七八九十', '[PHONE_1]十'],
+    // Readings said digit by digit, nine digits and more in one breath.
+    [
+      'Take one-one-one, one-zero-one, zero-zero-one for five days.',
+      'Take [PHONE_1] for five days.',
+    ],
+    [
+      'Prednisolone four four four three three three two two two one one one.',
+      'Prednisolone [MRN_1].',
+    ],
+    ['病人：发烧三八五，三九，三八二，三七八。', '病人：发烧[MRN_1]。'],
+    [
+      'Bring your IC. Pulse one one two, one oh eight, one oh four.',
+      'Bring your IC. Pulse [PHONE_1].',
+    ],
+    // Mostly digit by digit, which is how a phone read with a pair is told
+    // from a fever log read in pairs.
+    ['Pulse one twenty, one eighteen, one oh two.', 'Pulse [PHONE_1].'],
+    // Found in the final clinical review: vital-sign logs mixing pairs and
+    // single digits, which only the model pass reads, since the rules engine
+    // carries no numeric cutoff. An open owner decision (docs/trd.md §9).
+    ['Sats ninety-two, nine one, nine zero, eighty-nine, eighty-eight.', 'Sats [MRN_1].'],
+    ['Temp three eight five, three eight nine, three nine one, thirty-eight.', 'Temp [MRN_1].'],
+    ['BP one three five eh eight five, one three two eh eight two.', 'BP [PHONE_1].'],
+    // A cue in the question a turn answers, which is how "what's your
+    // number?" reaches the number read back.
+    [
+      'Doctor: Do you have your IC?\nPatient: Temperature three eight five, three nine one.',
+      'Doctor: Do you have your IC?\nPatient: Temperature [NRIC_1].',
+    ],
+    [
+      'Doctor: Did you check your oxygen on the phone app?\nPatient: Yes, nine one, nine zero, eight nine.',
+      'Doctor: Did you check your oxygen on the phone app?\nPatient: Yes, [PHONE_1].',
+    ],
+    // "your number" said of a reading.
+    [
+      "Doctor: What's your number on the oximeter?\nPatient: Eight nine, nine zero, eight eight.",
+      "Doctor: What's your number on the oximeter?\nPatient: [PHONE_1].",
+    ],
+  ])('tokenises %j, which is the price of the nine-digit rule', (sentence, expected) => {
+    // KNOWN COST, pinned rather than fixed. The values come back on
+    // rehydration, so the note is right; what the model reads is not.
+    expect(deidentify(sentence).text).toBe(expected)
+  })
+
+  it.each([
+    ['Patient ID: 12345, one tablet daily.', 'Patient ID: [MRN_1], one tablet daily.'],
+    ['RN 4521 two tablets', 'RN [MRN_1] two tablets'],
+    ['My IC is 900412-08-6543, two tablets.', 'My IC is [NRIC_1], two tablets.'],
+    ['Oh, 0123456789 is my number.', 'Oh, [PHONE_1] is my number.'],
+  ])('keeps a dose word beside an identifier written in digits: %j', (sentence, expected) => {
+    // One number word is never a reading, so the digit detectors' output is
+    // exactly what it was before #435.
+    expect(deidentify(sentence).text).toBe(expected)
+  })
+
+  it.each([
+    [
+      'My IC is nine zero zero four one two zero eight six five four three pulse one oh two',
+      'My IC is [NRIC_1] pulse one oh two',
+    ],
+    [
+      'Okay IC nine zero zero four one two zero eight six five four three temperature thirty-eight point five',
+      'Okay IC [NRIC_1] temperature thirty-eight point five',
+    ],
+    [
+      'My IC is nine zero zero four one two zero eight six five four three BP one twenty over eighty',
+      'My IC is [NRIC_1] BP one twenty over eighty',
+    ],
+    [
+      'IC saya sembilan kosong kosong empat satu dua kosong lapan enam lima empat tiga demam tiga',
+      'IC saya [NRIC_1] demam tiga',
+    ],
+  ])('stops a cued reading before the clinical words said after it: %j', (sentence, expected) => {
+    // An unpunctuated reading runs straight into the vital sign. Once a whole
+    // number has been read, the next ordinary word is not more of it.
+    expect(deidentify(sentence).text).toBe(expected)
+  })
+
+  it.each([
+    [
+      'My IC is nine she lives two. Encik Zarul Damia Qaseh binti Abdullah at Jalan Ampang 5.',
+      'My IC is nine she lives two. Encik [PATIENT_1] at [ADDRESS_1].',
+    ],
+    [
+      'IC saya sembilan kosong empat tiga tinggal di blok dua. Encik Zarul Damia Qaseh binti Abdullah pun di Jalan Ampang 5.',
+      'IC saya [NRIC_1] tinggal di blok dua. Encik [PATIENT_1] pun di [ADDRESS_1].',
+    ],
+  ])("never takes another detector's cue into the token: %j", (sentence, expected) => {
+    // Found in review. "lives" and "tinggal" went into [NRIC_1], and the
+    // address they cued, reachable only on the second pass, passed in clear.
+    expect(deidentify(sentence).text).toBe(expected)
+  })
+
+  it('leaves the egress guard nothing to find after every case', () => {
+    const cases = [
+      ...SPOKEN_IC_READINGS.map(spokenIcSentence),
+      ...RECALL.map(([sentence]) => sentence),
+      ...PRECISION,
+    ]
+    for (const sentence of cases) {
+      expect(() => assertNoIdentifiers(deidentify(sentence).text, 'op'), sentence).not.toThrow()
+    }
+  })
+
+  it('lets the egress guard refuse a spoken identifier, naming the label only', () => {
+    const smuggled = 'My IC is nine zero zero four one two zero eight six five four three' as never
+    expect(() => assertNoIdentifiers(smuggled, 'note_and_gaps')).toThrow(/NRIC/)
+    try {
+      assertNoIdentifiers(smuggled, 'note_and_gaps')
+    } catch (error) {
+      expect(String(error)).not.toMatch(/nine|zero/)
+    }
+  })
+
+  it.each([
+    ['one long run', 'nine zero '.repeat(15_000)],
+    ['cues with no anchor', 'IC number is semak '.repeat(7_000)],
+    ['cues with a one-unit clause', 'IC tiga hari lagi. '.repeat(7_000)],
+  ])('detects over %s within a time budget', (_shape, text) => {
+    const started = performance.now()
+    detect(text)
+    expect(performance.now() - started).toBeLessThan(2_000)
   })
 })

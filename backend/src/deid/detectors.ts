@@ -20,6 +20,7 @@ import {
   TAMIL_TITLES,
 } from './gazetteer.js'
 import { isStructurallyValidNric, NRIC_PATTERN, NRIC_UNHYPHENATED_PATTERN } from './nric.js'
+import { scanSpokenNumbers } from './spoken-numbers.js'
 
 /**
  * Detector inventory for the Malaysian context (docs/trd.md §9).
@@ -86,11 +87,14 @@ const CONTEXT_BOOST = 0.35
  */
 const CUE_PATTERNS = new Map<string, RegExp>()
 
+const escapeCue = (cue: string) => cue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const WORD_BEFORE = '(?<![\\p{L}\\p{N}])'
+const WORD_AFTER = '(?![\\p{L}\\p{N}])'
+
 function cuePattern(cue: string): RegExp {
   const cached = CUE_PATTERNS.get(cue)
   if (cached) return cached
-  const escaped = cue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const built = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu')
+  const built = new RegExp(`${WORD_BEFORE}${escapeCue(cue)}${WORD_AFTER}`, 'iu')
   CUE_PATTERNS.set(cue, built)
   return built
 }
@@ -499,8 +503,11 @@ function detectDob(text: string): Match[] {
  * orphaned digits, and a three-digit minimum on the first group so an age or a
  * tablet count cannot be one.
  */
-const MRN_CUE =
-  /\b(?:MRN|RN|record\s+(?:no|number)|registration\s+(?:no|number)|clinic\s+(?:no|number)|patient\s+(?:id|no|number)|file\s+(?:no|number)|(?:no\.?|nombor)\s+(?:pendaftaran|fail|klinik|pesakit))\b[:\s.#-]*([A-Z]{0,4}[-/]?\d{3,10}(?:[-/]?\d{2,10}){0,2}[A-Z]?)\b/gi
+const MRN_CUE_WORDS = String.raw`MRN|RN|record\s+(?:no|number)|registration\s+(?:no|number)|clinic\s+(?:no|number)|patient\s+(?:id|no|number)|file\s+(?:no|number)|(?:no\.?|nombor)\s+(?:pendaftaran|fail|klinik|pesakit)`
+const MRN_CUE = new RegExp(
+  String.raw`\b(?:${MRN_CUE_WORDS})\b[:\s.#-]*([A-Z]{0,4}[-/]?\d{3,10}(?:[-/]?\d{2,10}){0,2}[A-Z]?)\b`,
+  'gi',
+)
 
 function detectMrn(text: string): Match[] {
   const out: Match[] = []
@@ -509,6 +516,218 @@ function detectMrn(text: string): Match[] {
     if (!value) continue
     const start = m.index + m[0].lastIndexOf(value)
     out.push({ label: 'MRN', start, end: start + value.length, value, score: 0.8 })
+  }
+  return out
+}
+
+// ─── Identifiers spoken as number words ──────────────────────────────────────
+
+/*
+ * Identity words only. They anchor the cued rule below and are what a spoken
+ * run is scored against. The clinical-setting words in `NRIC_CONTEXT` are left
+ * out on purpose: a digit run beside "clinic" is likely a garbled IC, but a run
+ * of number words beside it is as likely "Pulse one two zero, one one eight",
+ * and every clinical transcript says "clinic" somewhere.
+ */
+const IDENTITY_CUES = [
+  'ic',
+  'icnya',
+  'i/c',
+  'k/p',
+  'nric',
+  'mykad',
+  'mykadnya',
+  'kad pengenalan',
+  'kad pengenalannya',
+  'identity',
+]
+/*
+ * Nouns, and "number" only where it is someone's, for the same reason. "the
+ * number on the thermometer", "Call us if the oximeter shows nine two" and
+ * "Any close contact?" are routine in a URTI consultation, so a bare "number",
+ * "call" and "contact" never mark a spoken run. "call me" is left out too: it
+ * opens safety-netting ("call me if it goes nine two") as often as a number.
+ */
+const SPOKEN_PHONE_CUES = [
+  'phone',
+  'telephone',
+  'handphone',
+  'hp',
+  'mobile',
+  'telefon',
+  'my number',
+  'your number',
+  'contact number',
+  'number saya',
+  'nombor saya',
+  'nombor awak',
+  'nombor anda',
+]
+const cueRegExp = (cues: readonly string[]) =>
+  new RegExp(`${WORD_BEFORE}(?:${cues.map(escapeCue).join('|')})${WORD_AFTER}`, 'giu')
+/** The cues a cued clause may follow, and the label its reading takes. */
+const CLAUSE_CUES: readonly { pattern: RegExp; label: DetectorLabel }[] = [
+  { pattern: cueRegExp(IDENTITY_CUES), label: 'NRIC' },
+  { pattern: cueRegExp(SPOKEN_PHONE_CUES), label: 'PHONE' },
+]
+/*
+ * Every word another detector reads as a cue ends a cued clause, so a fragment
+ * taken into the token never takes a cue with it: "My IC is nine she lives
+ * two." would otherwise hide "lives" from the address said after it.
+ */
+const CLAUSE_STOPS = new Set(
+  [
+    ...NRIC_CONTEXT,
+    ...PHONE_CONTEXT,
+    ...ADDRESS_CONTEXT,
+    ...HONORIFICS,
+    ...PATRONYMICS,
+    ...NAME_INTRODUCERS,
+    ...['born', 'birth', 'birthday', 'dob', 'lahir', 'dilahirkan', 'kelahiran', 'lahirkan'],
+    ...['mrn', 'rn', 'record', 'registration', 'file', 'fail', 'pendaftaran', 'patient', 'id'],
+  ].flatMap((cue) => cue.toLowerCase().split(/\s+/)),
+)
+const PHONE_DIGITS = new RegExp(`^(?:${PHONE_PATTERN.source})$`)
+/** A record cue with nothing but `[:\s.#-]` between it and the end of the text. */
+const MRN_CUE_BEFORE = new RegExp(String.raw`\b(?:${MRN_CUE_WORDS})\b[:\s.#-]*$`, 'i')
+
+const directlyAfterMrnCue = (text: string, start: number) =>
+  MRN_CUE_BEFORE.test(text.slice(Math.max(0, start - CONTEXT_WINDOW), start))
+
+const SENTENCE_ENDS = new Set(['.', '!', ';', '\n', '。', '！', '；'])
+const QUESTION_MARKS = new Set(['?', '？'])
+
+function previousNonSpace(text: string, at: number): string {
+  for (let i = at - 1; i >= 0; i--) if (!/\s/.test(text[i] ?? '')) return text[i] ?? ''
+  return ''
+}
+
+/*
+ * What a spoken run's cue may sit in: its own sentence up to where the run
+ * starts, and the question before it when it answers one ("Doctor: what's your
+ * number?\nPatient: oh one two..."). `scoreWith` looks both ways across
+ * sentences and turns, which a digit run can afford and a run of number words
+ * cannot: "Thanks for the IC. Temperature three eight five, three nine one" is
+ * a temperature.
+ */
+function sentenceBefore(text: string, start: number): string {
+  const from = Math.max(0, start - CONTEXT_WINDOW)
+  let answered = false
+  for (let i = start - 1; i >= from; i--) {
+    const c = text[i] ?? ''
+    if (QUESTION_MARKS.has(c)) {
+      if (answered) return text.slice(i + 1, start)
+      answered = true
+    } else if (SENTENCE_ENDS.has(c)) {
+      // The line break after a question belongs to it.
+      if (c === '\n' && QUESTION_MARKS.has(previousNonSpace(text, i))) continue
+      return text.slice(i + 1, start)
+    }
+  }
+  return text.slice(from, start)
+}
+
+function spokenCueLabel(text: string, start: number): DetectorLabel | undefined {
+  const sentence = sentenceBefore(text, start)
+  if (IDENTITY_CUES.some((cue) => cuePattern(cue).test(sentence))) return 'NRIC'
+  if (SPOKEN_PHONE_CUES.some((cue) => cuePattern(cue).test(sentence))) return 'PHONE'
+  return undefined
+}
+
+function longRunLabel(digits: string): DetectorLabel {
+  if (digits.length === 12 && isStructurallyValidNric(digits)) return 'NRIC'
+  return PHONE_DIGITS.test(digits) ? 'PHONE' : 'MRN'
+}
+
+/**
+ * An identifier read aloud and written as number words (#435, docs/trd.md §9,
+ * "Spoken Digit Runs").
+ *
+ * Batch transcription never wrote the synthetic IC as digits in 32 results, so
+ * every detector above reads past it. Two rules, because neither alone covers
+ * what came back. Neither fires on fewer than two number words, short of a
+ * cued reading of nine digits or more, so a dose word beside a digit
+ * identifier ("RN 4521 two tablets") is left alone.
+ *
+ * **The run rule** reads the digits a run of number words spells:
+ *
+ * - **Nine or more, mostly digit by digit:** at least four single units and
+ *   more singles than two-digit number words. Always an identifier. No
+ *   progression exemption, because the corpus phone read aloud, "zero one two
+ *   three four five six seven eight nine", is itself one. Counting aloud to
+ *   nine pays for that.
+ * - **Three to eight, every unit a single digit, directly after a record cue:**
+ *   MRN. The plan stops this band at five; it runs to eight here because "MRN"
+ *   names neither an IC nor a phone, so the cued band below would leave a
+ *   six-digit record number read out after it in clear.
+ * - **Six or more, at least four single units, after an identity or phone
+ *   cue earlier in its own sentence or the question it answers:** that cue's
+ *   label. Six to eight must not be a progression. Nine or more lands here
+ *   when two-digit words are at least half of it, because a fever log read
+ *   "thirty-nine five, thirty-nine eight, thirty-nine one" is twelve digits
+ *   too, one pair and one single per reading.
+ *
+ * Single units are the precision bound, and outside a cue an ASCII digit
+ * group is one unit whatever its length, so "38, 39, 38, 37, 38, two days" is
+ * not ten single digits.
+ *
+ * **The cued rule** catches what a run cannot: many readings mix languages,
+ * insert fillers ("sama", "semak") or decay into phonetic fragments that break
+ * any run. After an identity cue, a clause opening on a number word is the
+ * reading, bounded by `scanSpokenNumbers` so that it stops before clinical
+ * content said after it. Three units at least, so "IC two three days of fever"
+ * keeps its duration, or two with garbled fragments between them.
+ */
+function detectSpokenNumbers(text: string): Match[] {
+  const cues = CLAUSE_CUES.flatMap(({ pattern, label }) =>
+    [...text.matchAll(pattern)].map((m) => ({ end: m.index + m[0].length, label })),
+  )
+  const { runs, clauses } = scanSpokenNumbers(text, {
+    cueEnds: cues.map((cue) => cue.end),
+    stops: CLAUSE_STOPS,
+  })
+  const out: Match[] = []
+  const emit = (label: DetectorLabel, span: { start: number; end: number }, score: number) => {
+    out.push({
+      label,
+      start: span.start,
+      end: span.end,
+      value: text.slice(span.start, span.end),
+      score,
+    })
+  }
+
+  for (const run of runs) {
+    const length = run.digits.length
+    const twoWords = run.spoken >= 2
+    if (twoWords && length >= 9 && run.singles >= 4 && run.singles > run.compounds) {
+      // Below the cued rule's 0.85, so the same span read after a cue is NRIC.
+      emit(longRunLabel(run.digits), run, 0.8)
+      continue
+    }
+    if (
+      twoWords &&
+      length >= 3 &&
+      run.singles === run.units &&
+      directlyAfterMrnCue(text, run.start)
+    ) {
+      emit('MRN', run, 0.8)
+      continue
+    }
+    // Under a cue each ASCII digit counts as a single, as a reading half
+    // written in digits ("My IC is 90041208654 three") is still one reading.
+    const singles = run.singles + run.asciiDigits
+    if (length < 6 || singles < 4 || (length <= 8 && (run.progression || !twoWords))) continue
+    // Base 0.3 clears `ACCEPT_THRESHOLD` only with a cue before it.
+    const label = spokenCueLabel(text, run.start)
+    if (label) emit(label, run, 0.3 + CONTEXT_BOOST)
+  }
+  for (const clause of clauses) {
+    // Two number words are a reading only with fragments between them, as a
+    // garbled one has; with none they are as likely "two, three days".
+    const floor = clause.fragments > 0 ? 2 : 3
+    const label = cues[clause.cue]?.label
+    if (label && clause.units >= floor && clause.spoken >= 2) emit(label, clause, 0.85)
   }
   return out
 }
@@ -920,6 +1139,7 @@ const DETECTORS = [
   detectNames,
   detectNativeScriptNames,
   detectScript,
+  detectSpokenNumbers,
 ] as const
 
 /**
