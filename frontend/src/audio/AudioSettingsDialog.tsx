@@ -119,12 +119,19 @@ export function AudioSettingsDialog({
   settings,
   onApply,
   ambient,
+  refinementAvailable = false,
 }: {
   ref: Ref<HTMLDialogElement>
   settings: AudioSettings
   onApply: (next: AudioSettings) => void
   /** True while the Record tab is showing the ambient panel. */
   ambient: boolean
+  /**
+   * True when the API offers refinement after Stop (#436), which the ambient
+   * panel learns from its config probe. The switch is shown only then, so it
+   * never governs nothing.
+   */
+  refinementAvailable?: boolean
 }) {
   const [draft, setDraft] = useState(settings)
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
@@ -170,10 +177,14 @@ export function AudioSettingsDialog({
                 tick was removed in #228 and the copy stayed, so the dialog told
                 the doctor each patient was asked while nothing asked. Pinned by
                 a test that renders both. */}
+            {/* It said "Ambient capture always uses Soniox" until refinement
+                after Stop gave the same recording a second processor (#436).
+                Naming that one here instead would be the quieter disclosure
+                `docs/decisions.md` D-004 forbids, so it names neither. */}
             <InfoTip label="About Transcription Engine" layered>
-              Applies to Press To Record. Ambient capture always uses Soniox. Choosing ILMU does not
-              send anything on its own. Each patient is asked on the Record tab, and that agreement
-              is never remembered.
+              Applies to Press To Record. Ambient capture follows this consultation&apos;s Capture
+              Mode, not this choice. Choosing ILMU does not send anything on its own. Each patient
+              is asked on the Record tab, and that agreement is never remembered.
             </InfoTip>
           </legend>
           <div className="grid gap-2">
@@ -213,6 +224,23 @@ export function AudioSettingsDialog({
                     The audio leaves this device as it happens. Set by this consultation's Capture
                     Mode.
                   </span>
+                  {/* Refinement after Stop (#436), on this card because it
+                      belongs to the ambient engine and to nothing below it.
+                      Vendor neutral on purpose, label and tip alike: naming the
+                      second processor somewhere quieter than the consent gate
+                      is what D-004 forbids. Saying the recording is sent again
+                      names nobody, and it is what makes this switch an honest
+                      control rather than a quality setting. */}
+                  {refinementAvailable && (
+                    <div className="mt-2 border-accent/20 border-t">
+                      <Toggle
+                        checked={draft.refineAfterStop}
+                        onChange={(next) => setDraft({ ...draft, refineAfterStop: next })}
+                        label="Refine After Stop"
+                        detail="After you stop, the whole recording is sent once more and transcribed again, for a more accurate transcript. If that fails, or you skip it, the live transcript is used and you are told. Not used on translated consultations."
+                      />
+                    </div>
+                  )}
                 </div>
                 <Radio aria-hidden className="mt-0.5 size-4 shrink-0" />
               </div>

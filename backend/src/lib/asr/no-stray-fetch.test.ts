@@ -44,16 +44,18 @@ const SCANNED_DIR = 'backend/src'
 /**
  * The complete, intended inventory of outbound `fetch` calls in the API.
  *
- * Three entries, and they are not the same kind of thing.
+ * Four entries, and they are not the same kind of thing.
  *
  * `ilmu.ts` is the audio egress the rule names: `transcribeWithIlmu` posts a
  * recording. `soniox.ts` carries no audio at all, and is here because it mints
  * the short-lived credential the browser uses to open its own stream (#268);
  * the egress it enables happens in the client, where this guard cannot see it,
  * which is why `frontend/src/audio/live/no-stray-websocket.test.ts` exists as
- * its counterpart.
+ * its counterpart. `elevenlabs.ts` is the same shape for refinement after Stop
+ * (#436): it mints a single-use token and the browser uploads the recording,
+ * which `frontend/src/no-stray-fetch.test.ts` pins on the other side.
  *
- * Both use native fetch because neither vendor's SDK may be imported: the
+ * All three use native fetch because neither vendor's SDK may be imported: the
  * repo-wide provider-SDK inventory is pinned at one, inside `lib/llm/`, and
  * `no-stray-provider-sdk.test.ts` names both vendors so a shortcut trips it.
  *
@@ -68,6 +70,7 @@ const SCANNED_DIR = 'backend/src'
 const EXPECTED_FETCH_CALLS: ReadonlyMap<string, number> = new Map([
   ['backend/src/lib/asr/ilmu.ts', 1],
   ['backend/src/lib/asr/soniox.ts', 1],
+  ['backend/src/lib/asr/elevenlabs.ts', 1],
   ['backend/src/scripts/ingest-cpg.ts', 1],
 ])
 

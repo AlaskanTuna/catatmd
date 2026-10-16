@@ -85,9 +85,12 @@ const PROVIDER_PACKAGES = new Set([
   'microsoft-cognitiveservices-speech-sdk',
   '@azure/cognitiveservices-speech-sdk',
   'revai-node-sdk',
+  // The refinement provider (#436). The unscoped package is its older SDK;
+  // the scoped ones are caught by `@elevenlabs/` below.
+  'elevenlabs',
 ])
 
-const PROVIDER_SCOPES = ['@ai-sdk/', '@mistralai/', '@soniox/', '@speechmatics/']
+const PROVIDER_SCOPES = ['@ai-sdk/', '@mistralai/', '@soniox/', '@speechmatics/', '@elevenlabs/']
 
 /** `import x from 'y'`, `import 'y'`, `require('y')`, `await import('y')`. */
 const SPECIFIER = /(?:\bfrom\s*|\bimport\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)['"]([^'"]+)['"]/g
@@ -193,6 +196,12 @@ describe('only lib/llm imports a provider SDK (issue #81)', () => {
       // replace the single pinned socket module with the vendor's own.
       '@soniox/node',
       '@soniox/speech-to-text-web',
+      // The refinement provider (#436). Any of these would replace the one
+      // pinned upload module with the vendor's own client.
+      'elevenlabs',
+      '@elevenlabs/elevenlabs-js',
+      '@elevenlabs/client',
+      '@elevenlabs/react',
     ]) {
       expect(isProviderSdk(specifier), `${specifier} should be caught`).toBe(true)
     }
@@ -209,8 +218,11 @@ describe('only lib/llm imports a provider SDK (issue #81)', () => {
       '@aws-sdk/client-s3',
       'assemblyai-utils',
       'soniox-utils',
+      'elevenlabs-utils',
       './asr/ilmu.js',
       './asr/soniox.js',
+      './asr/elevenlabs.js',
+      './live/elevenlabs-batch.js',
     ]) {
       expect(isProviderSdk(specifier), `${specifier} should not be caught`).toBe(false)
     }

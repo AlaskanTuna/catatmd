@@ -55,8 +55,21 @@ const MAY_PERSIST = new Set(['audio-settings.ts'])
  * and bounded by the retention window in `backend/src/audio/`; what must still
  * never appear is a second module sending one.
  */
-const SENDS_AUDIO = /\bapi\.(putConsultationAudio|getConsultationAudio)\b/
-const MAY_SEND_AUDIO = new Set(['use-transcript-audio.ts'])
+/*
+ * Refinement after Stop (#436) added the second sender, and the first that is
+ * not our own API: `elevenlabs-batch.ts` uploads the finished recording to the
+ * refinement vendor, and `AmbientCapture.tsx` is the one module that calls it.
+ * The raw send primitives are in the pattern as well as the named calls, so a
+ * third module posting a recording by hand is caught too, whatever it names
+ * the function.
+ */
+const SENDS_AUDIO =
+  /\bapi\.(putConsultationAudio|getConsultationAudio)\b|\btranscribeRecording\s*\(|\bfetch\s*\(|\bnew\s+FormData\b/
+const MAY_SEND_AUDIO = new Set([
+  'use-transcript-audio.ts',
+  'live/elevenlabs-batch.ts',
+  'live/AmbientCapture.tsx',
+])
 
 function sourceFiles(dir: string): string[] {
   const found: string[] = []
@@ -113,8 +126,12 @@ describe('audio is never persisted', () => {
     },
   )
 
-  it('names the one module that may send a recording, so the list is reviewable', () => {
-    expect([...MAY_SEND_AUDIO]).toEqual(['use-transcript-audio.ts'])
+  it('names the modules that may send a recording, so the list is reviewable', () => {
+    expect([...MAY_SEND_AUDIO]).toEqual([
+      'use-transcript-audio.ts',
+      'live/elevenlabs-batch.ts',
+      'live/AmbientCapture.tsx',
+    ])
   })
 
   /*
@@ -126,6 +143,10 @@ describe('audio is never persisted', () => {
     expect(SENDS_AUDIO.test('void api.putConsultationAudio(consultationId, blob)')).toBe(true)
     expect(SENDS_AUDIO.test('await api.getConsultationAudio(consultationId)')).toBe(true)
     expect(SENDS_AUDIO.test('const detail = await api.approve(id)')).toBe(false)
+    expect(SENDS_AUDIO.test('await transcribeRecording(session, recording, signal)')).toBe(true)
+    expect(SENDS_AUDIO.test('const response = await fetch(target, init)')).toBe(true)
+    expect(SENDS_AUDIO.test('const form = new FormData()')).toBe(true)
+    expect(SENDS_AUDIO.test('void proposals.refetch()')).toBe(false)
   })
 
   it('keeps the retained recording in exactly one module', () => {

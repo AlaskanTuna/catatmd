@@ -42,17 +42,20 @@ afterEach(cleanup)
  * not implement. The attribute is what the UA stylesheet keys on, which is the
  * only part of the difference these assertions can see.
  */
-function renderDialog(ambient = false) {
+function renderDialog(ambient = false, refinementAvailable = false) {
   const ref = createRef<HTMLDialogElement>()
+  const onApply = vi.fn()
   render(
     <AudioSettingsDialog
       ref={ref}
       settings={DEFAULT_AUDIO_SETTINGS}
-      onApply={vi.fn()}
+      onApply={onApply}
       ambient={ambient}
+      refinementAvailable={refinementAvailable}
     />,
   )
   act(() => ref.current?.setAttribute('open', ''))
+  return { onApply }
 }
 
 /*
@@ -186,11 +189,29 @@ describe('the Audio dialog and the control it describes', () => {
 
     // Press-to-record never opens a socket, so naming a running Soniox engine
     // there would be the same class of untrue claim in the other direction.
-    // The scoping sentence behind the engine tip still names Soniox, and must:
-    // it is what tells the reader the list does not cover every path.
+    // The scoping sentence behind the engine tip still says the list does not
+    // govern ambient capture, and must: it is what tells the reader the list
+    // does not cover every path.
     expect(screen.queryByText(/soniox \(streaming\)/i)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'About Transcription Engine' }))
-    expect(screen.getByText(/ambient capture always uses soniox/i)).toBeTruthy()
+    expect(
+      screen.getByText(
+        /ambient capture follows this consultation's capture mode, not this choice/i,
+      ),
+    ).toBeTruthy()
+  })
+
+  /*
+   * "Ambient capture always uses Soniox" stopped being true when refinement
+   * after Stop added a second processor for the same recording (#436). Naming
+   * that one here instead is what D-004 forbids, so the sentence names neither.
+   */
+  it('no longer claims ambient capture uses one processor only, and names no other', () => {
+    renderDialog(true, true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'About Transcription Engine' }))
+    expect(screen.queryByText(/always uses/i)).toBeNull()
+    expect(document.body.textContent).not.toMatch(/ElevenLabs|scribe_v2/i)
   })
 
   it('claims no label review, which was removed with the review gate', () => {
@@ -338,5 +359,71 @@ describe('cancelling the Audio settings dialog', () => {
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
 
     expect(onApply).toHaveBeenCalledWith({ ...saved, engine: 'local' })
+  })
+})
+
+/*
+ * Refinement after Stop (#436): on by default, with this switch as the per
+ * device opt-out, shown only where the API offers it and only beside the
+ * ambient engine it belongs to.
+ */
+describe('the refinement switch', () => {
+  const nativeClose = HTMLDialogElement.prototype.close
+
+  // Save closes the dialog, which this jsdom does not implement.
+  beforeAll(() => {
+    HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
+      this.open = false
+      this.dispatchEvent(new Event('close'))
+    }
+  })
+
+  afterAll(() => {
+    HTMLDialogElement.prototype.close = nativeClose
+  })
+
+  const refineSwitch = () => screen.queryByRole('switch', { name: 'Refine After Stop' })
+
+  it('sits on the ambient card when the API offers refinement', () => {
+    renderDialog(true, true)
+
+    const control = refineSwitch()
+    expect(control).toBeTruthy()
+    expect(control?.getAttribute('aria-checked')).toBe('true')
+    const card = screen.getByText(/soniox \(streaming\)/i).closest('div')?.parentElement
+    expect(card?.contains(control as Node)).toBe(true)
+  })
+
+  it('is absent where the API does not offer refinement', () => {
+    renderDialog(true, false)
+
+    expect(refineSwitch()).toBeNull()
+  })
+
+  it('is absent on press-to-record, which it does not govern', () => {
+    renderDialog(false, true)
+
+    expect(refineSwitch()).toBeNull()
+  })
+
+  it('names no vendor, in its label or behind its tip', () => {
+    renderDialog(true, true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'About Refine After Stop' }))
+    const tip = screen.getByRole('tooltip').textContent ?? ''
+    expect(tip).toMatch(/live transcript/i)
+    // It says the recording leaves again, which names nobody (D-004).
+    expect(tip).toMatch(/recording is sent once more/i)
+    expect(tip).not.toMatch(/ElevenLabs|Soniox|scribe_v2/i)
+  })
+
+  it('saves the opt-out for this device', () => {
+    const { onApply } = renderDialog(true, true)
+
+    fireEvent.click(refineSwitch() as HTMLElement)
+    expect(refineSwitch()?.getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(onApply).toHaveBeenCalledWith({ ...DEFAULT_AUDIO_SETTINGS, refineAfterStop: false })
   })
 })

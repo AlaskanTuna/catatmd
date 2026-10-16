@@ -257,6 +257,55 @@ export const draftTurnsRateLimit = rateLimit({
 })
 
 /**
+ * Per-IP limiter for `POST /api/asr/batch-sessions`, which mints the single-use
+ * token that uploads one finished ambient recording for refinement (#436).
+ *
+ * Five a minute, matching the ambient mint, because one consultation needs one
+ * refinement: the number bounds retries by a human hand, not throughput. It is
+ * the only per-caller control on this path, and it matters more here than on
+ * the live mint, because the token binds no duration (docs/trd.md §20.14): what
+ * one upload costs is however long the recording is, up to the vendor's own
+ * limits. The vendor credit quota on the key is the only spend bound beyond
+ * this, and `.claude/rules/security.md` states the missing global cap as a gap.
+ * Its own bucket, so refinement neither spends nor is spent by the live mint.
+ */
+export const batchSessionRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: {
+      code: 'rate_limited',
+      message: 'Too many refinement requests. Please retry shortly.',
+    },
+  },
+})
+
+/**
+ * Per-IP limiter for `POST /api/asr/refinement-check`, which runs the rules
+ * engine over a live and a refined transcript after Stop (#436).
+ *
+ * In-process and model-free, like `liveFlagsRateLimit`, so this is a bound on
+ * CPU a caller did not pay for rather than on spend. Ten a minute is twice the
+ * batch mint it follows one-to-one.
+ */
+export const refinementCheckRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: clientKey,
+  message: {
+    error: {
+      code: 'rate_limited',
+      message: 'Too many refinement checks. Please retry shortly.',
+    },
+  },
+})
+
+/**
  * Per-IP limiter for `POST /api/consultations/:id/live-flags`, ambient
  * capture's deterministic pane (#219).
  *

@@ -14,13 +14,9 @@ import { AudioSettingsDialog } from '../audio/AudioSettingsDialog.js'
 import { type AudioSettings, loadAudioSettings } from '../audio/audio-settings.js'
 import {
   carryUncertain,
-  type DraftLine,
+  draftLinesFor,
   draftToTurns,
   type MarkedSegment,
-  proseToDraft,
-  segmentsToDraft,
-  timeDraftLines,
-  voteRolesBySpeaker,
 } from '../audio/draft-turns.js'
 import { AmbientCapture } from '../audio/live/AmbientCapture.js'
 import type { OtherLanguage } from '../audio/live/bilingual.js'
@@ -156,6 +152,12 @@ export function CapturePanel({
    * A live session still wins, so this can never unmount one.
    */
   const [ambientUnavailable, setAmbientUnavailable] = useState(false)
+  /*
+   * Whether the API offers refinement after Stop (#436), as the ambient panel's
+   * config probe reported it, so the Audio dialog shows its switch only where
+   * the switch does something.
+   */
+  const [refinementAvailable, setRefinementAvailable] = useState(false)
   const showAmbient = (captureMode === 'ambient' && !ambientUnavailable) || ambientLive
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>(TABS[0].id)
   const audioDialog = useRef<HTMLDialogElement>(null)
@@ -200,6 +202,16 @@ export function CapturePanel({
   const translatedLanguages = useRef<InterpretedLanguage[]>([])
 
   /*
+   * Whether any recording was uploaded for refinement after Stop, and whether
+   * any refined transcript was used (#436). Both only ever widen, like the
+   * provenance stamp: a later pass that uploaded nothing does not make the
+   * earlier upload not have happened, and the trail reads this from the
+   * submitted transcript.
+   */
+  const batchUploaded = useRef(false)
+  const batchUsed = useRef(false)
+
+  /*
    * `labelsReviewed` says whether a person stands behind the speaker on every
    * turn, and the red-flag engine reads it before it is willing to drop a
    * trigger hit (shared/src/index.ts). True on Paste only, because the doctor
@@ -223,6 +235,7 @@ export function CapturePanel({
       turns: withUncertainty,
       labelsReviewed: nextSource === 'paste',
       ...(languages.length > 0 ? { machineTranslation: { languages: [...languages] } } : {}),
+      ...(batchUploaded.current ? { batchTranscription: { used: batchUsed.current } } : {}),
     })
   }
 
@@ -305,6 +318,7 @@ export function CapturePanel({
     otherLanguages,
     translation,
     audio: recording,
+    batchTranscription,
   }: {
     text: string
     segments: readonly MarkedSegment[]
@@ -313,6 +327,7 @@ export function CapturePanel({
     otherLanguages?: readonly (OtherLanguage | null)[]
     translation?: InterpretedLanguage
     audio?: Blob
+    batchTranscription?: { used: boolean }
   }) => {
     /*
      * Appended, never replacing what is already there. A doctor may
@@ -334,62 +349,26 @@ export function CapturePanel({
     // anything together: audio with no timing cannot be seeked to, and timing
     // from an earlier pass does not index into this recording.
     if (withOffsets && recording) onRecording?.(recording)
-    // Hosted recordings carry server-drafted labels instead of
-    // segments (#189); `hosted-` ids are a namespace disjoint from
-    // the local `seg-` ones. The labels arrive with no timing of
-    // their own, and gain it below only where a live capture
-    // measured some and it can be located in the words.
-    //
-    // The third branch is the one that keeps this from being a
-    // dead end. A hosted recording carries no segments, so when the
-    // labelling pass does not return, the first two produce nothing
-    // and the doctor is left with a block of prose that parses to
-    // zero turns, which is exactly the condition Start Consultation
-    // is disabled on. `proseToDraft` applies the same rules to the
-    // text alone, so the recording stays usable and the labels stay
-    // the doctor's to confirm.
     /*
-     * The `undrafted` marker the server sets on a span it could not
-     * label is deliberately not carried further. Its only reader was
-     * the review list, which is gone, and a marker nothing reads is
-     * worse than none. The span's placeholder speaker is bounded
-     * instead by `labelsReviewed`, which stops the red-flag engine
-     * trusting any label on this path, drafted or placeholder.
-     */
-    const hostedLines = (draftTurns ?? []).map(
-      (turn, i): DraftLine => ({
-        id: `hosted-${i}`,
-        speaker: turn.speaker,
-        text: turn.text,
-      }),
-    )
-    /*
+     * Which lines this recording becomes: drafted turns first, then the
+     * segments, then prose so a recording with neither stays usable (#189).
+     * The choice lives in `draftLinesFor` because ambient refinement must read
+     * exactly these lines when it checks a refined transcript for lost red
+     * flags (#436), and two copies of it would be two answers.
+     *
      * Roles follow the voice the recogniser heard, voted by the draft (#388).
      * Not on a translated recording, whose roles come from the language spoken
-     * and whose pairs line up with these lines index for index.
+     * and whose pairs line up with these lines index for index. Ambient
+     * carries both halves (#293): the labelling pass gives the better speakers
+     * and the live capture the measured timing, which is put back onto them.
      */
-    const voted = (drafted: DraftLine[]) =>
-      translation === undefined ? voteRolesBySpeaker(drafted, segments) : drafted
-    const timedLines = voted(segmentsToDraft(segments, transcribed, { withOffsets }))
-    /*
-     * Ambient carries both halves, so it no longer has to choose (#293). The
-     * labelling pass gives the better speakers and the live capture gives real
-     * measured timing, and `timeDraftLines` puts the second back onto the
-     * first. A turn it cannot locate keeps no timing at all.
-     *
-     * The hosted relay reaches this line too and is unaffected: it sends no
-     * segments, so there is nothing to align against and the lines come back
-     * exactly as they went in.
-     */
-    const labelledLines = withOffsets
-      ? timeDraftLines(voted(hostedLines), segments)
-      : voted(hostedLines)
-    const lines =
-      labelledLines.length > 0
-        ? labelledLines
-        : timedLines.length > 0
-          ? timedLines
-          : proseToDraft(transcribed)
+    const { lines, labelled } = draftLinesFor({
+      text: transcribed,
+      segments,
+      ...(draftTurns === undefined ? {} : { draftTurns }),
+      voteBySpeaker: translation === undefined,
+      withOffsets,
+    })
     let addition: string
     if (lines.length > 0) {
       /*
@@ -424,11 +403,7 @@ export function CapturePanel({
        * the lines came from somewhere else, and no pair is better than a wrong
        * one.
        */
-      if (
-        otherLanguages !== undefined &&
-        lines === labelledLines &&
-        otherLanguages.length === applied.length
-      ) {
+      if (otherLanguages !== undefined && labelled && otherLanguages.length === applied.length) {
         const withPairs = applied.map((turn, index) => {
           const other = otherLanguages[index]
           return other ? { ...turn, otherLanguage: other } : turn
@@ -468,6 +443,10 @@ export function CapturePanel({
     setSource(nextSource)
     if (translation !== undefined && !translatedLanguages.current.includes(translation)) {
       translatedLanguages.current = [...translatedLanguages.current, translation]
+    }
+    if (batchTranscription !== undefined) {
+      batchUploaded.current = true
+      batchUsed.current = batchUsed.current || batchTranscription.used
     }
     submitText(nextText, nextSource)
   }
@@ -531,6 +510,7 @@ export function CapturePanel({
           settings={audio}
           onApply={setAudio}
           ambient={showAmbient}
+          refinementAvailable={refinementAvailable}
         />
       )}
 
@@ -581,6 +561,8 @@ export function CapturePanel({
                 }}
                 onLiveSegments={onLiveSegments}
                 deviceId={audio.deviceId}
+                refineAfterStop={audio.refineAfterStop}
+                onRefinementAvailable={setRefinementAvailable}
                 conversationExpanded={conversationExpanded}
                 onConversationExpandedChange={onConversationExpandedChange}
                 prompter={prompter}

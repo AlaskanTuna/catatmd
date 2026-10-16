@@ -1173,6 +1173,45 @@ describe('capturing a transcript into an existing draft', () => {
   })
 
   /*
+   * Refinement after Stop (#436). The row says whether the recording also went
+   * to the refinement vendor and whether its transcript was kept, as two
+   * booleans because a refused refinement still sent the audio.
+   */
+  it.each([
+    [undefined, { batchUploaded: false, batchUsed: false }],
+    [{ used: false }, { batchUploaded: true, batchUsed: false }],
+    [{ used: true }, { batchUploaded: true, batchUsed: true }],
+  ])(
+    'records the refinement %j on the ambient row when captured by PATCH',
+    async (batch, metadata) => {
+      seed('draft', { transcript: null })
+
+      await call('PATCH', '/api/consultations/c1', {
+        transcript: {
+          ...CAPTURED,
+          source: 'asr_live',
+          ...(batch === undefined ? {} : { batchTranscription: batch }),
+        },
+      })
+
+      expect(audits.find((a) => a.action === 'consultation.asr_live_used')?.metadata).toEqual(
+        metadata,
+      )
+    },
+  )
+
+  it('records the refinement on the ambient row when created with a transcript', async () => {
+    await call('POST', '/api/consultations', {
+      transcript: { ...CAPTURED, source: 'asr_live', batchTranscription: { used: false } },
+    })
+
+    expect(audits.find((a) => a.action === 'consultation.asr_live_used')?.metadata).toEqual({
+      batchUploaded: true,
+      batchUsed: false,
+    })
+  })
+
+  /*
    * Capture returns early, so a mixed patch would apply the transcript and
    * silently drop the rest. Refusing it is the honest outcome.
    */

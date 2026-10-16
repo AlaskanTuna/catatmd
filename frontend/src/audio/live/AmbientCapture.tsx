@@ -1,14 +1,21 @@
 import type { DraftTurn, InterpretedLanguage, LiveAsrConfig, LiveSession } from '@shared/types'
-import { MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
+import { MAX_BATCH_RECORDING_SECONDS, MAX_DRAFT_TEXT_CHARACTERS } from '@shared/types'
 import { Loader2, Maximize2, Mic, Minimize2, Square } from 'lucide-react'
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import toast from 'react-hot-toast'
 import { ApiError, api } from '../../lib/api.js'
 import { Button } from '../../ui/Button.js'
 import { InfoTip } from '../../ui/InfoTip.js'
 import { Select } from '../../ui/Select.js'
 import { ConsentGate } from '../ConsentGate.js'
-import type { MarkedSegment } from '../draft-turns.js'
+import { draftLinesFor, type MarkedSegment } from '../draft-turns.js'
 import { InputMeter } from '../InputMeter.js'
+import {
+  MAX_REFINED_TAIL_SHORTFALL_MS,
+  refinementCheckTexts,
+  refinementTimeoutMs,
+  refinementVerdict,
+} from './batch-tokens.js'
 import {
   bilingualDelivery,
   bilingualDisplay,
@@ -18,6 +25,7 @@ import {
   type OtherLanguage,
   tokensToBilingualTurns,
 } from './bilingual.js'
+import { transcribeRecording } from './elevenlabs-batch.js'
 import { LiveConversation } from './LiveConversation.js'
 import type { LiveFoldSegment } from './live-fold.js'
 import {
@@ -145,7 +153,19 @@ const SHORT_TAIL_NOTICE =
 const TRANSLATION_UNAVAILABLE_ERROR =
   'Translation is not available right now, and nothing was sent. Choose Auto-Detect, or try again shortly.'
 
-type Phase = 'idle' | 'starting' | 'listening' | 'finishing' | 'labelling'
+/**
+ * Shown when refinement after Stop did not produce a transcript that passed
+ * every check, so the live one is used (#436). Never silent, and vendor
+ * neutral: the panel names no processor (`docs/decisions.md` D-004), and a
+ * failure notice is not the place to start.
+ */
+const REFINE_FAILED_NOTICE =
+  'The transcript could not be refined, so the live transcript is used. Check it as usual.'
+
+/** Shown when the doctor chose the live transcript rather than wait. */
+const REFINE_SKIPPED_NOTICE = 'Refinement was skipped, so the live transcript is used.'
+
+type Phase = 'idle' | 'starting' | 'listening' | 'finishing' | 'refining' | 'labelling'
 
 type Availability =
   | { status: 'loading' }
@@ -167,6 +187,8 @@ export function AmbientCapture({
   onConversationExpandedChange,
   prompter,
   patientName,
+  refineAfterStop = true,
+  onRefinementAvailable,
 }: {
   onTranscript: (result: {
     text: string
@@ -188,6 +210,13 @@ export function AmbientCapture({
     translation?: InterpretedLanguage
     /** The consultation's audio, for playing a sentence back in review (#293). */
     audio?: Blob
+    /**
+     * Present whenever the recording was uploaded for refinement after Stop
+     * (#436), and whether the refined transcript is the one delivered. A
+     * refused refinement still sent the audio, so `used: false` is a record of
+     * an egress rather than of nothing.
+     */
+    batchTranscription?: { used: boolean }
   }) => void
   /** Returns the Record tab to press-to-record, and remembers that choice. */
   onSwitchToManual: () => void
@@ -246,6 +275,17 @@ export function AmbientCapture({
   prompter?: ReactNode
   /** Shown in the theatre's title bar, so the doctor knows whose room this is. */
   patientName?: string
+  /**
+   * This device's choice to refine an untranslated transcript after Stop
+   * (#436). On unless the doctor turned it off in the Audio dialog, and only
+   * ever acted on when the API also offers it.
+   */
+  refineAfterStop?: boolean
+  /**
+   * Whether the API offers refinement, once the config probe answers, so the
+   * Audio dialog shows its switch only where it does something.
+   */
+  onRefinementAvailable?: (available: boolean) => void
 }) {
   const [availability, setAvailability] = useState<Availability>({ status: 'loading' })
   const [phase, setPhase] = useState<Phase>('idle')
@@ -270,6 +310,8 @@ export function AmbientCapture({
    */
   const [interpreting, setInterpreting] = useState<InterpretedLanguage | null>(null)
   const conversationDialog = useRef<HTMLDialogElement>(null)
+  /** Holds Use Live Transcript, which takes focus when refinement starts. */
+  const skipRow = useRef<HTMLDivElement>(null)
 
   /*
    * The theatre is only ever open while the room is actually being heard, so
@@ -395,6 +437,15 @@ export function AmbientCapture({
   const onLiveChangeRef = useRef(onLiveChange)
   const onLiveSegmentsRef = useRef(onLiveSegments)
   const onUnavailableRef = useRef(onUnavailable)
+  const onRefinementAvailableRef = useRef(onRefinementAvailable)
+  /** Whether the API offers refinement after Stop (#436), from the config probe. */
+  const batchAvailable = useRef(false)
+  /** `refineAfterStop` for `deliver`, which must not wait for a render. */
+  const refineRef = useRef(refineAfterStop)
+  /** The one controller over a running refinement's mint, upload and check. */
+  const refining = useRef<AbortController | null>(null)
+  /** True once the doctor pressed Use Live Transcript, so the notice says so. */
+  const skipped = useRef(false)
 
   useEffect(() => {
     agreedRef.current = agreed
@@ -405,6 +456,8 @@ export function AmbientCapture({
     onLiveChangeRef.current = onLiveChange
     onLiveSegmentsRef.current = onLiveSegments
     onUnavailableRef.current = onUnavailable
+    onRefinementAvailableRef.current = onRefinementAvailable
+    refineRef.current = refineAfterStop
   })
 
   /*
@@ -428,10 +481,15 @@ export function AmbientCapture({
     api
       .liveAsrConfig('ambient')
       .then((config) => {
-        if (attempt.current === id) setAvailability({ status: 'ready', config })
+        if (attempt.current !== id) return
+        batchAvailable.current = config.batchRefinement === true
+        onRefinementAvailableRef.current?.(batchAvailable.current)
+        setAvailability({ status: 'ready', config })
       })
       .catch((cause: unknown) => {
         if (attempt.current !== id) return
+        batchAvailable.current = false
+        onRefinementAvailableRef.current?.(false)
         // A deployment with no ambient provider is a plain unavailability with
         // a way out, not an error the doctor has to interpret.
         /*
@@ -485,6 +543,15 @@ export function AmbientCapture({
     [teardown],
   )
 
+  /*
+   * Stop unmounts as the phase changes, which drops focus to the page, and the
+   * escape hatch is only useful for the minute or so refinement runs, so it is
+   * where a keyboard user lands rather than somewhere to tab to.
+   */
+  useEffect(() => {
+    if (phase === 'refining') skipRow.current?.querySelector('button')?.focus()
+  }, [phase])
+
   useEffect(() => {
     if (phase !== 'listening') return
     const tick = window.setInterval(() => setSeconds((s) => s + 1), 1_000)
@@ -497,78 +564,234 @@ export function AmbientCapture({
    * The labelling pass is the hosted path's, reused unchanged: it sends only
    * text, the API de-identifies it before any model sees it, and every failure
    * resolves to unlabelled prose rather than losing the consultation.
+   *
+   * `refine` is set by Stop alone (#436). The failure path never passes it: a
+   * session that ended on a dropped connection delivers what it heard, without
+   * a second egress the doctor did not ask to finish.
    */
-  const deliver = useCallback(async (transcript: LiveTranscript) => {
-    const takeRecording = (): Blob | undefined => {
-      const recording =
-        chunks.current.length > 0
-          ? new Blob(chunks.current, ...(mime.current ? [{ type: mime.current }] : []))
-          : undefined
-      chunks.current = []
-      return recording
-    }
+  const deliver = useCallback(
+    async (
+      transcript: LiveTranscript,
+      refine: { durationSeconds: number; id: number } | null = null,
+    ) => {
+      const takeRecording = (): Blob | undefined => {
+        const recording =
+          chunks.current.length > 0
+            ? new Blob(chunks.current, ...(mime.current ? [{ type: mime.current }] : []))
+            : undefined
+        chunks.current = []
+        return recording
+      }
 
-    /*
-     * A translated session takes no labelling pass (#393). Its roles came from
-     * the language each line was spoken in, which is firmer ground than a model
-     * reading the English, and the pass re-slices turns the pairs are aligned
-     * to one for one.
-     */
-    const language = pair.current
-    if (language !== null) {
-      const bilingual = bilingualDelivery(tokensToBilingualTurns(transcript.final), language)
-      if (bilingual.text.trim() === '') {
+      /*
+       * A translated session takes no labelling pass (#393). Its roles came from
+       * the language each line was spoken in, which is firmer ground than a model
+       * reading the English, and the pass re-slices turns the pairs are aligned
+       * to one for one.
+       */
+      const language = pair.current
+      if (language !== null) {
+        const bilingual = bilingualDelivery(tokensToBilingualTurns(transcript.final), language)
+        if (bilingual.text.trim() === '') {
+          setPhase('idle')
+          return
+        }
+        const recording = takeRecording()
+        onTranscriptRef.current({
+          text: bilingual.text,
+          segments: bilingual.segments,
+          source: 'asr_live',
+          draftTurns: bilingual.draftTurns,
+          otherLanguages: bilingual.others,
+          translation: language,
+          ...(recording ? { audio: recording } : {}),
+        })
         setPhase('idle')
         return
       }
-      const recording = takeRecording()
-      onTranscriptRef.current({
-        text: bilingual.text,
-        segments: bilingual.segments,
-        source: 'asr_live',
-        draftTurns: bilingual.draftTurns,
-        otherLanguages: bilingual.others,
-        translation: language,
-        ...(recording ? { audio: recording } : {}),
-      })
-      setPhase('idle')
-      return
-    }
 
-    const text = tokensToText(transcript.final)
-    const segments = tokensToSegments(transcript.final)
-    if (text.trim() === '') {
-      setPhase('idle')
-      return
-    }
-
-    let draftTurns: readonly DraftTurn[] | null = null
-    if (text.length <= MAX_DRAFT_TEXT_CHARACTERS) {
-      setPhase('labelling')
-      const controller = new AbortController()
-      inflight.current = controller
-      const bound = window.setTimeout(() => controller.abort(), LABEL_TIMEOUT_MS)
-      try {
-        draftTurns = await api.draftHostedTurns(text, controller.signal)
-      } catch {
-        draftTurns = null
-      } finally {
-        window.clearTimeout(bound)
-        if (inflight.current === controller) inflight.current = null
+      if (tokensToText(transcript.final).trim() === '') {
+        setPhase('idle')
+        return
       }
-    }
 
-    const recording = takeRecording()
+      /*
+       * Taken once, before refinement, so the bytes uploaded for refinement and
+       * the bytes kept for playback are the same recording, and the offsets of a
+       * refined transcript index into the audio the doctor hears.
+       */
+      const recording = takeRecording()
+      let final = transcript.final
+      /** `undefined` until a labelling pass has run for `final`. */
+      let draftTurns: readonly DraftTurn[] | null | undefined
+      let batchTranscription: { used: boolean } | undefined
+      let fallbackNotice: string | null = null
 
-    onTranscriptRef.current({
-      text,
-      segments,
-      source: 'asr_live',
-      ...(draftTurns && draftTurns.length > 0 ? { draftTurns } : {}),
-      ...(recording ? { audio: recording } : {}),
-    })
-    setPhase('idle')
-  }, [])
+      /** The labelling pass, bounded, and stopped by `controller` too. */
+      const label = async (
+        text: string,
+        controller: AbortController,
+      ): Promise<readonly DraftTurn[] | null> => {
+        if (text.length > MAX_DRAFT_TEXT_CHARACTERS) return null
+        inflight.current = controller
+        const bound = window.setTimeout(() => controller.abort(), LABEL_TIMEOUT_MS)
+        try {
+          return await api.draftHostedTurns(text, controller.signal)
+        } catch {
+          return null
+        } finally {
+          window.clearTimeout(bound)
+          if (inflight.current === controller) inflight.current = null
+        }
+      }
+
+      /*
+       * Refinement after Stop (#436, docs/trd.md §20.14): the whole recording is
+       * re-transcribed in one batch pass, and that transcript replaces the live
+       * one only when every check passes. Each condition is a reason not to
+       * start the second egress at all: the panel must still be the one Stop
+       * was pressed on (an unmount during Finishing must not upload from a page
+       * that is gone), the API must offer it, this device must not have opted
+       * out, the consent tick must still be held, and there must be a recording
+       * inside the bound to send.
+       */
+      if (
+        refine !== null &&
+        attempt.current === refine.id &&
+        recording !== undefined &&
+        batchAvailable.current &&
+        refineRef.current &&
+        agreedRef.current &&
+        refine.durationSeconds <= MAX_BATCH_RECORDING_SECONDS
+      ) {
+        setPhase('refining')
+        const live = transcript.final
+        const { durationSeconds } = refine
+        skipped.current = false
+        let sent = false
+        let refined: { tokens: LiveToken[]; drafted: readonly DraftTurn[] | null } | null = null
+
+        /*
+         * The mint and the upload, under the bound set from the recording's
+         * length. `sent` is read from the upload's own answer, because a refusal
+         * before the request sent nothing and a failure after it did.
+         */
+        const uploading = new AbortController()
+        inflight.current = uploading
+        refining.current = uploading
+        const bound = window.setTimeout(
+          () => uploading.abort(),
+          refinementTimeoutMs(durationSeconds),
+        )
+        let candidate: LiveToken[] | null = null
+        try {
+          const session = await api.createBatchSession(uploading.signal, durationSeconds)
+          const upload = await transcribeRecording(session, recording, uploading.signal)
+          sent = upload.sent
+          const verdict = upload.ok
+            ? refinementVerdict({ words: upload.words, live, durationSeconds })
+            : null
+          if (verdict?.ok && !uploading.signal.aborted) candidate = verdict.tokens
+        } catch {
+          candidate = null
+        } finally {
+          window.clearTimeout(bound)
+          if (inflight.current === uploading) inflight.current = null
+          if (refining.current === uploading) refining.current = null
+        }
+
+        /*
+         * Labelled before the red-flag check rather than after it, so the check
+         * reads the turns that will be stored (#436 review). Where turns break
+         * changes what the rules raise, and the recogniser's segments are not
+         * the turns the labelling pass and the voice vote make of them. Still
+         * the refining phase, so Skip stays on screen and stops this too.
+         */
+        if (candidate !== null && !skipped.current) {
+          const checking = new AbortController()
+          refining.current = checking
+          try {
+            const text = tokensToText(candidate)
+            const segments = tokensToSegments(candidate)
+            const drafted = await label(text, checking)
+            const { lines } = draftLinesFor({
+              text,
+              segments,
+              ...(drafted && drafted.length > 0 ? { draftTurns: drafted } : {}),
+              voteBySpeaker: true,
+              withOffsets: true,
+            })
+            inflight.current = checking
+            const lost = await api.refinementCheck(
+              refinementCheckTexts(live),
+              lines.map((line) => line.text),
+              checking.signal,
+            )
+            if (lost.length === 0 && !checking.signal.aborted) {
+              refined = { tokens: candidate, drafted }
+            }
+          } catch {
+            refined = null
+          } finally {
+            if (inflight.current === checking) inflight.current = null
+            if (refining.current === checking) refining.current = null
+          }
+        }
+
+        if (sent) batchTranscription = { used: refined !== null }
+        if (refined !== null) {
+          final = refined.tokens
+          // Delivered with the turns the check read, never re-labelled, so
+          // what is stored is what was checked.
+          draftTurns = refined.drafted
+          /*
+           * A gap in the live stream is not a gap in this transcript, but only
+           * when its words run to the end of the recording. The verdict measures
+           * against where the live transcript ended, and on exactly this path
+           * that is already short, so a refined reading cut off at the same
+           * point would otherwise clear the warning about the lost tail.
+           */
+          const reachedMs = Math.max(...refined.tokens.map((token) => token.endMs))
+          if (reachedMs >= durationSeconds * 1_000 - MAX_REFINED_TAIL_SHORTFALL_MS) {
+            setError((current) =>
+              current === UNSENT_TAIL_ERROR || current === SHORT_TAIL_NOTICE ? null : current,
+            )
+          }
+        } else if (attempt.current === refine.id) {
+          fallbackNotice = skipped.current ? REFINE_SKIPPED_NOTICE : REFINE_FAILED_NOTICE
+          const message = fallbackNotice
+          setNotice((current) => (current === null ? message : `${current} ${message}`))
+        }
+      }
+
+      const text = tokensToText(final)
+      const segments = tokensToSegments(final)
+
+      if (draftTurns === undefined) {
+        setPhase('labelling')
+        draftTurns = await label(text, new AbortController())
+      }
+
+      onTranscriptRef.current({
+        text,
+        segments,
+        source: 'asr_live',
+        ...(draftTurns && draftTurns.length > 0 ? { draftTurns } : {}),
+        ...(recording ? { audio: recording } : {}),
+        ...(batchTranscription ? { batchTranscription } : {}),
+      })
+      /*
+       * After delivery, not before labelling: the panel unmounts once the
+       * transcript saves, and labelling can run for minutes, so a toast raised
+       * earlier would be gone before the panel is. `PrescriptionTheatre`
+       * surfaces its stream notices the same way. A process notice, not a
+       * clinical one, so it fits the Toaster's rule.
+       */
+      if (fallbackNotice !== null) toast(fallbackNotice, { duration: 6_000 })
+      setPhase('idle')
+    },
+    [],
+  )
 
   const onStreamFailure = useCallback(() => {
     // The stop path has already claimed the transcript and is mid-drain.
@@ -891,6 +1114,9 @@ export function AmbientCapture({
   }, [availability, deviceId, onStreamFailure, releaseMicrophone, translation])
 
   const stop = useCallback(async () => {
+    // Read before any await: an unmount during the drain bumps it, and that is
+    // what keeps refinement from starting on a page that is gone.
+    const id = attempt.current
     const active = recorder.current
     const opened = stream.current
     /*
@@ -918,6 +1144,9 @@ export function AmbientCapture({
     await Promise.all([stopRecorder(active), kept === active ? undefined : stopRecorder(kept)])
     recorder.current = null
     archive.current = null
+    // The length of the recording the archive holds, which is what refinement
+    // would upload. Rounded up, so the bound is never understated.
+    const durationSeconds = Math.max(1, Math.ceil((Date.now() - startedAt.current) / 1_000))
 
     // The last chunk has been handed over by now, so the end frame cannot
     // arrive ahead of audio the provider still needs.
@@ -925,7 +1154,6 @@ export function AmbientCapture({
     const drained = unsent ? undefined : await opened?.finish()
     stream.current = null
     releaseMicrophone()
-    onLiveChangeRef.current(false)
 
     // `finished: false` means the provider never acknowledged the end, so what
     // it still held is lost. Saying so is the difference between a short
@@ -933,16 +1161,36 @@ export function AmbientCapture({
     if (unsent) setError(UNSENT_TAIL_ERROR)
     else if (opened && drained?.finished === false) setError(SHORT_TAIL_NOTICE)
 
-    await deliver(settled.current)
+    /*
+     * Released only once the transcript is delivered (#436), not when the
+     * microphone is. Refinement and labelling can run for minutes, and until
+     * the transcript lands the page must keep Consultation Settings locked and
+     * the leave-page prompt raised, because a reload there loses it. In a
+     * `finally`, so a delivery that throws cannot leave the page latched.
+     */
+    try {
+      await deliver(settled.current, { durationSeconds, id })
+    } finally {
+      onLiveChangeRef.current(false)
+    }
   }, [deliver, releaseMicrophone])
 
-  const busy = phase === 'starting' || phase === 'finishing' || phase === 'labelling'
+  /** Use Live Transcript: stops a running refinement, which then falls back. */
+  const skipRefinement = useCallback(() => {
+    skipped.current = true
+    refining.current?.abort()
+  }, [])
+
+  const busy =
+    phase === 'starting' || phase === 'finishing' || phase === 'refining' || phase === 'labelling'
   const busyLabel =
     phase === 'starting'
       ? 'Connecting'
       : phase === 'finishing'
         ? 'Finishing, waiting for the last words'
-        : 'Drafting speaker labels'
+        : phase === 'refining'
+          ? 'Refining the transcript'
+          : 'Drafting speaker labels'
 
   if (availability.status === 'loading') {
     return (
@@ -1085,6 +1333,16 @@ export function AmbientCapture({
         <div className="flex items-center gap-2 text-ink-muted text-sm">
           <Loader2 aria-hidden className="size-4 animate-spin" />
           <span aria-live="polite">{busyLabel}</span>
+        </div>
+      )}
+
+      {/* The doctor may always take the transcript already heard rather than
+          wait. Named for what it gives, and naming no processor (D-004). */}
+      {phase === 'refining' && (
+        <div ref={skipRow}>
+          <Button variant="neutral" onClick={skipRefinement}>
+            Use Live Transcript
+          </Button>
         </div>
       )}
 

@@ -29,6 +29,7 @@ import {
   PatientSchema,
   PrescriptionParseResponseSchema,
   PrescriptionSchema,
+  RefinementCheckRequestSchema,
   RetentionPolicySchema,
   SoapNoteSchema,
   type Transcript,
@@ -747,6 +748,40 @@ export function createPreviewBackend() {
   on('POST', '/asr/live-sessions', asrUnavailable('Ambient transcription'))
   on('POST', '/asr/transcriptions', asrUnavailable('Hosted transcription'))
   on('POST', '/asr/draft-turns', asrUnavailable('Speaker labelling'))
+  // Refinement after Stop (#436) uploads to a vendor, which a preview never does.
+  on('POST', '/asr/batch-sessions', asrUnavailable('Transcript refinement'))
+  // The check is the rules engine, so it runs as the API runs it: every
+  // trigger, and every field that could weaken the engine set here.
+  on('POST', '/asr/refinement-check', (_id, body) => {
+    const { live, refined } = parse(
+      RefinementCheckRequestSchema,
+      body,
+      'A live and a refined transcript are required.',
+    )
+    // Live read at its most (every turn the patient's), refined at its least
+    // (every turn the doctor's), exactly as `backend/src/routes/asr.ts` does.
+    const checked = (turns: readonly string[], speaker: 'doctor' | 'patient'): Transcript => ({
+      source: 'asr_live',
+      labelsReviewed: false,
+      turns: turns.map((text) => ({ speaker, text })),
+    })
+    const after = new Set(
+      evaluateRedFlags(checked(refined, 'doctor'), ALL_REDFLAG_TRIGGERS).map(
+        (f) => f.ruleId ?? f.id,
+      ),
+    )
+    // The live side read by segment and whole, pooled, as the API does.
+    const heard = new Map<string, ReturnType<typeof evaluateRedFlags>[number]>()
+    for (const reading of [live, [live.join(' ')]]) {
+      for (const flag of evaluateRedFlags(checked(reading, 'patient'), ALL_REDFLAG_TRIGGERS)) {
+        const id = flag.ruleId ?? flag.id
+        if (!heard.has(id)) heard.set(id, flag)
+      }
+    }
+    return json(200, {
+      lost: [...heard].filter(([id]) => !after.has(id)).map(([, flag]) => flag),
+    })
+  })
 
   on('GET', '/fixtures', () => json(200, { fixtures: FIXTURES }))
   on('GET', '/guidelines/documents', () => json(200, { documents: guidelineDocuments() }))

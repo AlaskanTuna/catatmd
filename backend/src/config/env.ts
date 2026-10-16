@@ -79,6 +79,17 @@ const EnvSchema = z.object({
   SONIOX_REGION: LiveAsrRegionSchema.default('us'),
   SONIOX_RT_MODEL: z.string().default('stt-rt-v5'),
 
+  // ElevenLabs batch speech-to-text, which refines an untranslated ambient
+  // transcript after Stop (#436, docs/trd.md §20.14). Optional on the same
+  // terms as Soniox: unset, the config route offers no refinement and the mint
+  // answers 503, so production stays inert until the account holder sets it.
+  //
+  // There is deliberately no model or host variable. Both are literals in
+  // lib/asr/elevenlabs.ts and in shared/, because the model decides whether
+  // voices are separated and the host is where patient audio goes. The key is
+  // meant to be a speech-to-text-only key with a vendor credit quota (§17).
+  ELEVENLABS_API_KEY: z.string().optional(),
+
   // How long a consultation recording is kept so the doctor can check what the
   // recogniser wrote (#293).
   //

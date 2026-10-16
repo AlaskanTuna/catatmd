@@ -43,6 +43,8 @@ function MockAmbientCapture({
   onSwitchToManual,
   onUnavailable,
   onLiveChange,
+  refineAfterStop,
+  onRefinementAvailable,
 }: {
   onTranscript: (result: {
     text: string
@@ -57,13 +59,40 @@ function MockAmbientCapture({
     draftTurns?: readonly DraftTurn[]
     otherLanguages?: readonly ({ language: 'bn' | 'ur'; text: string; spoken: boolean } | null)[]
     translation?: 'bn' | 'ur'
+    batchTranscription?: { used: boolean }
   }) => void
   onSwitchToManual: () => void
   onUnavailable?: () => void
   onLiveChange: (live: boolean) => void
+  refineAfterStop?: boolean
+  onRefinementAvailable?: (available: boolean) => void
 }) {
   return (
     <>
+      <output data-testid="refine-after-stop">{String(refineAfterStop)}</output>
+      <button type="button" onClick={() => onRefinementAvailable?.(true)}>
+        mock refinement available
+      </button>
+      {/* Refinement after Stop (#436): one pass whose refined transcript was
+          used, and one whose upload was made and then not used. */}
+      {[true, false].map((used) => (
+        <button
+          key={String(used)}
+          type="button"
+          onClick={() => {
+            onLiveChange(false)
+            onTranscript({
+              text: 'Ada batuk sikit.',
+              segments: [{ text: 'Ada batuk sikit.', start: 0, end: 2 }],
+              source: 'asr_live',
+              draftTurns: [{ speaker: 'patient', text: 'Ada batuk sikit.' }],
+              batchTranscription: { used },
+            })
+          }}
+        >
+          {used ? 'mock transcribe refined' : 'mock transcribe refinement refused'}
+        </button>
+      ))}
       <button type="button" onClick={() => onLiveChange(true)}>
         mock go live
       </button>
@@ -621,6 +650,41 @@ describe('recording provenance', () => {
     expect(transcript.source).toBe('asr_live')
     // Server-drafted labels, applied unreviewed, exactly as on the hosted path.
     expect(transcript.labelsReviewed).toBe(false)
+  })
+
+  /*
+   * Refinement after Stop (#436). The marker says the recording also went to
+   * the refinement vendor, and whether its transcript was kept; like the
+   * provenance stamp, each half only ever widens.
+   */
+  it('records a refinement whose transcript was used', async () => {
+    openAmbient()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe refined' }))
+
+    expect(await submit()).toMatchObject({ batchTranscription: { used: true } })
+  })
+
+  it('records an upload whose refinement was not used', async () => {
+    openAmbient()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe refinement refused' }))
+
+    expect(await submit()).toMatchObject({ batchTranscription: { used: false } })
+  })
+
+  it('records no refinement for a pass that uploaded nothing', async () => {
+    openAmbient()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe live' }))
+
+    expect(await submit()).not.toHaveProperty('batchTranscription')
+  })
+
+  it('keeps the refinement record when a later pass uploaded nothing', async () => {
+    openAmbient()
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe refined' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe refinement refused' }))
+    fireEvent.click(screen.getByRole('button', { name: 'mock transcribe live' }))
+
+    expect(await submit()).toMatchObject({ batchTranscription: { used: true } })
   })
 
   it('stays asr_live when a later pass is on-device or relayed', async () => {
@@ -1204,5 +1268,62 @@ describe('leaving the page with an unsaved transcript', () => {
       </QueryClientProvider>,
     )
     expect(leave()).toBe(false)
+  })
+})
+
+/*
+ * The per-device refinement choice (#436): read from this device's settings and
+ * handed to the ambient panel, and offered in the Audio dialog only once the
+ * panel reports that the API offers refinement.
+ */
+describe('refinement after Stop', () => {
+  beforeEach(() => localStorage.clear())
+
+  function openAmbientPanel() {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <CapturePanel
+            captureMode="ambient"
+            onCaptureModeChange={vi.fn()}
+            onCaptureBusyChange={vi.fn()}
+            onCapture={vi.fn()}
+            saving={false}
+            error={null}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(screen.getByRole('tab', { name: /record/i }))
+  }
+
+  it('hands the ambient panel this device choice, on by default', () => {
+    openAmbientPanel()
+
+    expect(screen.getByTestId('refine-after-stop').textContent).toBe('true')
+  })
+
+  it('hands it the opt-out when this device saved one', () => {
+    localStorage.setItem('catatmd.audio', JSON.stringify({ refineAfterStop: false }))
+    openAmbientPanel()
+
+    expect(screen.getByTestId('refine-after-stop').textContent).toBe('false')
+  })
+
+  it('leaves the switch out of Audio settings while refinement is not on offer', () => {
+    openAmbientPanel()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Audio settings' }))
+
+    expect(screen.queryByRole('switch', { name: 'Refine After Stop' })).toBeNull()
+  })
+
+  it('offers the switch in Audio settings once the ambient panel reports it is on offer', () => {
+    openAmbientPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'mock refinement available' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Audio settings' }))
+
+    expect(screen.getByRole('switch', { name: 'Refine After Stop' })).toBeTruthy()
   })
 })

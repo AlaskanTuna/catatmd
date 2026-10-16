@@ -48,6 +48,13 @@ services:
         sync: false
       - key: SONIOX_REGION
         value: us
+      # Refinement after Stop (#436). The browser uploads the finished ambient
+      # recording to ElevenLabs under a single-use token this service mints.
+      # Set only by the account holder, only once the vendor account's "use
+      # data to improve models" setting is off, and only with a
+      # speech-to-text-only key carrying a credit quota (docs/trd.md §17).
+      - key: ELEVENLABS_API_KEY
+        sync: false
       # Consultation audio retention (#293). How many hours a recording is kept
       # so the doctor can play back the sentence behind a transcript turn.
       #

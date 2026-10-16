@@ -1,4 +1,6 @@
 import {
+  type BatchSession,
+  BatchSessionSchema,
   type CaptureMode,
   type ConsultationAnalysis,
   ConsultationAnalysisSchema,
@@ -45,6 +47,7 @@ import {
   type PrescriptionParseResponse,
   PrescriptionParseResponseSchema,
   type RedFlag,
+  RefinementCheckResponseSchema,
   type SoapNote,
   type Transcript,
   type TranscriptCorrectionsResponse,
@@ -437,6 +440,42 @@ export const api = {
       }),
       signal,
     }),
+
+  /**
+   * Mints the single-use token that uploads one finished ambient recording for
+   * refinement after Stop (#436, docs/trd.md §20.14).
+   *
+   * **Only ever called by `AmbientCapture` after Stop**, on an untranslated
+   * session whose consent tick is still held, with a recording in hand. The
+   * consent asserted here is that tick, and `durationSeconds` is the length of
+   * the recording the token will upload, which the API bounds and records.
+   *
+   * The returned session is re-checked against the shared literal schema by
+   * `elevenlabs-batch.ts` before anything is sent, whatever this parse said.
+   */
+  createBatchSession: (signal: AbortSignal, durationSeconds: number): Promise<BatchSession> =>
+    request('/asr/batch-sessions', BatchSessionSchema, {
+      method: 'POST',
+      body: JSON.stringify({ consent: true, durationSeconds }),
+      signal,
+    }),
+
+  /**
+   * Asks the rules engine whether a refined transcript would lose a red flag
+   * the live one raised (#436). Text only: the API sets the source, the labels
+   * and the trigger set itself. Any entry in the answer means the live
+   * transcript is kept.
+   */
+  refinementCheck: (
+    live: readonly string[],
+    refined: readonly string[],
+    signal: AbortSignal,
+  ): Promise<RedFlag[]> =>
+    request('/asr/refinement-check', RefinementCheckResponseSchema, {
+      method: 'POST',
+      body: JSON.stringify({ live, refined }),
+      signal,
+    }).then((r) => r.lost),
 
   /**
    * The deterministic live pane: red flags over one window of a running
